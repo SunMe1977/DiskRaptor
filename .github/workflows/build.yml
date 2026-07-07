@@ -1,0 +1,229 @@
+# DiskRaptor — Cross-platform CI/CD
+#
+# Builds, tests, and packages for Windows, macOS, and Linux on every push.
+# On tagged releases (v*), also creates a GitHub Release with artifacts.
+
+name: Build & Release
+
+on:
+  push:
+    branches: [main, master, develop]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Validate & Test ──────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --all --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+  # ── Build + Test on all 3 platforms ──────────────────────────────────
+  build:
+    name: Build (${{ matrix.os }})
+    needs: [lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bundle: AppImage
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundle: dmg
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: msi
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+
+      # ── Linux system dependencies ──────────────────────────────────
+      - name: Install Linux deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      # ── macOS signing (optional) ────────────────────────────────────
+      - name: Import macOS certificate
+        if: matrix.os == 'macos-latest' && github.ref_type == 'tag'
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERT }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          echo "$APPLE_CERT" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p temp temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p temp temp.keychain
+          security import /tmp/cert.p12 -k temp.keychain -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temp temp.keychain
+
+      # ── Rust tests ──────────────────────────────────────────────────
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --release -- --nocapture
+        env:
+          RUST_LOG: info
+
+      # ── Build Tauri app ─────────────────────────────────────────────
+      - name: Build Tauri app (${{ matrix.bundle }})
+        run: npx tauri build --bundles ${{ matrix.bundle }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+
+      # ── Upload bundle artifact ──────────────────────────────────────
+      # Note: workspace Cargo.toml puts target/ at the workspace root
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: diskraptor-${{ matrix.os }}-${{ matrix.bundle }}
+          path: |
+            target/release/bundle/
+            src-tauri/target/release/bundle/
+          if-no-files-found: warn
+          retention-days: 7
+
+      # ── Upload binary for debugging ─────────────────────────────────
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: diskraptor-${{ matrix.os }}-binary
+          path: |
+            target/release/diskraptor${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+            src-tauri/target/release/diskraptor${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          if-no-files-found: warn
+          retention-days: 3
+
+  # ── E2E Tests (Playwright) on Windows ────────────────────────────────
+  e2e:
+    name: E2E (Playwright)
+    needs: [build]
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+      - name: Build release binary
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - name: Run E2E tests
+        run: node playwright-e2e.mjs
+        timeout-minutes: 10
+
+  # ── Create GitHub Release (on tags only) ────────────────────────────
+  release:
+    name: Create Release
+    if: github.ref_type == 'tag'
+    needs: [build, e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Organize artifacts
+        run: |
+          mkdir -p release
+          # Windows
+          find artifacts -name "*.msi" -exec cp {} release/ \;
+          find artifacts -name "*.exe" -exec cp {} release/ \;
+          # macOS
+          find artifacts -name "*.dmg" -exec cp {} release/ \;
+          # Linux
+          find artifacts -name "*.AppImage" -exec cp {} release/ \;
+          echo "=== Release files ==="
+          ls -lh release/
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          cat > release/RELEASE_NOTES.md << 'EOF'
+          ## 🦅 DiskRaptor ${{ github.ref_name }}
+
+          ### Downloads
+
+          | Platform | File |
+          |----------|------|
+          | Windows | `*.msi` / `*.exe` |
+          | macOS   | `*.dmg` |
+          | Linux   | `*.AppImage` |
+
+          ### Install
+
+          - **Windows**: Run the `.msi` installer
+          - **macOS**: Open the `.dmg` and drag to Applications
+          - **Linux**: Make `.AppImage` executable: `chmod +x *.AppImage && ./DiskRaptor-*.AppImage`
+
+          ### Changelog
+
+          See commit history for full details.
+          EOF
+          echo "notes_file=release/RELEASE_NOTES.md" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: DiskRaptor ${{ github.ref_name }}
+          body_path: ${{ steps.notes.outputs.notes_file }}
+          files: release/*
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

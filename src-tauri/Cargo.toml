@@ -1,0 +1,32 @@
+[package]
+name = "diskraptor"
+version = "0.1.0"
+description = "Ultra-fast directory scanner - modern JDiskReport successor"
+authors = ["DiskRaptor Team"]
+edition = "2021"
+
+[lib]
+name = "diskraptor_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "1"
+
+[dependencies]
+tauri = { version = "1", features = ["shell-open", "dialog-all", "fs-all"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+jwalk = "0.8"
+rayon = "1"
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+anyhow = "1"
+rfd = "0.10"
+log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.39", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+env_logger = "0.10"

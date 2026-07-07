@@ -1,0 +1,17 @@
+{
+  "name": "diskraptor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ultra-fast directory scanner with virtual tree view",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1",
+    "playwright": "^1.61.1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.6.0"
+  }
+}
