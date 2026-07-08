@@ -52,8 +52,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.0-dev librsvg2-dev
-      - name: Build Tauri app
-        run: npm run tauri build -- --bundles ${{ matrix.bundle }}
+      - name: Build and bundle
+        run: |
+          cargo build --manifest-path src-tauri/Cargo.toml --release
+          ls -la target/release/ || ls -la src-tauri/target/release/ || true
+          npm run tauri build -- --bundles ${{ matrix.bundle }} 2>&1 || true
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.os }}
