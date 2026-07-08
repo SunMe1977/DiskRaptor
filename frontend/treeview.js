@@ -20,31 +20,61 @@ class TreeView {
     var self = this;
     window.addEventListener("diagram-jump-to-path", async function (e) {
       var fullPath = e.detail && e.detail.path;
-      if (!fullPath || !self.loader || !self.loader.allNodes) return;
+      if (!fullPath || !self.loader || !self.loader.allNodes) {
+        console.warn("Jump: no loader data yet");
+        return;
+      }
       var scanPath = document.getElementById("scan-path");
-      if (!scanPath || !scanPath.value) return;
+      if (!scanPath || !scanPath.value) {
+        console.warn("Jump: no scan path");
+        return;
+      }
       var root = scanPath.value.replace(/\\+$/, "");
-      if (fullPath.indexOf(root) !== 0) return;
+      if (fullPath.indexOf(root) !== 0) {
+        console.warn("Jump: path mismatch", fullPath, "vs", root);
+        return;
+      }
       var rel = fullPath.substring(root.length).replace(/^\\/, "");
-      if (!rel) return;
+      if (!rel) return; // clicking root
       var parts = rel.split("\\");
+      // Remove the last part (the file name) — only navigate to the parent dir
+      parts.pop();
+      if (parts.length === 0) return;
+
       var currentIdx = 0;
       var found = true;
       for (var pi = 0; pi < parts.length; pi++) {
         var seg = parts[pi];
         if (!seg) continue;
+
+        // Mark as expanded
         if (!self.expanded.has(currentIdx)) {
           self.expanded.add(currentIdx);
         }
-        var children = self.loader.getChildrenIndices(currentIdx);
+
+        // First, scan all loaded nodes manually (more thorough than getChildrenIndices)
         var match = -1;
-        for (var ci = 0; ci < children.length; ci++) {
-          var n = self.loader.getNode(children[ci]);
-          if (n && n.name === seg) {
-            match = children[ci];
+        for (var ni = 0; ni < self.loader.allNodes.length; ni++) {
+          var n = self.loader.allNodes[ni];
+          if (n && n.parent === currentIdx && n.name === seg) {
+            match = ni;
             break;
           }
         }
+
+        // If not found, try getChildrenIndices
+        if (match === -1) {
+          var children = self.loader.getChildrenIndices(currentIdx);
+          for (var ci = 0; ci < children.length; ci++) {
+            var n = self.loader.getNode(children[ci]);
+            if (n && n.name === seg) {
+              match = children[ci];
+              break;
+            }
+          }
+        }
+
+        // If still not found, fetch from backend
         if (match === -1) {
           try {
             var rawKids = await self.loader.fetchChildren(currentIdx);
@@ -62,21 +92,26 @@ class TreeView {
                 }
               }
             }
-          } catch (e) {
+          } catch (err) {
+            console.warn("Jump: fetch failed for", seg, err);
             break;
           }
         }
+
         if (match === -1) {
           found = false;
           break;
         }
         currentIdx = match;
       }
+
       if (found) {
         await self.rebuild();
         self.select(currentIdx);
         var sb = document.querySelector(".status-bar");
         if (sb) sb.textContent = "Jumped to: " + fullPath;
+      } else {
+        console.warn("Jump: could not find path in tree:", fullPath);
       }
     });
   }
