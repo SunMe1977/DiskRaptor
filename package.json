@@ -9,7 +9,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1",
-    "playwright": "^1.61.1"
+    "playwright": "^1.61.1",
+    "sharp": "^0.35.3"
   },
   "dependencies": {
     "@tauri-apps/api": "^1.6.0"
