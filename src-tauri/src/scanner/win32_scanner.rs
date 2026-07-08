@@ -1,6 +1,6 @@
-// DiskRaptor – Win32 directory scanner using FindFirstFileW / FindNextFileW
+// DiskRaptor - Win32 directory scanner using FindFirstFileW / FindNextFileW
 // Uses \\?\ prefix for long paths (>260 chars).
-// Returns (file_count, dir_count) — call scan_dir(path).
+// Returns (file_count, dir_count) - call scan_dir(path).
 
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -59,7 +59,6 @@ pub fn scan_dir(root: &str) -> (u64, u64) {
                 }
                 let name = String::from_utf16_lossy(&fd.cFileName[..nlen]);
                 if name == "." || name == ".." {
-                    // Skip . and .., advance to next entry
                     let mut nd = WIN32_FIND_DATAW::default();
                     if FindNextFileW(hh, &mut nd).as_bool() {
                         fd = nd;
@@ -70,9 +69,21 @@ pub fn scan_dir(root: &str) -> (u64, u64) {
                 }
 
                 let is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                let is_reparse = (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0) != 0;
+                // Skip reparse points (junctions, symlinks) to avoid infinite loops
+                if is_dir && is_reparse {
+                    let mut nd = WIN32_FIND_DATAW::default();
+                    if FindNextFileW(hh, &mut nd).as_bool() {
+                        fd = nd;
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
                 if is_dir {
                     dirs += 1;
-                    stack.lock().unwrap().push(format!("{}\\{}", current, name));
+                    let child = format!("{}\\{}", current, name);
+                    stack.lock().unwrap().push(child);
                 } else {
                     files += 1;
                 }
