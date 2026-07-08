@@ -150,6 +150,29 @@
         return;
       }
 
+      // Check if admin rights are needed (Windows only, best-effort)
+      try {
+        if (window.__TAURI__ && window.__TAURI__.invoke) {
+          var needsAdmin = await window.__TAURI__.invoke("check_admin_needed", {
+            path: path,
+          });
+          if (needsAdmin) {
+            if (
+              confirm(
+                "Some folders require administrator rights for full visibility.\n" +
+                  "Restart DiskRaptor as Administrator?",
+              )
+            ) {
+              await window.__TAURI__.invoke("restart_as_admin");
+              return; // process.exit(0) will be called on the Rust side
+            }
+          }
+        }
+      } catch (e) {
+        // Silently ignore — admin check is optional
+        console.log("Admin check skipped:", e.message);
+      }
+
       isScanning = true;
       btnScan.disabled = true;
       btnBrowse.disabled = true;

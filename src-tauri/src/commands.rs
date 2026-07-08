@@ -436,6 +436,94 @@ pub fn delete_path(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Check if a directory requires admin rights to scan fully.
+/// Tries to access a known protected system folder.
+#[cfg(windows)]
+#[tauri::command]
+pub fn check_admin_needed(path: String) -> Result<bool, String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::{FindFirstFileW, WIN32_FIND_DATAW};
+
+    let test_paths = vec![
+        format!(
+            "{}\\System Volume Information\\*",
+            path.trim_end_matches('\\')
+        ),
+        format!("{}\\$RECYCLE.BIN\\*", path.trim_end_matches('\\')),
+    ];
+    for test in &test_paths {
+        let w: Vec<u16> = OsStr::new(test)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe {
+            let mut fd = WIN32_FIND_DATAW::default();
+            let h = FindFirstFileW(windows::core::PCWSTR::from_raw(w.as_ptr()), &mut fd);
+            if let Err(e) = h {
+                let code = e.code().0;
+                // ERROR_ACCESS_DENIED = 5
+                if code == 5 {
+                    return Ok(true);
+                }
+            } else {
+                let _ = windows::Win32::Storage::FileSystem::FindClose(h.unwrap());
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Restart the application as Administrator (UAC prompt).
+#[cfg(windows)]
+#[tauri::command]
+pub fn restart_as_admin() -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let exe = std::env::current_exe().map_err(|e| format!("Cannot get exe path: {}", e))?;
+    let exe_str = exe.to_string_lossy().to_string();
+
+    let w_path: Vec<u16> = OsStr::new(&exe_str)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let verb: Vec<u16> = OsStr::new("runas")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteW(
+            hwnd: isize,
+            lpOperation: *const u16,
+            lpFile: *const u16,
+            lpParameters: *const u16,
+            lpDirectory: *const u16,
+            nShowCmd: i32,
+        ) -> isize;
+    }
+
+    unsafe {
+        let ret = ShellExecuteW(
+            0,
+            verb.as_ptr(),
+            w_path.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            5, // SW_SHOW
+        );
+        // ShellExecute returns > 32 on success
+        if ret as usize <= 32 {
+            return Err(format!("ShellExecuteW failed: ret={}", ret));
+        }
+    }
+
+    // Exit the current (non-elevated) instance
+    std::process::exit(0);
+}
+
 /// Get a 16x16 Windows shell icon as base64 RGBA data.
 #[cfg(windows)]
 #[tauri::command]

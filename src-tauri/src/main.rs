@@ -89,6 +89,8 @@ fn main() {
             commands::open_explorer,
             commands::open_properties,
             commands::get_icon,
+            commands::check_admin_needed,
+            commands::restart_as_admin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DiskRaptor");
