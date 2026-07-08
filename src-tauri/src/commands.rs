@@ -276,47 +276,64 @@ pub fn open_explorer(path: String) -> Result<(), String> {
 }
 
 /// Open file/folder properties dialog.
-/// On Windows: uses PowerShell COM to show native properties dialog.
+/// On Windows: uses ShellExecuteExW with "properties" verb (native dialog).
 /// On macOS: reveals in Finder. On Linux: opens in file manager.
 #[tauri::command]
 pub fn open_properties(path: String) -> Result<(), String> {
-    use std::process::Command;
     #[cfg(windows)]
     {
-        // Use PowerShell COM to show native Windows properties dialog.
-        // This is the most reliable cross-Windows-version approach.
-        use std::process::Command;
-        // Escape single quotes in the path for PowerShell
-        let escaped = path.replace('\'', "''");
-        let ps = format!(
-            "(New-Object -ComObject Shell.Application).ShellExecute('{}', 'properties')",
-            escaped
-        );
-        let status = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
-            .spawn();
-        match status {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("Failed to open properties: {}", e)),
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::Shell::{
+            ShellExecuteExW, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW,
+        };
+
+        let wide_path: Vec<u16> = OsStr::new(&path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let verb: Vec<u16> = OsStr::new("properties")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let mut sei = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_INVOKEIDLIST,
+            hwnd: HWND::default(),
+            lpVerb: windows::core::PCWSTR::from_raw(verb.as_ptr()),
+            lpFile: windows::core::PCWSTR::from_raw(wide_path.as_ptr()),
+            lpParameters: windows::core::PCWSTR::null(),
+            lpDirectory: windows::core::PCWSTR::null(),
+            nShow: 5,
+            ..Default::default()
+        };
+
+        let result = unsafe { ShellExecuteExW(&mut sei as *mut SHELLEXECUTEINFOW) };
+        if result.as_bool() {
+            Ok(())
+        } else {
+            Err(format!("Failed to open properties"))
         }
     }
     #[cfg(target_os = "macos")]
     {
-        let status = Command::new("open").args(["-R", &path]).spawn().map(|_| ());
-        match status {
-            Ok(()) => Ok(()),
+        use std::process::Command;
+        match Command::new("open").args(["-R", &path]).spawn() {
+            Ok(_) => Ok(()),
             Err(e) => Err(format!("Failed to open properties: {}", e)),
         }
     }
     #[cfg(target_os = "linux")]
     {
-        let status = Command::new("nautilus")
+        use std::process::Command;
+        let result = Command::new("nautilus")
             .arg(&path)
             .spawn()
-            .map(|_| ())
-            .or_else(|_| Command::new("dolphin").arg(&path).spawn().map(|_| ()));
-        match status {
-            Ok(()) => Ok(()),
+            .or_else(|_| Command::new("dolphin").arg(&path).spawn());
+        match result {
+            Ok(_) => Ok(()),
             Err(e) => Err(format!("Failed to open properties: {}", e)),
         }
     }
