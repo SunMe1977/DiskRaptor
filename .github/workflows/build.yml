@@ -69,7 +69,9 @@ jobs:
           name: release-Windows
           compression-level: 0
           path: |
+            target/release/diskraptor.exe
             src-tauri/target/release/diskraptor.exe
+            target/release/bundle/msi/**/*.msi
             src-tauri/target/release/bundle/msi/**/*.msi
           if-no-files-found: error
           retention-days: 7
@@ -102,7 +104,9 @@ jobs:
           name: release-macOS
           compression-level: 0
           path: |
+            target/release/diskraptor
             src-tauri/target/release/diskraptor
+            target/release/bundle/dmg/**/*.dmg
             src-tauri/target/release/bundle/dmg/**/*.dmg
           if-no-files-found: error
           retention-days: 7
@@ -141,9 +145,16 @@ jobs:
           sudo apt-get install -y -qq \
             libgtk-3-dev \
             librsvg2-dev \
-            patchelf \
-            libayatana-appindicator3-dev \
-            libappindicator3-dev
+            patchelf
+
+          # Install exactly one tray indicator dev package to avoid apt conflicts.
+          if apt-cache show libayatana-appindicator3-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libayatana-appindicator3-dev
+          elif apt-cache show libappindicator3-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libappindicator3-dev
+          else
+            echo "No appindicator dev package found; continuing without it"
+          fi
 
           if apt-cache show libfuse2 >/dev/null 2>&1; then
             sudo apt-get install -y -qq libfuse2
@@ -164,7 +175,9 @@ jobs:
           name: release-Linux
           compression-level: 0
           path: |
+            target/release/diskraptor
             src-tauri/target/release/diskraptor
+            target/release/bundle/appimage/**/*.AppImage
             src-tauri/target/release/bundle/appimage/**/*.AppImage
           if-no-files-found: error
           retention-days: 7

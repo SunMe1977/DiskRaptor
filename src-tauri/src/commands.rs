@@ -259,9 +259,9 @@ pub fn release_scan(scan_id: String) -> Result<(), String> {
 /// For directories: opens the directory directly.
 #[tauri::command]
 pub fn open_explorer(path: String) -> Result<(), String> {
-    use std::path::Path;
     #[cfg(windows)]
     {
+        use std::path::Path;
         use std::process::Command;
         let p = Path::new(&path);
         if p.is_dir() {
