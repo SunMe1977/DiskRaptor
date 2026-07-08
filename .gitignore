@@ -15,8 +15,8 @@ frontend/lib/
 .DS_Store
 Thumbs.db
 
-# Source assets (for local icon generation only)
-raw/
+# Generated icon copies
+images/
 
 # Temp
 nul
