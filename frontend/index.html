@@ -27,9 +27,8 @@
             </div>
         </header>
 
-        <!-- Scrollable main area containing everything below toolbar -->
-        <div id="main-scroll">
-            <div id="main-layout">
+        <div id="main-layout">
+            <div class="left-column">
                 <section id="tree-panel">
                     <div class="panel-header">
                         <h2>Directory Tree</h2>
@@ -43,106 +42,91 @@
                     <div id="tree-status" class="status-bar">Ready</div>
                 </section>
 
-                <!-- Resizable Divider -->
-                <div id="splitter"></div>
-
-                <aside id="detail-panel">
-                    <div class="card">
-                        <h3>Scan Summary</h3>
-                        <div id="stats-content">
-                            <div class="stat-row">
-                                <span class="stat-label">Files</span
-                                ><span id="stat-files" class="stat-value"
-                                    >-</span
-                                >
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Directories</span
-                                ><span id="stat-dirs" class="stat-value"
-                                    >-</span
-                                >
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Total Size</span
-                                ><span id="stat-size" class="stat-value"
-                                    >-</span
-                                >
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Scan Time</span
-                                ><span id="stat-time" class="stat-value"
-                                    >-</span
-                                >
-                            </div>
+                <!-- Diagram under the tree, same width -->
+                <div id="diagram-panel">
+                    <div class="panel-header">
+                        <h3 id="diagram-title">File Types</h3>
+                        <div class="diagram-controls">
+                            <button class="diagram-mode active" data-mode="pie">
+                                Pie
+                            </button>
+                            <button class="diagram-mode" data-mode="treemap">
+                                Treemap
+                            </button>
                         </div>
                     </div>
-                    <div class="card">
-                        <h3>Selection</h3>
-                        <div id="selection-content">
-                            <div class="stat-row">
-                                <span class="stat-label">Name</span
-                                ><span id="sel-name" class="stat-value">-</span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Size</span
-                                ><span id="sel-size" class="stat-value">-</span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Files</span
-                                ><span id="sel-files" class="stat-value"
-                                    >-</span
-                                >
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Type</span
-                                ><span id="sel-type" class="stat-value">-</span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Action</span
-                                ><span
-                                    id="sel-action"
-                                    class="stat-value"
-                                ></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card flex-grow">
-                        <h3>Top 50 Files</h3>
-                        <div id="topfiles-container">
-                            <table id="topfiles-table">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Path</th>
-                                        <th>Size</th>
-                                        <th style="width: 40px">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="topfiles-body"></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </aside>
+                    <div id="diagram-container"></div>
+                </div>
             </div>
 
-            <!-- Full-width Diagram Panel at bottom -->
-            <div id="diagram-panel">
-                <div class="panel-header">
-                    <h3 id="diagram-title">File Types</h3>
-                    <div class="diagram-controls">
-                        <button class="diagram-mode active" data-mode="pie">
-                            Pie
-                        </button>
-                        <button class="diagram-mode" data-mode="treemap">
-                            Treemap
-                        </button>
+            <div id="splitter"></div>
+
+            <aside id="detail-panel">
+                <div class="card">
+                    <h3>Scan Summary</h3>
+                    <div id="stats-content">
+                        <div class="stat-row">
+                            <span class="stat-label">Files</span
+                            ><span id="stat-files" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Directories</span
+                            ><span id="stat-dirs" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total Size</span
+                            ><span id="stat-size" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Scan Time</span
+                            ><span id="stat-time" class="stat-value">-</span>
+                        </div>
                     </div>
                 </div>
-                <div id="diagram-container"></div>
-            </div>
+                <div class="card">
+                    <h3>Selection</h3>
+                    <div id="selection-content">
+                        <div class="stat-row">
+                            <span class="stat-label">Name</span
+                            ><span id="sel-name" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Size</span
+                            ><span id="sel-size" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Files</span
+                            ><span id="sel-files" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Type</span
+                            ><span id="sel-type" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Action</span
+                            ><span id="sel-action" class="stat-value"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card flex-grow">
+                    <h3>Top 50 Files</h3>
+                    <div id="topfiles-container">
+                        <table id="topfiles-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Path</th>
+                                    <th>Size</th>
+                                    <th style="width: 40px">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="topfiles-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </aside>
         </div>
 
-        <!-- Progress Overlay -->
         <div id="progress-overlay">
             <div class="progress-card">
                 <div class="spinner"></div>
@@ -151,7 +135,6 @@
             </div>
         </div>
 
-        <!-- About Dialog -->
         <div id="about-overlay">
             <div class="about-card">
                 <h2>DiskRaptor</h2>
