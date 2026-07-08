@@ -497,7 +497,7 @@ button.icon-btn {
     background: var(--bg-primary);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: var(--space-md) var(--space-lg);
+    padding: 12px 16px;
     flex-shrink: 0;
     box-shadow: var(--shadow-sm);
     transition: box-shadow var(--transition);
@@ -506,21 +506,21 @@ button.icon-btn {
     box-shadow: var(--shadow-md);
 }
 .card h3 {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    margin-bottom: var(--space-md);
+    margin-bottom: 8px;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 0.8px;
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
+    gap: 6px;
 }
 .card h3::before {
     content: "";
     display: inline-block;
     width: 3px;
-    height: 16px;
+    height: 12px;
     background: var(--accent);
     border-radius: 2px;
     flex-shrink: 0;
@@ -532,12 +532,21 @@ button.icon-btn {
     flex-direction: column;
 }
 
-/* ── Stat Rows ──────────────────────────────────────────── */
+/* Topfiles card fills remaining space */
+#topfiles-card {
+    flex: 1;
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Stat Rows (compact) ───────────────────────────────── */
 .stat-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 0;
+    padding: 4px 0;
     border-bottom: 1px solid var(--border-light);
 }
 .stat-row:last-child {
@@ -546,20 +555,20 @@ button.icon-btn {
 .stat-label {
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
+    gap: 6px;
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 500;
 }
 .stat-label .stat-icon {
-    width: 20px;
+    width: 16px;
     text-align: center;
-    font-size: 16px;
+    font-size: 13px;
     flex-shrink: 0;
 }
 .stat-value {
     font-family: var(--font-mono);
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--text-primary);
     text-align: right;
@@ -568,7 +577,7 @@ button.icon-btn {
 #stat-size,
 .stat-value.size {
     color: var(--accent-orange);
-    font-size: 20px;
+    font-size: 15px;
 }
 #stat-files,
 .stat-value.files {

@@ -101,33 +101,82 @@
                     <h3>Selection</h3>
                     <div id="selection-content">
                         <div class="stat-row">
-                            <span class="stat-label"><span class="stat-icon">📄</span> Name</span
+                            <span class="stat-label"
+                                ><span class="stat-icon">📄</span> Name</span
                             ><span id="sel-name" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label"><span class="stat-icon">💾</span> Size</span
+                            <span class="stat-label"
+                                ><span class="stat-icon">💾</span> Size</span
                             ><span id="sel-size" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label"><span class="stat-icon">📂</span> Files</span
+                            <span class="stat-label"
+                                ><span class="stat-icon">📂</span> Files</span
                             ><span id="sel-files" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label"><span class="stat-icon">🏷️</span> Type</span
+                            <span class="stat-label"
+                                ><span class="stat-icon">🏷️</span> Type</span
                             ><span id="sel-type" class="stat-value">-</span>
                         </div>
-                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
-                            <button class="sel-action" data-action="explorer" title="Open in Explorer" disabled>📂</button>
-                            <button class="sel-action" data-action="terminal" title="Open Terminal" disabled>💻</button>
-                            <button class="sel-action" data-action="properties" title="Properties" disabled>⚙️</button></button>
-                            <button class="sel-action" data-action="copy" title="Copy Path" disabled>📋</buttonbutton>>
-                            <button class="sel-action" data-action="delete" title="Delete" disabled style="color:var(--accent-red);">🗑️</button>
+                        <div
+                            style="
+                                display: flex;
+                                gap: 4px;
+                                flex-wrap: wrap;
+                                margin-top: 8px;
+                                padding-top: 8px;
+                                border-top: 1px solid var(--border-light);
+                            "
+                        >
+                            <button
+                                class="sel-action"
+                                data-action="explorer"
+                                title="Open in Explorer"
+                                disabled
+                            >
+                                📂
+                            </button>
+                            <button
+                                class="sel-action"
+                                data-action="terminal"
+                                title="Open Terminal"
+                                disabled
+                            >
+                                💻
+                            </button>
+                            <button
+                                class="sel-action"
+                                data-action="properties"
+                                title="Properties"
+                                disabled
+                            >
+                                ⚙️
+                            </button>
+                            <button
+                                class="sel-action"
+                                data-action="copy"
+                                title="Copy Path"
+                                disabled
+                            >
+                                📋
+                            </button>
+                            <button
+                                class="sel-action"
+                                data-action="delete"
+                                title="Delete"
+                                disabled
+                                style="color: var(--accent-red)"
+                            >
+                                🗑️
+                            </button>
                         </div>
                     </div>
                 </div>
                 <!-- Resizable splitter for topfiles -->
                 <div id="tf-splitter"></div>
-                <div class="card" id="topfiles-card" style="flex:1;min-height:100px;display:flex;flex-direction:column;overflow:hidden;">
+                <div class="card" id="topfiles-card"></div>
                     <h3>Top 50 Files</h3>
                     <div id="topfiles-container">
                         <table id="topfiles-table">
@@ -151,7 +200,17 @@
                 <div class="spinner"></div>
                 <p id="progress-status">Scanning directory...</p>
                 <p id="progress-path"></p>
-                <p id="progress-engine" style="margin-top:12px;font-size:11px;color:var(--text-muted);font-style:italic;">⚡ Scanning with the ultra-fast parallel Rust engine…</p>
+                <p
+                    id="progress-engine"
+                    style="
+                        margin-top: 12px;
+                        font-size: 11px;
+                        color: var(--text-muted);
+                        font-style: italic;
+                    "
+                >
+                    ⚡ Scanning with the ultra-fast parallel Rust engine…
+                </p>
             </div>
         </div>
 
@@ -183,15 +242,21 @@
                 if (typeof window.__TAURI__?.invoke !== "function") {
                     var sb = document.querySelector(".status-bar");
                     if (sb && sb.textContent === "Ready") {
-                        sb.textContent = "App is stuck - check console for errors";
+                        sb.textContent =
+                            "App is stuck - check console for errors";
                         sb.style.color = "#f85149";
                     }
                 }
             }, 12000);
             // Clear the timer once bridge is ready
-            var clearStuck = function () { clearTimeout(stuckTimer); };
+            var clearStuck = function () {
+                clearTimeout(stuckTimer);
+            };
             if (window.__TAURI__?.invoke) clearStuck();
-            else document.addEventListener("tauri-bridge-ready", clearStuck, { once: true });
+            else
+                document.addEventListener("tauri-bridge-ready", clearStuck, {
+                    once: true,
+                });
         </script>
     </body>
 </html>
