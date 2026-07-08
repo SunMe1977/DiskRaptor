@@ -5,6 +5,9 @@ description = "Ultra-fast directory scanner - modern JDiskReport successor"
 authors = ["DiskRaptor Team"]
 edition = "2021"
 
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
 [lib]
 name = "diskraptor_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
