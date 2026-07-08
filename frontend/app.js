@@ -38,6 +38,21 @@
 
     console.log("DiskRaptor initializing...");
 
+    // ── Theme toggle ───────────────────────────────────────
+    var btnTheme = document.getElementById("btn-theme");
+    var savedTheme = localStorage.getItem("diskraptor-theme");
+    if (savedTheme === "light") {
+      document.body.classList.add("light-theme");
+      btnTheme.textContent = "☀";
+      btnTheme.title = "Switch to dark mode";
+    }
+    btnTheme.addEventListener("click", function () {
+      var isLight = document.body.classList.toggle("light-theme");
+      localStorage.setItem("diskraptor-theme", isLight ? "light" : "dark");
+      btnTheme.textContent = isLight ? "☀" : "☾";
+      btnTheme.title = isLight ? "Switch to dark mode" : "Switch to light mode";
+    });
+
     const loader = new ChunkLoader();
     const treeView = new TreeView("tree-viewport", loader);
     const topFiles = new TopFilesPanel();

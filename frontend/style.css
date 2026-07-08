@@ -672,6 +672,44 @@ button.primary:hover:not(:disabled) {
     margin-bottom: 24px;
 }
 
+/* ── Light Theme ───────────────────────────────────────────── */
+body.light-theme {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f6f8fa;
+    --bg-tertiary: #eaeef2;
+    --bg-hover: #d0d7de;
+    --bg-active: #0969da12;
+    --bg-selected: #0969da18;
+    --text-primary: #1f2328;
+    --text-secondary: #656d76;
+    --text-muted: #8c959f;
+    --accent: #0969da;
+    --accent-hover: #0550ae;
+    --accent-green: #1a7f37;
+    --accent-orange: #9a6700;
+    --accent-red: #cf222e;
+    --accent-purple: #8250df;
+    --border: #d0d7de;
+    --border-light: #e8ecef;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+body.light-theme .logo {
+    color: var(--accent);
+}
+body.light-theme button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+body.light-theme button.primary:hover {
+    background: var(--accent-hover);
+}
+body.light-theme #progress-overlay,
+body.light-theme #about-overlay {
+    background: rgba(255, 255, 255, 0.7);
+}
+
 .spinner {
     width: 40px;
     height: 40px;
