@@ -1,9 +1,9 @@
 use crate::scanner::tree::*;
 use anyhow::Result;
 use parking_lot::Mutex;
-use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -111,14 +111,25 @@ pub struct ScanResult {
     pub stats: ScanStats,
 }
 
-// ── Platform modules ─────────────────────────────────────
+/// A single file entry collected during parallel scanning.
+/// Phase 1 produces these, Phase 2 builds the tree from them.
+#[derive(Debug, Clone)]
+struct FileEntry {
+    full_path: String,
+    name: String,
+    parent_path: String,
+    size: u64,
+    is_dir: bool,
+}
 
+// ─── Windows Parallel Scanner ─────────────────────────────
 #[cfg(windows)]
 mod platform {
     use super::*;
+    use std::collections::VecDeque;
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::thread;
     use windows::Win32::Foundation::*;
     use windows::Win32::Storage::FileSystem::*;
 
@@ -140,23 +151,17 @@ mod platform {
         }
     }
 
-    /// Scan a single directory (non-recursive), returning its files and subdirs.
-    /// This is the inner function called by parallel workers.
-    unsafe fn scan_single_dir(
+    /// Scan a single directory, returning its contents without locking.
+    /// Called by worker threads — no locks needed for local results.
+    unsafe fn scan_dir_contents(
         dir: &str,
-        pi: u32,
-        d: u16,
-        arena: &Mutex<TreeNodeArena>,
-        lc: &Mutex<HashMap<u32, u32>>,
-        visited: &Mutex<std::collections::HashSet<String>>,
         skip_dirs: &[String],
-        top_files: &TopFilesAccum,
-        file_types: &FileTypeAccum,
-        top_count: usize,
-        files_count: &AtomicU64,
-    ) -> Vec<(String, u32, u16)> {
-        let mut subdirs: Vec<(String, u32, u16)> = Vec::new();
+        visited: &Mutex<std::collections::HashSet<String>>,
+    ) -> (Vec<FileEntry>, Vec<String>) {
+        let mut entries: Vec<FileEntry> = Vec::new();
+        let mut subdirs: Vec<String> = Vec::new();
         let dl = long(dir);
+
         let mut fd = WIN32_FIND_DATAW::default();
         let search = format!("{}\\*", dl);
         let h = match FindFirstFileW(
@@ -164,7 +169,7 @@ mod platform {
             &mut fd,
         ) {
             Ok(h) => h,
-            Err(_) => return subdirs,
+            Err(_) => return (entries, subdirs),
         };
         let hh = HANDLE(h.0);
 
@@ -197,7 +202,7 @@ mod platform {
                         break;
                     }
                 }
-                // Check visited
+                // Check visited (only one thread should process each dir)
                 let full_long = long(&full);
                 let mut v = visited.lock();
                 if !v.insert(full_long) {
@@ -211,67 +216,23 @@ mod platform {
                     }
                 }
                 drop(v);
-
-                // Allocate node for this directory
-                let ci = {
-                    let mut a = arena.lock();
-                    let ci = a.alloc(TreeNode {
-                        name,
-                        size: 0,
-                        file_count: 0,
-                        node_type: NodeType::Directory,
-                        parent: pi,
-                        first_child: u32::MAX,
-                        next_sibling: u32::MAX,
-                        depth: d + 1,
-                        chunk_id: 0,
-                    });
-                    // Link as last child of parent
-                    let mut l = lc.lock();
-                    match l.get(&pi) {
-                        Some(&last) => {
-                            a.nodes[last as usize].next_sibling = ci;
-                        }
-                        None => {
-                            a.nodes[pi as usize].first_child = ci;
-                        }
-                    }
-                    l.insert(pi, ci);
-                    ci
-                };
-                subdirs.push((full, ci, d + 1));
+                subdirs.push(full.clone());
+                entries.push(FileEntry {
+                    full_path: full,
+                    name,
+                    parent_path: dir.to_string(),
+                    size: 0,
+                    is_dir: true,
+                });
             } else {
-                files_count.fetch_add(1, Ordering::Relaxed);
                 let sz = ((fd.nFileSizeHigh as u64) << 32) | (fd.nFileSizeLow as u64);
-                let _ci = {
-                    let mut a = arena.lock();
-                    let ci = a.alloc(TreeNode {
-                        name,
-                        size: sz,
-                        file_count: 1,
-                        node_type: NodeType::File,
-                        parent: pi,
-                        first_child: u32::MAX,
-                        next_sibling: u32::MAX,
-                        depth: d + 1,
-                        chunk_id: 0,
-                    });
-                    let mut l = lc.lock();
-                    match l.get(&pi) {
-                        Some(&last) => {
-                            a.nodes[last as usize].next_sibling = ci;
-                        }
-                        None => {
-                            a.nodes[pi as usize].first_child = ci;
-                        }
-                    }
-                    l.insert(pi, ci);
-                    ci
-                };
-                if sz > 0 {
-                    top_files.insert(full.clone(), sz, top_count);
-                    file_types.add(&full, sz);
-                }
+                entries.push(FileEntry {
+                    full_path: full,
+                    name,
+                    parent_path: dir.to_string(),
+                    size: sz,
+                    is_dir: false,
+                });
             }
             let mut nd = WIN32_FIND_DATAW::default();
             if FindNextFileW(hh, &mut nd).as_bool() {
@@ -281,7 +242,7 @@ mod platform {
             }
         }
         let _ = FindClose(h);
-        subdirs
+        (entries, subdirs)
     }
 
     pub fn scan(
@@ -294,18 +255,152 @@ mod platform {
         let top_files = Arc::new(TopFilesAccum::default());
         let file_types = Arc::new(FileTypeAccum::default());
         let top_count = config.top_files_count;
-        let files_count = Arc::new(AtomicU64::new(0));
 
-        let arena = Arc::new(Mutex::new(TreeNodeArena::with_capacity(2_000_000)));
-        let lc = Arc::new(Mutex::new(HashMap::new()));
+        // ── Phase 1: Parallel directory scanning ────────────
         let visited = Arc::new(Mutex::new(std::collections::HashSet::new()));
+        visited.lock().insert(long(root_path));
 
-        // Allocate root node
+        let queue = Arc::new(Mutex::new(VecDeque::<String>::new()));
+        queue.lock().push_back(root_path.to_string());
+
+        let all_entries = Arc::new(Mutex::new(Vec::<FileEntry>::new()));
+        let files_found = Arc::new(AtomicU64::new(0));
+        let dirs_found = Arc::new(AtomicU64::new(0));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let active_workers = Arc::new(AtomicU64::new(0));
+        let node_count = Arc::new(AtomicU64::new(1)); // root
+
+        // Determine worker count (4-8, capped by logical CPUs)
+        let num_workers = std::cmp::max(4, std::cmp::min(num_cpus::get(), 8));
+
+        // Use crossbeam-channel for signaling
+        let (done_tx, done_rx) = crossbeam_channel::bounded::<bool>(num_workers);
+
+        for _ in 0..num_workers {
+            let q = queue.clone();
+            let v = visited.clone();
+            let all = all_entries.clone();
+            let ff = files_found.clone();
+            let df = dirs_found.clone();
+            let cncl = cancel.clone();
+            let act = active_workers.clone();
+            let nc = node_count.clone();
+            let skp = skip_dirs.clone();
+            let tf = top_files.clone();
+            let ft = file_types.clone();
+            let tc = top_count;
+            let done = done_tx.clone();
+            let prog = progress; // &dyn Fn — we need to re-wrap for threads
+
+            thread::spawn(move || {
+                act.fetch_add(1, Ordering::Relaxed);
+                loop {
+                    if cncl.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    // Get next directory from queue
+                    let dir = {
+                        let mut q_lock = q.lock();
+                        q_lock.pop_front()
+                    };
+
+                    match dir {
+                        Some(d) => {
+                            // Check node limit
+                            if nc.load(Ordering::Relaxed) > 20_000_000 {
+                                break;
+                            }
+
+                            // Scan directory (no locks held during scan)
+                            let (entries, subdirs) = unsafe { scan_dir_contents(&d, &skp, &v) };
+
+                            // Push results
+                            let mut all_lock = all.lock();
+                            let entry_count = entries.len();
+                            all_lock.extend(entries);
+                            drop(all_lock);
+
+                            nc.fetch_add(entry_count as u64, Ordering::Relaxed);
+
+                            // Push subdirectories to queue
+                            if !subdirs.is_empty() {
+                                let mut q_lock = q.lock();
+                                for sd in subdirs {
+                                    q_lock.push_back(sd);
+                                }
+                            }
+
+                            // Thread-local top files processing
+                            // Process files for top_files — lock briefly
+                            ff.fetch_add(entry_count as u64, Ordering::Relaxed);
+                        }
+                        None => {
+                            // Queue empty — check if all workers are idle
+                            thread::sleep(std::time::Duration::from_millis(5));
+                            // Try again after a short sleep
+                            let q_len = q.lock().len();
+                            if q_len == 0 {
+                                // Give other workers time to add more work
+                                thread::sleep(std::time::Duration::from_millis(20));
+                                if q.lock().len() == 0 {
+                                    break; // All done
+                                }
+                            }
+                        }
+                    }
+                }
+                act.fetch_sub(1, Ordering::Relaxed);
+                let _ = done.send(true);
+            });
+        }
+        drop(done_tx);
+
+        // Monitor progress
+        loop {
+            let f = files_found.load(Ordering::Relaxed);
+            let d = dirs_found.load(Ordering::Relaxed);
+            progress(
+                f,
+                d,
+                &format!("{} workers active", active_workers.load(Ordering::Relaxed)),
+            );
+
+            // Check if all workers finished
+            let q_empty = queue.lock().is_empty();
+            let no_workers = active_workers.load(Ordering::Relaxed) == 0;
+            if q_empty && no_workers {
+                // Double-check: drain any remaining done signals
+                break;
+            }
+
+            // Also check cancellation
+            if cancel.load(Ordering::Relaxed) {
+                break;
+            }
+
+            thread::sleep(std::time::Duration::from_millis(100));
+            if node_count.load(Ordering::Relaxed) > 20_000_000 {
+                break;
+            }
+        }
+
+        // Collect all done signals
+        for _ in 0..num_workers {
+            let _ = done_rx.recv_timeout(std::time::Duration::from_millis(500));
+        }
+
+        // ── Phase 2: Tree building (sequential) ─────────────
+        let entries = Arc::try_unwrap(all_entries).unwrap().into_inner();
+        let total_count = entries.len() as u64 + 1; // +1 for root
+
+        let mut arena = TreeNodeArena::with_capacity(total_count as usize + 1000);
         let root_name = Path::new(root_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| root_path.into());
-        let root_idx = arena.lock().alloc(TreeNode {
+
+        let root_idx = arena.alloc(TreeNode {
             name: root_name,
             size: 0,
             file_count: 0,
@@ -316,87 +411,80 @@ mod platform {
             depth: 0,
             chunk_id: 0,
         });
-        visited.lock().insert(long(root_path));
 
-        // Work stack: directories to process
-        let stack = Arc::new(Mutex::new(Vec::<(String, u32, u16)>::new()));
-        stack.lock().push((root_path.into(), root_idx, 0));
+        // Map from path to arena index
+        let mut path_to_idx: HashMap<String, u32> = HashMap::new();
+        path_to_idx.insert(root_path.to_string(), root_idx);
+        let mut lc: HashMap<u32, u32> = HashMap::new();
 
-        // Process stack in parallel batches
-        loop {
-            // Take a batch from the stack (up to 64 dirs at a time)
-            let batch: Vec<(String, u32, u16)> = {
-                let mut s = stack.lock();
-                let len = s.len();
-                let count = std::cmp::min(len, 64);
-                if count == 0 {
-                    break;
+        for entry in &entries {
+            let pi = *path_to_idx.get(&entry.parent_path).unwrap_or(&root_idx);
+            if entry.is_dir {
+                let ci = arena.alloc(TreeNode {
+                    name: entry.name.clone(),
+                    size: 0,
+                    file_count: 0,
+                    node_type: NodeType::Directory,
+                    parent: pi,
+                    first_child: u32::MAX,
+                    next_sibling: u32::MAX,
+                    depth: if pi == root_idx {
+                        1
+                    } else {
+                        arena.nodes[pi as usize].depth + 1
+                    },
+                    chunk_id: 0,
+                });
+                match lc.get(&pi) {
+                    Some(&last) => {
+                        arena.nodes[last as usize].next_sibling = ci;
+                    }
+                    None => {
+                        arena.nodes[pi as usize].first_child = ci;
+                    }
                 }
-                s.drain(len - count..).collect()
-            };
-
-            // Check node limit
-            if arena.lock().len() > 20_000_000 {
-                break;
-            }
-
-            // Progress
-            progress(
-                files_count.load(Ordering::Relaxed),
-                0,
-                &batch.last().map(|b| b.0.clone()).unwrap_or_default(),
-            );
-
-            // Process each directory in parallel
-            let results: Vec<Vec<(String, u32, u16)>> = batch
-                .par_iter()
-                .map(|(dir, pi, d)| unsafe {
-                    scan_single_dir(
-                        dir,
-                        *pi,
-                        *d,
-                        &arena,
-                        &lc,
-                        &visited,
-                        &skip_dirs,
-                        &top_files,
-                        &file_types,
-                        top_count,
-                        &files_count,
-                    )
-                })
-                .collect();
-
-            // Collect results back into the stack
-            let mut s = stack.lock();
-            for subdirs in results {
-                if arena.lock().len() > 20_000_000 {
-                    break;
+                lc.insert(pi, ci);
+                path_to_idx.insert(entry.full_path.clone(), ci);
+            } else {
+                let ci = arena.alloc(TreeNode {
+                    name: entry.name.clone(),
+                    size: entry.size,
+                    file_count: 1,
+                    node_type: NodeType::File,
+                    parent: pi,
+                    first_child: u32::MAX,
+                    next_sibling: u32::MAX,
+                    depth: if pi == root_idx {
+                        1
+                    } else {
+                        arena.nodes[pi as usize].depth + 1
+                    },
+                    chunk_id: 0,
+                });
+                match lc.get(&pi) {
+                    Some(&last) => {
+                        arena.nodes[last as usize].next_sibling = ci;
+                    }
+                    None => {
+                        arena.nodes[pi as usize].first_child = ci;
+                    }
                 }
-                for sd in subdirs {
-                    s.push(sd);
+                lc.insert(pi, ci);
+                if entry.size > 0 {
+                    top_files.insert(entry.full_path.clone(), entry.size, top_count);
+                    file_types.add(&entry.full_path, entry.size);
                 }
             }
         }
 
-        // Extract arena and finish
-        let arena = Arc::try_unwrap(arena).unwrap().into_inner();
-        finish_scan(
-            start,
-            arena,
-            top_files,
-            file_types,
-            progress,
-            files_count.load(Ordering::Relaxed),
-        )
+        finish_scan(start, arena, top_files, file_types, progress)
     }
 }
 
+// ─── Cross-platform fallback ──────────────────────────────
 #[cfg(not(windows))]
 mod platform {
     use super::*;
-    use rayon::prelude::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
     pub fn scan(
         config: &ScanConfig,
@@ -409,81 +497,52 @@ mod platform {
         let top_files = Arc::new(TopFilesAccum::default());
         let file_types = Arc::new(FileTypeAccum::default());
         let top_count = config.top_files_count;
-        let files_count = Arc::new(AtomicU64::new(0));
+        let mut arena = TreeNodeArena::with_capacity(2_000_000);
+        let root_name = Path::new(root_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| root_path.into());
+        let root_idx = arena.alloc(TreeNode {
+            name: root_name,
+            size: 0,
+            file_count: 0,
+            node_type: NodeType::Directory,
+            parent: u32::MAX,
+            first_child: u32::MAX,
+            next_sibling: u32::MAX,
+            depth: 0,
+            chunk_id: 0,
+        });
+        let mut ptix: HashMap<String, u32> = HashMap::new();
+        ptix.insert(root_path.into(), root_idx);
+        let mut lc: HashMap<u32, u32> = HashMap::new();
 
-        let arena = Arc::new(Mutex::new(TreeNodeArena::with_capacity(2_000_000)));
-        let lc = Arc::new(Mutex::new(HashMap::new()));
-        let ptix = Arc::new(Mutex::new(HashMap::new()));
-
-        let root_idx = {
-            let mut a = arena.lock();
-            let root_name = Path::new(root_path)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| root_path.into());
-            let idx = a.alloc(TreeNode {
-                name: root_name,
-                size: 0,
-                file_count: 0,
-                node_type: NodeType::Directory,
-                parent: u32::MAX,
-                first_child: u32::MAX,
-                next_sibling: u32::MAX,
-                depth: 0,
-                chunk_id: 0,
-            });
-            ptix.lock().insert(root_path.to_string(), idx);
-            idx
-        };
-
-        let root_path_arc = Arc::new(root_path.to_string());
-        let entries: Vec<_> = WalkDir::new(&*root_path_arc)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .collect();
-
-        // Process entries in parallel
-        let processed: Vec<_> = entries
-            .par_iter()
-            .filter_map(|entry| {
-                let full = entry.path().to_string_lossy().to_string();
-                if full == *root_path_arc {
-                    return None;
-                }
-
-                files_count.fetch_add(1, Ordering::Relaxed);
-                let file_name = entry.file_name().to_string_lossy().to_string();
-                let is_dir = entry.file_type().is_dir();
-                let parent = entry
-                    .path()
-                    .parent()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|| root_path_arc.to_string());
-
-                Some((
-                    full,
-                    parent,
-                    file_name,
-                    is_dir,
-                    entry.metadata().map(|m| m.len()).unwrap_or(0),
-                ))
-            })
-            .collect();
-
-        // Build tree from processed entries
-        for (full, parent, file_name, is_dir, sz) in processed {
-            if arena.lock().len() > 20_000_000 {
+        for entry_result in WalkDir::new(root_path).follow_links(false) {
+            if arena.nodes.len() > 20_000_000 {
                 break;
             }
-            progress(files_count.load(Ordering::Relaxed), 0, &full);
-
-            let pi = *ptix.lock().get(&parent).unwrap_or(&root_idx);
+            let entry = match entry_result {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let full = entry.path().to_string_lossy().to_string();
+            if full == root_path {
+                continue;
+            }
+            progress(arena.nodes.len() as u64, 0, &full);
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.file_type().is_dir();
+            let parent = entry
+                .path()
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| root_path.into());
+            let pi = *ptix.get(&parent).unwrap_or(&root_idx);
             if is_dir {
                 if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
                     continue;
                 }
-                let ci = arena.lock().alloc(TreeNode {
+                let ci = arena.alloc(TreeNode {
                     name: file_name,
                     size: 0,
                     file_count: 0,
@@ -494,24 +553,23 @@ mod platform {
                     depth: if pi == root_idx {
                         1
                     } else {
-                        arena.lock().nodes[pi as usize].depth + 1
+                        arena.nodes[pi as usize].depth + 1
                     },
                     chunk_id: 0,
                 });
-                let mut a = arena.lock();
-                let mut l = lc.lock();
-                match l.get(&pi) {
+                match lc.get(&pi) {
                     Some(&last) => {
-                        a.nodes[last as usize].next_sibling = ci;
+                        arena.nodes[last as usize].next_sibling = ci;
                     }
                     None => {
-                        a.nodes[pi as usize].first_child = ci;
+                        arena.nodes[pi as usize].first_child = ci;
                     }
                 }
-                l.insert(pi, ci);
-                ptix.lock().insert(full, ci);
+                lc.insert(pi, ci);
+                ptix.insert(full, ci);
             } else {
-                let ci = arena.lock().alloc(TreeNode {
+                let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                let ci = arena.alloc(TreeNode {
                     name: file_name,
                     size: sz,
                     file_count: 1,
@@ -522,37 +580,26 @@ mod platform {
                     depth: if pi == root_idx {
                         1
                     } else {
-                        arena.lock().nodes[pi as usize].depth + 1
+                        arena.nodes[pi as usize].depth + 1
                     },
                     chunk_id: 0,
                 });
-                let mut a = arena.lock();
-                let mut l = lc.lock();
-                match l.get(&pi) {
+                match lc.get(&pi) {
                     Some(&last) => {
-                        a.nodes[last as usize].next_sibling = ci;
+                        arena.nodes[last as usize].next_sibling = ci;
                     }
                     None => {
-                        a.nodes[pi as usize].first_child = ci;
+                        arena.nodes[pi as usize].first_child = ci;
                     }
                 }
-                l.insert(pi, ci);
+                lc.insert(pi, ci);
                 if sz > 0 {
                     top_files.insert(full.clone(), sz, top_count);
                     file_types.add(&full, sz);
                 }
             }
         }
-
-        let arena = Arc::try_unwrap(arena).unwrap().into_inner();
-        finish_scan(
-            start,
-            arena,
-            top_files,
-            file_types,
-            progress,
-            files_count.load(Ordering::Relaxed),
-        )
+        finish_scan(start, arena, top_files, file_types, progress)
     }
 }
 
@@ -562,7 +609,6 @@ fn finish_scan(
     top_files: Arc<TopFilesAccum>,
     file_types: Arc<FileTypeAccum>,
     _progress: &ScanProgressCallback,
-    _total_files_scanned: u64,
 ) -> Result<ScanResult> {
     let n = arena.nodes.len();
     for i in (1..n).rev() {
@@ -576,12 +622,10 @@ fn finish_scan(
             parent.file_count += fc;
         }
     }
-
     let elapsed = start.elapsed().as_millis() as u64;
     let total_files = arena.nodes.iter().filter(|n| n.is_file()).count() as u64;
     let total_dirs = arena.nodes.iter().filter(|n| n.is_directory()).count() as u64;
     let total_size = arena.nodes[0].size;
-
     let stats = ScanStats {
         total_files,
         total_dirs,
