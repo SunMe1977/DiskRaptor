@@ -48,6 +48,7 @@
     "windows": [
       {
         "fullscreen": false,
+        "maximized": true,
         "resizable": true,
         "title": "DiskRaptor",
         "width": 1280,

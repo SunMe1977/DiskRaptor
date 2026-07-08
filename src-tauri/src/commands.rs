@@ -276,28 +276,52 @@ pub fn open_explorer(path: String) -> Result<(), String> {
 }
 
 /// Open file/folder properties dialog.
+/// On Windows: uses PowerShell COM to show native properties dialog.
+/// On macOS: reveals in Finder. On Linux: opens in file manager.
 #[tauri::command]
 pub fn open_properties(path: String) -> Result<(), String> {
     use std::process::Command;
     #[cfg(windows)]
-    let status = Command::new("explorer")
-        .args(["/select,", &path])
-        .spawn()
-        .map(|_| ());
-    #[cfg(target_os = "macos")]
-    let status = Command::new("open").args(["-R", &path]).spawn().map(|_| ());
-    #[cfg(target_os = "linux")]
-    let status = Command::new("nautilus")
-        .arg(&path)
-        .spawn()
-        .map(|_| ())
-        .or_else(|_| Command::new("dolphin").arg(&path).spawn().map(|_| ()));
-    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    let status = Err(String::from("unsupported"));
-    match status {
-        Ok(()) => Ok(()),
-        Err(e) => Err(format!("Failed to open properties: {}", e)),
+    {
+        // Use PowerShell COM to show native Windows properties dialog.
+        // This is the most reliable cross-Windows-version approach.
+        use std::process::Command;
+        // Escape single quotes in the path for PowerShell
+        let escaped = path.replace('\'', "''");
+        let ps = format!(
+            "(New-Object -ComObject Shell.Application).ShellExecute('{}', 'properties')",
+            escaped
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+            .spawn();
+        match status {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to open properties: {}", e)),
+        }
     }
+    #[cfg(target_os = "macos")]
+    {
+        let status = Command::new("open").args(["-R", &path]).spawn().map(|_| ());
+        match status {
+            Ok(()) => Ok(()),
+            Err(e) => Err(format!("Failed to open properties: {}", e)),
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let status = Command::new("nautilus")
+            .arg(&path)
+            .spawn()
+            .map(|_| ())
+            .or_else(|_| Command::new("dolphin").arg(&path).spawn().map(|_| ()));
+        match status {
+            Ok(()) => Ok(()),
+            Err(e) => Err(format!("Failed to open properties: {}", e)),
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    Err(String::from("unsupported platform"))
 }
 
 /// Open a terminal at the given directory path (cross-platform).

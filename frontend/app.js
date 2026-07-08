@@ -268,7 +268,12 @@
 
           try {
             await loader.loadChunk(0);
-          } catch (e) {}
+          } catch (e) {
+            console.warn("loadChunk(0) failed:", e);
+          }
+
+          // Auto-expand root so users see children immediately
+          treeView.expanded.add(0);
 
           try {
             await treeView.rebuild();
@@ -276,12 +281,24 @@
             console.warn("Tree rebuild:", e.message);
           }
 
-          // Background chunk loading
-          for (var ci = 1; ci < loader.totalChunks; ci++) {
-            if (!loader.loadedChunks.has(ci)) {
-              await loader.loadChunk(ci);
+          // Background chunk loading (parallel batches of 10)
+          var BATCH_SIZE = 10;
+          for (var ci = 1; ci < loader.totalChunks; ci += BATCH_SIZE) {
+            var batch = [];
+            for (
+              var bj = 0;
+              bj < BATCH_SIZE && ci + bj < loader.totalChunks;
+              bj++
+            ) {
+              var chunkIdx = ci + bj;
+              if (!loader.loadedChunks.has(chunkIdx)) {
+                batch.push(loader.loadChunk(chunkIdx));
+              }
             }
-            if (ci % 5 === 0) await sleep(0);
+            if (batch.length > 0) {
+              await Promise.all(batch);
+            }
+            await sleep(0); // yield to UI
           }
         }
 

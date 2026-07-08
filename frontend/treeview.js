@@ -1,8 +1,7 @@
 /**
  * TreeView — Virtual tree view for the directory hierarchy.
- * With right-click context menu (Delete, Open Terminal).
+ * With right-click context menu matching the diagram menu.
  */
-
 class TreeView {
   constructor(containerId, chunkLoader) {
     this.loader = chunkLoader;
@@ -13,6 +12,73 @@ class TreeView {
     this.maxSize = 0;
     this._initScroll();
     this._initContextMenu();
+    this._initDiagramJump();
+  }
+
+  /** Listen for diagram "jump in tree" clicks */
+  _initDiagramJump() {
+    var self = this;
+    window.addEventListener("diagram-jump-to-path", async function (e) {
+      var fullPath = e.detail && e.detail.path;
+      if (!fullPath || !self.loader || !self.loader.allNodes) return;
+      var scanPath = document.getElementById("scan-path");
+      if (!scanPath || !scanPath.value) return;
+      var root = scanPath.value.replace(/\\+$/, "");
+      if (fullPath.indexOf(root) !== 0) return;
+      var rel = fullPath.substring(root.length).replace(/^\\/, "");
+      if (!rel) return;
+      var parts = rel.split("\\");
+      var currentIdx = 0;
+      var found = true;
+      for (var pi = 0; pi < parts.length; pi++) {
+        var seg = parts[pi];
+        if (!seg) continue;
+        if (!self.expanded.has(currentIdx)) {
+          self.expanded.add(currentIdx);
+        }
+        var children = self.loader.getChildrenIndices(currentIdx);
+        var match = -1;
+        for (var ci = 0; ci < children.length; ci++) {
+          var n = self.loader.getNode(children[ci]);
+          if (n && n.name === seg) {
+            match = children[ci];
+            break;
+          }
+        }
+        if (match === -1) {
+          try {
+            var rawKids = await self.loader.fetchChildren(currentIdx);
+            if (rawKids && rawKids.length > 0) {
+              for (var ri = 0; ri < rawKids.length; ri++) {
+                if (rawKids[ri].name === seg) {
+                  var newIdx = self.loader.allNodes.length;
+                  rawKids[ri]._arenaIndex = newIdx;
+                  self.loader.allNodes.push(rawKids[ri]);
+                  var existing = self.loader.parentMap.get(currentIdx) || [];
+                  existing.push(newIdx);
+                  self.loader.parentMap.set(currentIdx, existing);
+                  match = newIdx;
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            break;
+          }
+        }
+        if (match === -1) {
+          found = false;
+          break;
+        }
+        currentIdx = match;
+      }
+      if (found) {
+        await self.rebuild();
+        self.select(currentIdx);
+        var sb = document.querySelector(".status-bar");
+        if (sb) sb.textContent = "Jumped to: " + fullPath;
+      }
+    });
   }
 
   _initScroll() {
@@ -25,45 +91,45 @@ class TreeView {
   }
 
   _initContextMenu() {
-    // Create context menu element
     this._ctxMenu = document.createElement("div");
     this._ctxMenu.id = "tree-context-menu";
-    this._ctxMenu.style.cssText =
-      "display:none;position:fixed;z-index:2000;background:var(--bg-secondary);" +
-      "border:1px solid var(--border);border-radius:var(--radius-sm);" +
-      "padding:4px 0;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.4);";
+    Object.assign(this._ctxMenu.style, {
+      display: "none",
+      position: "fixed",
+      zIndex: 2000,
+      background: "#161b22",
+      border: "1px solid #30363d",
+      borderRadius: "6px",
+      padding: "4px 0",
+      minWidth: "200px",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    });
     this._ctxMenu.innerHTML =
-      '<div class="ctx-item" data-action="explorer">Open in Explorer</div>' +
-      '<div class="ctx-item" data-action="terminal">Open Terminal</div>' +
-      '<div class="ctx-separator"></div>' +
-      '<div class="ctx-item" data-action="copy">Copy Path</div>' +
-      '<div class="ctx-item" data-action="properties">Properties</div>' +
-      '<div class="ctx-separator"></div>' +
-      '<div class="ctx-item" data-action="delete">Delete</div>';
+      '<div class="tctx-item" data-action="explorer">\u{1F4C2} Open in Explorer</div>' +
+      '<div class="tctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
+      '<div class="tctx-sep"></div>' +
+      '<div class="tctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
+      '<div class="tctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
+      '<div class="tctx-sep"></div>' +
+      '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F Delete</div>';
     document.body.appendChild(this._ctxMenu);
 
-    // Style context menu items
     const style = document.createElement("style");
     style.textContent =
-      ".ctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:var(--text-primary);}" +
-      ".ctx-item:hover{background:var(--bg-hover);}" +
-      ".ctx-separator{height:1px;background:var(--border);margin:4px 8px;}" +
-      ".ctx-item[data-action=delete]{color:var(--accent-red);}" +
-      ".ctx-item[data-action=explorer]{}" +
-      ".ctx-item[data-action=copy]{}" +
-      ".ctx-item[data-action=properties]{}";
+      ".tctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
+      ".tctx-item:hover{background:#30363d;}" +
+      ".tctx-sep{height:1px;background:#30363d;margin:4px 8px;}" +
+      ".tctx-del{color:#f85149;}";
     document.head.appendChild(style);
 
-    // Close on click outside
     document.addEventListener("click", (e) => {
       if (this._ctxMenu && !this._ctxMenu.contains(e.target)) {
         this._ctxMenu.style.display = "none";
       }
     });
 
-    // Handle context menu item clicks
     this._ctxMenu.addEventListener("click", (e) => {
-      const item = e.target.closest(".ctx-item");
+      const item = e.target.closest(".tctx-item");
       if (!item) return;
       const action = item.dataset.action;
       const idx = this._ctxMenu._arenaIdx;
@@ -79,7 +145,6 @@ class TreeView {
   async _handleDelete(arenaIdx) {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
-    // We need the full path - construct from parent chain
     const path = this._buildPath(arenaIdx);
     if (!path) return;
     const name = node.name || "?";
@@ -89,7 +154,6 @@ class TreeView {
     try {
       await window.__TAURI__.invoke("delete_path", { path: path });
       document.querySelector(".status-bar").textContent = "Deleted: " + name;
-      // Refresh tree, removing the deleted node
       this.expanded.delete(arenaIdx);
       await this.rebuild();
     } catch (e) {
@@ -101,21 +165,14 @@ class TreeView {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
     const isDir = node.node_type === "Directory" || node.node_type === 0;
-    const path = this._buildPath(arenaIdx);
+    const path = isDir
+      ? this._buildPath(arenaIdx)
+      : this._buildParentPath(arenaIdx);
     if (!path) return;
     try {
-      if (window.__TAURI__.invoke) {
-        await window.__TAURI__
-          .invoke("open_terminal", { path: path })
-          .catch(() => {
-            // Fallback: try shell open
-            if (window.__TAURI__.shell) {
-              window.__TAURI__.shell.open(path);
-            }
-          });
-      }
+      await window.__TAURI__.invoke("open_terminal", { path: path });
     } catch (e) {
-      console.warn("Open terminal failed:", e);
+      console.warn("Terminal failed:", e);
     }
   }
 
@@ -125,7 +182,7 @@ class TreeView {
     try {
       await window.__TAURI__.invoke("open_explorer", { path: path });
     } catch (e) {
-      console.warn("Open explorer failed:", e);
+      console.warn("Explorer failed:", e);
     }
   }
 
@@ -146,7 +203,7 @@ class TreeView {
     try {
       await window.__TAURI__.invoke("open_properties", { path: path });
     } catch (e) {
-      console.warn("Open properties failed:", e);
+      console.warn("Properties failed:", e);
     }
   }
 
@@ -162,7 +219,6 @@ class TreeView {
       safety++;
     }
     if (parts.length === 0) return null;
-    // Root name is the scan path, stored separately
     const scanPath = document.getElementById("scan-path");
     if (scanPath && scanPath.value) {
       const root = scanPath.value.replace(/\\+$/, "");
@@ -171,7 +227,13 @@ class TreeView {
     return parts.join("\\");
   }
 
-  /** Rebuild visible node list from root. */
+  _buildParentPath(arenaIdx) {
+    const path = this._buildPath(arenaIdx);
+    if (!path) return null;
+    const idx = path.lastIndexOf("\\");
+    return idx >= 0 ? path.substring(0, idx) : path;
+  }
+
   async rebuild() {
     this.visibleNodes = [];
     try {
@@ -222,12 +284,16 @@ class TreeView {
               arenaIdx,
             );
             if (found !== null) indices.push(found);
+            else {
+              const newIdx = this.loader.allNodes.length;
+              raw._arenaIndex = newIdx;
+              this.loader.allNodes.push(raw);
+              indices.push(newIdx);
+            }
           }
           if (indices.length > 0) {
             this.loader.parentMap.set(arenaIdx, indices);
             children = indices;
-          } else {
-            children = this._registerTemporaryChildren(arenaIdx, rawNodes);
           }
         }
       }
@@ -257,22 +323,6 @@ class TreeView {
         return i;
     }
     return null;
-  }
-
-  _registerTemporaryChildren(parentIdx, rawNodes) {
-    const indices = [];
-    for (const raw of rawNodes) {
-      let found = this._findNodeByNameAndParent(raw.name, raw.size, parentIdx);
-      if (found === null) {
-        const idx = this.loader.allNodes.length;
-        raw._arenaIndex = idx;
-        this.loader.allNodes.push(raw);
-        found = idx;
-      }
-      indices.push(found);
-    }
-    this.loader.parentMap.set(parentIdx, indices);
-    return indices;
   }
 
   async toggleExpand(arenaIdx) {
@@ -337,7 +387,6 @@ class TreeView {
       this.select(arenaIdx);
     };
 
-    // Right-click context menu
     el.oncontextmenu = (e) => {
       e.preventDefault();
       this.select(arenaIdx);
@@ -347,19 +396,16 @@ class TreeView {
       this._ctxMenu.style.top = e.clientY + "px";
     };
 
-    // Indent
     const indent = document.createElement("span");
     indent.className = "indent";
     indent.style.width = depth * 18 + "px";
     el.appendChild(indent);
 
-    // Toggle
     const toggle = document.createElement("span");
     toggle.className = "toggle";
     toggle.textContent = isDir ? (isExpanded ? "\u25BC" : "\u25B6") : "";
     el.appendChild(toggle);
 
-    // Icon
     const icon = document.createElement("span");
     icon.className = "icon";
     icon.textContent = isDir
@@ -369,19 +415,16 @@ class TreeView {
       : "\uD83D\uDCC4";
     el.appendChild(icon);
 
-    // Name
     const name = document.createElement("span");
     name.className = "node-name";
     name.textContent = node.name || "(root)";
     el.appendChild(name);
 
-    // Size
     const size = document.createElement("span");
     size.className = "node-size";
     size.textContent = this._formatSize(node.size);
     el.appendChild(size);
 
-    // Size bar
     const bar = document.createElement("span");
     bar.className = "node-bar";
     const fill = document.createElement("span");

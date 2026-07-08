@@ -145,8 +145,8 @@ button.primary:hover:not(:disabled) {
     overflow: hidden;
 }
 
-/* ── Left Column: Tree + Diagram ──────────────────────────────────────── */
-.left-column {
+/* ── Left Column: Diagram + Tree ─────────────────────────────────────── */
+#left-column {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -160,7 +160,7 @@ button.primary:hover:not(:disabled) {
     display: flex;
     flex-direction: column;
     background: var(--bg-primary);
-    min-height: 150px;
+    min-height: 100px;
     overflow: hidden;
 }
 
@@ -282,14 +282,15 @@ button.primary:hover:not(:disabled) {
     flex-shrink: 0;
 }
 
-/* ── Diagram (under tree, same width) ──────────────────────────────────── */
+/* ── Diagram (above tree) ─────────────────────────────────────────────── */
 #diagram-panel {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     background: var(--bg-primary);
-    border-top: 1px solid var(--border);
-    height: 220px;
+    height: 340px;
+    min-height: 160px;
+    overflow: hidden;
 }
 
 #diagram-container {
@@ -324,15 +325,29 @@ button.primary:hover:not(:disabled) {
     border-color: var(--accent);
 }
 
-/* ── Splitter ─────────────────────────────────────────────────────────── */
-#splitter {
+/* ── Vertical Splitter (left column ↔ detail panel) ──────────────────── */
+#v-splitter {
     width: 5px;
     cursor: col-resize;
     background: var(--border);
     flex-shrink: 0;
     transition: background 0.15s;
 }
-#splitter:hover {
+#v-splitter:hover,
+#v-splitter.active {
+    background: var(--accent);
+}
+
+/* ── Horizontal Splitter (diagram ↔ tree) ────────────────────────────── */
+#h-splitter {
+    height: 4px;
+    cursor: row-resize;
+    background: var(--border);
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+#h-splitter:hover,
+#h-splitter.active {
     background: var(--accent);
 }
 

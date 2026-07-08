@@ -2,7 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use diskraptor_lib::commands;
-use tauri::{CustomMenuItem, Menu, Submenu, SystemTray};
+use tauri::{
+    CustomMenuItem, Manager, Menu, Submenu, SystemTray, SystemTrayMenu, SystemTrayMenuItem,
+};
 
 fn main() {
     env_logger::init();
@@ -24,8 +26,12 @@ fn main() {
 
     let menu = Menu::new().add_submenu(view_menu).add_submenu(help_menu);
 
-    // System Tray (minimal - icon will be loaded from config)
-    let tray = SystemTray::new();
+    // System Tray with Open and Exit menus
+    let tray_menu = SystemTrayMenu::new()
+        .add_item(CustomMenuItem::new("tray_open", "Open DiskRaptor"))
+        .add_native_item(SystemTrayMenuItem::Separator)
+        .add_item(CustomMenuItem::new("tray_quit", "Quit"));
+    let tray = SystemTray::new().with_menu(tray_menu);
 
     tauri::Builder::default()
         .menu(menu)
@@ -45,8 +51,27 @@ fn main() {
                 _ => {}
             }
         })
-        .on_system_tray_event(|_app, _event| {
-            // Tray events handled per platform
+        .on_system_tray_event(|app, event| match event {
+            tauri::SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
+                "tray_open" => {
+                    if let Some(window) = app.get_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                "tray_quit" => {
+                    std::process::exit(0);
+                }
+                _ => {}
+            },
+            _ => {}
+        })
+        .setup(|app| {
+            // Maximize the main window after creation
+            if let Some(window) = app.get_window("main") {
+                let _ = window.maximize();
+            }
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::start_scan,

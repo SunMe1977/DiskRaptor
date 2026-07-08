@@ -28,7 +28,8 @@
         </header>
 
         <div id="main-layout">
-            <div class="left-column">
+            <div id="left-column">
+                <!-- Tree on top -->
                 <section id="tree-panel">
                     <div class="panel-header">
                         <h2>Directory Tree</h2>
@@ -42,10 +43,13 @@
                     <div id="tree-status" class="status-bar">Ready</div>
                 </section>
 
-                <!-- Diagram under the tree, same width -->
+                <!-- Horizontal splitter between tree and diagram -->
+                <div id="h-splitter"></div>
+
+                <!-- Diagram below tree -->
                 <div id="diagram-panel">
                     <div class="panel-header">
-                        <h3 id="diagram-title">File Types</h3>
+                        <h3 id="diagram-title">Top 50 Files</h3>
                         <div class="diagram-controls">
                             <button class="diagram-mode active" data-mode="pie">
                                 Pie
@@ -59,7 +63,8 @@
                 </div>
             </div>
 
-            <div id="splitter"></div>
+            <!-- Vertical splitter between left column and detail panel -->
+            <div id="v-splitter"></div>
 
             <aside id="detail-panel">
                 <div class="card">

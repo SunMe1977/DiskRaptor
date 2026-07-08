@@ -66,6 +66,25 @@
       invoke: async (cmd, args) => {
         mockInvokeLog.push({ cmd, args: JSON.parse(JSON.stringify(args)) });
         switch (cmd) {
+          case 'get_scan_progress':
+            return { scan_id: args.scan_id, files_found: 50000, dirs_found: 2000, is_running: false, phase: 3, current_dir: 'C:\\Test', elapsed_secs: 5, error: null };
+
+          case 'get_scan_result':
+            return {
+              scan_id: args.scan_id || 'test_scan_123',
+              root_info: { root_index: 0, total_nodes: 15000, total_chunks: 2 },
+              stats: {
+                total_files: 1200, total_dirs: 300, total_size: 5368709120, scan_time_ms: 423,
+                top_files: [
+                  { path: 'C:\\big.iso', size: 2147483648, size_human: '2.00 GB' },
+                  { path: 'C:\\data.zip', size: 1073741824, size_human: '1.00 GB' },
+                ],
+                file_type_breakdown: [
+                  { extension: 'iso', count: 1, total_size: 2147483648, size_human: '2.00 GB' },
+                ],
+              },
+            };
+
           case 'dialog_open':
             return 'C:\\Test\\MockPath';
 
@@ -89,7 +108,7 @@
             };
 
           case 'get_chunk': {
-            const ci = args.chunk_index;
+            const ci = args.chunkIndex;
             const nodes = [];
             const base = ci * 10000;
             const count = ci === 0 ? 5 : 3; // small test chunks
@@ -113,9 +132,9 @@
 
           case 'get_children': {
             const children = [
-              { name: 'child_A', size: 500000, file_count: 5, node_type: 'Directory', parent: args.node_index, chunk_id: 1 },
-              { name: 'child_B', size: 250000, file_count: 3, node_type: 'Directory', parent: args.node_index, chunk_id: 1 },
-              { name: 'file_1.txt', size: 1024, file_count: 1, node_type: 'File', parent: args.node_index, chunk_id: 1 },
+              { name: 'child_A', size: 500000, file_count: 5, node_type: 'Directory', parent: args.nodeIndex, chunk_id: 1 },
+              { name: 'child_B', size: 250000, file_count: 3, node_type: 'Directory', parent: args.nodeIndex, chunk_id: 1 },
+              { name: 'file_1.txt', size: 1024, file_count: 1, node_type: 'File', parent: args.nodeIndex, chunk_id: 1 },
             ];
             return children;
           }
@@ -255,7 +274,7 @@
 
         // Selection panel elements
         const selPanel = document.createElement('div');
-        ['sel-name', 'sel-size', 'sel-files', 'sel-type'].forEach(id => {
+        ['sel-name', 'sel-size', 'sel-files', 'sel-type', 'sel-action'].forEach(id => {
           const el = document.createElement('span');
           el.id = id;
           selPanel.appendChild(el);
@@ -412,14 +431,14 @@
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Test 8: Invoke uses correct snake_case parameter names
+    // Test 8: Invoke uses correct camelCase parameter names
+    // (Tauri v1 auto-converts snake_case Rust params to camelCase)
     // ═══════════════════════════════════════════════════════════════════════
-    async function testSnakeCaseArgs() {
+    async function testCamelCaseArgs() {
       mockInvokeLog.length = 0;
       const loader = new ChunkLoader();
 
       await loader.startScan('C:\\Test');
-      // For chunk loading
       await loader.loadChunk(1);
       // Children
       await loader.fetchChildren(0);
@@ -428,33 +447,34 @@
       // Release
       await loader.release();
 
-      // Check all invoke calls for correct parameter names
+      // Check all invoke calls for correct camelCase parameter names
       const issues = [];
       for (const call of mockInvokeLog) {
         if (call.cmd === 'start_scan') {
+          // 'path' matches both forms
           if (!('path' in (call.args || {}))) issues.push('start_scan missing "path"');
         }
         if (call.cmd === 'get_chunk') {
-          if (!('scan_id' in (call.args || {}))) issues.push('get_chunk missing "scan_id"');
-          if (!('chunk_index' in (call.args || {}))) issues.push('get_chunk missing "chunk_index"');
-          if ('scanId' in (call.args || {})) issues.push('get_chunk uses camelCase "scanId"');
+          if (!('scanId' in (call.args || {}))) issues.push('get_chunk missing "scanId"');
+          if (!('chunkIndex' in (call.args || {}))) issues.push('get_chunk missing "chunkIndex"');
+          if ('scan_id' in (call.args || {})) issues.push('get_chunk uses snake_case "scan_id"');
         }
         if (call.cmd === 'get_children') {
-          if (!('scan_id' in (call.args || {}))) issues.push('get_children missing "scan_id"');
-          if (!('node_index' in (call.args || {}))) issues.push('get_children missing "node_index"');
+          if (!('scanId' in (call.args || {}))) issues.push('get_children missing "scanId"');
+          if (!('nodeIndex' in (call.args || {}))) issues.push('get_children missing "nodeIndex"');
         }
         if (call.cmd === 'get_stats') {
-          if (!('scan_id' in (call.args || {}))) issues.push('get_stats missing "scan_id"');
+          if (!('scanId' in (call.args || {}))) issues.push('get_stats missing "scanId"');
         }
         if (call.cmd === 'release_scan') {
-          if (!('scan_id' in (call.args || {}))) issues.push('release_scan missing "scan_id"');
+          if (!('scanId' in (call.args || {}))) issues.push('release_scan missing "scanId"');
         }
       }
 
       if (issues.length === 0) {
-        pass.push('SnakeCase: all invoke args use correct snake_case');
+        pass.push('CamelCase: all invoke args use correct camelCase');
       } else {
-        fail.push(`SnakeCase: ${issues.join('; ')}`);
+        fail.push('CamelCase: ' + issues.join('; '));
       }
 
       mockInvokeLog.length = 0;
@@ -491,18 +511,25 @@
     (async () => {
       console.log('DiskRaptor UI tests starting...');
 
-      try { await testVirtualScroll(); } catch (e) { fail.push(`VirtualScroll threw: ${e.message}`); console.error(e); }
-      try { await testChunkLoader(); } catch (e) { fail.push(`ChunkLoader threw: ${e.message}`); console.error(e); }
-      try { await testTreeView(); } catch (e) { fail.push(`TreeView threw: ${e.message}`); console.error(e); }
-      try { testTopFiles(); } catch (e) { fail.push(`TopFiles threw: ${e.message}`); console.error(e); }
-      try { testStatsPanel(); } catch (e) { fail.push(`StatsPanel threw: ${e.message}`); console.error(e); }
-      try { await testBrowseButton(); } catch (e) { fail.push(`BrowseButton threw: ${e.message}`); console.error(e); }
-      try { await testScanFlow(); } catch (e) { fail.push(`ScanFlow threw: ${e.message}`); console.error(e); }
-      try { await testSnakeCaseArgs(); } catch (e) { fail.push(`SnakeCaseArgs threw: ${e.message}`); console.error(e); }
-      try { testFormatHelpers(); } catch (e) { fail.push(`FormatHelpers threw: ${e.message}`); console.error(e); }
+      // Safety timeout: force show results after 20s
+      const safetyTimer = setTimeout(function() {
+        console.log('Safety timeout triggered');
+        logResult();
+      }, 20000);
 
+      try { await testVirtualScroll(); } catch (e) { fail.push('VirtualScroll: ' + e.message); }
+      try { await testChunkLoader(); } catch (e) { fail.push('ChunkLoader: ' + e.message); }
+      try { await testTreeView(); } catch (e) { fail.push('TreeView: ' + e.message); }
+      try { testTopFiles(); } catch (e) { fail.push('TopFiles: ' + e.message); }
+      try { testStatsPanel(); } catch (e) { fail.push('StatsPanel: ' + e.message); }
+      try { await testBrowseButton(); } catch (e) { fail.push('BrowseButton: ' + e.message); }
+      try { await testScanFlow(); } catch (e) { fail.push('ScanFlow: ' + e.message); }
+      try { await testCamelCaseArgs(); } catch (e) { fail.push('CamelCaseArgs: ' + e.message); }
+      try { testFormatHelpers(); } catch (e) { fail.push('FormatHelpers: ' + e.message); }
+
+      clearTimeout(safetyTimer);
       logResult();
-      console.log(`Tests complete. ${pass.length} passed, ${fail.length} failed.`);
+      console.log('Tests complete. ' + pass.length + ' passed, ' + fail.length + ' failed.');
     })();
   </script>
 </body>

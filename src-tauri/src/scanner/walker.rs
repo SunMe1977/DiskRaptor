@@ -132,11 +132,16 @@ mod platform {
             .chain(std::iter::once(0))
             .collect()
     }
+    // Add \\\\?\\ prefix for long path support (>260 chars)
     fn long(s: &str) -> String {
-        if s.starts_with("\\\\?\\") {
+        let prefix = "\\\\?\\";
+        if s.starts_with(prefix) {
             s.into()
         } else {
-            format!("\\\\?\\{}", s)
+            let mut r = String::with_capacity(prefix.len() + s.len());
+            r.push_str(prefix);
+            r.push_str(s);
+            r
         }
     }
 
@@ -171,9 +176,12 @@ mod platform {
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut stack: Vec<(String, u32, u16)> = Vec::new();
         stack.push((root_path.into(), root_idx, 0));
+        // Track visited long-paths to avoid infinite loops through junctions
+        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+        visited.insert(long(root_path));
 
         while let Some((dir, pi, d)) = stack.pop() {
-            if arena.nodes.len() > 5_000_000 {
+            if arena.nodes.len() > 20_000_000 {
                 break;
             }
             progress(arena.nodes.len() as u64, 0, &dir);
@@ -205,20 +213,23 @@ mod platform {
                         }
                     }
                     let is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
-                    let is_reparse = (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0) != 0;
                     let full = format!("{}\\{}", dir, name);
-                    // Skip reparse points to avoid infinite loops
-                    if is_dir && is_reparse {
-                        let mut nd = WIN32_FIND_DATAW::default();
-                        if FindNextFileW(hh, &mut nd).as_bool() {
-                            fd = nd;
-                            continue;
-                        } else {
-                            break;
-                        }
-                    }
+                    // Follow reparse points (junctions) like `dir /s`.
+                    // Track visited long-paths to prevent infinite loops.
                     if is_dir {
                         if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+                            let mut nd = WIN32_FIND_DATAW::default();
+                            if FindNextFileW(hh, &mut nd).as_bool() {
+                                fd = nd;
+                                continue;
+                            } else {
+                                break;
+                            }
+                        }
+                        // Check if this directory's long-path was already visited
+                        // (handles junctions pointing to already-scanned dirs)
+                        let full_long = long(&full);
+                        if !visited.insert(full_long) {
                             let mut nd = WIN32_FIND_DATAW::default();
                             if FindNextFileW(hh, &mut nd).as_bool() {
                                 fd = nd;
@@ -328,7 +339,7 @@ mod platform {
             .follow_links(false)
             .into_iter();
         for entry_result in walkdir_iter {
-            if arena.nodes.len() > 5_000_000 {
+            if arena.nodes.len() > 20_000_000 {
                 break;
             }
             let entry = match entry_result {

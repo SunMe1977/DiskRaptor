@@ -1,30 +1,109 @@
 /**
- * DiskRaptor Diagrams — Canvas-based visualizations
+ * DiskRaptor Diagrams — Top 50 files visualization
  *
- * Two diagram modes:
- * 1. Pie Chart — File type distribution by total size
- * 2. Treemap — Directory size visualization
+ * Pie Chart and Treemap of the 50 largest files.
+ * Hover → full filename tooltip.  Click → action menu + jump in tree.
  */
-
 class DiagramRenderer {
   constructor(containerId) {
     this.container = document.getElementById(containerId);
     if (!this.container) return;
     this.canvas = null;
     this.ctx = null;
-    this.mode = 'pie'; // 'pie' or 'treemap'
+    this.mode = "pie";
     this.data = null;
+    this.files = [];
+    this.hitRegions = [];
+    this.tooltipEl = null;
+    this.contextMenu = null;
+    this._hoveredIndex = -1;
     this._init();
   }
 
   _init() {
-    this.canvas = document.createElement('canvas');
-    this.canvas.style.width = '100%';
-    this.canvas.style.height = '100%';
+    // Canvas
+    this.canvas = document.createElement("canvas");
+    this.canvas.style.width = "100%";
+    this.canvas.style.height = "100%";
+    this.canvas.style.display = "block";
     this.container.appendChild(this.canvas);
-    this.ctx = this.canvas.getContext('2d');
+    this.ctx = this.canvas.getContext("2d");
+
+    // Tooltip
+    this.tooltipEl = document.createElement("div");
+    this.tooltipEl.className = "diagram-tooltip";
+    Object.assign(this.tooltipEl.style, {
+      position: "fixed",
+      display: "none",
+      zIndex: 3000,
+      background: "#1f1f1f",
+      border: "1px solid #444",
+      borderRadius: "4px",
+      padding: "4px 10px",
+      fontSize: "12px",
+      color: "#e6edf3",
+      pointerEvents: "none",
+      maxWidth: "500px",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+      fontFamily: "monospace",
+    });
+    document.body.appendChild(this.tooltipEl);
+
+    // Context menu
+    this.contextMenu = document.createElement("div");
+    Object.assign(this.contextMenu.style, {
+      position: "fixed",
+      display: "none",
+      zIndex: 3001,
+      background: "#161b22",
+      border: "1px solid #30363d",
+      borderRadius: "6px",
+      padding: "4px 0",
+      minWidth: "200px",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    });
+    this.contextMenu.innerHTML =
+      '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} Open in Explorer</div>' +
+      '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
+      '<div class="diag-ctx-item" data-action="tree">\u{1F332} Jump in Tree</div>' +
+      '<div class="diag-ctx-sep"></div>' +
+      '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
+      '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
+      '<div class="diag-ctx-sep"></div>' +
+      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F Delete</div>';
+    document.body.appendChild(this.contextMenu);
+
+    // Context menu styles
+    const style = document.createElement("style");
+    style.textContent =
+      ".diag-ctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
+      ".diag-ctx-item:hover{background:#30363d;}" +
+      ".diag-ctx-sep{height:1px;background:#30363d;margin:4px 8px;}" +
+      ".diag-ctx-del{color:#f85149;}";
+    document.head.appendChild(style);
+
+    // Events
+    this.canvas.addEventListener("mousemove", (e) => this._onMouseMove(e));
+    this.canvas.addEventListener("mouseleave", () => this._hideTooltip());
+    this.canvas.addEventListener("click", (e) => this._onClick(e));
+    document.addEventListener("click", (e) => {
+      if (
+        this.contextMenu &&
+        !this.contextMenu.contains(e.target) &&
+        e.target !== this.canvas
+      ) {
+        this.contextMenu.style.display = "none";
+      }
+    });
+    this.contextMenu.addEventListener("click", (e) =>
+      this._onContextMenuAction(e),
+    );
+
     this._resize();
-    window.addEventListener('resize', () => this._resize());
+    window.addEventListener("resize", () => this._resize());
   }
 
   _resize() {
@@ -33,20 +112,28 @@ class DiagramRenderer {
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = rect.width * dpr;
     this.canvas.height = rect.height * dpr;
-    this.canvas.style.width = rect.width + 'px';
-    this.canvas.style.height = rect.height + 'px';
+    this.canvas.style.width = rect.width + "px";
+    this.canvas.style.height = rect.height + "px";
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this._draw();
   }
 
   setMode(mode) {
-    if (mode !== 'pie' && mode !== 'treemap') return;
+    if (mode !== "pie" && mode !== "treemap") return;
     this.mode = mode;
     this._draw();
   }
 
   setData(data) {
     this.data = data;
+    const raw = (data && data.top_files) || [];
+    this.files = raw.slice(0, 50).map((f, i) => ({
+      path: f.path || "?",
+      size: f.size || 0,
+      size_human: f.size_human || this._formatSize(f.size || 0),
+      index: i,
+    }));
+    this.files.sort((a, b) => b.size - a.size);
     this._draw();
   }
 
@@ -55,147 +142,416 @@ class DiagramRenderer {
     const w = this.canvas.width / (window.devicePixelRatio || 1);
     const h = this.canvas.height / (window.devicePixelRatio || 1);
     this.ctx.clearRect(0, 0, w, h);
+    this.hitRegions = [];
 
-    if (this.mode === 'pie') {
-      this._drawPie(w, h);
-    } else {
-      this._drawTreemap(w, h);
+    if (this.files.length === 0) {
+      this.ctx.fillStyle = "#484f58";
+      this.ctx.font = "14px sans-serif";
+      this.ctx.textAlign = "center";
+      this.ctx.fillText("No file data. Run a scan first.", w / 2, h / 2);
+      return;
     }
+
+    if (this.mode === "pie") this._drawPie(w, h);
+    else this._drawTreemap(w, h);
   }
 
+  // ── Pie Chart ──────────────────────────────────────────────
   _drawPie(w, h) {
     const ctx = this.ctx;
-    const cx = w * 0.4;
+    const margin = 10;
+    const legendW = Math.min(160, w * 0.3);
+    const pieArea = w - legendW - margin * 3;
+    const cx = margin + pieArea / 2;
     const cy = h / 2;
-    const radius = Math.min(cx - 20, cy - 20, 120);
+    const radius = Math.min(pieArea / 2, cy) - 8;
+    const totalSize = this.files.reduce((s, f) => s + f.size, 1);
+    const colors = this._colors();
 
-    const types = this.data.file_type_breakdown || [];
-    const totalSize = this.data.total_size || 1;
-
-    // Draw pie
     let startAngle = -Math.PI / 2;
-    const colors = ['#58a6ff', '#3fb950', '#d29922', '#f85149', '#bc8cff',
-                    '#79c0ff', '#56d364', '#e3b341', '#ff7b72', '#d2a8ff',
-                    '#8b949e', '#484f58', '#30363d'];
+    const maxLabels = Math.min(this.files.length, 12);
 
-    types.slice(0, 12).forEach((t, i) => {
-      const sliceAngle = (t.total_size / totalSize) * Math.PI * 2;
+    this.files.forEach((file, i) => {
+      const sliceAngle = (file.size / totalSize) * Math.PI * 2;
       const color = colors[i % colors.length];
+      const isHov = i === this._hoveredIndex;
+      const r = isHov ? radius + 5 : radius;
 
       ctx.beginPath();
       ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, radius, startAngle, startAngle + sliceAngle);
+      ctx.arc(cx, cy, r, startAngle, startAngle + sliceAngle);
       ctx.closePath();
       ctx.fillStyle = color;
       ctx.fill();
 
-      // Label
-      if (sliceAngle > 0.15) {
-        const midAngle = startAngle + sliceAngle / 2;
-        const lx = cx + Math.cos(midAngle) * (radius * 0.6);
-        const ly = cy + Math.sin(midAngle) * (radius * 0.6);
-        ctx.fillStyle = '#fff';
-        ctx.font = '11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(t.extension, lx, ly + 4);
+      if (isHov) {
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
       }
 
+      this.hitRegions.push({
+        index: i,
+        path: file.path,
+        size: file.size,
+        size_human: file.size_human,
+        type: "pie",
+        cx,
+        cy,
+        startAngle,
+        endAngle: startAngle + sliceAngle,
+        radius: r,
+      });
+
+      if (sliceAngle > 0.06 && i < maxLabels) {
+        const mid = startAngle + sliceAngle / 2;
+        const lx = cx + Math.cos(mid) * (r * 0.65);
+        const ly = cy + Math.sin(mid) * (r * 0.65);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const name = this._shortName(file.path);
+        ctx.fillText(name, lx, ly);
+      }
       startAngle += sliceAngle;
     });
 
     // Legend
-    const legendX = w * 0.65;
-    let legendY = 30;
-    ctx.font = '11px sans-serif';
-    types.slice(0, 12).forEach((t, i) => {
-      const color = colors[i % colors.length];
-      const pct = ((t.total_size / totalSize) * 100).toFixed(1);
+    const lx = w - legendW - margin;
+    let ly = 16;
+    ctx.font = "10px sans-serif";
+    ctx.textBaseline = "top";
+    const maxLeg = Math.min(this.files.length, 18);
+    for (let i = 0; i < maxLeg; i++) {
+      const f = this.files[i];
+      const name = this._shortName(f.path);
+      const pct = ((f.size / totalSize) * 100).toFixed(1);
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillRect(lx, ly, 8, 8);
+      ctx.fillStyle = "#e6edf3";
+      ctx.textAlign = "left";
+      ctx.fillText(name + " " + pct + "%", lx + 12, ly);
+      ly += 15;
+    }
+    if (this.files.length > 18) {
+      ctx.fillStyle = "#8b949e";
+      ctx.textAlign = "left";
+      ctx.fillText("+" + (this.files.length - 18) + " more", lx + 12, ly);
+    }
 
-      ctx.fillStyle = color;
-      ctx.fillRect(legendX, legendY, 10, 10);
-
-      ctx.fillStyle = '#e6edf3';
-      ctx.textAlign = 'left';
-      ctx.fillText(t.extension + ' (' + pct + '%)', legendX + 16, legendY + 10);
-      legendY += 18;
-    });
-
-    // Center text
-    ctx.fillStyle = '#8b949e';
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'center';
-    const total = types.reduce((s, t) => s + t.count, 0);
-    ctx.fillText((total || 0).toLocaleString() + ' files', cx, cy + 4);
+    // Center label
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Top " + this.files.length, cx, cy - 8);
+    ctx.fillStyle = "#e6edf3";
+    ctx.font = "bold 13px sans-serif";
+    ctx.fillText(this._formatSize(totalSize), cx, cy + 10);
   }
 
+  // ── Treemap ────────────────────────────────────────────────
   _drawTreemap(w, h) {
     const ctx = this.ctx;
-    const types = this.data.file_type_breakdown || [];
-    if (types.length === 0) {
-      ctx.fillStyle = '#484f58';
-      ctx.font = '14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('No data', w / 2, h / 2);
+    const totalSize = this.files.reduce((s, f) => s + f.size, 1);
+    const colors = this._colors();
+    const pad = 2;
+    const m = 6;
+    const titleH = 16;
+    const availW = w - m * 2;
+    const availH = h - m * 2 - titleH;
+
+    if (this.files.length === 0) {
+      ctx.fillStyle = "#484f58";
+      ctx.font = "14px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("No data", w / 2, h / 2);
       return;
     }
 
-    const totalSize = types.reduce((s, t) => s + t.total_size, 0) || 1;
-    const colors = ['#58a6ff', '#3fb950', '#d29922', '#f85149', '#bc8cff',
-                    '#79c0ff', '#56d364', '#e3b341', '#ff7b72', '#d2a8ff',
-                    '#8b949e', '#484f58'];
+    // Compute relative sizes (ensure minimum visible fraction)
+    const minRatio = 0.005; // at least 0.5% of total
+    const ratios = this.files.map((f) =>
+      Math.max(minRatio, f.size / totalSize),
+    );
+    const ratioSum = ratios.reduce((a, b) => a + b, 0);
+    const normalized = ratios.map((r) => r / ratioSum);
 
-    // Simple squarified treemap using a row-based layout
-    let x = 10, y = 10;
-    let rowWidth = w - 20;
-    let rowHeight = 0;
-    let items = types.slice(0, 12).map(t => ({
-      ...t,
-      ratio: t.total_size / totalSize
-    }));
+    // Use a strip treemap: distribute items across rows that fill the width
+    // Each item gets a cell proportional to its size.
+    // We precompute row layout first, then draw.
+    const rows = []; // each row: { items: [index], y, h }
+    let rowItems = [];
+    let rowRatioSum = 0;
 
-    items.forEach((item, i) => {
-      const area = item.ratio * (w - 20) * (h - 20);
-      const cellW = Math.sqrt(area * (rowWidth / (rowWidth || 1)));
-      const cellH = area / cellW;
+    for (let i = 0; i < this.files.length; i++) {
+      rowItems.push(i);
+      rowRatioSum += normalized[i];
 
-      if (x + cellW > w - 10 && y + cellH < h - 10) {
-        // Wrap to next line
-        x = 10;
-        y += rowHeight || cellH;
-        rowHeight = cellH;
-      } else if (x + cellW > w - 10) {
-        // Start new column
-        x = 10;
-        y += 5;
+      // Check if adding this item makes the row too wide
+      // A row's width is proportional to its ratio sum
+      // We want each item's width = (itemRatio / rowRatioSum) * availW
+      // Check if the row is "full enough" or this is the last item
+      const wouldFit =
+        i === this.files.length - 1 ||
+        rowRatioSum > 0.08 ||
+        rowItems.length >= Math.ceil(this.files.length / 5);
+
+      if (wouldFit) {
+        rows.push({ items: rowItems.slice(), ratioSum: rowRatioSum });
+        rowItems = [];
+        rowRatioSum = 0;
       }
+    }
+    // Flush remaining
+    if (rowItems.length > 0) {
+      rows.push({ items: rowItems.slice(), ratioSum: rowRatioSum });
+    }
 
-      const cw = Math.min(cellW, w - x - 10);
-      const ch = Math.min(cellH, h - y - 10);
+    // Calculate row heights proportional to ratio sum
+    const totalRowRatio = rows.reduce((s, r) => s + r.ratioSum, 0);
+    let y = m;
+    const rowHeights = [];
+    for (let ri = 0; ri < rows.length; ri++) {
+      const rh = Math.max(14, (rows[ri].ratioSum / totalRowRatio) * availH);
+      rowHeights.push(rh);
+    }
 
-      if (cw > 5 && ch > 5) {
-        ctx.fillStyle = colors[i % colors.length];
+    // Draw each row
+    for (let ri = 0; ri < rows.length; ri++) {
+      const row = rows[ri];
+      const rh = rowHeights[ri];
+      let x = m;
+
+      for (let ii = 0; ii < row.items.length; ii++) {
+        const fi = row.items[ii];
+        const itemRatio = normalized[fi] / row.ratioSum;
+        const cw = Math.max(8, itemRatio * availW);
+        const ch = Math.max(8, rh - pad);
+
+        if (x + cw > w - m) break; // shouldn't happen with proper layout
+
+        const isHov = fi === this._hoveredIndex;
+        const color = colors[fi % colors.length];
+
+        ctx.fillStyle = color;
         ctx.fillRect(x, y, cw, ch);
 
-        // Label
-        ctx.fillStyle = '#fff';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'left';
-        if (cw > 30) {
-          ctx.fillText(item.extension, x + 4, y + 12);
-          const pct = (item.ratio * 100).toFixed(1) + '%';
-          ctx.font = '9px sans-serif';
-          ctx.fillText(pct, x + 4, y + 24);
+        if (isHov) {
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, cw, ch);
         }
 
-        x += cw + 2;
-        rowHeight = Math.max(rowHeight, ch);
+        this.hitRegions.push({
+          index: fi,
+          path: this.files[fi].path,
+          size: this.files[fi].size,
+          size_human: this.files[fi].size_human,
+          type: "treemap",
+          x,
+          y,
+          w: cw,
+          h: ch,
+        });
+
+        // Label if cell is big enough
+        if (cw > 30 && ch > 14) {
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 8px sans-serif";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "top";
+          const name = this._shortName(this.files[fi].path);
+          ctx.fillText(name, x + 2, y + 2);
+        }
+
+        x += cw + pad;
       }
-    });
+
+      y += rh + 1;
+    }
 
     // Title
-    ctx.fillStyle = '#8b949e';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('File Types by Size', w / 2, h - 8);
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText("Top " + this.files.length + " Files by Size", w / 2, h - 2);
+  }
+
+  // ── Hit Testing ────────────────────────────────────────────
+  _hitTest(mx, my) {
+    for (let i = this.hitRegions.length - 1; i >= 0; i--) {
+      const r = this.hitRegions[i];
+      if (r.type === "pie") {
+        const dx = mx - r.cx,
+          dy = my - r.cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > r.radius) continue;
+        let angle = Math.atan2(dy, dx);
+        if (angle < 0) angle += Math.PI * 2;
+        let sa = r.startAngle;
+        if (sa < 0) sa += Math.PI * 2;
+        let ea = r.endAngle;
+        if (ea < 0) ea += Math.PI * 2;
+        if (sa > ea) ea += Math.PI * 2;
+        if (angle < sa) angle += Math.PI * 2;
+        if (angle >= sa && angle <= ea) return r;
+      } else {
+        if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h)
+          return r;
+      }
+    }
+    return null;
+  }
+
+  _onMouseMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit) {
+      this._hoveredIndex = hit.index;
+      this.canvas.style.cursor = "pointer";
+      this.tooltipEl.textContent = hit.path + "  [" + hit.size_human + "]";
+      this.tooltipEl.style.display = "block";
+      this.tooltipEl.style.left = e.clientX + 12 + "px";
+      this.tooltipEl.style.top = e.clientY - 10 + "px";
+      this._draw();
+    } else {
+      this._hideTooltip();
+    }
+  }
+
+  _hideTooltip() {
+    if (this._hoveredIndex !== -1) {
+      this._hoveredIndex = -1;
+      this._draw();
+    }
+    this.tooltipEl.style.display = "none";
+    this.canvas.style.cursor = "default";
+  }
+
+  _onClick(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit) this._showContextMenu(e.clientX, e.clientY, hit);
+    else this.contextMenu.style.display = "none";
+  }
+
+  _showContextMenu(x, y, hit) {
+    this.contextMenu._filePath = hit.path;
+    this.contextMenu._fileName =
+      hit.path.split("\\").pop() || hit.path.split("/").pop() || hit.path;
+    this.contextMenu.style.display = "block";
+    this.contextMenu.style.left = x + "px";
+    this.contextMenu.style.top = y + "px";
+  }
+
+  _onContextMenuAction(e) {
+    const item = e.target.closest(".diag-ctx-item");
+    if (!item) return;
+    const action = item.dataset.action;
+    const filePath = this.contextMenu._filePath;
+    this.contextMenu.style.display = "none";
+    if (!filePath) return;
+
+    const sb = document.querySelector(".status-bar");
+
+    switch (action) {
+      case "explorer":
+        this._invoke("open_explorer", { path: filePath }).catch(() => {});
+        break;
+      case "terminal": {
+        const dir = filePath.includes("\\")
+          ? filePath.substring(0, filePath.lastIndexOf("\\"))
+          : filePath.includes("/")
+            ? filePath.substring(0, filePath.lastIndexOf("/"))
+            : filePath;
+        this._invoke("open_terminal", { path: dir }).catch(() => {});
+        break;
+      }
+      case "properties":
+        this._invoke("open_properties", { path: filePath }).catch(() => {});
+        break;
+      case "copy":
+        navigator.clipboard
+          .writeText(filePath)
+          .then(() => {
+            if (sb) sb.textContent = "Copied: " + filePath;
+          })
+          .catch(() => {});
+        break;
+      case "tree":
+        // Dispatch a custom event for the tree to jump to this path
+        window.dispatchEvent(
+          new CustomEvent("diagram-jump-to-path", {
+            detail: { path: filePath },
+          }),
+        );
+        if (sb) sb.textContent = "Locating: " + filePath;
+        break;
+      case "delete":
+        if (confirm("Delete file?\n" + filePath)) {
+          this._invoke("delete_path", { path: filePath })
+            .then(() => {
+              if (sb) sb.textContent = "Deleted: " + this.contextMenu._fileName;
+              this.files = this.files.filter((f) => f.path !== filePath);
+              if (this.data && this.data.top_files) {
+                this.data.top_files = this.data.top_files.filter(
+                  (f) => f.path !== filePath,
+                );
+              }
+              this._draw();
+            })
+            .catch((err) => alert("Delete failed: " + err));
+        }
+        break;
+    }
+  }
+
+  _invoke(cmd, args) {
+    if (window.__TAURI__ && window.__TAURI__.invoke)
+      return window.__TAURI__.invoke(cmd, args);
+    return Promise.reject(new Error("No invoke"));
+  }
+
+  _shortName(p) {
+    return p.split("\\").pop() || p.split("/").pop() || p;
+  }
+
+  _colors() {
+    const c = [
+      "#58a6ff",
+      "#3fb950",
+      "#d29922",
+      "#f85149",
+      "#bc8cff",
+      "#79c0ff",
+      "#56d364",
+      "#e3b341",
+      "#ff7b72",
+      "#d2a8ff",
+      "#8b949e",
+      "#484f58",
+      "#f0883e",
+      "#7ee787",
+      "#a5d6ff",
+      "#ffa657",
+      "#ff7b72",
+      "#c9d1d9",
+      "#f778ba",
+      "#db6d28",
+    ];
+    const res = [];
+    for (let i = 0; i < 50; i++) res.push(c[i % c.length]);
+    return res;
+  }
+
+  _formatSize(bytes) {
+    if (bytes === 0) return "0 B";
+    const u = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const v = bytes / Math.pow(1024, i);
+    return i === 0 ? bytes + " B" : v.toFixed(2) + " " + u[i];
   }
 }

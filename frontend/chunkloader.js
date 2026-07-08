@@ -1,7 +1,7 @@
 /**
  * ChunkLoader — Loads tree data from the Tauri backend in chunks.
  *
- * Tauri v1.6+ uses camelCase for command parameter names internally.
+ * NOTE: Tauri v1 uses snake_case parameter names matching Rust function params.
  */
 class ChunkLoader {
   constructor() {
@@ -46,20 +46,38 @@ class ChunkLoader {
 
     // Release previous scan
     if (this.scanId) {
-      try { await self._invoke('release_scan', { scanId: this.scanId }); } catch (e) {}
+      try {
+        await self._invoke("release_scan", { scanId: this.scanId });
+      } catch (e) {}
     }
+    // Save resolve/reject before _reset() clears them
+    var savedResolve = this._scanResolve;
+    var savedReject = this._scanReject;
     this._reset();
+    this._scanResolve = savedResolve;
+    this._scanReject = savedReject;
     this.scanId = scanId;
 
     try {
-      // Poll for completion
-      while (true) {
-        var prog = await self._invoke('get_scan_progress', { scanId: scanId }).catch(function () { return null; });
+      // Poll for completion (max 100 iterations = ~30s safety)
+      for (var pollIter = 0; pollIter < 100; pollIter++) {
+        var prog = await self
+          ._invoke("get_scan_progress", { scanId: scanId })
+          .catch(function () {
+            return null;
+          });
+        if (!prog) {
+          continue;
+        }
         if (prog && !prog.is_running && prog.phase !== 3) {
-          throw new Error(prog.error || 'Scan did not complete successfully.');
+          throw new Error(prog.error || "Scan did not complete successfully.");
         }
 
-        var result = await self._invoke('get_scan_result', { scanId: scanId }).catch(function () { return null; });
+        var result = await self
+          ._invoke("get_scan_result", { scanId: scanId })
+          .catch(function () {
+            return null;
+          });
         if (result) {
           // Scan finished
           self.totalNodes = result.root_info.total_nodes;
@@ -75,8 +93,13 @@ class ChunkLoader {
           }
           return;
         }
-        await new Promise(function (r) { setTimeout(r, 300); });
+        await new Promise(function (r) {
+          setTimeout(r, 300);
+        });
       }
+      // If we exhaust all iterations, reject
+      if (self._scanReject)
+        self._scanReject(new Error("Polling timed out (100 iterations)"));
     } catch (e) {
       if (self._scanReject) self._scanReject(e);
     }
@@ -86,13 +109,23 @@ class ChunkLoader {
   async _doStartScan(path) {
     var self = this;
 
+    // Save resolve/reject before _reset() clears them
+    var savedResolve = this._scanResolve;
+    var savedReject = this._scanReject;
+
     if (this.scanId) {
-      try { await self._invoke('release_scan', { scanId: this.scanId }); } catch (e) {}
+      try {
+        await self._invoke("release_scan", { scanId: this.scanId });
+      } catch (e) {}
     }
     this._reset();
 
+    // Restore resolve/reject after _reset()
+    this._scanResolve = savedResolve;
+    this._scanReject = savedReject;
+
     try {
-      var initResult = await self._invoke('start_scan', { path: path });
+      var initResult = await self._invoke("start_scan", { path: path });
       this.scanId = initResult.scan_id;
       await self._pollScanComplete(this.scanId);
     } catch (e) {
@@ -104,7 +137,7 @@ class ChunkLoader {
     if (this.loadedChunks.has(chunkIndex)) return;
 
     var self = this;
-    var chunk = await this._invoke('get_chunk', {
+    var chunk = await this._invoke("get_chunk", {
       scanId: this.scanId,
       chunkIndex: chunkIndex,
     });
@@ -155,7 +188,7 @@ class ChunkLoader {
 
   async fetchChildren(arenaIndex) {
     if (arenaIndex === 4294967295) return [];
-    var result = await this._invoke('get_children', {
+    var result = await this._invoke("get_children", {
       scanId: this.scanId,
       nodeIndex: arenaIndex,
     });
@@ -173,12 +206,12 @@ class ChunkLoader {
   }
 
   async getStats() {
-    return this._invoke('get_stats', { scanId: this.scanId });
+    return this._invoke("get_stats", { scanId: this.scanId });
   }
 
   async release() {
     if (this.scanId) {
-      await this._invoke('release_scan', { scanId: this.scanId });
+      await this._invoke("release_scan", { scanId: this.scanId });
     }
     this._reset();
   }
@@ -187,7 +220,7 @@ class ChunkLoader {
     try {
       return await window.__TAURI__.invoke(cmd, args);
     } catch (err) {
-      console.error('Tauri invoke error (' + cmd + '):', err);
+      console.error("Tauri invoke error (" + cmd + "):", err);
       throw err;
     }
   }
