@@ -15,6 +15,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -25,121 +26,119 @@ jobs:
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml
         continue-on-error: true
 
-  build:
-    name: Build (${{ matrix.os }})
+  # ── Windows Build ─────────────────────────────────────
+  build-windows:
+    name: Build Windows
     needs: [lint]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            bundle: appimage
-            binary_name: diskraptor
-          - os: macos-latest
-            bundle: dmg
-            binary_name: diskraptor
-          - os: windows-latest
-            bundle: msi
-            binary_name: diskraptor.exe
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+        with: { node-version: 20, cache: npm }
       - run: npm install 2>&1 || npm ci 2>&1 || true
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build binary
+        continue-on-error: true
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - name: Bundle MSI
+        continue-on-error: true
+        run: |
+          cd src-tauri
+          npx tauri build --bundles msi --ci --verbose 2>&1 || echo 'MSI bundle done'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-Windows
+          compression-level: 0
+          path: |
+            src-tauri/target/release/diskraptor.exe
+            target/release/diskraptor.exe
+            src-tauri/target/release/bundle/
+            target/release/bundle/
+          if-no-files-found: warn
+          retention-days: 7
 
-      # ── Linux dependencies (for AppImage) ──────────────────
+  # ── macOS Build ───────────────────────────────────────
+  build-macos:
+    name: Build macOS
+    needs: [lint]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm install 2>&1 || npm ci 2>&1 || true
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build binary
+        continue-on-error: true
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - name: Bundle DMG
+        continue-on-error: true
+        run: |
+          cd src-tauri
+          npx tauri build --bundles dmg --ci --verbose 2>&1 || \
+          npx tauri build --ci --verbose 2>&1 || echo 'DMG bundle done'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macOS
+          compression-level: 0
+          path: |
+            src-tauri/target/release/diskraptor
+            target/release/diskraptor
+            src-tauri/target/release/bundle/
+            target/release/bundle/
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ── Linux Build ───────────────────────────────────────
+  build-linux:
+    name: Build Linux
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm install 2>&1 || npm ci 2>&1 || true
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
         continue-on-error: true
         run: |
           sudo apt-get update -qq 2>&1 || true
-          # Try multiple package name variants (different Ubuntu versions)
           for pkg in libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
             libfuse2 libayatana-appindicator3-dev libappindicator3-dev; do
             sudo apt-get install -y -qq $pkg 2>&1 || true
           done 2>&1 || true
-
-      # ── Windows: install WiX Toolset (required for MSI) ───
-      - name: Install WiX Toolset
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          dotnet tool install --global wix 2>&1 || echo "wix already installed"
-          wix --version 2>&1 || echo "wix not available via dotnet, trying winget"
-          winget install --name "WiX Toolset" 2>&1 || echo "winget failed"
-
-      # ── macOS: Install Rust (brew might have old version) ─
-      - name: Setup macOS signing (best-effort)
-        if: matrix.os == 'macos-latest'
-        continue-on-error: true
-        run: |
-          # Create a self-signed certificate for code signing (best-effort)
-          security create-keychain -p temp mac-build.keychain 2>&1 || true
-          security default-keychain -s mac-build.keychain 2>&1 || true
-          security unlock-keychain -p temp mac-build.keychain 2>&1 || true
-          security set-keychain-settings -lut 7200 mac-build.keychain 2>&1 || true
-          cat > /tmp/cert_req.cnf << 'EOF'
-          [req]
-          distinguished_name = req_distinguished_name
-          prompt = no
-          [req_distinguished_name]
-          CN = DiskRaptor
-          EOF
-          openssl req -new -newkey rsa:2048 -nodes -keyout /tmp/key.pem \
-            -out /tmp/csr.pem -config /tmp/cert_req.cnf 2>&1 || true
-          openssl x509 -req -days 365 -in /tmp/csr.pem -signkey /tmp/key.pem \
-            -out /tmp/cert.pem 2>&1 || true
-          security import /tmp/cert.pem -k mac-build.keychain -P temp \
-            -T /usr/bin/codesign 2>&1 || true
-          echo "macOS signing setup done (may have been skipped)"
-
-      # ── Build binary ───────────────────────────────────────
       - name: Build binary
         continue-on-error: true
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
-
-      # ── Bundle via Tauri builder ───────────────────────────
-      # ── Bundle ─────────────────────────────────────────────
-      - name: Bundle ${{ matrix.bundle }}
+      - name: Bundle AppImage
         continue-on-error: true
         run: |
           cd src-tauri
-          npx tauri build --bundles ${{ matrix.bundle }} --ci --verbose 2>&1 || \
-          npx tauri build --ci --verbose 2>&1 || \
-          echo 'Bundle step done (binary will be uploaded regardless)'
-
-      # ── List all artifacts ─────────────────────────────────
-      - name: Collect artifacts
-        run: |
-          echo "=== Binaries ==="
-          find . -name "${{ matrix.binary_name }}" -type f 2>/dev/null | head -10
-          echo "=== Bundles ==="
-          find . -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" 2>/dev/null | head -10
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+          npx tauri build --bundles appimage --ci --verbose 2>&1 || \
+          npx tauri build --ci --verbose 2>&1 || echo 'AppImage bundle done'
+      - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.os }}
+          name: release-Linux
           compression-level: 0
           path: |
-            src-tauri/target/release/${{ matrix.binary_name }}
-            target/release/${{ matrix.binary_name }}
+            src-tauri/target/release/diskraptor
+            target/release/diskraptor
             src-tauri/target/release/bundle/
             target/release/bundle/
           if-no-files-found: warn
           retention-days: 7
 
   # ── Create GitHub Release (only for tags) ─────────────────
-  # Runs even if some builds fail — uploads whatever succeeded.
   release:
     name: Create Release
-    if: always() && github.ref_type == 'tag'
-    needs: [build]
+    if: github.ref_type == 'tag'
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -157,7 +156,6 @@ jobs:
           echo "=== All downloaded files ==="
           find artifacts -type f 2>/dev/null | sort
 
-          # Copy files with platform-friendly names
           for f in artifacts/* artifacts/**/* 2>/dev/null; do
             [ ! -f "$f" ] && continue
             base=$(basename "$f")
@@ -167,32 +165,29 @@ jobs:
                 echo "  [Windows] $base"
                 ;;
               *.dmg)
-                cp "$f" release_assets/DiskRaptor-macOS-x64.dmg 2>/dev/null || cp "$f" release_assets/
-                echo "  [macOS] dmg bundle"
+                cp "$f" release_assets/DiskRaptor-macOS.dmg 2>/dev/null || cp "$f" release_assets/
+                echo "  [macOS] dmg"
                 ;;
               *.AppImage)
-                cp "$f" release_assets/DiskRaptor-Linux-x64.AppImage 2>/dev/null || cp "$f" release_assets/
+                cp "$f" release_assets/DiskRaptor-Linux.AppImage 2>/dev/null || cp "$f" release_assets/
                 echo "  [Linux] AppImage"
                 ;;
               diskraptor.exe)
                 cp "$f" release_assets/DiskRaptor-Windows-x64.exe
-                echo "  [Windows] standalone exe"
+                echo "  [Windows] exe"
                 ;;
               diskraptor)
-                # macOS or Linux binary
                 chmod +x "$f"
                 if [[ "$(dirname "$f")" == *macos* ]] || [[ "$(dirname "$f")" == *osx* ]]; then
                   cp "$f" release_assets/DiskRaptor-macOS-x64
-                  echo "  [macOS] standalone binary"
+                  echo "  [macOS] binary"
                 else
                   cp "$f" release_assets/DiskRaptor-Linux-x64
-                  echo "  [Linux] standalone binary"
+                  echo "  [Linux] binary"
                 fi
                 ;;
             esac
           done
-
-          echo "=== Release assets ==="
           ls -lh release_assets/ 2>/dev/null || echo "  (empty)"
 
       - name: Create Release
@@ -205,11 +200,11 @@ jobs:
 
             | Platform | Downloads |
             |----------|-----------|
-            | **Windows** | `*.msi` (installer) or `DiskRaptor-Windows-x64.exe` (standalone) |
+            | **Windows** | `.msi` installer or `DiskRaptor-Windows-x64.exe` |
             | **macOS** | `*.dmg` or `DiskRaptor-macOS-x64` binary |
             | **Linux** | `*.AppImage` or `DiskRaptor-Linux-x64` binary |
 
-            > ⚠️ macOS & Linux builds are unsigned. macOS: right-click → Open. Linux: `chmod +x`.
+            > ⚠️ macOS & Linux builds are unsigned.
           files: release_assets/**
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

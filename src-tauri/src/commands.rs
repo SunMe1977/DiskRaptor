@@ -255,24 +255,77 @@ pub fn release_scan(scan_id: String) -> Result<(), String> {
 }
 
 /// Open file explorer at the given path.
+/// For files: opens parent directory and selects the file.
+/// For directories: opens the directory directly.
 #[tauri::command]
 pub fn open_explorer(path: String) -> Result<(), String> {
-    use std::process::Command;
+    use std::path::Path;
     #[cfg(windows)]
-    let status = Command::new("explorer").arg(&path).spawn();
-    #[cfg(target_os = "macos")]
-    let status = Command::new("open").arg(&path).spawn();
-    #[cfg(target_os = "linux")]
-    let status = Command::new("xdg-open").arg(&path).spawn();
-    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    let status = Err(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        "unsupported",
-    ));
-    match status {
-        Ok(_) => Ok(()),
-        Err(e) => Err(format!("Failed to open explorer: {}", e)),
+    {
+        use std::process::Command;
+        let p = Path::new(&path);
+        if p.is_dir() {
+            // Open directory directly
+            let status = Command::new("explorer").arg(&path).spawn();
+            match status {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Failed to open explorer: {}", e)),
+            }
+        } else {
+            // Open parent directory and select the file
+            let status = Command::new("explorer").args(["/select,", &path]).spawn();
+            match status {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Failed to open explorer: {}", e)),
+            }
+        }
     }
+    #[cfg(target_os = "macos")]
+    {
+        use std::path::Path;
+        use std::process::Command;
+        let p = Path::new(&path);
+        if p.is_dir() {
+            let status = Command::new("open").arg(&path).spawn();
+            match status {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Failed to open: {}", e)),
+            }
+        } else {
+            // Reveal in Finder
+            let status = Command::new("open").args(["-R", &path]).spawn();
+            match status {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Failed to reveal: {}", e)),
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::path::Path;
+        use std::process::Command;
+        let p = Path::new(&path);
+        if p.is_dir() {
+            let status = Command::new("xdg-open").arg(&path).spawn();
+            match status {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Failed to open: {}", e)),
+            }
+        } else {
+            // Open parent folder
+            if let Some(parent) = p.parent() {
+                let status = Command::new("xdg-open").arg(parent).spawn();
+                match status {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(format!("Failed to open: {}", e)),
+                }
+            } else {
+                Err("Cannot determine parent directory".into())
+            }
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    Err(String::from("unsupported platform"))
 }
 
 /// Open file/folder properties dialog.
