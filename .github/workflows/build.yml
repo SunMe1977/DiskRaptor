@@ -21,12 +21,21 @@ jobs:
       - name: Install lint dependencies
         run: |
           sudo apt-get update -qq
-          if apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
-          elif apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
+          if apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
             sudo apt-get install -y -qq libwebkit2gtk-4.0-dev
+          elif apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
           else
             echo "No suitable WebKit2GTK dev package found" >&2
+            exit 1
+          fi
+
+          if apt-cache show libjavascriptcoregtk-4.0-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libjavascriptcoregtk-4.0-dev
+          elif apt-cache show libjavascriptcoregtk-4.1-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libjavascriptcoregtk-4.1-dev
+          else
+            echo "No suitable JavaScriptCoreGTK dev package found" >&2
             exit 1
           fi
 
@@ -134,12 +143,21 @@ jobs:
           sudo apt-get update -qq
 
           # Tauri v1 may require either 4.0 or 4.1 depending on runner image.
-          if apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
-          elif apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
+          if apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
             sudo apt-get install -y -qq libwebkit2gtk-4.0-dev
+          elif apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
           else
             echo "No suitable WebKit2GTK dev package found" >&2
+            exit 1
+          fi
+
+          if apt-cache show libjavascriptcoregtk-4.0-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libjavascriptcoregtk-4.0-dev
+          elif apt-cache show libjavascriptcoregtk-4.1-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libjavascriptcoregtk-4.1-dev
+          else
+            echo "No suitable JavaScriptCoreGTK dev package found" >&2
             exit 1
           fi
 

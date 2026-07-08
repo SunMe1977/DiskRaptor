@@ -437,14 +437,9 @@ pub fn delete_path(path: String) -> Result<(), String> {
 }
 
 /// Get a 16x16 Windows shell icon as base64 RGBA data.
-/// On non-Windows, returns a placeholder.
-#[cfg_attr(not(windows), allow(unused_variables))]
+#[cfg(windows)]
 #[tauri::command]
 pub fn get_icon(path: String, is_dir: bool) -> Result<String, String> {
-    #[cfg(not(windows))]
-    {
-        return Err("Icons only available on Windows".into());
-    }
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use std::ptr;
@@ -589,6 +584,13 @@ pub fn get_icon(path: String, is_dir: bool) -> Result<String, String> {
             &pixels,
         ))
     }
+}
+
+/// Icons are currently only implemented on Windows.
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn get_icon(_path: String, _is_dir: bool) -> Result<String, String> {
+    Err("Icons only available on Windows".into())
 }
 
 // ── Response types ───────────────────────────────────────────────────────
