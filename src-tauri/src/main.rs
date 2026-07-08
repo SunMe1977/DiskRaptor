@@ -7,6 +7,7 @@ use tauri::{
 };
 
 fn main() {
+    #[cfg(windows)]
     env_logger::init();
 
     std::panic::set_hook(Box::new(|info| {
