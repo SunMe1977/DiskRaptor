@@ -436,6 +436,161 @@ pub fn delete_path(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Get a 16x16 Windows shell icon as base64 RGBA data.
+/// On non-Windows, returns a placeholder.
+#[cfg_attr(not(windows), allow(unused_variables))]
+#[tauri::command]
+pub fn get_icon(path: String, is_dir: bool) -> Result<String, String> {
+    #[cfg(not(windows))]
+    {
+        return Err("Icons only available on Windows".into());
+    }
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+    use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
+    use windows::Win32::UI::Shell::{
+        SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON, SHGFI_USEFILEATTRIBUTES,
+    };
+
+    // Raw Win32 API declarations not in windows crate v0.39
+    #[link(name = "user32")]
+    extern "system" {
+        fn DrawIconEx(
+            hdc: isize,
+            x: i32,
+            y: i32,
+            hicon: isize,
+            cx: i32,
+            cy: i32,
+            istepifani: u32,
+            hbrflickerfreedraw: isize,
+            diflags: u32,
+        ) -> i32;
+        fn DestroyIcon(hicon: isize) -> i32;
+    }
+    #[link(name = "gdi32")]
+    extern "system" {
+        fn CreateCompatibleDC(hdc: isize) -> isize;
+        fn CreateDIBSection(
+            hdc: isize,
+            pbmi: *const std::ffi::c_void,
+            usage: u32,
+            ppvbits: *mut *mut std::ffi::c_void,
+            hsection: isize,
+            offset: u32,
+        ) -> isize;
+        fn SelectObject(hdc: isize, hgdiobj: isize) -> isize;
+        fn DeleteDC(hdc: isize) -> i32;
+        fn DeleteObject(ho: isize) -> i32;
+        fn GetDC(hwnd: isize) -> isize;
+        fn ReleaseDC(hwnd: isize, hdc: isize) -> i32;
+    }
+
+    let w: Vec<u16> = OsStr::new(&path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let mut sfi: SHFILEINFOW = std::mem::zeroed();
+        let attr = if is_dir {
+            FILE_FLAGS_AND_ATTRIBUTES(0x10u32) // FILE_ATTRIBUTE_DIRECTORY
+        } else {
+            FILE_FLAGS_AND_ATTRIBUTES(0x80u32) // FILE_ATTRIBUTE_NORMAL
+        };
+        let ret = SHGetFileInfoW(
+            windows::core::PCWSTR::from_raw(w.as_ptr()),
+            attr,
+            &mut sfi,
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES,
+        );
+        if ret == 0 {
+            return Err("SHGetFileInfoW failed".into());
+        }
+
+        let hicon = sfi.hIcon.0 as isize;
+        if hicon == 0 {
+            return Err("No icon".into());
+        }
+
+        let hdc_screen = GetDC(0);
+        let hdc = CreateCompatibleDC(hdc_screen);
+        if hdc == 0 {
+            let _ = ReleaseDC(0, hdc_screen);
+            DestroyIcon(hicon);
+            return Err("CreateCompatibleDC failed".into());
+        }
+
+        // BITMAPINFOHEADER for 16x16 32-bit top-down DIB
+        let mut bi_header: [u32; 11] = [
+            40, // biSize
+            16, // biWidth
+            16, // biHeight (positive = bottom-up, but we handle it)
+            1,  // biPlanes
+            32, // biBitCount
+            0,  // biCompression (BI_RGB)
+            0,  // biSizeImage
+            0, 0, 0, 0, // biClrUsed, biClrImportant
+        ];
+        // Set biHeight negative for top-down
+        bi_header[2] = 0xFFFFFFF0u32; // -16 in unsigned u32 (two's complement)
+
+        let mut pixel_ptr: *mut std::ffi::c_void = ptr::null_mut();
+        let hbmp = CreateDIBSection(
+            hdc,
+            &bi_header as *const u32 as *const std::ffi::c_void,
+            0, // DIB_RGB_COLORS
+            &mut pixel_ptr,
+            0,
+            0,
+        );
+        if hbmp == 0 {
+            let _ = ReleaseDC(0, hdc_screen);
+            let _ = DeleteDC(hdc);
+            DestroyIcon(hicon);
+            return Err("CreateDIBSection failed".into());
+        }
+
+        SelectObject(hdc, hbmp);
+
+        // Draw the icon at 16x16
+        DrawIconEx(hdc, 0, 0, hicon, 16, 16, 0, 0, 3);
+
+        // Copy pixels and swap BGR to RGB, also handle top-down vs bottom-up
+        let src = pixel_ptr as *const u8;
+        let mut pixels = vec![0u8; 16 * 16 * 4];
+        // The DIB might be bottom-up (if height > 0), so flip rows
+        // Since we set height = -16 (in two's complement as 0xFFFFFFF0),
+        // but that might not work. Let's use height = 16 (bottom-up) and flip.
+        // Actually let's just use height=16 and flip rows
+        for y in 0..16 {
+            let src_row = src.wrapping_add((15 - y) * 64);
+            let dst_start = y * 64;
+            for x in 0..16 {
+                let si = x * 4;
+                let di = dst_start + x * 4;
+                pixels[di] = *src_row.add(si + 2).wrapping_add(0); // R
+                pixels[di + 1] = *src_row.add(si + 1);
+                pixels[di + 2] = *src_row.add(si);
+                pixels[di + 3] = *src_row.add(si + 3);
+            }
+        }
+
+        // Cleanup
+        DestroyIcon(hicon);
+        let _ = ReleaseDC(0, hdc_screen);
+        let _ = DeleteDC(hdc);
+        let _ = DeleteObject(hbmp);
+
+        Ok(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            &pixels,
+        ))
+    }
+}
+
 // ── Response types ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]

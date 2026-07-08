@@ -406,14 +406,35 @@ class TreeView {
     toggle.textContent = isDir ? (isExpanded ? "\u25BC" : "\u25B6") : "";
     el.appendChild(toggle);
 
-    const icon = document.createElement("span");
-    icon.className = "icon";
-    icon.textContent = isDir
-      ? isExpanded
-        ? "\uD83D\uDCC2"
-        : "\uD83D\uDCC1"
-      : "\uD83D\uDCC4";
-    el.appendChild(icon);
+    // Icon: fallback emoji, then replace with real Windows icon from IconCache
+    var iconEl = document.createElement("span");
+    iconEl.className = "icon";
+    iconEl.style.cssText =
+      "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;";
+    iconEl.textContent = isDir ? "📁" : "📄";
+    el.appendChild(iconEl);
+    if (window.__ICON_CACHE__) {
+      var iconKey = isDir ? "__folder__" : node.name || "file";
+      window.__ICON_CACHE__
+        .getIcon(iconKey, isDir)
+        .then(function (iconResult) {
+          if (
+            typeof iconResult === "string" &&
+            iconResult.indexOf("data:") === 0
+          ) {
+            // Replace emoji with real icon
+            iconEl.innerHTML = "";
+            var img = document.createElement("img");
+            img.src = iconResult;
+            img.style.cssText = "width:16px;height:16px;display:block;";
+            iconEl.appendChild(img);
+          } else if (typeof iconResult === "string" && iconResult.length < 10) {
+            // Update fallback emoji
+            iconEl.textContent = iconResult;
+          }
+        })
+        .catch(function () {});
+    }
 
     const name = document.createElement("span");
     name.className = "node-name";

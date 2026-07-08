@@ -204,10 +204,29 @@ class TopFilesPanel {
       pathTd.style.maxWidth = "200px";
       pathTd.style.overflow = "hidden";
       var iconSpan = document.createElement("span");
+      iconSpan.style.cssText =
+        "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;font-size:14px;";
       iconSpan.textContent = this._getFileIcon(entry.path || "");
-      iconSpan.style.flexShrink = "0";
-      iconSpan.style.fontSize = "14px";
       pathTd.appendChild(iconSpan);
+      // Load real icon
+      if (window.__ICON_CACHE__ && entry.path) {
+        (function (sp, p) {
+          window.__ICON_CACHE__
+            .getIcon(p, false)
+            .then(function (ir) {
+              if (typeof ir === "string" && ir.indexOf("data:") === 0) {
+                sp.innerHTML = "";
+                var img = document.createElement("img");
+                img.src = ir;
+                img.style.cssText = "width:16px;height:16px;display:block;";
+                sp.appendChild(img);
+              } else if (typeof ir === "string" && ir.length < 10) {
+                sp.textContent = ir;
+              }
+            })
+            .catch(function () {});
+        })(iconSpan, entry.path);
+      }
       var nameSpan = document.createElement("span");
       nameSpan.textContent = entry.path || "?";
       nameSpan.style.overflow = "hidden";
@@ -222,13 +241,6 @@ class TopFilesPanel {
         temp.innerHTML = badgeHtml;
         pathTd.appendChild(temp.firstChild);
       }
-      tr.appendChild(pathTd);
-      pathTd.appendChild(
-        new DOMParser().parseFromString(
-          this._getFileBadge(entry.path || ""),
-          "text/html",
-        ).body.firstChild || document.createTextNode(""),
-      );
       tr.appendChild(pathTd);
 
       // Size
