@@ -13,11 +13,65 @@ class TopFilesPanel {
     var thead = document.querySelector("#topfiles-table thead tr");
     if (thead) {
       thead.innerHTML =
-        "<th>#</th>" +
-        "<th>Path</th>" +
-        "<th>Size</th>" +
+        '<th># <span class="sort-arrow">\u25BC</span></th>' +
+        '<th>Path <span class="sort-arrow">\u25B2\u25BC</span></th>' +
+        '<th>Size <span class="sort-arrow">\u25BC</span></th>' +
         '<th style="width:40px">Action</th>';
     }
+  }
+
+  _getFileIcon(path) {
+    var ext = (path.split(".").pop() || "").toLowerCase();
+    var icons = {
+      iso: "\uD83D\uDCBF",
+      vhd: "\uD83D\uDCC0",
+      vhdx: "\uD83D\uDCC0",
+      zip: "\uD83D\uDCE6",
+      rar: "\uD83D\uDCE6",
+      "7z": "\uD83D\uDCE6",
+      exe: "\u2699\uFE0F",
+      dll: "\u2699\uFE0F",
+      pdf: "\uD83D\uDCC4",
+      doc: "\uD83D\uDCC4",
+      docx: "\uD83D\uDCC4",
+      png: "\uD83D\uDDBC\uFE0F",
+      jpg: "\uD83D\uDDBC\uFE0F",
+      jpeg: "\uD83D\uDDBC\uFE0F",
+      mp4: "\uD83C\uDFA5",
+      avi: "\uD83C\uDFA5",
+      mkv: "\uD83C\uDFA5",
+      mp3: "\uD83C\uDFB5",
+      wav: "\uD83C\uDFB5",
+      flac: "\uD83C\uDFB5",
+      txt: "\uD83D\uDCDD",
+      log: "\uD83D\uDCDD",
+      msi: "\u2699\uFE0F",
+      crdownload: "\u23F3",
+    };
+    return icons[ext] || "\uD83D\uDCC4";
+  }
+
+  _getFileBadge(path) {
+    var ext = (path.split(".").pop() || "").toLowerCase();
+    var badgeTypes = [
+      "iso",
+      "vhd",
+      "vhdx",
+      "zip",
+      "rar",
+      "7z",
+      "exe",
+      "dll",
+      "pdf",
+      "msi",
+      "crdownload",
+      "txt",
+      "log",
+    ];
+    if (badgeTypes.indexOf(ext) >= 0) {
+      return '<span class="file-type-badge ' + ext + '">' + ext + "</span>";
+    }
+    return "";
   }
 
   _initContextMenu() {
@@ -142,10 +196,39 @@ class TopFilesPanel {
       rankTd.textContent = i + 1;
       tr.appendChild(rankTd);
 
-      // Path
+      // Path with file icon + badge
       var pathTd = document.createElement("td");
-      pathTd.textContent = entry.path || "?";
-      pathTd.title = entry.path || "";
+      pathTd.style.display = "flex";
+      pathTd.style.alignItems = "center";
+      pathTd.style.gap = "6px";
+      pathTd.style.maxWidth = "200px";
+      pathTd.style.overflow = "hidden";
+      var iconSpan = document.createElement("span");
+      iconSpan.textContent = this._getFileIcon(entry.path || "");
+      iconSpan.style.flexShrink = "0";
+      iconSpan.style.fontSize = "14px";
+      pathTd.appendChild(iconSpan);
+      var nameSpan = document.createElement("span");
+      nameSpan.textContent = entry.path || "?";
+      nameSpan.style.overflow = "hidden";
+      nameSpan.style.textOverflow = "ellipsis";
+      nameSpan.style.whiteSpace = "nowrap";
+      nameSpan.title = entry.path || "";
+      pathTd.appendChild(nameSpan);
+      // Add badge as innerHTML
+      var badgeHtml = this._getFileBadge(entry.path || "");
+      if (badgeHtml) {
+        var temp = document.createElement("span");
+        temp.innerHTML = badgeHtml;
+        pathTd.appendChild(temp.firstChild);
+      }
+      tr.appendChild(pathTd);
+      pathTd.appendChild(
+        new DOMParser().parseFromString(
+          this._getFileBadge(entry.path || ""),
+          "text/html",
+        ).body.firstChild || document.createTextNode(""),
+      );
       tr.appendChild(pathTd);
 
       // Size
