@@ -272,7 +272,8 @@ mod platform {
                         }
                         lc.insert(pi, ci);
                         if sz > 0 {
-                            top_files.insert(full, sz, top_count);
+                            top_files.insert(full.clone(), sz, top_count);
+                            file_types.add(&full, sz);
                         }
                     }
                     let mut nd = WIN32_FIND_DATAW::default();

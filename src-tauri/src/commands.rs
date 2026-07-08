@@ -254,6 +254,33 @@ pub fn release_scan(scan_id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Open a terminal at the given directory path (cross-platform).
+#[tauri::command]
+pub fn open_terminal(path: String) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(windows)]
+    let status = Command::new("cmd")
+        .args(["/c", "start", "cmd", "/k", "cd", "/d", &path])
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open").args(["-a", "Terminal", &path]).spawn();
+    #[cfg(target_os = "linux")]
+    let status = Command::new("x-terminal-emulator")
+        .arg(&path)
+        .spawn()
+        .or_else(|_| Command::new("gnome-terminal").arg(&path).spawn())
+        .or_else(|_| Command::new("konsole").arg("--workdir").arg(&path).spawn());
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    let status = Err(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        "unsupported platform",
+    ));
+    match status {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("Failed to open terminal: {}", e)),
+    }
+}
+
 /// Delete a file or directory at the given path.
 #[tauri::command]
 pub fn delete_path(path: String) -> Result<(), String> {
