@@ -39,7 +39,7 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const inputBuffer = fs.readFileSync(INPUT);
-  const img = sharp(inputBuffer);
+  const img = sharp(inputBuffer).ensureAlpha();
 
   const iconEntries = [];
 

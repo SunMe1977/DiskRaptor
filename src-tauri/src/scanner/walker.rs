@@ -243,7 +243,7 @@ mod platform {
             } else {
                 files_count.fetch_add(1, Ordering::Relaxed);
                 let sz = ((fd.nFileSizeHigh as u64) << 32) | (fd.nFileSizeLow as u64);
-                let ci = {
+                let _ci = {
                     let mut a = arena.lock();
                     let ci = a.alloc(TreeNode {
                         name,
@@ -327,11 +327,12 @@ mod platform {
             // Take a batch from the stack (up to 64 dirs at a time)
             let batch: Vec<(String, u32, u16)> = {
                 let mut s = stack.lock();
-                let count = std::cmp::min(s.len(), 64);
+                let len = s.len();
+                let count = std::cmp::min(len, 64);
                 if count == 0 {
                     break;
                 }
-                s.drain(s.len() - count..).collect()
+                s.drain(len - count..).collect()
             };
 
             // Check node limit

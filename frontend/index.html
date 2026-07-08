@@ -9,7 +9,9 @@
     <body>
         <header id="toolbar">
             <div class="toolbar-left">
-                <h1 class="logo">DiskRaptor</h1>
+                <h1 class="logo">
+                    <span class="logo-icon">🦖</span> DiskRaptor
+                </h1>
             </div>
             <div class="toolbar-center">
                 <input
@@ -18,13 +20,19 @@
                     placeholder="Select or type a directory path..."
                     value="C:\dev\DiskRaptor"
                 />
-                <button id="btn-browse">Browse</button>
-                <button id="btn-scan" class="primary">Scan</button>
-                <button id="btn-cancel" disabled>Cancel</button>
+                <button id="btn-browse">📁 Browse</button>
+                <button id="btn-scan" class="primary">🔍 Scan</button>
+                <button id="btn-cancel" disabled>✖ Cancel</button>
             </div>
             <div class="toolbar-right">
-                <button id="btn-export" disabled>Export JSON</button>
-                <button id="btn-theme" title="Toggle dark/light mode">☾</button>
+                <button id="btn-export" disabled>📥 Export</button>
+                <button
+                    id="btn-theme"
+                    class="icon-btn"
+                    title="Toggle dark/light mode"
+                >
+                    ☾
+                </button>
             </div>
         </header>
 
@@ -143,12 +151,13 @@
 
         <div id="about-overlay">
             <div class="about-card">
+                <div style="font-size: 48px; margin-bottom: 8px">🦖</div>
                 <h2>DiskRaptor</h2>
                 <p class="about-version">v0.1.0</p>
                 <p class="about-desc">Ultra-fast directory scanner</p>
-                <p class="about-tech">Built with Rust + Tauri</p>
-                <p class="about-copy">2026 DiskRaptor Team</p>
-                <button id="btn-about-close">Close</button>
+                <p class="about-tech">⚡ Built with Rust + Tauri</p>
+                <p class="about-copy">© 2026 DiskRaptor Team</p>
+                <button id="btn-about-close" class="primary">✓ Done</button>
             </div>
         </div>
 

@@ -25,9 +25,9 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const inputBuffer = fs.readFileSync(INPUT);
-  const img = sharp(inputBuffer);
+  const img = sharp(inputBuffer).ensureAlpha();
 
-  // Generate PNGs for all sizes
+  // Generate PNGs for all sizes (always RGBA)
   for (const size of SIZES) {
     const outPath = path.join(OUT_DIR, `${size}x${size}.png`);
     await img.clone().resize(size, size).png().toFile(outPath);
