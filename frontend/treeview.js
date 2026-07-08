@@ -33,8 +33,13 @@ class TreeView {
       "border:1px solid var(--border);border-radius:var(--radius-sm);" +
       "padding:4px 0;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.4);";
     this._ctxMenu.innerHTML =
-      '<div class="ctx-item" data-action="delete">Delete</div>' +
-      '<div class="ctx-item" data-action="terminal">Open Terminal</div>';
+      '<div class="ctx-item" data-action="explorer">Open in Explorer</div>' +
+      '<div class="ctx-item" data-action="terminal">Open Terminal</div>' +
+      '<div class="ctx-separator"></div>' +
+      '<div class="ctx-item" data-action="copy">Copy Path</div>' +
+      '<div class="ctx-item" data-action="properties">Properties</div>' +
+      '<div class="ctx-separator"></div>' +
+      '<div class="ctx-item" data-action="delete">Delete</div>';
     document.body.appendChild(this._ctxMenu);
 
     // Style context menu items
@@ -42,8 +47,11 @@ class TreeView {
     style.textContent =
       ".ctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:var(--text-primary);}" +
       ".ctx-item:hover{background:var(--bg-hover);}" +
+      ".ctx-separator{height:1px;background:var(--border);margin:4px 8px;}" +
       ".ctx-item[data-action=delete]{color:var(--accent-red);}" +
-      ".ctx-item[data-action=terminal]{color:var(--accent-green);}";
+      ".ctx-item[data-action=explorer]{}" +
+      ".ctx-item[data-action=copy]{}" +
+      ".ctx-item[data-action=properties]{}";
     document.head.appendChild(style);
 
     // Close on click outside
@@ -62,6 +70,9 @@ class TreeView {
       this._ctxMenu.style.display = "none";
       if (action === "delete") this._handleDelete(idx);
       if (action === "terminal") this._handleTerminal(idx);
+      if (action === "explorer") this._handleExplorer(idx);
+      if (action === "copy") this._handleCopyPath(idx);
+      if (action === "properties") this._handleProperties(idx);
     });
   }
 
@@ -105,6 +116,37 @@ class TreeView {
       }
     } catch (e) {
       console.warn("Open terminal failed:", e);
+    }
+  }
+
+  async _handleExplorer(arenaIdx) {
+    const path = this._buildPath(arenaIdx);
+    if (!path) return;
+    try {
+      await window.__TAURI__.invoke("open_explorer", { path: path });
+    } catch (e) {
+      console.warn("Open explorer failed:", e);
+    }
+  }
+
+  async _handleCopyPath(arenaIdx) {
+    const path = this._buildPath(arenaIdx);
+    if (!path) return;
+    try {
+      await navigator.clipboard.writeText(path);
+      document.querySelector(".status-bar").textContent = "Copied: " + path;
+    } catch (e) {
+      console.warn("Copy failed:", e);
+    }
+  }
+
+  async _handleProperties(arenaIdx) {
+    const path = this._buildPath(arenaIdx);
+    if (!path) return;
+    try {
+      await window.__TAURI__.invoke("open_properties", { path: path });
+    } catch (e) {
+      console.warn("Open properties failed:", e);
     }
   }
 

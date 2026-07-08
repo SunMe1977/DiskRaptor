@@ -59,6 +59,8 @@ fn main() {
             commands::get_scan_result,
             commands::delete_path,
             commands::open_terminal,
+            commands::open_explorer,
+            commands::open_properties,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DiskRaptor");

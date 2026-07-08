@@ -254,6 +254,52 @@ pub fn release_scan(scan_id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Open file explorer at the given path.
+#[tauri::command]
+pub fn open_explorer(path: String) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(windows)]
+    let status = Command::new("explorer").arg(&path).spawn();
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open").arg(&path).spawn();
+    #[cfg(target_os = "linux")]
+    let status = Command::new("xdg-open").arg(&path).spawn();
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    let status = Err(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        "unsupported",
+    ));
+    match status {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("Failed to open explorer: {}", e)),
+    }
+}
+
+/// Open file/folder properties dialog.
+#[tauri::command]
+pub fn open_properties(path: String) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(windows)]
+    let status = Command::new("explorer")
+        .args(["/select,", &path])
+        .spawn()
+        .map(|_| ());
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open").args(["-R", &path]).spawn().map(|_| ());
+    #[cfg(target_os = "linux")]
+    let status = Command::new("nautilus")
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .or_else(|_| Command::new("dolphin").arg(&path).spawn().map(|_| ()));
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    let status = Err(String::from("unsupported"));
+    match status {
+        Ok(()) => Ok(()),
+        Err(e) => Err(format!("Failed to open properties: {}", e)),
+    }
+}
+
 /// Open a terminal at the given directory path (cross-platform).
 #[tauri::command]
 pub fn open_terminal(path: String) -> Result<(), String> {
