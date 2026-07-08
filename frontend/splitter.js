@@ -88,5 +88,46 @@
         }
       });
     }
+
+    // ── Topfiles Splitter (between Selection and Top 50) ────
+    var tfSplit = document.getElementById("tf-splitter");
+    var topfilesCard = document.getElementById("topfiles-card");
+    var detailPanel = document.getElementById("detail-panel");
+
+    if (tfSplit && topfilesCard && detailPanel) {
+      var tfDragging = false;
+      var tfStartY = 0;
+      var tfStartHeight = 0;
+
+      tfSplit.addEventListener("mousedown", function (e) {
+        tfDragging = true;
+        tfStartY = e.clientY;
+        tfStartHeight = topfilesCard.offsetHeight;
+        tfSplit.classList.add("active");
+        document.body.style.cursor = "row-resize";
+        document.body.style.userSelect = "none";
+      });
+
+      document.addEventListener("mousemove", function (e) {
+        if (!tfDragging) return;
+        var dy = e.clientY - tfStartY;
+        var newHeight = tfStartHeight - dy; // invert: drag up = larger
+        newHeight = Math.max(
+          80,
+          Math.min(newHeight, detailPanel.offsetHeight - 250),
+        );
+        topfilesCard.style.flex = "none";
+        topfilesCard.style.height = newHeight + "px";
+      });
+
+      document.addEventListener("mouseup", function () {
+        if (tfDragging) {
+          tfDragging = false;
+          tfSplit.classList.remove("active");
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+        }
+      });
+    }
   });
 })();

@@ -482,6 +482,19 @@ button.icon-btn {
     background: var(--accent);
 }
 
+/* ── Topfiles Splitter ──────────────────────────────── */
+#tf-splitter {
+    height: 4px;
+    cursor: row-resize;
+    background: var(--border);
+    flex-shrink: 0;
+    transition: background var(--transition-fast);
+}
+#tf-splitter:hover,
+#tf-splitter.active {
+    background: var(--accent);
+}
+
 /* ═══════════════════════════════════════════════════════════════
    DETAIL PANEL — CARDS
    ═══════════════════════════════════════════════════════════════ */

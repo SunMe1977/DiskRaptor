@@ -117,15 +117,17 @@
                             ><span id="sel-type" class="stat-value">-</span>
                         </div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
-                            <button class="sel-action" data-action="explorer" title="Open in Explorer" disabled>📂</button></button>
+                            <button class="sel-action" data-action="explorer" title="Open in Explorer" disabled>📂</button>
                             <button class="sel-action" data-action="terminal" title="Open Terminal" disabled>💻</button>
-button>                            <button class="sel-action" data-action="properties" title="Properties" disabled>⚙</button>️</button>
-                            <button class="sel-action" data-action="copy" title="Copy Path" disabled>📋<</button>/button>
+                            <button class="sel-action" data-action="properties" title="Properties" disabled>⚙️</button></button>
+                            <button class="sel-action" data-action="copy" title="Copy Path" disabled>📋</buttonbutton>>
                             <button class="sel-action" data-action="delete" title="Delete" disabled style="color:var(--accent-red);">🗑️</button>
                         </div>
                     </div>
                 </div>
-                <div class="card flex-grow">
+                <!-- Resizable splitter for topfiles -->
+                <div id="tf-splitter"></div>
+                <div class="card" id="topfiles-card" style="flex:1;min-height:100px;display:flex;flex-direction:column;overflow:hidden;">
                     <h3>Top 50 Files</h3>
                     <div id="topfiles-container">
                         <table id="topfiles-table">
