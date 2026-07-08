@@ -281,16 +281,11 @@ mod platform {
             let v = visited.clone();
             let all = all_entries.clone();
             let ff = files_found.clone();
-            let df = dirs_found.clone();
             let cncl = cancel.clone();
             let act = active_workers.clone();
             let nc = node_count.clone();
             let skp = skip_dirs.clone();
-            let tf = top_files.clone();
-            let ft = file_types.clone();
-            let tc = top_count;
             let done = done_tx.clone();
-            let prog = progress; // &dyn Fn — we need to re-wrap for threads
 
             thread::spawn(move || {
                 act.fetch_add(1, Ordering::Relaxed);
@@ -366,12 +361,16 @@ mod platform {
                 &format!("{} workers active", active_workers.load(Ordering::Relaxed)),
             );
 
-            // Check if all workers finished
+            // Check if all workers finished (with debounce)
             let q_empty = queue.lock().is_empty();
             let no_workers = active_workers.load(Ordering::Relaxed) == 0;
             if q_empty && no_workers {
-                // Double-check: drain any remaining done signals
-                break;
+                // Race condition: a worker might still be adding work.
+                // Wait a bit and re-check.
+                thread::sleep(std::time::Duration::from_millis(200));
+                if queue.lock().is_empty() && active_workers.load(Ordering::Relaxed) == 0 {
+                    break;
+                }
             }
 
             // Also check cancellation
@@ -385,13 +384,14 @@ mod platform {
             }
         }
 
-        // Collect all done signals
+        // Collect all done signals (don't require all — workers may have crashed)
         for _ in 0..num_workers {
-            let _ = done_rx.recv_timeout(std::time::Duration::from_millis(500));
+            let _ = done_rx.recv_timeout(std::time::Duration::from_millis(200));
         }
 
         // ── Phase 2: Tree building (sequential) ─────────────
-        let entries = Arc::try_unwrap(all_entries).unwrap().into_inner();
+        // Drain entries via lock (safe even if Arc is still referenced)
+        let entries: Vec<FileEntry> = all_entries.lock().drain(..).collect();
         let total_count = entries.len() as u64 + 1; // +1 for root
 
         let mut arena = TreeNodeArena::with_capacity(total_count as usize + 1000);
