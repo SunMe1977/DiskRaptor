@@ -1,98 +1,166 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DiskRaptor</title></title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <header id="toolbar">
-    <div class="toolbar-left">
-      <h1 class="logo">🦅 DiskRaptor</h1>
-    </div>
-    <div class="toolbar-center">
-      <input type="text" id="scan-path" placeholder="Select or type a directory path..." value="C:\dev\DiskRaptor" />
-      <button id="btn-browse">📁 Browse</button>
-      <button id="btn-scan" class="primary">▶ Scan</button>
-      <button id="btn-cancel" disabled>⏹ Cancel</button>
-    </div>
-    <div class="toolbar-right">
-      <button id="btn-export" disabled>📥 Export JSON</button>
-    </div>
-  </header>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>DiskRaptor</title>
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <header id="toolbar">
+            <div class="toolbar-left">
+                <h1 class="logo">DiskRaptor</h1>
+            </div>
+            <div class="toolbar-center">
+                <input
+                    type="text"
+                    id="scan-path"
+                    placeholder="Select or type a directory path..."
+                    value="C:\dev\DiskRaptor"
+                />
+                <button id="btn-browse">Browse</button>
+                <button id="btn-scan" class="primary">Scan</button>
+                <button id="btn-cancel" disabled>Cancel</button>
+            </div>
+            <div class="toolbar-right">
+                <button id="btn-export" disabled>Export JSON</button>
+            </div>
+        </header>
 
-  <div id="main-layout">
-    <section id="tree-panel">
-      <div class="panel-header">
-        <h2>Directory Tree</h2>
-        <span id="node-count" class="badge">0 nodes</span>
-      </div>
-      <div id="tree-container">
-        <div id="tree-scroll">
-          <div id="tree-viewport"></div>
-        </div>
-      </div>
-      <div id="tree-status" class="status-bar">Ready</div>
-    </section>
+        <div id="main-layout">
+            <section id="tree-panel">
+                <div class="panel-header">
+                    <h2>Directory Tree</h2>
+                    <span id="node-count" class="badge">0 nodes</span>
+                </div>
+                <div id="tree-container">
+                    <div id="tree-scroll">
+                        <div id="tree-viewport"></div>
+                    </div>
+                </div>
+                <div id="tree-status" class="status-bar">Ready</div>
+            </section>
 
-    <aside id="detail-panel">
-      <div class="card">
-        <h3>📊 Scan Summary</h3>
-        <div id="stats-content">
-          <div class="stat-row"><span class="stat-label">Files</span><span id="stat-files" class="stat-value">—</span></div>
-          <div class="stat-row"><span class="stat-label">Directories</span><span id="stat-dirs" class="stat-value">—</span></div>
-          <div class="stat-row"><span class="stat-label">Total Size</span><span id="stat-size" class="stat-value">—</span></div>
-          <div class="stat-row"><span class="stat-label">Scan Time</span><span id="stat-time" class="stat-value">—</span></div>
+            <aside id="detail-panel">
+                <div class="card">
+                    <h3>Scan Summary</h3>
+                    <div id="stats-content">
+                        <div class="stat-row">
+                            <span class="stat-label">Files</span
+                            ><span id="stat-files" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Directories</span
+                            ><span id="stat-dirs" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total Size</span
+                            ><span id="stat-size" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Scan Time</span
+                            ><span id="stat-time" class="stat-value">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Selection</h3>
+                    <div id="selection-content">
+                        <div class="stat-row">
+                            <span class="stat-label">Name</span
+                            ><span id="sel-name" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Size</span
+                            ><span id="sel-size" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Files</span
+                            ><span id="sel-files" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Type</span
+                            ><span id="sel-type" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Action</span
+                            ><span id="sel-action" class="stat-value"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card flex-grow">
+                    <h3>Top 100 Files</h3>
+                    <div id="topfiles-container</h3>">
+                        <table id="topfiles-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Path</th>
+                                    <th>Size</th>
+                                    <th style="width: 30px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="topfiles-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </aside>
         </div>
-      </div>
-      <div class="card">
-        <h3>🔍 Selection</h3>
-        <div id="selection-content">
-          <div class="stat-row"><span class="stat-label">Name</span><span id="sel-name" class="stat-value">—</span></div>
-          <div class="stat-row"><span class="stat-label">Size</span><span id="sel-size" class="stat-value">—</span></div>
-          <div class="stat-row"><span class="stat-label">Files</span><span id="sel-files" class="stat-value">—</span></div>
-          <div class="stat-row"><span class="stat-label">Type</span><span id="sel-type" class="stat-value">—</span></div>
-          <div class="stat-row"><span class="stat-label">Action</span><span id="sel-action" class="stat-value"></span></div>
-        </div>
-      </div>
-      <div class="card flex-grow">
-        <h3>🏆 Top 100 Files</h3>
-        <div id="topfiles-container">
-          <table id="topfiles-table">
-            <thead><tr><th>#</th><th>Path</th><th>Size</th><th style="width:30px"></th></tr></thead>
-            <tbody id="topfiles-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </aside>
-  </div>
 
-  <div id="progress-overlay">
-    <div class="progress-card">
-      <div class="spinner"></div>
-      <p>Scanning directory…</p>
-      <p id="progress-path"></p>
-    </div>
-  </div>
+        <!-- Diagram Panel -->
+        <div id="diagram-panel">
+            <div class="panel-header">
+                <h3 id="diagram-title">File Types</h3>
+                <div class="diagram-controls">
+                    <button class="diagram-mode active" data-mode="pie">
+                        Pie
+                    </button>
+                    <button class="diagram-mode" data-mode="treemap">
+                        Treemap
+                    </button>
+                </div>
+            </div>
+            <div id="diagram-container"></div>
+        </div>
 
-  <!-- Scripts — loaded at end so DOM renders first -->
-  <script src="tauri-api-bridge.js"></script>
-  <script src="virtualscroll.js"></script>
-  <script src="chunkloader.js"></script>
-  <script src="treeview.js"></script>
-  <script src="topfiles.js"></script>
-  <script src="stats.js"></script>
-  <script src="app.js"></script>
-  <script>
-    // Fallback: if after 10s the app hasn't initialised, show a visible error
-    setTimeout(function() {
-      var sb = document.querySelector('.status-bar');
-      if (sb && sb.textContent === 'Ready') {
-        sb.textContent = '⚠️ App is stuck — check console (Ctrl+Shift+I) for errors';
-        sb.style.color = '#f85149';
-      }
-    }, 10000);
-  </script>
-</body>
+        <!-- Progress Overlay -->
+        <div id="progress-overlay">
+            <div class="progress-card">
+                <div class="spinner"></div>
+                <p>Scanning directory...</p>
+                <p id="progress-path"></p>
+            </div>
+        </div>
+
+        <!-- About Dialog -->
+        <div id="about-overlay">
+            <div class="about-card">
+                <h2>DiskRaptor</h2>
+                <p class="about-version">v0.1.0</p>
+                <p class="about-desc">Ultra-fast directory scanner</p>
+                <p class="about-tech">Built with Rust + Tauri</p>
+                <p class="about-copy">2026 DiskRaptor Team</p>
+                <button id="btn-about-close">Close</button>
+            </div>
+        </div>
+
+        <script src="tauri-api-bridge.js"></script>
+        <script src="virtualscroll.js"></script>
+        <script src="chunkloader.js"></script>
+        <script src="treeview.js"></script>
+        <script src="topfiles.js"></script>
+        <script src="stats.js"></script>
+        <script src="diagrams.js"></script>
+        <script src="app.js"></script>
+        <script>
+            setTimeout(function () {
+                var sb = document.querySelector(".status-bar");
+                if (sb && sb.textContent === "Ready") {
+                    sb.textContent =
+                        "App is stuck - check console (Ctrl+Shift+I) for errors";
+                    sb.style.color = "#f85149";
+                }
+            }, 10000);
+        </script>
+    </body>
 </html>

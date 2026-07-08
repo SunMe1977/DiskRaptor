@@ -26,6 +26,10 @@
         "scope": ["**"]
       }
     },
+    "systemTray": {
+      "iconPath": "icons/128x128.png",
+      "iconAsTemplate": true
+    },
     "bundle": {
       "active": true,
       "identifier": "com.diskraptor.app",
