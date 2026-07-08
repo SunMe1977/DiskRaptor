@@ -52,20 +52,21 @@ fn main() {
                 _ => {}
             }
         })
-        .on_system_tray_event(|app, event| match event {
-            tauri::SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
-                "tray_open" => {
-                    if let Some(window) = app.get_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+        .on_system_tray_event(|app, event| {
+            if let tauri::SystemTrayEvent::MenuItemClick { id, .. } = event {
+                match id.as_str() {
+                    "tray_open" => {
+                        if let Some(window) = app.get_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
                     }
+                    "tray_quit" => {
+                        std::process::exit(0);
+                    }
+                    _ => {}
                 }
-                "tray_quit" => {
-                    std::process::exit(0);
-                }
-                _ => {}
-            },
-            _ => {}
+            }
         })
         .setup(|app| {
             // Maximize the main window after creation

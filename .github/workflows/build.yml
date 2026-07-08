@@ -49,6 +49,9 @@ jobs:
         with:
           cache: false
           components: clippy, rustfmt
+      - name: Clean stale build artifacts
+        run: |
+          rm -rf target src-tauri/target
       - run: cargo fmt --all --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml
 
@@ -141,6 +144,11 @@ jobs:
             npm install
           fi
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+      - name: Clean stale build artifacts
+        run: |
+          rm -rf target src-tauri/target
       - name: Install Linux dependencies
         run: |
           sudo apt-get update -qq
