@@ -15,16 +15,13 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy, rustfmt
       - run: cargo fmt --all --check
-        continue-on-error: true
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml
-        continue-on-error: true
 
   # ── Windows Build ─────────────────────────────────────
   build-windows:
@@ -36,26 +33,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
-      - run: npm install 2>&1 || npm ci 2>&1 || true
+      - name: Install Node dependencies
+        run: |
+          if (Test-Path package-lock.json) {
+            npm ci
+          } else {
+            npm install
+          }
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Build binary
-        continue-on-error: true
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
       - name: Bundle MSI
-        continue-on-error: true
         run: |
           cd src-tauri
-          npx tauri build --bundles msi --ci --verbose 2>&1 || echo 'MSI bundle done'
+          npx tauri build --bundles msi --ci --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: release-Windows
           compression-level: 0
           path: |
             src-tauri/target/release/diskraptor.exe
-            target/release/diskraptor.exe
-            src-tauri/target/release/bundle/
-            target/release/bundle/
-          if-no-files-found: warn
+            src-tauri/target/release/bundle/msi/**/*.msi
+          if-no-files-found: error
           retention-days: 7
 
   # ── macOS Build ───────────────────────────────────────
@@ -64,32 +63,32 @@ jobs:
     needs: [lint]
     runs-on: macos-latest
     timeout-minutes: 30
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
-      - run: npm install 2>&1 || npm ci 2>&1 || true
+      - name: Install Node dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Build binary
-        continue-on-error: true
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
       - name: Bundle DMG
-        continue-on-error: true
         run: |
           cd src-tauri
-          npx tauri build --bundles dmg --ci --verbose 2>&1 || \
-          npx tauri build --ci --verbose 2>&1 || echo 'DMG bundle done'
+          npx tauri build --bundles dmg --ci --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: release-macOS
           compression-level: 0
           path: |
             src-tauri/target/release/diskraptor
-            target/release/diskraptor
-            src-tauri/target/release/bundle/
-            target/release/bundle/
-          if-no-files-found: warn
+            src-tauri/target/release/bundle/dmg/**/*.dmg
+          if-no-files-found: error
           retention-days: 7
 
   # ── Linux Build ───────────────────────────────────────
@@ -98,40 +97,61 @@ jobs:
     needs: [lint]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
-      - run: npm install 2>&1 || npm ci 2>&1 || true
+      - name: Install Node dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Install Linux dependencies
-        continue-on-error: true
         run: |
-          sudo apt-get update -qq 2>&1 || true
-          for pkg in libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
-            libfuse2 libayatana-appindicator3-dev libappindicator3-dev; do
-            sudo apt-get install -y -qq $pkg 2>&1 || true
-          done 2>&1 || true
+          sudo apt-get update -qq
+
+          # Tauri v1 may require either 4.0 or 4.1 depending on runner image.
+          if apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
+          elif apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libwebkit2gtk-4.0-dev
+          else
+            echo "No suitable WebKit2GTK dev package found" >&2
+            exit 1
+          fi
+
+          sudo apt-get install -y -qq \
+            libgtk-3-dev \
+            librsvg2-dev \
+            patchelf \
+            libayatana-appindicator3-dev \
+            libappindicator3-dev
+
+          if apt-cache show libfuse2 >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libfuse2
+          elif apt-cache show libfuse2t64 >/dev/null 2>&1; then
+            sudo apt-get install -y -qq libfuse2t64
+          else
+            echo "No suitable libfuse2 package found" >&2
+            exit 1
+          fi
       - name: Build binary
-        continue-on-error: true
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
       - name: Bundle AppImage
-        continue-on-error: true
         run: |
           cd src-tauri
-          npx tauri build --bundles appimage --ci --verbose 2>&1 || \
-          npx tauri build --ci --verbose 2>&1 || echo 'AppImage bundle done'
+          npx tauri build --bundles appimage --ci --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: release-Linux
           compression-level: 0
           path: |
             src-tauri/target/release/diskraptor
-            target/release/diskraptor
-            src-tauri/target/release/bundle/
-            target/release/bundle/
-          if-no-files-found: warn
+            src-tauri/target/release/bundle/appimage/**/*.AppImage
+          if-no-files-found: error
           retention-days: 7
 
   # ── Create GitHub Release (only for tags) ─────────────────
@@ -147,8 +167,19 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-          merge-multiple: true
+          name: release-Windows
+          path: artifacts/windows
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-macOS
+          path: artifacts/macos
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-Linux
+          path: artifacts/linux
+          
 
       - name: Prepare release assets
         run: |
@@ -156,7 +187,7 @@ jobs:
           echo "=== All downloaded files ==="
           find artifacts -type f 2>/dev/null | sort
 
-          for f in artifacts/* artifacts/**/* 2>/dev/null; do
+          for f in $(find artifacts -type f); do
             [ ! -f "$f" ] && continue
             base=$(basename "$f")
             case "$base" in
@@ -188,7 +219,17 @@ jobs:
                 ;;
             esac
           done
-          ls -lh release_assets/ 2>/dev/null || echo "  (empty)"
+
+      - name: Validate required release files
+        run: |
+          ls -lh release_assets/
+
+          test -f release_assets/DiskRaptor-Windows-x64.exe
+          test -n "$(find release_assets -maxdepth 1 -name '*.msi' -print -quit)"
+          test -n "$(find release_assets -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$(find release_assets -maxdepth 1 -name '*.AppImage' -print -quit)"
+
+          echo "All required artifacts are present (.exe, .msi, .dmg, .AppImage)."
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
