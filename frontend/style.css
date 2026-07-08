@@ -218,22 +218,6 @@ button.icon-btn {
     min-width: 32px;
     justify-content: center;
 }
-#btn-browse::before {
-    content: "\u{1F4C1}";
-    font-size: 14px;
-}
-#btn-scan::before {
-    content: "\u{1F50D}";
-    font-size: 14px;
-}
-#btn-cancel::before {
-    content: "\u2716";
-    font-size: 14px;
-}
-#btn-export::before {
-    content: "\u{1F4E5}";
-    font-size: 14px;
-}
 
 /* ═══════════════════════════════════════════════════════════════
    LAYOUT
