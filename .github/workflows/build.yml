@@ -49,4 +49,48 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --release -- --nocapture --test-threads=1
         timeout-minutes: 3
       - name: Build Tauri app
-        run: npx tauri build
+        run: npx tauri build --bundles ${{ matrix.os == 'windows-latest' && 'msi' || matrix.os == 'macos-latest' && 'dmg' || 'AppImage' }}
+
+      # Upload artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.os }}
+          path: |
+            target/release/bundle/
+            src-tauri/target/release/bundle/
+          if-no-files-found: warn
+          retention-days: 7
+
+  release:
+    name: Create Release
+    if: github.ref_type == 'tag'
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Organize and release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: DiskRaptor ${{ github.ref_name }}
+          body: |
+            ## 🦅 DiskRaptor ${{ github.ref_name }}
+
+            Automated release build.
+
+            ### Downloads
+
+            | Platform | Bundle |
+            |----------|--------|
+            | Windows | `.msi` |
+            | macOS | `.dmg` |
+            | Linux | `.AppImage` |
+          files: artifacts/**
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
