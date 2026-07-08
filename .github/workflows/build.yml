@@ -53,7 +53,7 @@ jobs:
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.0-dev librsvg2-dev
       - name: Build Tauri app
-        run: npx tauri build --bundles ${{ matrix.bundle }}
+        run: npm run tauri build -- --bundles ${{ matrix.bundle }}
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.os }}
