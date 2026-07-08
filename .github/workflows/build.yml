@@ -3,7 +3,7 @@
 # Builds, tests, and packages for Windows, macOS, and Linux on every push.
 # On tagged releases (v*), also creates a GitHub Release with artifacts.
 
-name: Build & Release
+name: Build and Release
 
 on:
   push:
