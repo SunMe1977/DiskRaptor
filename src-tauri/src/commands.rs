@@ -243,7 +243,7 @@ pub fn get_children(scan_id: String, node_index: u32) -> Result<Vec<TreeNode>, S
         children.push(state.arena.nodes[child as usize].clone());
         child = state.arena.nodes[child as usize].next_sibling;
     }
-    children.sort_unstable_by(|a, b| b.size.cmp(&a.size));
+    children.sort_unstable_by_key(|b| std::cmp::Reverse(b.size));
     Ok(children)
 }
 

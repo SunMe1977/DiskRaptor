@@ -86,7 +86,8 @@ pub fn scan_dir(root: &str) -> (u64, u64) {
             }
             let _ = FindClose(h);
         }
-        if (files + dirs) % 50000 == 0 && files + dirs > 0 {
+        #[allow(clippy::manual_is_multiple_of)]
+        if (files + dirs) > 0 && (files + dirs) % 50000 == 0 {
             eprintln!("[progress] files={} dirs={}", files, dirs);
         }
     }

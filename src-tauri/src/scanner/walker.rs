@@ -59,7 +59,7 @@ impl TopFilesAccum {
             size,
             size_human: format_size(size),
         });
-        files.sort_unstable_by(|a, b| b.size.cmp(&a.size));
+        files.sort_unstable_by_key(|b| std::cmp::Reverse(b.size));
         if files.len() > max_count {
             files.truncate(max_count);
         }
@@ -81,6 +81,7 @@ impl Default for FileTypeAccum {
     }
 }
 impl FileTypeAccum {
+    #[allow(dead_code)]
     fn add(&self, path: &str, size: u64) {
         let ext = Path::new(path)
             .extension()
@@ -103,7 +104,7 @@ impl FileTypeAccum {
                 size_human: format_size(s),
             })
             .collect();
-        r.sort_unstable_by(|a, b| b.total_size.cmp(&a.total_size));
+        r.sort_unstable_by_key(|b| std::cmp::Reverse(b.total_size));
         r
     }
 }
