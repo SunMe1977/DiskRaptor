@@ -52,15 +52,19 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.0-dev librsvg2-dev
-      - name: Build and bundle
+      - name: Build binary
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - name: Bundle app (best-effort)
         continue-on-error: true
-        run: npx tauri build --bundles ${{ matrix.bundle }} --ci --verbose 2>&1 || echo 'Build completed with warnings'
+        run: npx tauri build --bundles ${{ matrix.bundle }} --ci --verbose 2>&1 || echo 'Bundle skipped for this platform'
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.os }}
           path: |
             target/release/bundle/
             src-tauri/target/release/bundle/
+            target/release/diskraptor*
+            src-tauri/target/release/diskraptor*
           if-no-files-found: warn
           retention-days: 7
 
