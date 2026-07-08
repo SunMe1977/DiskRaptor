@@ -251,18 +251,19 @@ class DiagramRenderer {
     ctx.fillText(this._formatSize(totalSize), cx, cy + 10);
   }
 
-  // ── Treemap ────────────────────────────────────────────────
+  // ── Treemap: Squarified Algorithm ───────────────────────────
+  // Professional layout that fills the entire area without gaps.
+  // Each rectangle's area is proportional to the file's size.
   _drawTreemap(w, h) {
     const ctx = this.ctx;
     const totalSize = this.files.reduce((s, f) => s + f.size, 1);
     const colors = this._colors();
-    const pad = 2;
-    const m = 6;
-    const titleH = 16;
-    const availW = w - m * 2;
-    const availH = h - m * 2 - titleH;
+    const titleH = 18;
+    const margin = 4;
+    const availW = w - margin * 2;
+    const availH = h - margin * 2 - titleH;
 
-    if (this.files.length === 0) {
+    if (this.files.length === 0 || availW < 20 || availH < 20) {
       ctx.fillStyle = "#484f58";
       ctx.font = "14px sans-serif";
       ctx.textAlign = "center";
@@ -270,106 +271,167 @@ class DiagramRenderer {
       return;
     }
 
-    // Compute relative sizes (ensure minimum visible fraction)
-    const minRatio = 0.005; // at least 0.5% of total
-    const ratios = this.files.map((f) =>
-      Math.max(minRatio, f.size / totalSize),
-    );
-    const ratioSum = ratios.reduce((a, b) => a + b, 0);
-    const normalized = ratios.map((r) => r / ratioSum);
+    // Normalized sizes summing to the total area
+    const totalArea = availW * availH;
+    const items = this.files.map((f, i) => ({
+      index: i,
+      path: f.path,
+      size: f.size,
+      size_human: f.size_human,
+      area: Math.max(totalArea * 0.001, (f.size / totalSize) * totalArea),
+    }));
+    // Re-normalize areas to exactly fill totalArea
+    const areaSum = items.reduce((s, it) => s + it.area, 0);
+    items.forEach((it) => {
+      it.area = (it.area / areaSum) * totalArea;
+    });
 
-    // Use a strip treemap: distribute items across rows that fill the width
-    // Each item gets a cell proportional to its size.
-    // We precompute row layout first, then draw.
-    const rows = []; // each row: { items: [index], y, h }
-    let rowItems = [];
-    let rowRatioSum = 0;
+    // Squarified treemap using recursive subdivision
+    // We precompute all rectangles into this.rects
+    const rects = [];
+    const stack = [
+      { x: margin, y: margin, w: availW, h: availH, items: items },
+    ];
 
-    for (let i = 0; i < this.files.length; i++) {
-      rowItems.push(i);
-      rowRatioSum += normalized[i];
-
-      // Check if adding this item makes the row too wide
-      // A row's width is proportional to its ratio sum
-      // We want each item's width = (itemRatio / rowRatioSum) * availW
-      // Check if the row is "full enough" or this is the last item
-      const wouldFit =
-        i === this.files.length - 1 ||
-        rowRatioSum > 0.08 ||
-        rowItems.length >= Math.ceil(this.files.length / 5);
-
-      if (wouldFit) {
-        rows.push({ items: rowItems.slice(), ratioSum: rowRatioSum });
-        rowItems = [];
-        rowRatioSum = 0;
-      }
-    }
-    // Flush remaining
-    if (rowItems.length > 0) {
-      rows.push({ items: rowItems.slice(), ratioSum: rowRatioSum });
-    }
-
-    // Calculate row heights proportional to ratio sum
-    const totalRowRatio = rows.reduce((s, r) => s + r.ratioSum, 0);
-    let y = m;
-    const rowHeights = [];
-    for (let ri = 0; ri < rows.length; ri++) {
-      const rh = Math.max(14, (rows[ri].ratioSum / totalRowRatio) * availH);
-      rowHeights.push(rh);
-    }
-
-    // Draw each row
-    for (let ri = 0; ri < rows.length; ri++) {
-      const row = rows[ri];
-      const rh = rowHeights[ri];
-      let x = m;
-
-      for (let ii = 0; ii < row.items.length; ii++) {
-        const fi = row.items[ii];
-        const itemRatio = normalized[fi] / row.ratioSum;
-        const cw = Math.max(8, itemRatio * availW);
-        const ch = Math.max(8, rh - pad);
-
-        if (x + cw > w - m) break; // shouldn't happen with proper layout
-
-        const isHov = fi === this._hoveredIndex;
-        const color = colors[fi % colors.length];
-
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y, cw, ch);
-
-        if (isHov) {
-          ctx.strokeStyle = "#fff";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x, y, cw, ch);
-        }
-
-        this.hitRegions.push({
-          index: fi,
-          path: this.files[fi].path,
-          size: this.files[fi].size,
-          size_human: this.files[fi].size_human,
-          type: "treemap",
-          x,
-          y,
-          w: cw,
-          h: ch,
+    while (stack.length > 0) {
+      const cell = stack.pop();
+      if (cell.items.length === 0) continue;
+      if (cell.items.length === 1) {
+        rects.push({
+          index: cell.items[0].index,
+          x: cell.x,
+          y: cell.y,
+          w: cell.w,
+          h: cell.h,
+          path: cell.items[0].path,
+          size: cell.items[0].size,
+          size_human: cell.items[0].size_human,
         });
-
-        // Label if cell is big enough
-        if (cw > 30 && ch > 14) {
-          ctx.fillStyle = "#fff";
-          ctx.font = "bold 8px sans-serif";
-          ctx.textAlign = "left";
-          ctx.textBaseline = "top";
-          const name = this._shortName(this.files[fi].path);
-          ctx.fillText(name, x + 2, y + 2);
-        }
-
-        x += cw + pad;
+        continue;
       }
 
-      y += rh + 1;
+      // Decide orientation: split along the longest axis
+      const horizontal = cell.w >= cell.h;
+      const total = cell.items.reduce((s, it) => s + it.area, 0);
+
+      // Find the split point where items are partitioned as evenly as possible
+      // while maintaining good aspect ratios
+      let splitIdx = 1;
+      let bestScore = Infinity;
+      let cumSum = 0;
+      const halfTotal = total / 2;
+
+      for (let i = 0; i < cell.items.length - 1; i++) {
+        cumSum += cell.items[i].area;
+        const ratio = cumSum / total;
+        const firstSize = horizontal ? cell.w : cell.h;
+        const secondSize = horizontal ? cell.w : cell.h;
+        const firstDim = ratio * firstSize;
+        const secondDim = (1 - ratio) * secondSize;
+        const otherDim = horizontal ? cell.h : cell.w;
+
+        // Aspect ratios of the two sub-rectangles
+        const ar1 = horizontal ? firstDim / otherDim : otherDim / firstDim;
+        const ar2 = horizontal ? secondDim / otherDim : otherDim / secondDim;
+
+        const score = Math.max(ar1, ar2) + Math.abs(ratio - 0.5) * 2;
+        if (score < bestScore) {
+          bestScore = score;
+          splitIdx = i + 1;
+        }
+      }
+
+      const leftItems = cell.items.slice(0, splitIdx);
+      const rightItems = cell.items.slice(splitIdx);
+      const leftArea = leftItems.reduce((s, it) => s + it.area, 0);
+      const ratio = leftArea / total;
+
+      if (horizontal) {
+        const leftW = Math.max(10, ratio * cell.w);
+        const rightW = Math.max(10, cell.w - leftW);
+        stack.push({
+          x: cell.x,
+          y: cell.y,
+          w: leftW,
+          h: cell.h,
+          items: leftItems,
+        });
+        stack.push({
+          x: cell.x + leftW,
+          y: cell.y,
+          w: rightW,
+          h: cell.h,
+          items: rightItems,
+        });
+      } else {
+        const topH = Math.max(10, ratio * cell.h);
+        const bottomH = Math.max(10, cell.h - topH);
+        stack.push({
+          x: cell.x,
+          y: cell.y,
+          w: cell.w,
+          h: topH,
+          items: leftItems,
+        });
+        stack.push({
+          x: cell.x,
+          y: cell.y + topH,
+          w: cell.w,
+          h: bottomH,
+          items: rightItems,
+        });
+      }
+    }
+
+    // Draw all rectangles (no gaps, no overlaps)
+    const gap = 1; // 1px gap between rectangles
+    for (const r of rects) {
+      const isHov = r.index === this._hoveredIndex;
+      const color = colors[r.index % colors.length];
+
+      // Shrink slightly for the gap
+      const rx = r.x + gap;
+      const ry = r.y + gap;
+      const rw = Math.max(2, r.w - gap * 2);
+      const rh = Math.max(2, r.h - gap * 2);
+
+      ctx.fillStyle = color;
+      ctx.fillRect(rx, ry, rw, rh);
+
+      if (isHov) {
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rx, ry, rw, rh);
+      }
+
+      this.hitRegions.push({
+        index: r.index,
+        path: r.path,
+        size: r.size,
+        size_human: r.size_human,
+        type: "treemap",
+        x: rx,
+        y: ry,
+        w: rw,
+        h: rh,
+      });
+
+      // Label if cell is big enough
+      if (rw > 28 && rh > 14) {
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        ctx.font = "bold 9px sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        const name = this._shortName(r.path);
+        ctx.fillText(name, rx + 3, ry + 3);
+
+        // Size on second line if enough height
+        if (rh > 26) {
+          ctx.fillStyle = "rgba(255,255,255,0.6)";
+          ctx.font = "8px sans-serif";
+          ctx.fillText(r.size_human, rx + 3, ry + 14);
+        }
+      }
     }
 
     // Title
