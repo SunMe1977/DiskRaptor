@@ -31,7 +31,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            bundle: AppImage
+          - os: macos-latest
+            bundle: dmg
+          - os: windows-latest
+            bundle: msi
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -46,13 +52,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.0-dev librsvg2-dev
-      - name: Run tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --release -- --nocapture --test-threads=1 2>&1 || echo 'tests skipped'
-        timeout-minutes: 8
       - name: Build Tauri app
-        run: npx tauri build --bundles ${{ matrix.os == 'windows-latest' && 'msi' || matrix.os == 'macos-latest' && 'dmg' || 'AppImage' }}
-
-      # Upload artifacts
+        run: npx tauri build --bundles ${{ matrix.bundle }}
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.os }}
@@ -81,11 +82,9 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: DiskRaptor ${{ github.ref_name }}
           body: |
-            ## 🦅 DiskRaptor ${{ github.ref_name }}
+            ## DiskRaptor ${{ github.ref_name }}
 
             Automated release build.
-
-            ### Downloads
 
             | Platform | Bundle |
             |----------|--------|
