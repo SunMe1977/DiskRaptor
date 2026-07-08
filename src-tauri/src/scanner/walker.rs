@@ -3,6 +3,7 @@ use anyhow::Result;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
+#[cfg(windows)]
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -113,6 +114,7 @@ pub struct ScanResult {
 
 /// A single file entry collected during parallel scanning.
 /// Phase 1 produces these, Phase 2 builds the tree from them.
+#[cfg(windows)]
 #[derive(Debug, Clone)]
 struct FileEntry {
     full_path: String,
@@ -390,6 +392,8 @@ mod platform {
         }
 
         // ── Phase 2: Tree building (sequential) ─────────────
+        progress(files_found.load(Ordering::Relaxed), 0, "Building tree...");
+
         // Drain entries via lock (safe even if Arc is still referenced)
         let entries: Vec<FileEntry> = all_entries.lock().drain(..).collect();
         let total_count = entries.len() as u64 + 1; // +1 for root
@@ -417,7 +421,18 @@ mod platform {
         path_to_idx.insert(root_path.to_string(), root_idx);
         let mut lc: HashMap<u32, u32> = HashMap::new();
 
-        for entry in &entries {
+        let total_entries = entries.len();
+        for (ei, entry) in entries.iter().enumerate() {
+            if ei % 100000 == 0 && ei > 0 {
+                progress(
+                    files_found.load(Ordering::Relaxed),
+                    0,
+                    &format!(
+                        "Building tree... {:.0}%",
+                        (ei as f64 / total_entries as f64) * 100.0
+                    ),
+                );
+            }
             let pi = *path_to_idx.get(&entry.parent_path).unwrap_or(&root_idx);
             if entry.is_dir {
                 let ci = arena.alloc(TreeNode {
