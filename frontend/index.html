@@ -177,13 +177,20 @@
         <script src="splitter.js"></script>
         <script src="app.js"></script>
         <script>
-            setTimeout(function () {
-                var sb = document.querySelector(".status-bar");
-                if (sb && sb.textContent === "Ready") {
-                    sb.textContent = "App is stuck - check console for errors";
-                    sb.style.color = "#f85149";
+            // If Tauri bridge isn't ready after 12s, show a hint
+            var stuckTimer = setTimeout(function () {
+                if (typeof window.__TAURI__?.invoke !== "function") {
+                    var sb = document.querySelector(".status-bar");
+                    if (sb && sb.textContent === "Ready") {
+                        sb.textContent = "App is stuck - check console for errors";
+                        sb.style.color = "#f85149";
+                    }
                 }
-            }, 10000);
+            }, 12000);
+            // Clear the timer once bridge is ready
+            var clearStuck = function () { clearTimeout(stuckTimer); };
+            if (window.__TAURI__?.invoke) clearStuck();
+            else document.addEventListener("tauri-bridge-ready", clearStuck, { once: true });
         </script>
     </body>
 </html>

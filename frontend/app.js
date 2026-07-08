@@ -386,9 +386,21 @@
     });
   }
 
+  // Wrap init in a global error handler
+  function safeInit() {
+    init().catch(function (err) {
+      console.error("DiskRaptor init failed:", err);
+      var sb = document.querySelector(".status-bar");
+      if (sb) {
+        sb.textContent = "Init error: " + err.message;
+        sb.style.color = "#f85149";
+      }
+    });
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", safeInit);
   } else {
-    init();
+    safeInit();
   }
 })();
