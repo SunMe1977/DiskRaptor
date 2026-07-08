@@ -65,7 +65,7 @@
     var aboutOverlay = document.getElementById("about-overlay");
     var aboutClose = document.getElementById("btn-about-close");
 
-    // Diagram mode switcher
+    // Diagram mode switcher (in detail panel)
     var diagramModes = document.querySelectorAll(".diagram-mode");
     diagramModes.forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -85,26 +85,20 @@
       if (e.target === aboutOverlay) aboutOverlay.classList.remove("active");
     });
 
-    // Listen for menu events from Tauri
+    // Menu events from Tauri
     if (window.__TAURI__ && window.__TAURI__.event) {
       try {
-        window.__TAURI__.event.listen("menu-view-pie", function () {
-          diagramModes.forEach(function (b) {
-            b.classList.remove("active");
+        ["pie", "treemap"].forEach(function (mode) {
+          window.__TAURI__.event.listen("menu-view-" + mode, function () {
+            document.querySelectorAll(".diagram-mode").forEach(function (b) {
+              b.classList.remove("active");
+            });
+            var btn = document.querySelector(
+              '.diagram-mode[data-mode="' + mode + '"]',
+            );
+            if (btn) btn.classList.add("active");
+            diagram.setMode(mode);
           });
-          document
-            .querySelector('.diagram-mode[data-mode="pie"]')
-            .classList.add("active");
-          diagram.setMode("pie");
-        });
-        window.__TAURI__.event.listen("menu-view-treemap", function () {
-          diagramModes.forEach(function (b) {
-            b.classList.remove("active");
-          });
-          document
-            .querySelector('.diagram-mode[data-mode="treemap"]')
-            .classList.add("active");
-          diagram.setMode("treemap");
         });
         window.__TAURI__.event.listen("menu-about", function () {
           aboutOverlay.classList.add("active");

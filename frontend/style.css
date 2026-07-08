@@ -68,7 +68,7 @@ body {
     background: var(--bg-hover);
 }
 
-/* Toolbar */
+/* ── Toolbar ──────────────────────────────────────────────────────────── */
 #toolbar {
     display: flex;
     align-items: center;
@@ -148,21 +148,21 @@ button.primary:hover:not(:disabled) {
     gap: 8px;
 }
 
-/* Main Layout */
+/* ── Main Layout ──────────────────────────────────────────────────────── */
 #main-layout {
     display: flex;
-    height: calc(100vh - var(--toolbar-height) - 200px);
+    height: calc(100vh - var(--toolbar-height));
     overflow: hidden;
 }
 
-/* Tree Panel */
+/* ── Tree Panel ───────────────────────────────────────────────────────── */
 #tree-panel {
     flex: 1;
     display: flex;
     flex-direction: column;
     background: var(--bg-primary);
-    border-right: 1px solid var(--border);
-    min-width: 320px;
+    min-width: 200px;
+    overflow: hidden;
 }
 
 .panel-header {
@@ -172,6 +172,7 @@ button.primary:hover:not(:disabled) {
     padding: 10px 16px;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
 }
 .panel-header h2,
 .panel-header h3 {
@@ -192,20 +193,18 @@ button.primary:hover:not(:disabled) {
     overflow: hidden;
     position: relative;
 }
-
 #tree-scroll {
     height: 100%;
     overflow-y: auto;
     overflow-x: auto;
     position: relative;
 }
-
 #tree-viewport {
     position: relative;
     min-width: 100%;
 }
 
-/* Tree node rows */
+/* Tree rows */
 .tree-row {
     display: flex;
     align-items: center;
@@ -282,25 +281,48 @@ button.primary:hover:not(:disabled) {
     color: var(--text-secondary);
     background: var(--bg-secondary);
     border-top: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
-/* Detail Panel */
+/* ── Resizable Splitter ───────────────────────────────────────────────── */
+#splitter {
+    width: 5px;
+    cursor: col-resize;
+    background: var(--border);
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+#splitter:hover {
+    background: var(--accent);
+}
+
+/* ── Detail Panel (scrollable) ────────────────────────────────────────── */
 #detail-panel {
-    width: 380px;
+    width: 400px;
+    min-width: 280px;
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary);
+    overflow: hidden;
+}
+
+.detail-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
     display: flex;
     flex-direction: column;
     gap: 1px;
-    background: var(--bg-secondary);
-    overflow-y: auto;
-    padding: 12px;
 }
 
+/* Cards */
 .card {
     background: var(--bg-primary);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 12px;
-    margin-bottom: 1px;
+    flex-shrink: 0;
 }
 .card h3 {
     font-size: 13px;
@@ -312,11 +334,61 @@ button.primary:hover:not(:disabled) {
 }
 .card.flex-grow {
     flex: 1;
-    min-height: 200px;
+    min-height: 180px;
     display: flex;
     flex-direction: column;
 }
 
+/* Chart card */
+.chart-card {
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+}
+.chart-card .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+.chart-card .chart-header h3 {
+    margin-bottom: 0;
+}
+#diagram-container {
+    flex: 1;
+    min-height: 180px;
+    overflow: hidden;
+    position: relative;
+}
+#diagram-container canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* Diagram mode buttons */
+.diagram-controls {
+    display: flex;
+    gap: 4px;
+}
+.diagram-mode {
+    padding: 2px 10px;
+    font-size: 11px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.diagram-mode.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+/* Stats & Selection */
 .stat-row {
     display: flex;
     justify-content: space-between;
@@ -337,13 +409,12 @@ button.primary:hover:not(:disabled) {
     text-align: right;
 }
 
-/* Top Files Table */
+/* Top Files */
 #topfiles-container {
     flex: 1;
     overflow-y: auto;
     margin: 0 -12px -12px;
 }
-
 #topfiles-table {
     width: 100%;
     border-collapse: collapse;
@@ -380,49 +451,11 @@ button.primary:hover:not(:disabled) {
 #topfiles-table tbody td:nth-child(2) {
     max-width: 200px;
 }
-#topfiles-table tbody td:last-child {
+#topfiles-table tbody td:nth-child(3) {
     width: 80px;
     font-family: var(--font-mono);
     color: var(--accent-orange);
     text-align: right;
-}
-
-/* Diagram Panel */
-#diagram-panel {
-    height: 200px;
-    background: var(--bg-secondary);
-    border-top: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-}
-
-.diagram-controls {
-    display: flex;
-    gap: 4px;
-}
-
-.diagram-mode {
-    padding: 2px 10px;
-    font-size: 11px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    cursor: pointer;
-}
-.diagram-mode.active {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-}
-
-#diagram-container {
-    flex: 1;
-    overflow: hidden;
-}
-
-canvas {
-    display: block;
 }
 
 /* Progress Overlay */
@@ -518,20 +551,4 @@ canvas {
     color: var(--text-muted);
     font-size: 11px;
     margin-bottom: 20px;
-}
-
-/* Empty state */
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: var(--text-muted);
-    font-size: 16px;
-    gap: 8px;
-}
-.empty-state .big-icon {
-    font-size: 48px;
-    opacity: 0.3;
 }
