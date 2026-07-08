@@ -508,7 +508,12 @@ class TreeView {
 
   _updateSelection() {
     const node = this.loader.getNode(this.selectedIndex);
-    if (!node) return;
+    if (!node) {
+      document.querySelectorAll(".sel-action").forEach(function (b) {
+        b.disabled = true;
+      });
+      return;
+    }
     document.getElementById("sel-name").textContent = node.name || "(root)";
     document.getElementById("sel-size").textContent = this._formatSize(
       node.size,
@@ -520,8 +525,24 @@ class TreeView {
     document.getElementById("sel-type").textContent = isDir
       ? "Directory"
       : "File";
-    document.getElementById("sel-action").textContent =
-      "Right-click for options";
+    // Enable action buttons and attach click handlers
+    var path = this._buildPath(this.selectedIndex);
+    var self = this;
+    document.querySelectorAll(".sel-action").forEach(function (btn) {
+      btn.disabled = false;
+      btn._path = path;
+      btn._nodeIdx = self.selectedIndex;
+      // Replace click handler
+      btn.onclick = function (e) {
+        var action = this.dataset.action;
+        var idx = this._nodeIdx;
+        if (action === "explorer") self._handleExplorer(idx);
+        else if (action === "terminal") self._handleTerminal(idx);
+        else if (action === "properties") self._handleProperties(idx);
+        else if (action === "copy") self._handleCopyPath(idx);
+        else if (action === "delete") self._handleDelete(idx);
+      };
+    });
   }
 
   _formatSize(bytes) {

@@ -101,24 +101,27 @@
                     <h3>Selection</h3>
                     <div id="selection-content">
                         <div class="stat-row">
-                            <span class="stat-label">Name</span
+                            <span class="stat-label"><span class="stat-icon">📄</span> Name</span
                             ><span id="sel-name" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Size</span
+                            <span class="stat-label"><span class="stat-icon">💾</span> Size</span
                             ><span id="sel-size" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Files</span
+                            <span class="stat-label"><span class="stat-icon">📂</span> Files</span
                             ><span id="sel-files" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Type</span
+                            <span class="stat-label"><span class="stat-icon">🏷️</span> Type</span
                             ><span id="sel-type" class="stat-value">-</span>
                         </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Action</span
-                            ><span id="sel-action" class="stat-value"></span>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
+                            <button class="sel-action" data-action="explorer" title="Open in Explorer" disabled>📂</button></button>
+                            <button class="sel-action" data-action="terminal" title="Open Terminal" disabled>💻</button>
+button>                            <button class="sel-action" data-action="properties" title="Properties" disabled>⚙</button>️</button>
+                            <button class="sel-action" data-action="copy" title="Copy Path" disabled>📋<</button>/button>
+                            <button class="sel-action" data-action="delete" title="Delete" disabled style="color:var(--accent-red);">🗑️</button>
                         </div>
                     </div>
                 </div>
