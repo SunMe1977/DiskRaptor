@@ -1,5 +1,5 @@
 /**
- * TopFiles — Renders the top 100 files table with optional delete buttons.
+ * TopFiles — Renders the top 50 files table with optional delete buttons.
  * Displays rank, path, size, and action columns with a header row.
  */
 class TopFilesPanel {
@@ -36,7 +36,7 @@ class TopFilesPanel {
       return;
     }
 
-    for (var i = 0; i < Math.min(topFiles.length, 100); i++) {
+    for (var i = 0; i < Math.min(topFiles.length, 50); i++) {
       var entry = topFiles[i];
       var tr = document.createElement("tr");
 
