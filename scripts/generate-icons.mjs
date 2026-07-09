@@ -9,7 +9,7 @@ import sharp from "sharp";
 import fs from "fs";
 import path from "path";
 
-const INPUT = "raw/logo4.png";
+const INPUT = "raw/logo6.png";
 const OUT_DIR = "src-tauri/icons";
 
 const SIZES = [32, 128, 256];

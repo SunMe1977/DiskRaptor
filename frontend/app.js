@@ -100,6 +100,99 @@
       if (e.target === aboutOverlay) aboutOverlay.classList.remove("active");
     });
 
+    // ── Language Switcher ──────────────────────────────────
+    (function initLangSwitcher() {
+      var btnLang = document.getElementById("btn-lang");
+      var langMenu = document.getElementById("lang-menu");
+      var langList = document.getElementById("lang-list");
+      var langFilter = document.getElementById("lang-filter");
+
+      function renderLangs(filter) {
+        filter = (filter || "").toLowerCase();
+        var current = window.I18N.getLocale().raw;
+        var html = "";
+        // Auto (System) entry
+        var autoActive = current === "auto" ? ' class="lang-item active"' : "";
+        html +=
+          '<button data-lang="auto"' +
+          autoActive +
+          ' class="lang-item"><span class="lang-flag">🖥️</span> <span>' +
+          window.__("lang.auto") +
+          '</span> <span class="lang-code">auto</span></button>';
+        html += '<hr style="border:none;border-top:1px solid var(--border-light);margin:4px 0">';
+
+        window.I18N.LANGUAGES.forEach(function (lang) {
+          if (filter && !lang.label.toLowerCase().includes(filter) && !lang.code.includes(filter)) return;
+          var active = current === lang.code ? ' class="lang-item active"' : "";
+          html +=
+            '<button data-lang="' +
+            lang.code +
+            '"' +
+            active +
+            ' class="lang-item"><span class="lang-flag">' +
+            lang.flag +
+            '</span> <span>' +
+            lang.label +
+            '</span> <span class="lang-code">' +
+            lang.code +
+            "</span></button>";
+        });
+        langList.innerHTML = html;
+
+        // Click handlers
+        langList.querySelectorAll(".lang-item").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var code = this.getAttribute("data-lang");
+            window.I18N.setLocale(code);
+            langMenu.classList.remove("active");
+            // Emit event to Rust backend for menu label update
+            if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.emit) {
+              try {
+                window.__TAURI__.event.emit("lang-changed", { locale: code });
+              } catch (e) { /* ignore */ }
+            }
+          });
+        });
+      }
+
+      btnLang.addEventListener("click", function (e) {
+        e.stopPropagation();
+        langMenu.classList.toggle("active");
+        if (langMenu.classList.contains("active")) {
+          langFilter.value = "";
+          renderLangs("");
+          langFilter.focus();
+        }
+      });
+
+      // Filter on input
+      langFilter.addEventListener("input", function () {
+        renderLangs(this.value);
+      });
+
+      // Close on outside click
+      document.addEventListener("click", function (e) {
+        if (!e.target.closest(".lang-dropdown-wrap")) {
+          langMenu.classList.remove("active");
+        }
+      });
+
+      // Close on Escape
+      langFilter.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          langMenu.classList.remove("active");
+          btnLang.focus();
+        }
+      });
+
+      // Re-render on locale change (for the "auto" label update)
+      window.addEventListener("locale-changed", function () {
+        if (langMenu.classList.contains("active")) {
+          renderLangs(langFilter.value);
+        }
+      });
+    })();
+
     // Menu events from Tauri
     if (window.__TAURI__ && window.__TAURI__.event) {
       try {
@@ -118,10 +211,34 @@
         window.__TAURI__.event.listen("menu-about", function () {
           aboutOverlay.classList.add("active");
         });
+        // Language menu events from native menu
+        window.I18N.LANGUAGES.forEach(function (lang) {
+          var eventName = "menu-lang-" + lang.code;
+          window.__TAURI__.event.listen(eventName, function () {
+            window.I18N.setLocale(lang.code);
+          });
+        });
+        window.__TAURI__.event.listen("menu-lang-auto", function () {
+          window.I18N.setLocale("auto");
+        });
       } catch (e) {
         console.log("Menu events not available:", e.message);
       }
     }
+
+    // Update progress label on locale change
+    window.addEventListener("locale-changed", function () {
+      var label = document.getElementById("progress-label");
+      if (label && !label.textContent.includes("build") && !label.textContent.includes("chunk")) {
+        label.textContent = window.__("progress.files_found");
+      }
+      var elapsed = document.getElementById("progress-elapsed");
+      if (elapsed && elapsed.textContent) {
+        // Don't override running elapsed counter, just prefix
+        var txt = elapsed.textContent.replace(/^.+?: /, "");
+        elapsed.textContent = window.__("progress.elapsed") + txt;
+      }
+    });
 
     // Browse
     btnBrowse.addEventListener("click", async function () {

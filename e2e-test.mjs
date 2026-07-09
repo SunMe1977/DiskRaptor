@@ -16,7 +16,13 @@ import path from "node:path";
 import fs from "node:fs";
 
 const APP_DIR = path.resolve(".");
-const BINARY = path.join(APP_DIR, "target", "release", "diskraptor.exe");
+const BINARY = path.join(
+  APP_DIR,
+  "src-tauri",
+  "target",
+  "release",
+  "diskraptor.exe",
+);
 const TEST_PORT = "9222";
 let tp = null;
 
@@ -38,7 +44,7 @@ function startApp() {
         "--remote-debugging-port=" + TEST_PORT,
     };
     tp = spawn(BINARY, [], {
-      cwd: APP_DIR,
+      cwd: path.join(APP_DIR, "src-tauri", "target", "release"),
       env,
       stdio: ["pipe", "pipe", "pipe"],
     });

@@ -102,7 +102,9 @@
       tfSplit.addEventListener("mousedown", function (e) {
         tfDragging = true;
         tfStartY = e.clientY;
-        tfStartHeight = topfilesCard.offsetHeight;
+        // Use getBoundingClientRect for accurate height even when flex=1
+        tfStartHeight = topfilesCard.getBoundingClientRect().height;
+        if (tfStartHeight < 50) tfStartHeight = 150; // fallback
         tfSplit.classList.add("active");
         document.body.style.cursor = "row-resize";
         document.body.style.userSelect = "none";
@@ -110,12 +112,12 @@
 
       document.addEventListener("mousemove", function (e) {
         if (!tfDragging) return;
-        var dy = e.clientY - tfStartY;
-        var newHeight = tfStartHeight - dy; // invert: drag up = larger
-        newHeight = Math.max(
-          80,
-          Math.min(newHeight, detailPanel.offsetHeight - 250),
-        );
+        // Invert: drag down = topfiles larger, drag up = smaller
+        var dy = tfStartY - e.clientY;
+        var newHeight = tfStartHeight + dy;
+        // Clamp between 60px and available space minus 200px for stats
+        var maxH = Math.max(60, detailPanel.offsetHeight - 220);
+        newHeight = Math.max(60, Math.min(newHeight, maxH));
         topfilesCard.style.flex = "none";
         topfilesCard.style.height = newHeight + "px";
       });

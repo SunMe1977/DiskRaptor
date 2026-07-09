@@ -4,32 +4,44 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>DiskRaptor</title>
+</title>        <link rel="icon" type="image/x-icon" href="../src-tauri/icons/icon.ico" />
         <link rel="stylesheet" href="style.css" />
     </head>
     <body>
         <header id="toolbar">
             <div class="toolbar-left">
                 <h1 class="logo">
-                    <span class="logo-icon">🦖</span> DiskRaptor
+                    <span class="logo-icon">🦖</span> <span data-i18n="toolbar.title">DiskRaptor</span>
                 </h1>
             </div>
             <div class="toolbar-center">
                 <input
                     type="text"
                     id="scan-path"
+                    data-i18n-placeholder="scan.path.placeholder"
                     placeholder="Select or type a directory path..."
                     value="C:\dev\DiskRaptor"
                 />
-                <button id="btn-browse">📁 Browse</button>
-                <button id="btn-scan" class="primary">🔍 Scan</button>
-                <button id="btn-cancel" disabled>✖ Cancel</button>
+                <button id="btn-browse" data-i18n="btn.browse">📁 Browse</button>
+                <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
+                <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
-                <button id="btn-export" disabled>📥 Export</button>
+                <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
+                <div class="lang-dropdown-wrap">
+                    <button id="btn-lang" class="icon-btn" title="Language">🌐</button>
+                    <div id="lang-menu" class="lang-dropdown">
+                        <div class="lang-search">
+                            <input type="text" id="lang-filter" placeholder="🔍 Search language..." />
+                        </div>
+                        <div id="lang-list" class="lang-list"></div>
+                    </div>
+                </div>
                 <button
                     id="btn-theme"
                     class="icon-btn"
-                    title="Toggle dark/light mode"
+                    data-i18n-title="theme.toggle.dark"
+                    title="Switch to dark mode"
                 >
                     ☾
                 </button>
@@ -41,15 +53,15 @@
                 <!-- Tree on top -->
                 <section id="tree-panel">
                     <div class="panel-header">
-                        <h2>Directory Tree</h2>
-                        <span id="node-count" class="badge">0 nodes</span>
+                        <h2 data-i18n="tree.title">Directory Tree</h2>
+                        <span id="node-count" class="badge">0 <span data-i18n="tree.nodes">nodes</span></span>
                     </div>
                     <div id="tree-container">
                         <div id="tree-scroll">
                             <div id="tree-viewport"></div>
                         </div>
                     </div>
-                    <div id="tree-status" class="status-bar">Ready</div>
+                    <div id="tree-status" class="status-bar" data-i18n="tree.ready">Ready</div>
                 </section>
 
                 <!-- Horizontal splitter between tree and diagram -->
@@ -58,12 +70,12 @@
                 <!-- Diagram below tree -->
                 <div id="diagram-panel">
                     <div class="panel-header">
-                        <h3 id="diagram-title">Top 50 Files</h3>
+                        <h3 id="diagram-title" data-i18n="diagram.top50">Top 50 Files</h3>
                         <div class="diagram-controls">
-                            <button class="diagram-mode active" data-mode="pie">
+                            <button class="diagram-mode active" data-mode="pie" data-i18n="diagram.pie">
                                 Pie
                             </button>
-                            <button class="diagram-mode" data-mode="treemap">
+                            <button class="diagram-mode" data-mode="treemap" data-i18n="diagram.treemap">
                                 Treemap
                             </button>
                         </div>
@@ -77,47 +89,47 @@
 
             <aside id="detail-panel">
                 <div class="card">
-                    <h3>Scan Summary</h3>
+                    <h3 data-i18n="stats.title">Scan Summary</h3>
                     <div id="stats-content">
                         <div class="stat-row">
-                            <span class="stat-label">Files</span
+                            <span class="stat-label" data-i18n="stats.files">Files</span
                             ><span id="stat-files" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Directories</span
+                            <span class="stat-label" data-i18n="stats.directories">Directories</span
                             ><span id="stat-dirs" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Total Size</span
+                            <span class="stat-label" data-i18n="stats.total_size">Total Size</span
                             ><span id="stat-size" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Scan Time</span
+                            <span class="stat-label" data-i18n="stats.scan_time">Scan Time</span
                             ><span id="stat-time" class="stat-value">-</span>
                         </div>
                     </div>
                 </div>
                 <div class="card">
-                    <h3>Selection</h3>
+                    <h3 data-i18n="sel.title">Selection</h3>
                     <div id="selection-content">
                         <div class="stat-row">
                             <span class="stat-label"
-                                ><span class="stat-icon">📄</span> Name</span
+                                ><span class="stat-icon">📄</span> <span data-i18n="sel.name">Name</span></span
                             ><span id="sel-name" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
                             <span class="stat-label"
-                                ><span class="stat-icon">💾</span> Size</span
+                                ><span class="stat-icon">💾</span> <span data-i18n="sel.size">Size</span></span
                             ><span id="sel-size" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
                             <span class="stat-label"
-                                ><span class="stat-icon">📂</span> Files</span
+                                ><span class="stat-icon">📂</span> <span data-i18n="sel.files">Files</span></span
                             ><span id="sel-files" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
                             <span class="stat-label"
-                                ><span class="stat-icon">🏷️</span> Type</span
+                                ><span class="stat-icon">🏷️</span> <span data-i18n="sel.type">Type</span></span
                             ><span id="sel-type" class="stat-value">-</span>
                         </div>
                         <div
@@ -133,6 +145,7 @@
                             <button
                                 class="sel-action"
                                 data-action="explorer"
+                                data-i18n-title="action.explorer"
                                 title="Open in Explorer"
                                 disabled
                             >
@@ -141,6 +154,7 @@
                             <button
                                 class="sel-action"
                                 data-action="terminal"
+                                data-i18n-title="action.terminal"
                                 title="Open Terminal"
                                 disabled
                             >
@@ -149,6 +163,7 @@
                             <button
                                 class="sel-action"
                                 data-action="properties"
+                                data-i18n-title="action.properties"
                                 title="Properties"
                                 disabled
                             >
@@ -157,6 +172,7 @@
                             <button
                                 class="sel-action"
                                 data-action="copy"
+                                data-i18n-title="action.copy_path"
                                 title="Copy Path"
                                 disabled
                             >
@@ -165,6 +181,7 @@
                             <button
                                 class="sel-action"
                                 data-action="delete"
+                                data-i18n-title="action.delete"
                                 title="Delete"
                                 disabled
                                 style="color: var(--accent-red)"
@@ -177,15 +194,15 @@
                 <!-- Resizable splitter for topfiles -->
                 <div id="tf-splitter"></div>
                 <div class="card" id="topfiles-card">
-                    <h3>Top 50 Files</h3>
+                    <h3 data-i18n="diagram.top50">Top 50 Files</h3>
                     <div id="topfiles-container">
                         <table id="topfiles-table">
                             <thead>
                                 <tr>
                                     <th>#</th>
-                                    <th>Path</th>
-                                    <th>Size</th>
-                                    <th style="width: 40px">Action</th>
+                                    <th data-i18n="sel.name">Path</th>
+                                    <th data-i18n="sel.size">Size</th>
+                                    <th style="width: 40px" data-i18n="action.delete">Action</th>
                                 </tr>
                             </thead>
                             <tbody id="topfiles-body"></tbody>
@@ -198,7 +215,7 @@
         <div id="progress-overlay">
             <div class="progress-card">
                 <div class="spinner"></div>
-                <p id="progress-status">Scanning directory...</p>
+                <p id="progress-status" data-i18n="progress.scanning">Scanning directory...</p>
                 <p id="progress-path"></p>
                 <p
                     id="progress-engine"
@@ -208,6 +225,7 @@
                         color: var(--text-muted);
                         font-style: italic;
                     "
+                    data-i18n="progress.engine"
                 >
                     ⚡ Scanning with the ultra-fast parallel Rust engine…
                 </p>
@@ -217,16 +235,17 @@
         <div id="about-overlay">
             <div class="about-card">
                 <div style="font-size: 48px; margin-bottom: 8px">🦖</div>
-                <h2>DiskRaptor</h2>
-                <p class="about-version">v0.1.0</p>
-                <p class="about-desc">Ultra-fast directory scanner</p>
-                <p class="about-tech">⚡ Built with Rust + Tauri</p>
+                <h2 data-i18n="about.title">DiskRaptor</h2>
+                <p class="about-version"><span data-i18n="about.version">Version</span> v0.1.0</p>
+                <p class="about-desc" data-i18n="about.desc">Ultra-fast directory scanner</p>
+                <p class="about-tech" data-i18n="about.tech">⚡ Built with Rust + Tauri</p>
                 <p class="about-copy">© 2026 DiskRaptor Team</p>
-                <button id="btn-about-close" class="primary">✓ Done</button>
+                <button id="btn-about-close" class="primary" data-i18n="about.done">✓ Done</button>
             </div>
         </div>
 
         <script src="tauri-api-bridge.js"></script>
+        <script src="i18n.js"></script>
         <script src="iconcache.js"></script>
         <script src="virtualscroll.js"></script>
         <script src="chunkloader.js"></script>
@@ -248,7 +267,6 @@
                     }
                 }
             }, 12000);
-            // Clear the timer once bridge is ready
             var clearStuck = function () {
                 clearTimeout(stuckTimer);
             };

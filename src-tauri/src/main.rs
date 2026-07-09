@@ -14,12 +14,58 @@ fn main() {
         eprintln!("[DiskRaptor] Panic: {}", info);
     }));
 
-    // Native Menu
+    // ── Language menu (all 25 languages) ──────────────────
+    let lang_auto = CustomMenuItem::new("lang_auto", "🌐 Auto (System)");
+    let lang_menu = Menu::new().add_item(lang_auto);
+
+    let languages = [
+        ("lang_en", "🇺🇸 English"),
+        ("lang_de", "🇩🇪 Deutsch"),
+        ("lang_fr", "🇫🇷 Français"),
+        ("lang_es", "🇪🇸 Español"),
+        ("lang_it", "🇮🇹 Italiano"),
+        ("lang_pt", "🇧🇷 Português"),
+        ("lang_nl", "🇳🇱 Nederlands"),
+        ("lang_pl", "🇵🇱 Polski"),
+        ("lang_sv", "🇸🇪 Svenska"),
+        ("lang_da", "🇩🇰 Dansk"),
+        ("lang_nb", "🇳🇴 Norsk"),
+        ("lang_fi", "🇫🇮 Suomi"),
+        ("lang_cs", "🇨🇿 Čeština"),
+        ("lang_ro", "🇷🇴 Română"),
+        ("lang_tr", "🇹🇷 Türkçe"),
+        ("lang_id", "🇮🇩 Bahasa Indonesia"),
+        ("lang_vi", "🇻🇳 Tiếng Việt"),
+        ("lang_ru", "🇷🇺 Русский"),
+        ("lang_uk", "🇺🇦 Українська"),
+        ("lang_ar", "🇸🇦 العربية"),
+        ("lang_zh", "🇨🇳 简体中文"),
+        ("lang_zh-tw", "🇹🇼 繁體中文"),
+        ("lang_ja", "🇯🇵 日本語"),
+        ("lang_ko", "🇰🇷 한국어"),
+        ("lang_hi", "🇮🇳 हिन्दी"),
+    ];
+
+    // Start building lang submenu — start with a separator after "Auto"
+    // by using a dummy label item as visual separator
+    let mut lang_menu_built = lang_menu.add_item(CustomMenuItem::new("_lang_sep1", "─"));
+
+    for (id, label) in languages {
+        let item = CustomMenuItem::new(id.to_string(), label);
+        lang_menu_built = lang_menu_built.add_item(item);
+    }
+
+    let lang_submenu = Submenu::new("Language", lang_menu_built);
+
+    // ── View menu ─────────────────────────────────────────
     let view_pie = CustomMenuItem::new("view_pie", "Pie Chart").accelerator("CmdOrCtrl+1");
     let view_treemap = CustomMenuItem::new("view_treemap", "Treemap").accelerator("CmdOrCtrl+2");
     let view_menu = Submenu::new(
         "View",
-        Menu::new().add_item(view_pie).add_item(view_treemap),
+        Menu::new()
+            .add_item(view_pie)
+            .add_item(view_treemap)
+            .add_submenu(lang_submenu),
     );
 
     let about = CustomMenuItem::new("about", "About DiskRaptor").accelerator("CmdOrCtrl+I");
@@ -27,7 +73,7 @@ fn main() {
 
     let menu = Menu::new().add_submenu(view_menu).add_submenu(help_menu);
 
-    // System Tray with Open and Exit menus
+    // ── System Tray ───────────────────────────────────────
     let tray_menu = SystemTrayMenu::new()
         .add_item(CustomMenuItem::new("tray_open", "Open DiskRaptor"))
         .add_native_item(SystemTrayMenuItem::Separator)
@@ -39,7 +85,8 @@ fn main() {
         .system_tray(tray)
         .on_menu_event(|event| {
             let win = event.window();
-            match event.menu_item_id() {
+            let id = event.menu_item_id();
+            match id {
                 "view_pie" => {
                     let _ = win.emit("menu-view-pie", ());
                 }
@@ -48,6 +95,14 @@ fn main() {
                 }
                 "about" => {
                     let _ = win.emit("menu-about", ());
+                }
+                "lang_auto" => {
+                    let _ = win.emit("menu-lang-auto", ());
+                }
+                _ if id.starts_with("lang_") && !id.starts_with("_lang_") => {
+                    let code = id.strip_prefix("lang_").unwrap_or("en");
+                    let event_name = format!("menu-lang-{}", code);
+                    let _ = win.emit(&event_name, ());
                 }
                 _ => {}
             }

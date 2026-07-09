@@ -1,3 +1,5 @@
+![alt text](path/to/image.png)
+
 # 🦖 DiskRaptor
 
 **Ultra-fast directory scanner** — A modern, high-performance successor to JDiskReport, built with **Rust + Tauri**.

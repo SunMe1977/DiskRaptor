@@ -438,6 +438,12 @@ pub fn delete_path(path: String) -> Result<(), String> {
 
 /// Check if a directory requires admin rights to scan fully.
 /// Tries to access a known protected system folder.
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn check_admin_needed(_path: String) -> Result<bool, String> {
+    Ok(false)
+}
+
 #[cfg(windows)]
 #[tauri::command]
 pub fn check_admin_needed(path: String) -> Result<bool, String> {
@@ -475,6 +481,12 @@ pub fn check_admin_needed(path: String) -> Result<bool, String> {
 }
 
 /// Restart the application as Administrator (UAC prompt).
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn restart_as_admin() -> Result<(), String> {
+    Err("Admin restart is only available on Windows".into())
+}
+
 #[cfg(windows)]
 #[tauri::command]
 pub fn restart_as_admin() -> Result<(), String> {

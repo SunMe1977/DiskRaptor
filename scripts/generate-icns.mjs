@@ -10,7 +10,7 @@ import fs from "fs";
 import path from "path";
 import zlib from "zlib";
 
-const INPUT = "raw/logo4.png";
+const INPUT = "raw/logo6.png";
 const OUT_DIR = "src-tauri/icons";
 const OUTPUT = path.join(OUT_DIR, "icon.icns");
 
