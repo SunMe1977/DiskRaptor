@@ -73,20 +73,41 @@ jobs:
           cache: false
       - name: Build binary
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - name: Prepare Windows artifacts
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
+
+          if (Test-Path "target/release/diskraptor.exe") {
+            Copy-Item "target/release/diskraptor.exe" "artifacts/windows/DiskRaptor-Windows-x64.exe" -Force
+          } elseif (Test-Path "src-tauri/target/release/diskraptor.exe") {
+            Copy-Item "src-tauri/target/release/diskraptor.exe" "artifacts/windows/DiskRaptor-Windows-x64.exe" -Force
+          } else {
+            Write-Error "Windows release binary not found in target/release or src-tauri/target/release"
+            exit 1
+          }
+
+          Get-ChildItem -Path "target/release/bundle/msi" -Recurse -Filter *.msi -ErrorAction SilentlyContinue |
+            Copy-Item -Destination "artifacts/windows" -Force
+          Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Recurse -Filter *.msi -ErrorAction SilentlyContinue |
+            Copy-Item -Destination "artifacts/windows" -Force
       - name: Bundle MSI (best-effort)
         continue-on-error: true
         run: |
           cd src-tauri
           npx tauri build --bundles msi --ci --verbose
         shell: bash
+      - name: Collect bundled MSI (if present)
+        run: |
+          Get-ChildItem -Path "target/release/bundle/msi" -Recurse -Filter *.msi -ErrorAction SilentlyContinue |
+            Copy-Item -Destination "artifacts/windows" -Force
+          Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Recurse -Filter *.msi -ErrorAction SilentlyContinue |
+            Copy-Item -Destination "artifacts/windows" -Force
       - uses: actions/upload-artifact@v4
         with:
           name: release-Windows
           compression-level: 0
-          path: |
-            src-tauri/target/release/diskraptor.exe
-            src-tauri/target/release/bundle/msi/**/*.msi
-          if-no-files-found: warn
+          path: artifacts/windows/**
+          if-no-files-found: error
           retention-days: 7
 
   # ── macOS Build ───────────────────────────────────────
@@ -108,19 +129,36 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Build binary
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - name: Prepare macOS artifacts
+        run: |
+          mkdir -p artifacts/macos
+
+          if [ -f target/release/diskraptor ]; then
+            cp target/release/diskraptor artifacts/macos/DiskRaptor-macOS-x64
+            chmod +x artifacts/macos/DiskRaptor-macOS-x64
+          elif [ -f src-tauri/target/release/diskraptor ]; then
+            cp src-tauri/target/release/diskraptor artifacts/macos/DiskRaptor-macOS-x64
+            chmod +x artifacts/macos/DiskRaptor-macOS-x64
+          else
+            echo "macOS release binary not found in target/release or src-tauri/target/release" >&2
+            exit 1
+          fi
+
+          find target/release/bundle/dmg src-tauri/target/release/bundle/dmg -type f -name '*.dmg' -exec cp {} artifacts/macos/ \; 2>/dev/null || true
       - name: Bundle DMG (best-effort, may fail on unsigned)
         continue-on-error: true
         run: |
           cd src-tauri
           npx tauri build --bundles dmg --ci --verbose 2>&1 || echo "DMG bundling failed (expected on unsigned) — continuing"
+      - name: Collect bundled DMG (if present)
+        run: |
+          find target/release/bundle/dmg src-tauri/target/release/bundle/dmg -type f -name '*.dmg' -exec cp {} artifacts/macos/ \; 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         with:
           name: release-macOS
           compression-level: 0
-          path: |
-            src-tauri/target/release/diskraptor
-            src-tauri/target/release/bundle/dmg/**/*.dmg
-          if-no-files-found: warn
+          path: artifacts/macos/**
+          if-no-files-found: error
           retention-days: 7
 
   # ── Linux Build ───────────────────────────────────────
@@ -190,19 +228,36 @@ jobs:
           fi
       - name: Build binary
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - name: Prepare Linux artifacts
+        run: |
+          mkdir -p artifacts/linux
+
+          if [ -f target/release/diskraptor ]; then
+            cp target/release/diskraptor artifacts/linux/DiskRaptor-Linux-x64
+            chmod +x artifacts/linux/DiskRaptor-Linux-x64
+          elif [ -f src-tauri/target/release/diskraptor ]; then
+            cp src-tauri/target/release/diskraptor artifacts/linux/DiskRaptor-Linux-x64
+            chmod +x artifacts/linux/DiskRaptor-Linux-x64
+          else
+            echo "Linux release binary not found in target/release or src-tauri/target/release" >&2
+            exit 1
+          fi
+
+          find target/release/bundle/appimage src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' -exec cp {} artifacts/linux/ \; 2>/dev/null || true
       - name: Bundle AppImage (best-effort)
         continue-on-error: true
         run: |
           cd src-tauri
           npx tauri build --bundles appimage --ci --verbose 2>&1 || echo "AppImage bundling failed — continuing"
+      - name: Collect bundled AppImage (if present)
+        run: |
+          find target/release/bundle/appimage src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' -exec cp {} artifacts/linux/ \; 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         with:
           name: release-Linux
           compression-level: 0
-          path: |
-            src-tauri/target/release/diskraptor
-            src-tauri/target/release/bundle/appimage/**/*.AppImage
-          if-no-files-found: warn
+          path: artifacts/linux/**
+          if-no-files-found: error
           retention-days: 7
 
   # ── Create GitHub Release (only for tags) ─────────────────
