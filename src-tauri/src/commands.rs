@@ -367,7 +367,7 @@ pub fn open_properties(path: String) -> Result<(), String> {
         if result.as_bool() {
             Ok(())
         } else {
-            Err(format!("Failed to open properties"))
+            Err("Failed to open properties".to_string())
         }
     }
     #[cfg(target_os = "macos")]

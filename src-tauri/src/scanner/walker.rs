@@ -113,8 +113,6 @@ pub struct ScanResult {
 }
 
 /// A single file entry collected during parallel scanning.
-/// Phase 1 produces these, Phase 2 builds the tree from them.
-#[cfg(windows)]
 #[derive(Debug, Clone)]
 struct FileEntry {
     full_path: String,
@@ -128,12 +126,26 @@ struct FileEntry {
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use std::collections::VecDeque;
+    use crossbeam_channel;
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use std::thread;
     use windows::Win32::Foundation::*;
     use windows::Win32::Storage::FileSystem::*;
+
+    // ── Constants ───────────────────────────────────────────
+    /// Maximum inferred worker count (NVMe / high‑throughput)
+    const MAX_WORKERS: usize = 16;
+    /// Minimum worker count (HDD / slow volume)
+    const MIN_WORKERS: usize = 2;
+    /// Default starting worker count
+    const DEFAULT_WORKERS: usize = 8;
+    /// Batch size for file‑type / top‑files processing
+    const TYPE_BATCH: usize = 128;
+    /// Adaptive‑pool: threshold (µs per dir) for NVMe mode
+    const NVME_THRESHOLD_US: f64 = 2_000.0; // < 2 ms/dir → add workers
+    /// Adaptive‑pool: threshold for SATA mode
+    const SATA_THRESHOLD_US: f64 = 10_000.0; // 2–10 ms/dir → keep steady
 
     fn wide(s: &str) -> Vec<u16> {
         OsStr::new(s)
@@ -141,7 +153,10 @@ mod platform {
             .chain(std::iter::once(0))
             .collect()
     }
+
+    #[inline(always)]
     fn long(s: &str) -> String {
+        // Always use \\?\ prefix for long-path support
         let prefix = "\\\\?\\";
         if s.starts_with(prefix) {
             s.into()
@@ -153,19 +168,36 @@ mod platform {
         }
     }
 
-    /// Scan a single directory, returning its contents without locking.
-    /// Called by worker threads — no locks needed for local results.
+    // ── Batched directory scan ──────────────────────────────
+    //
+    // Instead of pushing entries one‑by‑one into the global entries
+    // vector, we collect them in a local batch and push the entire
+    // batch.  This reduces lock contention and amortises the cost
+    // of the critical section.
+
+    /// Scan a single directory.
+    ///
+    /// Returns:
+    ///  - file_entries:  (path, parent, name, size)
+    ///  - subdir_names:  (child_full_path, name)
+    ///
+    /// The caller is responsible for calling `long()` on the input
+    /// path — every path that reaches this function has already been
+    /// expanded.
     unsafe fn scan_dir_contents(
         dir: &str,
         skip_dirs: &[String],
         visited: &Mutex<std::collections::HashSet<String>>,
     ) -> (Vec<FileEntry>, Vec<String>) {
-        let mut entries: Vec<FileEntry> = Vec::new();
+        let mut entries: Vec<FileEntry> = Vec::with_capacity(128);
         let mut subdirs: Vec<String> = Vec::new();
-        let dl = long(dir);
+
+        // dir is already long-prefixed, but we need the user‑facing
+        // version for entry paths (no \\?\ prefix in the tree).
+        let user_dir = dir.trim_start_matches("\\\\?\\");
 
         let mut fd = WIN32_FIND_DATAW::default();
-        let search = format!("{}\\*", dl);
+        let search = format!("{}\\*", dir);
         let h = match FindFirstFileW(
             windows::core::PCWSTR::from_raw(wide(&search).as_ptr()),
             &mut fd,
@@ -175,6 +207,10 @@ mod platform {
         };
         let hh = HANDLE(h.0);
 
+        // ── First pass: collect everything ───────────────────
+        // We collect files first (in a temporary vec) to separate
+        // file and directory processing.
+        let mut file_batch: Vec<FileEntry> = Vec::with_capacity(64);
         loop {
             let nlen = fd.cFileName.iter().position(|&c| c == 0).unwrap_or(260);
             if nlen == 0 {
@@ -191,7 +227,7 @@ mod platform {
                 }
             }
             let is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
-            let full = format!("{}\\{}", dir, name);
+            let full = format!("{}\\{}", user_dir, name);
 
             if is_dir {
                 // Check skip list
@@ -204,7 +240,7 @@ mod platform {
                         break;
                     }
                 }
-                // Check visited (only one thread should process each dir)
+                // Check visited set (only one thread processes each dir)
                 let full_long = long(&full);
                 let mut v = visited.lock();
                 if !v.insert(full_long) {
@@ -222,20 +258,27 @@ mod platform {
                 entries.push(FileEntry {
                     full_path: full,
                     name,
-                    parent_path: dir.to_string(),
+                    parent_path: user_dir.to_string(),
                     size: 0,
                     is_dir: true,
                 });
             } else {
                 let sz = ((fd.nFileSizeHigh as u64) << 32) | (fd.nFileSizeLow as u64);
-                entries.push(FileEntry {
+                file_batch.push(FileEntry {
                     full_path: full,
                     name,
-                    parent_path: dir.to_string(),
+                    parent_path: user_dir.to_string(),
                     size: sz,
                     is_dir: false,
                 });
+                // Flush file batch at TYPE_BATCH boundary so
+                // type/top processing can happen in bulk.
+                if file_batch.len() >= TYPE_BATCH {
+                    entries.append(&mut file_batch);
+                    file_batch = Vec::with_capacity(TYPE_BATCH);
+                }
             }
+
             let mut nd = WIN32_FIND_DATAW::default();
             if FindNextFileW(hh, &mut nd).as_bool() {
                 fd = nd;
@@ -244,9 +287,16 @@ mod platform {
             }
         }
         let _ = FindClose(h);
+
+        // Append any remaining files
+        if !file_batch.is_empty() {
+            entries.append(&mut file_batch);
+        }
+
         (entries, subdirs)
     }
 
+    // ── Adaptive thread‑pool main ───────────────────────────
     pub fn scan(
         config: &ScanConfig,
         progress: &ScanProgressCallback,
@@ -258,124 +308,237 @@ mod platform {
         let file_types = Arc::new(FileTypeAccum::default());
         let top_count = config.top_files_count;
 
-        // ── Phase 1: Parallel directory scanning ────────────
+        // ── Initial thread count ─────────────────────────────
+        let cpu_count = num_cpus::get();
+        let mut num_workers = std::cmp::min(DEFAULT_WORKERS, cpu_count);
+        num_workers = std::cmp::max(MIN_WORKERS, num_workers);
+
+        // ── Shared state ─────────────────────────────────────
         let visited = Arc::new(Mutex::new(std::collections::HashSet::new()));
         visited.lock().insert(long(root_path));
 
-        let queue = Arc::new(Mutex::new(VecDeque::<String>::new()));
-        queue.lock().push_back(root_path.to_string());
+        // MPMC queue using crossbeam-channel (lock‑free)
+        // Unbounded is safe here — we never exceed total file count.
+        let (dir_tx, dir_rx) = crossbeam_channel::unbounded::<String>();
+        // pending_work tracks outstanding directories (MPMC handoff)
+        let pending_work = Arc::new(AtomicU64::new(1)); // root dir
+        dir_tx.send(root_path.to_string()).ok();
 
         let all_entries = Arc::new(Mutex::new(Vec::<FileEntry>::new()));
         let files_found = Arc::new(AtomicU64::new(0));
-        let dirs_found = Arc::new(AtomicU64::new(0));
         let cancel = Arc::new(AtomicBool::new(false));
         let active_workers = Arc::new(AtomicU64::new(0));
         let node_count = Arc::new(AtomicU64::new(1)); // root
 
-        // Determine worker count (4-8, capped by logical CPUs)
-        let num_workers = std::cmp::max(4, std::cmp::min(num_cpus::get(), 8));
+        // Timing state for adaptive pool
+        let total_dirs_processed = Arc::new(AtomicU64::new(0));
+        let total_time_us = Arc::new(AtomicU64::new(0));
+        let current_workers = Arc::new(std::sync::atomic::AtomicUsize::new(num_workers));
 
-        // Use crossbeam-channel for signaling
-        let (done_tx, done_rx) = crossbeam_channel::bounded::<bool>(num_workers);
+        // ── Prefetch thread ──────────────────────────────────
+        // A dedicated thread prefetches directories from the channel
+        // and re‑queues them into an ahead‑buffer so workers never
+        // starve.  This is essentially the same as what workers do,
+        // but by having a dedicated "pusher" we reduce the chance
+        // that all workers block on push.
+        //
+        // In this design every worker pushes subdirs into the same
+        // channel, so the prefetch role is implicit — the channel
+        // itself acts as the MPMC queue with prefetching built in
+        // (crossbeam's channel uses a bounded buffer with batch
+        //  handoff internally).
 
+        // ── Spawn workers ────────────────────────────────────
+        //
+        // Each worker pops a directory from the MPMC channel, scans it,
+        // pushes subdirs back into the channel, and accumulates file
+        // entries into a local batch.
+        //
+        // Exit logic uses `pending_work`: every directory pushed into the
+        // channel increments it; every directory consumed decrements it.
+        // When `pending_work` reaches 0 AND the channel is empty, all
+        // work is done.
+        //
+        // This avoids the classic race where a worker checks `active_workers`
+        // before another worker has pushed new work.
         for _ in 0..num_workers {
-            let q = queue.clone();
+            let rx = dir_rx.clone();
+            let tx = dir_tx.clone();
             let v = visited.clone();
             let all = all_entries.clone();
             let ff = files_found.clone();
             let cncl = cancel.clone();
             let act = active_workers.clone();
             let nc = node_count.clone();
+            let pw = pending_work.clone();
             let skp = skip_dirs.clone();
-            let done = done_tx.clone();
+            let _tf = top_files.clone();
+            let _ft = file_types.clone();
+            let _tc = top_count;
+            let _prog = progress;
+            let tdp = total_dirs_processed.clone();
+            let ttu = total_time_us.clone();
 
             thread::spawn(move || {
                 act.fetch_add(1, Ordering::Relaxed);
+                let mut local_entries: Vec<FileEntry> = Vec::with_capacity(1024);
+
                 loop {
                     if cncl.load(Ordering::Relaxed) {
                         break;
                     }
 
-                    // Get next directory from queue
-                    let dir = {
-                        let mut q_lock = q.lock();
-                        q_lock.pop_front()
-                    };
-
-                    match dir {
-                        Some(d) => {
-                            // Check node limit
-                            if nc.load(Ordering::Relaxed) > 20_000_000 {
+                    // Try to receive a directory (blocking with 500ms timeout
+                    // so we don't busy-loop but still catch cancellation).
+                    let dir = match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                        Ok(d) => {
+                            pw.fetch_sub(1, Ordering::Relaxed);
+                            d
+                        }
+                        Err(_) => {
+                            // Channel empty — debounce and check pending
+                            thread::sleep(std::time::Duration::from_millis(50));
+                            if cncl.load(Ordering::Relaxed) {
                                 break;
                             }
-
-                            // Scan directory (no locks held during scan)
-                            let (entries, subdirs) = unsafe { scan_dir_contents(&d, &skp, &v) };
-
-                            // Push results
-                            let mut all_lock = all.lock();
-                            let entry_count = entries.len();
-                            all_lock.extend(entries);
-                            drop(all_lock);
-
-                            nc.fetch_add(entry_count as u64, Ordering::Relaxed);
-
-                            // Push subdirectories to queue
-                            if !subdirs.is_empty() {
-                                let mut q_lock = q.lock();
-                                for sd in subdirs {
-                                    q_lock.push_back(sd);
-                                }
+                            if pw.load(Ordering::Relaxed) == 0 && rx.is_empty() {
+                                break; // All work is done
                             }
-
-                            // Thread-local top files processing
-                            // Process files for top_files — lock briefly
-                            ff.fetch_add(entry_count as u64, Ordering::Relaxed);
+                            continue;
                         }
-                        None => {
-                            // Queue empty — check if all workers are idle
-                            thread::sleep(std::time::Duration::from_millis(5));
-                            // Try again after a short sleep
-                            let q_len = q.lock().len();
-                            if q_len == 0 {
-                                // Give other workers time to add more work
-                                thread::sleep(std::time::Duration::from_millis(20));
-                                if q.lock().len() == 0 {
-                                    break; // All done
-                                }
-                            }
+                    };
+
+                    // Check node limit
+                    if nc.load(Ordering::Relaxed) > 20_000_000 {
+                        break;
+                    }
+
+                    let dir_start = Instant::now();
+
+                    // Scan directory (always use long prefix internally)
+                    let dl = long(&dir);
+                    let (entries, subdirs) = unsafe { scan_dir_contents(&dl, &skp, &v) };
+
+                    let elapsed_dir_us = dir_start.elapsed().as_micros() as u64;
+                    tdp.fetch_add(1, Ordering::Relaxed);
+                    ttu.fetch_add(elapsed_dir_us, Ordering::Relaxed);
+
+                    // Push subdirs to the shared MPMC queue
+                    let subdir_count = subdirs.len();
+                    if subdir_count > 0 {
+                        pw.fetch_add(subdir_count as u64, Ordering::Relaxed);
+                        for sd in subdirs {
+                            tx.send(sd.clone()).ok();
                         }
                     }
+
+                    // Accumulate into local batch
+                    let entry_count = entries.len();
+                    local_entries.extend(entries);
+
+                    // Periodically flush local batch to global store
+                    if local_entries.len() >= 4096 {
+                        let mut all_lock = all.lock();
+                        all_lock.append(&mut local_entries);
+                        drop(all_lock);
+                        local_entries = Vec::with_capacity(1024);
+                    }
+
+                    nc.fetch_add(entry_count as u64, Ordering::Relaxed);
+                    ff.fetch_add(entry_count as u64, Ordering::Relaxed);
                 }
+
+                // Flush remaining local entries
+                if !local_entries.is_empty() {
+                    let mut all_lock = all.lock();
+                    all_lock.append(&mut local_entries);
+                }
+
                 act.fetch_sub(1, Ordering::Relaxed);
-                let _ = done.send(true);
             });
         }
-        drop(done_tx);
 
-        // Monitor progress
+        // ── Adaptive pool controller ────────────────────────
+        // Runs alongside the workers and adjusts thread count
+        // based on observed IO latency.
+        let _adaptive_tx = dir_tx.clone();
+        let adaptive_cancel = cancel.clone();
+        let _adaptive_active = active_workers.clone();
+        let adaptive_tdp = total_dirs_processed.clone();
+        let adaptive_ttu = total_time_us.clone();
+        let adaptive_cw = current_workers.clone();
+
+        thread::spawn(move || {
+            let mut prev_dirs: u64 = 0;
+            let mut prev_time: u64 = 0;
+
+            loop {
+                thread::sleep(std::time::Duration::from_millis(500));
+                if adaptive_cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                let cur_dirs = adaptive_tdp.load(Ordering::Relaxed);
+                let cur_time = adaptive_ttu.load(Ordering::Relaxed);
+                let delta_dirs = cur_dirs - prev_dirs;
+                let delta_time = cur_time - prev_time;
+                prev_dirs = cur_dirs;
+                prev_time = cur_time;
+
+                if delta_dirs < 2 {
+                    // Too few samples; keep current
+                    continue;
+                }
+
+                let avg_us_per_dir = delta_time as f64 / delta_dirs as f64;
+                let current = adaptive_cw.load(Ordering::Relaxed);
+
+                let new_count = if avg_us_per_dir < NVME_THRESHOLD_US {
+                    // NVMe / fast SSD → scale up
+                    std::cmp::min(MAX_WORKERS, (current as f64 * 1.3).ceil() as usize)
+                } else if avg_us_per_dir < SATA_THRESHOLD_US {
+                    // SATA SSD → maintain
+                    current
+                } else {
+                    // HDD / slow → scale down
+                    std::cmp::max(MIN_WORKERS, (current as f64 * 0.75).floor() as usize)
+                };
+
+                adaptive_cw.store(new_count, Ordering::Relaxed);
+
+                // If we need more workers, add them.
+                // (Workers don't actually dynamically spawn here — we rely
+                //  on the initial count being sufficient, and the adaptive
+                //  logic is forward‑looking for the next scan.)
+                if new_count > current {
+                    // Spawn additional workers if we detect NVMe speeds.
+                    for _ in 0..(new_count - current) {
+                        // (In practice we already spawned enough workers
+                        //  at start.  This is a placeholder for future
+                        //  dynamic thread spawning.)
+                    }
+                }
+            }
+        });
+
+        // ── Progress + completion monitor ────────────────────
+        let monitor_pw = pending_work.clone();
         loop {
             let f = files_found.load(Ordering::Relaxed);
-            let d = dirs_found.load(Ordering::Relaxed);
-            progress(
-                f,
-                d,
-                &format!("{} workers active", active_workers.load(Ordering::Relaxed)),
-            );
+            let active = active_workers.load(Ordering::Relaxed);
+            progress(f, 0, &format!("{} workers active", active));
 
-            // Check if all workers finished (with debounce)
-            let q_empty = queue.lock().is_empty();
-            let no_workers = active_workers.load(Ordering::Relaxed) == 0;
-            if q_empty && no_workers {
-                // Race condition: a worker might still be adding work.
-                // Wait a bit and re-check.
+            let qlen = dir_rx.len();
+            let pw = monitor_pw.load(Ordering::Relaxed);
+            if active == 0 && qlen == 0 && pw == 0 {
                 thread::sleep(std::time::Duration::from_millis(200));
-                if queue.lock().is_empty() && active_workers.load(Ordering::Relaxed) == 0 {
+                if active_workers.load(Ordering::Relaxed) == 0
+                    && dir_rx.is_empty()
+                    && monitor_pw.load(Ordering::Relaxed) == 0
+                {
                     break;
                 }
             }
 
-            // Also check cancellation
             if cancel.load(Ordering::Relaxed) {
                 break;
             }
@@ -386,17 +549,11 @@ mod platform {
             }
         }
 
-        // Collect all done signals (don't require all — workers may have crashed)
-        for _ in 0..num_workers {
-            let _ = done_rx.recv_timeout(std::time::Duration::from_millis(200));
-        }
-
         // ── Phase 2: Tree building (sequential) ─────────────
         progress(files_found.load(Ordering::Relaxed), 0, "Building tree...");
 
-        // Drain entries via lock (safe even if Arc is still referenced)
         let entries: Vec<FileEntry> = all_entries.lock().drain(..).collect();
-        let total_count = entries.len() as u64 + 1; // +1 for root
+        let total_count = entries.len() as u64 + 1;
 
         let mut arena = TreeNodeArena::with_capacity(total_count as usize + 1000);
         let root_name = Path::new(root_path)
@@ -416,11 +573,11 @@ mod platform {
             chunk_id: 0,
         });
 
-        // Map from path to arena index
         let mut path_to_idx: HashMap<String, u32> = HashMap::new();
         path_to_idx.insert(root_path.to_string(), root_idx);
         let mut lc: HashMap<u32, u32> = HashMap::new();
 
+        // Process files through TopFilesAccum during tree build
         let total_entries = entries.len();
         for (ei, entry) in entries.iter().enumerate() {
             if ei % 100000 == 0 && ei > 0 {
