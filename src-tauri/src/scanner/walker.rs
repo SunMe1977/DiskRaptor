@@ -113,6 +113,7 @@ pub struct ScanResult {
 }
 
 /// A single file entry collected during parallel scanning.
+#[cfg(windows)]
 #[derive(Debug, Clone)]
 struct FileEntry {
     full_path: String,
