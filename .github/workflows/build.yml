@@ -73,30 +73,16 @@ jobs:
           cache: false
       - name: Build binary
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
-      - name: Prepare Windows artifacts
+      - name: Prepare Windows artifacts (binary first)
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
-
           if (Test-Path "target/release/diskraptor.exe") {
             Copy-Item "target/release/diskraptor.exe" "artifacts/windows/DiskRaptor-Windows-x64.exe" -Force
           } elseif (Test-Path "src-tauri/target/release/diskraptor.exe") {
             Copy-Item "src-tauri/target/release/diskraptor.exe" "artifacts/windows/DiskRaptor-Windows-x64.exe" -Force
           } else {
-            Write-Error "Windows release binary not found in target/release or src-tauri/target/release"
+            Write-Error "Windows binary not found"
             exit 1
-          }
-
-          Get-ChildItem -Path "target/release/bundle/msi" -Recurse -Filter *.msi -ErrorAction SilentlyContinue |
-            Copy-Item -Destination "artifacts/windows" -Force
-          Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Recurse -Filter *.msi -ErrorAction SilentlyContinue |
-            Copy-Item -Destination "artifacts/windows" -Force
-      - name: Prepare Windows artifacts (binary first)
-        run: |
-          mkdir -p artifacts/windows
-          if (Test-Path "target/release/diskraptor.exe") {
-            Copy-Item "target/release/diskraptor.exe" "artifacts/windows/DiskRaptor-Windows-x64.exe"
-          } elseif (Test-Path "src-tauri/target/release/diskraptor.exe") {
-            Copy-Item "src-tauri/target/release/diskraptor.exe" "artifacts/windows/DiskRaptor-Windows-x64.exe"
           }
       - name: Bundle MSI (best-effort, continue on error)
         continue-on-error: true
@@ -268,7 +254,7 @@ jobs:
   release:
     name: Create Release
     if: github.ref_type == 'tag'
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
