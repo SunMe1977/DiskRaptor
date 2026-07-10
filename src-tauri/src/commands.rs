@@ -371,7 +371,6 @@ pub fn open_properties(path: String) -> Result<(), String> {
     {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
-        use std::ptr;
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::Shell::{
             ShellExecuteExW, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW,

@@ -21,3 +21,6 @@ images/
 # Temp
 nul
 *.log
+
+# Never commit this file
+raw/info.txt
