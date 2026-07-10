@@ -134,6 +134,58 @@ mod platform {
     use windows::Win32::Foundation::*;
     use windows::Win32::Storage::FileSystem::*;
 
+    // ── Manual externs (not in windows crate v0.39 without Win32_Security) ──
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateFileW(
+            lpFileName: *const u16,
+            dwDesiredAccess: u32,
+            dwShareMode: u32,
+            lpSecurityAttributes: *const std::ffi::c_void,
+            dwCreationDisposition: u32,
+            dwFlagsAndAttributes: u32,
+            hTemplateFile: isize,
+        ) -> isize;
+        fn CloseHandle(hObject: isize) -> u32;
+    }
+
+    // ── NtQueryDirectoryFile from ntdll ──────────────────────────────────
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtQueryDirectoryFile(
+            FileHandle: isize,
+            Event: isize,
+            ApcRoutine: *mut std::ffi::c_void,
+            ApcContext: *mut std::ffi::c_void,
+            IoStatusBlock: *mut std::ffi::c_void,
+            FileInformation: *mut std::ffi::c_void,
+            Length: u32,
+            FileInformationClass: u32,
+            ReturnSingleEntry: u8,
+            FileName: *mut std::ffi::c_void,
+            RestartScan: u8,
+        ) -> i32;
+    }
+
+    type NTSTATUS = i32;
+    const FILE_DIRECTORY_INFORMATION_CLASS: u32 = 1;
+    const STATUS_SUCCESS: NTSTATUS = 0;
+    const STATUS_NO_MORE_FILES: NTSTATUS = 0x8000_0006u32 as i32;
+    const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x8000_0005u32 as i32;
+
+    // Desired access for directory handle used with NtQueryDirectoryFile
+    const FILE_LIST_DIRECTORY_ACCESS: u32 = 0x0001;
+    const SYNCHRONIZE_ACCESS: u32 = 0x0010_0000;
+
+    // Offsets in FILE_DIRECTORY_INFORMATION (fixed-size header = 64 bytes)
+    const OFS_FILE_ATTRS: usize = 56; // u32
+    const OFS_FILE_NAME_LEN: usize = 60; // u32
+    const OFS_END_OF_FILE: usize = 40; // u64
+    const OFS_FILE_NAME: usize = 64; // u16[] (variable length)
+
+    /// Initial buffer size for NtQueryDirectoryFile (per directory scan).
+    const NT_BUF_SIZE: usize = 64 * 1024;
+
     // ── Constants ───────────────────────────────────────────
     /// Maximum inferred worker count (NVMe / high‑throughput)
     const MAX_WORKERS: usize = 16;
@@ -169,22 +221,181 @@ mod platform {
         }
     }
 
-    // ── Batched directory scan ──────────────────────────────
+    // ── Batched directory scan via NtQueryDirectoryFile ──────
     //
-    // Instead of pushing entries one‑by‑one into the global entries
-    // vector, we collect them in a local batch and push the entire
-    // batch.  This reduces lock contention and amortises the cost
-    // of the critical section.
+    // Faster than FindFirstFileW/FindNextFileW because it avoids
+    // per-entry transition to user mode and the cost of building
+    // WIN32_FIND_DATAW for every entry.
+    //
+    // Returns:
+    //  - file_entries:  (path, parent, name, size)
+    //  - subdir_names:  (child_full_path, name)
+    //
+    // The caller is responsible for calling `long()` on the input
+    // path — every path that reaches this function has already been
+    // expanded.
+    unsafe fn scan_dir_contents_nt(
+        dir: &str,
+        skip_dirs: &[String],
+        visited: &Mutex<std::collections::HashSet<String>>,
+    ) -> (Vec<FileEntry>, Vec<String>) {
+        let mut entries: Vec<FileEntry> = Vec::with_capacity(128);
+        let mut subdirs: Vec<String> = Vec::new();
 
-    /// Scan a single directory.
+        // dir is already long-prefixed, but we need the user‑facing
+        // version for entry paths (no \\?\ prefix in the tree).
+        let user_dir = dir.trim_start_matches("\\\\?\\");
+
+        // ── Open directory handle ─────────────────────────────
+        let wide_dir = wide(dir);
+        let h_dir = CreateFileW(
+            wide_dir.as_ptr(),
+            FILE_LIST_DIRECTORY_ACCESS | SYNCHRONIZE_ACCESS,
+            FILE_SHARE_READ.0 | FILE_SHARE_WRITE.0 | FILE_SHARE_DELETE.0,
+            std::ptr::null(),
+            OPEN_EXISTING.0,
+            FILE_FLAG_BACKUP_SEMANTICS.0,
+            0, // no template
+        );
+        if h_dir == -1 {
+            return (entries, subdirs);
+        }
+
+        // ── Buffer and IO status block ────────────────────────
+        let mut buf: Vec<u8> = vec![0u8; NT_BUF_SIZE];
+        let mut io_status: [u8; 16] = std::mem::zeroed();
+        let mut restart = 1u8;
+
+        let mut file_batch: Vec<FileEntry> = Vec::with_capacity(64);
+
+        // ── Query loop ────────────────────────────────────────
+        loop {
+            let status = NtQueryDirectoryFile(
+                h_dir,
+                0, // Event
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                io_status.as_mut_ptr() as *mut std::ffi::c_void,
+                buf.as_mut_ptr() as *mut std::ffi::c_void,
+                buf.len() as u32,
+                FILE_DIRECTORY_INFORMATION_CLASS,
+                0, // ReturnSingleEntry = FALSE
+                std::ptr::null_mut(),
+                restart,
+            );
+            restart = 0;
+
+            if status == STATUS_NO_MORE_FILES {
+                break;
+            }
+            if status == STATUS_BUFFER_OVERFLOW {
+                // Extremely rare with 64KB buffer; double and retry
+                let new_len = buf.len().saturating_mul(2);
+                buf.resize(new_len, 0u8);
+                restart = 1;
+                continue;
+            }
+            if status != STATUS_SUCCESS {
+                break;
+            }
+
+            // ── Parse entries ─────────────────────────────────
+            let mut offset: usize = 0;
+            loop {
+                let base = buf.as_ptr().add(offset);
+
+                let next_off = (base as *const u32).read_unaligned();
+                let file_attrs = (base.add(OFS_FILE_ATTRS) as *const u32).read_unaligned();
+                let name_len_bytes = (base.add(OFS_FILE_NAME_LEN) as *const u32).read_unaligned();
+                let file_size = (base.add(OFS_END_OF_FILE) as *const u64).read_unaligned();
+
+                let name_char_len = name_len_bytes as usize / 2;
+                let name = if name_char_len > 0 {
+                    let name_ptr = base.add(OFS_FILE_NAME) as *const u16;
+                    let name_slice = std::slice::from_raw_parts(name_ptr, name_char_len);
+                    String::from_utf16_lossy(name_slice)
+                } else {
+                    String::new()
+                };
+
+                if name == "." || name == ".." || name.is_empty() {
+                    if next_off == 0 {
+                        break;
+                    }
+                    offset += next_off as usize;
+                    continue;
+                }
+
+                let is_dir = (file_attrs & FILE_ATTRIBUTE_DIRECTORY.0 as u32) != 0;
+                let full = format!("{}\\{}", user_dir, name);
+
+                if is_dir {
+                    // Check skip list
+                    if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+                        if next_off == 0 {
+                            break;
+                        }
+                        offset += next_off as usize;
+                        continue;
+                    }
+                    // Check visited set (only one thread processes each dir)
+                    let full_long = long(&full);
+                    let mut v = visited.lock();
+                    if !v.insert(full_long) {
+                        drop(v);
+                        if next_off == 0 {
+                            break;
+                        }
+                        offset += next_off as usize;
+                        continue;
+                    }
+                    drop(v);
+                    subdirs.push(full.clone());
+                    entries.push(FileEntry {
+                        full_path: full,
+                        name,
+                        parent_path: user_dir.to_string(),
+                        size: 0,
+                        is_dir: true,
+                    });
+                } else {
+                    file_batch.push(FileEntry {
+                        full_path: full,
+                        name,
+                        parent_path: user_dir.to_string(),
+                        size: file_size,
+                        is_dir: false,
+                    });
+                    // Flush file batch at TYPE_BATCH boundary so
+                    // type/top processing can happen in bulk.
+                    if file_batch.len() >= TYPE_BATCH {
+                        entries.append(&mut file_batch);
+                        file_batch = Vec::with_capacity(TYPE_BATCH);
+                    }
+                }
+
+                if next_off == 0 {
+                    break;
+                }
+                offset += next_off as usize;
+            }
+        }
+
+        let _ = CloseHandle(h_dir);
+
+        // Append any remaining files
+        if !file_batch.is_empty() {
+            entries.append(&mut file_batch);
+        }
+
+        (entries, subdirs)
+    }
+
+    // ── Legacy fallback ─────────────────────────────────────
+    /// Scan a single directory using FindFirstFileW / FindNextFileW.
     ///
-    /// Returns:
-    ///  - file_entries:  (path, parent, name, size)
-    ///  - subdir_names:  (child_full_path, name)
-    ///
-    /// The caller is responsible for calling `long()` on the input
-    /// path — every path that reaches this function has already been
-    /// expanded.
+    /// Kept as a fallback reference implementation.
+    #[allow(dead_code)]
     unsafe fn scan_dir_contents(
         dir: &str,
         skip_dirs: &[String],
@@ -327,6 +538,7 @@ mod platform {
 
         let all_entries = Arc::new(Mutex::new(Vec::<FileEntry>::new()));
         let files_found = Arc::new(AtomicU64::new(0));
+        let dirs_found = Arc::new(AtomicU64::new(1)); // root counts as 1
         let cancel = Arc::new(AtomicBool::new(false));
         let active_workers = Arc::new(AtomicU64::new(0));
         let node_count = Arc::new(AtomicU64::new(1)); // root
@@ -368,6 +580,7 @@ mod platform {
             let v = visited.clone();
             let all = all_entries.clone();
             let ff = files_found.clone();
+            let df = dirs_found.clone();
             let cncl = cancel.clone();
             let act = active_workers.clone();
             let nc = node_count.clone();
@@ -418,7 +631,7 @@ mod platform {
 
                     // Scan directory (always use long prefix internally)
                     let dl = long(&dir);
-                    let (entries, subdirs) = unsafe { scan_dir_contents(&dl, &skp, &v) };
+                    let (entries, subdirs) = unsafe { scan_dir_contents_nt(&dl, &skp, &v) };
 
                     let elapsed_dir_us = dir_start.elapsed().as_micros() as u64;
                     tdp.fetch_add(1, Ordering::Relaxed);
@@ -428,6 +641,7 @@ mod platform {
                     let subdir_count = subdirs.len();
                     if subdir_count > 0 {
                         pw.fetch_add(subdir_count as u64, Ordering::Relaxed);
+                        df.fetch_add(subdir_count as u64, Ordering::Relaxed);
                         for sd in subdirs {
                             tx.send(sd.clone()).ok();
                         }
@@ -526,7 +740,8 @@ mod platform {
         loop {
             let f = files_found.load(Ordering::Relaxed);
             let active = active_workers.load(Ordering::Relaxed);
-            progress(f, 0, &format!("{} workers active", active));
+            let d = dirs_found.load(Ordering::Relaxed);
+            progress(f, d, &format!("{} workers active", active));
 
             let qlen = dir_rx.len();
             let pw = monitor_pw.load(Ordering::Relaxed);

@@ -15,6 +15,13 @@
                 </h1>
             </div>
             <div class="toolbar-center">
+                <div class="drive-selector">
+                    <button id="btn-drives" class="icon-btn" title="Select drive">💻</button>
+                    <div id="drives-dropdown" class="drives-dropdown">
+                        <div class="drives-header">Select a drive</div>
+                        <div id="drives-list"></div>
+                    </div>
+                </div>
                 <input
                     type="text"
                     id="scan-path"
@@ -27,7 +34,15 @@
                 <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
-                <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
+                <div class="export-dropdown-wrap">
+                    <button id="btn-export" disabled data-i18n="btn.export">📥 Export ▾</button>
+                    <div id="export-menu" class="export-dropdown">
+                        <button class="export-option" data-format="json">📄 JSON</button>
+                        <button class="export-option" data-format="csv">📊 CSV</button>
+                        <button class="export-option" data-format="html">🌐 HTML</button>
+                    </div>
+                </div>
+                <button id="btn-duplicates" class="icon-btn" title="Find duplicate files">🔍</button>
                 <div class="lang-dropdown-wrap">
                     <button id="btn-lang" class="icon-btn" title="Language">🌐</button>
                     <div id="lang-menu" class="lang-dropdown">
@@ -55,6 +70,14 @@
                     <div class="panel-header">
                         <h2 data-i18n="tree.title">Directory Tree</h2>
                         <span id="node-count" class="badge">0 <span data-i18n="tree.nodes">nodes</span></span>
+                    </div>
+                    <div id="filter-bar">
+                        <input type="text" id="tree-filter" placeholder="Filter files by name, size, type..." />
+                        <select id="filter-type">
+                            <option value="all">All</option>
+                            <option value="file">Files</option>
+                            <option value="dir">Directories</option>
+                        </select>
                     </div>
                     <div id="tree-container">
                         <div id="tree-scroll">
@@ -88,7 +111,7 @@
             <div id="v-splitter"></div>
 
             <aside id="detail-panel">
-                <div class="card">
+                <div class="card card-compact">
                     <h3 data-i18n="stats.title">Scan Summary</h3>
                     <div id="stats-content">
                         <div class="stat-row">
@@ -109,7 +132,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="card">
+                <div class="card card-compact">
                     <h3 data-i18n="sel.title">Selection</h3>
                     <div id="selection-content">
                         <div class="stat-row">
@@ -217,6 +240,28 @@
                 <div class="spinner"></div>
                 <p id="progress-status" data-i18n="progress.scanning">Scanning directory...</p>
                 <p id="progress-path"></p>
+                <div id="progress-stats">
+                    <div class="pstat">
+                        <span class="pstat-icon">📄</span>
+                        <span class="pstat-value" id="pstat-files">0</span>
+                        <span class="pstat-label">Files</span>
+                        <span class="pstat-rate" id="pstat-files-rate">—</span>
+                    </div>
+                    <div class="pstat">
+                        <span class="pstat-icon">📁</span>
+                        <span class="pstat-value" id="pstat-dirs">0</span>
+                        <span class="pstat-label">Folders</span>
+                        <span class="pstat-rate" id="pstat-dirs-rate">—</span>
+                    </div>
+                    <div class="pstat">
+                        <span class="pstat-icon">💾</span>
+                        <span class="pstat-value" id="pstat-size">0 B</span>
+                        <span class="pstat-label">Size</span>
+                        <span class="pstat-rate" id="pstat-size-rate">—</span>
+                    </div>
+                </div>
+                <p id="progress-elapsed"></p>
+                <canvas id="perf-graph" width="360" height="80"></canvas>
                 <p
                     id="progress-engine"
                     style="
@@ -229,6 +274,51 @@
                 >
                     ⚡ Scanning with the ultra-fast parallel Rust engine…
                 </p>
+            </div>
+        </div>
+
+        <div id="duplicates-overlay">
+            <div class="duplicates-card">
+                <div class="duplicates-header">
+                    <h2>🔍 Duplicate Files</h2>
+                    <button id="btn-duplicates-close" class="icon-btn" title="Close">✖</button>
+                </div>
+                <div id="duplicates-status" class="duplicates-status">Click "🔍 Duplicates" to scan for duplicate files.</div>
+                <div id="duplicates-loading" class="duplicates-loading" style="display:none">
+                    <span class="spinner-small"></span> Scanning for duplicates...
+                </div>
+                <div id="duplicates-results" class="duplicates-results" style="display:none">
+                    <p id="duplicates-summary" class="duplicates-summary"></p>
+                    <div id="duplicates-table-wrap" class="duplicates-table-wrap">
+                        <table id="duplicates-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:60px">Size</th>
+                                    <th style="width:60px">Count</th>
+                                    <th>Files</th>
+                                </tr>
+                            </thead>
+                            <tbody id="duplicates-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="update-overlay">
+            <div class="about-card">
+                <div style="font-size: 48px; margin-bottom: 8px">📥</div>
+                <h2 data-i18n="update.title">Update Available</h2>
+                <p id="update-version" style="font-size:13px;color:var(--text-secondary);margin-bottom:8px"></p>
+                <p id="update-status" style="font-size:13px;color:var(--text-primary);margin-bottom:16px"></p>
+                <div id="update-actions" style="display:flex;gap:8px;justify-content:center">
+                    <button id="btn-update-download" class="primary" data-i18n="update.download">Download &amp; Install</button>
+                    <button id="btn-update-close" data-i18n="about.done">Later</button>
+                </div>
+                <div id="update-progress" style="display:none;margin-top:12px">
+                    <div class="spinner-small" style="width:20px;height:20px;margin:0 auto 8px"></div>
+                    <p style="font-size:11px;color:var(--text-muted)" data-i18n="update.downloading">Downloading…</p>
+                </div>
             </div>
         </div>
 

@@ -68,8 +68,9 @@ fn main() {
             .add_submenu(lang_submenu),
     );
 
+    let check_updates = CustomMenuItem::new("check_updates", "Check for Updates…");
     let about = CustomMenuItem::new("about", "About DiskRaptor").accelerator("CmdOrCtrl+I");
-    let help_menu = Submenu::new("Help", Menu::new().add_item(about));
+    let help_menu = Submenu::new("Help", Menu::new().add_item(check_updates).add_item(about));
 
     let menu = Menu::new().add_submenu(view_menu).add_submenu(help_menu);
 
@@ -93,16 +94,18 @@ fn main() {
                 "view_treemap" => {
                     let _ = win.emit("menu-view-treemap", ());
                 }
+                "check_updates" => {
+                    let _ = win.emit("menu-check-updates", ());
+                }
                 "about" => {
                     let _ = win.emit("menu-about", ());
                 }
                 "lang_auto" => {
-                    let _ = win.emit("menu-lang-auto", ());
+                    let _ = win.emit("lang-changed", "auto");
                 }
                 _ if id.starts_with("lang_") && !id.starts_with("_lang_") => {
                     let code = id.strip_prefix("lang_").unwrap_or("en");
-                    let event_name = format!("menu-lang-{}", code);
-                    let _ = win.emit(&event_name, ());
+                    let _ = win.emit("lang-changed", code);
                 }
                 _ => {}
             }
@@ -144,8 +147,13 @@ fn main() {
             commands::open_explorer,
             commands::open_properties,
             commands::get_icon,
+            commands::get_home_dir,
+            commands::list_drives,
+            commands::check_for_updates,
+            commands::download_and_install,
             commands::check_admin_needed,
             commands::restart_as_admin,
+            commands::find_duplicates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DiskRaptor");

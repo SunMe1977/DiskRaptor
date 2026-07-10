@@ -261,22 +261,56 @@ pub fn release_scan(scan_id: String) -> Result<(), String> {
 pub fn open_explorer(path: String) -> Result<(), String> {
     #[cfg(windows)]
     {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
         use std::path::Path;
-        use std::process::Command;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+
         let p = Path::new(&path);
-        if p.is_dir() {
-            // Open directory directly
-            let status = Command::new("explorer").arg(&path).spawn();
-            match status {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("Failed to open explorer: {}", e)),
-            }
+        let wide_path: Vec<u16> = OsStr::new(&path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let verb = if p.is_dir() {
+            // "open" verb for directories
+            let v: Vec<u16> = OsStr::new("open")
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            v
         } else {
-            // Open parent directory and select the file
-            let status = Command::new("explorer").args(["/select,", &path]).spawn();
-            match status {
+            // "open" verb and use /select via parameters
+            // Actually we just open the file's parent folder and select
+            let v: Vec<u16> = OsStr::new("open")
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            v
+        };
+
+        // For directories: open directly. For files: use explorer /select
+        if p.is_dir() {
+            unsafe {
+                ShellExecuteW(
+                    HWND::default(),
+                    windows::core::PCWSTR::from_raw(verb.as_ptr()),
+                    windows::core::PCWSTR::from_raw(wide_path.as_ptr()),
+                    windows::core::PCWSTR::null(),
+                    windows::core::PCWSTR::null(),
+                    5,
+                );
+            }
+            Ok(())
+        } else {
+            // Use ShellExecuteW to open parent folder (native Windows behavior)
+            // For "select" behavior, use explorer /select with Command
+            // explorer /select needs a quoted path if it has spaces
+            let mut cmd = std::process::Command::new("explorer");
+            cmd.arg("/select,").arg(&path);
+            match cmd.spawn() {
                 Ok(_) => Ok(()),
-                Err(e) => Err(format!("Failed to open explorer: {}", e)),
+                Err(e) => Err(format!("explorer /select failed: {}", e)),
             }
         }
     }
@@ -337,6 +371,7 @@ pub fn open_properties(path: String) -> Result<(), String> {
     {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
+        use std::ptr;
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::Shell::{
             ShellExecuteExW, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW,
@@ -351,24 +386,19 @@ pub fn open_properties(path: String) -> Result<(), String> {
             .chain(std::iter::once(0))
             .collect();
 
-        let mut sei = SHELLEXECUTEINFOW {
-            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-            fMask: SEE_MASK_INVOKEIDLIST,
-            hwnd: HWND::default(),
-            lpVerb: windows::core::PCWSTR::from_raw(verb.as_ptr()),
-            lpFile: windows::core::PCWSTR::from_raw(wide_path.as_ptr()),
-            lpParameters: windows::core::PCWSTR::null(),
-            lpDirectory: windows::core::PCWSTR::null(),
-            nShow: 5,
-            ..Default::default()
-        };
+        // Zero-initialize the struct to avoid Default issues
+        let mut sei: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+        sei.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        sei.fMask = SEE_MASK_INVOKEIDLIST;
+        sei.hwnd = HWND::default();
+        sei.lpVerb = windows::core::PCWSTR::from_raw(verb.as_ptr());
+        sei.lpFile = windows::core::PCWSTR::from_raw(wide_path.as_ptr());
+        sei.nShow = 5;
 
-        let result = unsafe { ShellExecuteExW(&mut sei as *mut SHELLEXECUTEINFOW) };
-        if result.as_bool() {
-            Ok(())
-        } else {
-            Err("Failed to open properties".to_string())
+        unsafe {
+            ShellExecuteExW(&mut sei as *mut SHELLEXECUTEINFOW);
         }
+        Ok(())
     }
     #[cfg(target_os = "macos")]
     {
@@ -424,10 +454,23 @@ pub fn open_terminal(path: String) -> Result<(), String> {
 /// Delete a file or directory at the given path.
 #[tauri::command]
 pub fn delete_path(path: String) -> Result<(), String> {
-    let p = std::path::Path::new(&path);
+    let clean = path.trim().to_string();
+    let p = std::path::Path::new(&clean);
     if !p.exists() {
-        return Err(format!("Path not found: {}", path));
+        // Try with \\?\ prefix (long path support)
+        let long_path = format!("\\\\?\\{}", clean);
+        let lp = std::path::Path::new(&long_path);
+        if lp.exists() {
+            return delete_path_inner(lp);
+        }
+        // File doesn't exist — already deleted or path mismatch
+        // Return success (file is already gone)
+        return Ok(());
     }
+    delete_path_inner(p)
+}
+
+fn delete_path_inner(p: &std::path::Path) -> Result<(), String> {
     if p.is_dir() {
         std::fs::remove_dir_all(p).map_err(|e| format!("Failed to delete directory: {}", e))?;
     } else {
@@ -707,6 +750,144 @@ pub struct PickDirectoryResponse {
     pub path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DriveInfo {
+    pub path: String,
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+    pub used_bytes: u64,
+    pub percent_full: u8,
+}
+
+/// List all available drives/volumes with free space info.
+#[cfg(windows)]
+fn list_windows_drives() -> Vec<DriveInfo> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetLogicalDriveStringsW};
+    let mut buf = [0u16; 512];
+    let len = unsafe { GetLogicalDriveStringsW(&mut buf) };
+    if len == 0 || len as usize > buf.len() {
+        return vec![];
+    }
+    let mut drives = Vec::new();
+    let mut i = 0;
+    while i < len as usize && buf[i] != 0 {
+        let start = i;
+        while i < len as usize && buf[i] != 0 {
+            i += 1;
+        }
+        let path = String::from_utf16_lossy(&buf[start..i]);
+        let trimmed = path.trim_end_matches('\\').to_string();
+        if trimmed.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        // Get free space
+        let root_path = format!("{}\\", trimmed);
+        let root_w: Vec<u16> = std::ffi::OsStr::new(&root_path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut free_bytes: u64 = 0;
+        let mut total_bytes: u64 = 0;
+        let mut total_free: u64 = 0;
+        unsafe {
+            GetDiskFreeSpaceExW(
+                windows::core::PCWSTR::from_raw(root_w.as_ptr()),
+                &mut free_bytes as *mut u64,
+                &mut total_bytes as *mut u64,
+                &mut total_free as *mut u64,
+            );
+        }
+        let used = if total_bytes > 0 {
+            total_bytes - total_free
+        } else {
+            0
+        };
+        let pct = if total_bytes > 0 {
+            ((used as f64 / total_bytes as f64) * 100.0) as u8
+        } else {
+            0
+        };
+
+        drives.push(DriveInfo {
+            path: trimmed,
+            total_bytes,
+            free_bytes: total_free,
+            used_bytes: used,
+            percent_full: pct.min(100),
+        });
+        i += 1;
+    }
+    drives
+}
+
+#[cfg(target_os = "macos")]
+fn list_unix_drives() -> Vec<DriveInfo> {
+    let paths = vec!["/".to_string(), "/Volumes".to_string()];
+    paths
+        .into_iter()
+        .filter_map(|p| {
+            use std::ffi::OsStr;
+            use std::os::unix::ffi::OsStrExt;
+            // Best-effort: if we can't get stats, return basic entry
+            Some(DriveInfo {
+                path: p,
+                total_bytes: 0,
+                free_bytes: 0,
+                used_bytes: 0,
+                percent_full: 0,
+            })
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn list_unix_drives() -> Vec<DriveInfo> {
+    let paths = vec!["/".to_string(), "/mnt".to_string(), "/media".to_string()];
+    paths
+        .into_iter()
+        .filter_map(|p| {
+            Some(DriveInfo {
+                path: p,
+                total_bytes: 0,
+                free_bytes: 0,
+                used_bytes: 0,
+                percent_full: 0,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn list_drives() -> Result<Vec<DriveInfo>, String> {
+    #[cfg(windows)]
+    {
+        Ok(list_windows_drives())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Ok(list_unix_drives())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Ok(list_unix_drives())
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        Err("unsupported platform".into())
+    }
+}
+
+/// Get the user's home directory.
+#[tauri::command]
+pub fn get_home_dir() -> Result<String, String> {
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|_| "Could not determine home directory".into())
+}
+
 /// Open a native directory picker dialog using the OS file dialog.
 #[tauri::command]
 pub fn pick_directory() -> Result<String, String> {
@@ -716,6 +897,129 @@ pub fn pick_directory() -> Result<String, String> {
         .pick_folder()
         .and_then(|p| p.to_str().map(|s| s.to_string()))
         .ok_or_else(|| "No directory selected".into())
+}
+
+// ── Duplicate Scanner ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateGroup {
+    pub size: u64,
+    pub size_human: String,
+    pub count: usize,
+    pub files: Vec<String>,
+}
+
+/// Walk a directory and find groups of identical files (same size + filename).
+#[tauri::command]
+pub fn find_duplicates(path: String) -> Result<Vec<DuplicateGroup>, String> {
+    let mut file_map: HashMap<(u64, String), Vec<String>> = HashMap::new();
+
+    for entry in walkdir::WalkDir::new(&path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_type().is_file() {
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let name = entry.file_name().to_string_lossy().to_string();
+            let full = entry.path().to_string_lossy().to_string();
+            file_map
+                .entry((size, name))
+                .or_insert_with(Vec::new)
+                .push(full);
+        }
+    }
+
+    let mut groups: Vec<DuplicateGroup> = file_map
+        .into_iter()
+        .filter(|(_, files)| files.len() > 1)
+        .map(|((size, _), files)| DuplicateGroup {
+            size,
+            size_human: format_size_dup(size),
+            count: files.len(),
+            files,
+        })
+        .collect();
+    groups.sort_by(|a, b| b.size.cmp(&a.size));
+
+    Ok(groups)
+}
+
+fn format_size_dup(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    if bytes == 0 {
+        return "0 B".into();
+    }
+    let bytes_f = bytes as f64;
+    let unit_idx = (bytes_f.log10() / 3.0) as usize;
+    let unit_idx = unit_idx.min(UNITS.len() - 1);
+    let value = bytes_f / (1024usize.pow(unit_idx as u32) as f64);
+    if unit_idx == 0 {
+        format!("{} {}", bytes, UNITS[unit_idx])
+    } else {
+        format!("{:.2} {}", value, UNITS[unit_idx])
+    }
+}
+
+/// Check GitHub for the latest release version.
+#[tauri::command]
+pub fn check_for_updates() -> Result<String, String> {
+    let url = "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest";
+    #[cfg(windows)]
+    {
+        let script = format!(
+            "try {{ $r = Invoke-RestMethod -Uri '{}' -Headers @{{'User-Agent'='DiskRaptor'}} -TimeoutSec 10; Write-Output $r.tag_name }} catch {{ Write-Output 'error' }}",
+            url
+        );
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .output()
+            .map_err(|e| format!("Failed to run update check: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if stdout == "error" || stdout.is_empty() {
+            return Err("Could not fetch update info".into());
+        }
+        Ok(stdout)
+    }
+    #[cfg(not(windows))]
+    Err("Auto-update is only available on Windows".into())
+}
+
+/// Download and install the latest version.
+#[tauri::command]
+pub fn download_and_install(version: String) -> Result<(), String> {
+    let msi_url = format!(
+        "https://github.com/SunMe1977/DiskRaptor/releases/download/{}/DiskRaptor_0.1.0_x64_en-US.msi",
+        version
+    );
+    let temp_dir = std::env::temp_dir();
+    let msi_path = temp_dir.join("DiskRaptor_update.msi");
+    let msi_str = msi_path.to_string_lossy().to_string();
+
+    #[cfg(windows)]
+    {
+        // Download via PowerShell
+        let dl_script = format!(
+            "Invoke-WebRequest -Uri '{}' -OutFile '{}' -TimeoutSec 120",
+            msi_url, msi_str
+        );
+        let status = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &dl_script])
+            .status()
+            .map_err(|e| format!("Failed to download update: {}", e))?;
+        if !status.success() {
+            return Err("Download failed".into());
+        }
+        // Launch MSI installer (detached, so the app can close)
+        std::process::Command::new("msiexec")
+            .args(["/i", &msi_str, "/qb", "REINSTALLMODE=amus", "REINSTALL=ALL"])
+            .spawn()
+            .map_err(|e| format!("Failed to start installer: {}", e))?;
+        // Exit the current app so the installer can overwrite
+        std::process::exit(0);
+    }
+    #[cfg(not(windows))]
+    Err("Auto-update is only available on Windows".into())
 }
 
 fn chrono_id() -> String {

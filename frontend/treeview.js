@@ -10,9 +10,12 @@ class TreeView {
     this.selectedIndex = null;
     this.onSelect = null;
     this.maxSize = 0;
+    this.filterText = '';
+    this.filterType = 'all';
     this._initScroll();
     this._initContextMenu();
     this._initDiagramJump();
+    this._initFilter();
   }
 
   /** Listen for diagram "jump in tree" clicks */
@@ -243,6 +246,12 @@ class TreeView {
   }
 
   _buildPath(arenaIdx) {
+    if (arenaIdx === 0 || arenaIdx === 4294967295) {
+      // Root → return the scan path itself
+      const sp = document.getElementById("scan-path");
+      return sp ? sp.value.trim().replace(/\\+$/, "") : null;
+    }
+    // Walk up the tree collecting names
     const parts = [];
     let cur = arenaIdx;
     let safety = 0;
@@ -255,11 +264,13 @@ class TreeView {
     }
     if (parts.length === 0) return null;
     const scanPath = document.getElementById("scan-path");
+    let root = "";
     if (scanPath && scanPath.value) {
-      const root = scanPath.value.replace(/\\+$/, "");
-      return root + "\\" + parts.join("\\");
+      root = scanPath.value.trim().replace(/\\+$/, "");
     }
-    return parts.join("\\");
+    const full = root + "\\" + parts.join("\\");
+    // Normalize: remove any \\?\ prefix if present (Windows unc path prefix)
+    return full.replace(/^\\\\\?\\/, "");
   }
 
   _buildParentPath(arenaIdx) {
@@ -269,12 +280,53 @@ class TreeView {
     return idx >= 0 ? path.substring(0, idx) : path;
   }
 
+  _initFilter() {
+    this._filterInput = document.getElementById('tree-filter');
+    this._filterSelect = document.getElementById('filter-type');
+    var self = this;
+    if (this._filterInput) {
+      this._filterInput.addEventListener('input', function () {
+        self.filterText = self._filterInput.value;
+        self._reapplyFilter();
+      });
+    }
+    if (this._filterSelect) {
+      this._filterSelect.addEventListener('change', function () {
+        self.filterType = self._filterSelect.value;
+        self._reapplyFilter();
+      });
+    }
+  }
+
+  _matchesFilter(arenaIdx) {
+    var node = this.loader.getNode(arenaIdx);
+    if (!node) return false;
+    if (this.filterType === 'file' && (node.node_type === 'Directory' || node.node_type === 0)) return false;
+    if (this.filterType === 'dir' && node.node_type !== 'Directory' && node.node_type !== 0) return false;
+    if (this.filterText) {
+      var lower = this.filterText.toLowerCase();
+      if (!node.name.toLowerCase().includes(lower)) return false;
+    }
+    return true;
+  }
+
+  _reapplyFilter() {
+    this.rebuild();
+  }
+
   async rebuild() {
     this.visibleNodes = [];
     try {
       await this._buildList(0, 0);
     } catch (e) {
       console.warn("_buildList error:", e);
+    }
+
+    // Apply filter to flat visible list
+    if (this.filterText || this.filterType !== 'all') {
+      this.visibleNodes = this.visibleNodes.filter(function (idx) {
+        return this._matchesFilter(idx);
+      }, this);
     }
 
     this.maxSize = 0;

@@ -1,0 +1,5 @@
+RELEASE_STATUS_CHECK
+- Check: https://github.com/SunMe1977/DiskRaptor/releases/tag/v0.1.6
+- Windows: uploaded (exe + msi)
+- macOS: uploaded (binary + dmg)
+- Linux: MISSING - need to build and upload

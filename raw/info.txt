@@ -1,0 +1,70 @@
+Github Token
+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
+SunMe1977
+
+
+During scanning, show:
+
+Live files/sec and folders/sec
+Current folder being scanned
+Top 10 largest files updating in real time
+Estimated finish time
+Disk read speed (MB/s)
+Memory usage,3
+
+
+
+⚡ Lightning-fast Rust engine
+
+• Scan over 1,000,000 files in under 20 seconds
+• Multi-threaded directory traversal
+• Minimal memory footprint
+• Real-time visualization
+• Interactive treemap and pie chart
+• Export to JSON, CSV, Excel, HTML
+• Native Windows application — no .NET or Java runtime required
+
+
+
+C:\Users\hansj>dir /a-d /s /b | find /c /v ""
+1190659
+
+C:\Users\hansj>dir /ad /s /b | find /c /v ""
+152921
+
+C:\Users\hansj>
+
+
+DiskUsageAnalyzer, WinDirStat2
+WinDirStat, WizTree, TreeSize, DaisyDisk 
+
+
+Disk Space Analyzer
+
+
+   
+ heise Download, CHIP, Freeware.de oder Computer Bild
+Softpedia
+
+MajorGeeks
+
+FileHorse
+
+TechSpot Downloads
+
+FileHippo
+
+SnapFiles
+
+SourceForge (nur Binary)
+
+Ninite (nur Auswahl)
+
+PortableApps
+
+WinGet
+
+Chocolatey
+
+Scoop
+
