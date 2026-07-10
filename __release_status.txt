@@ -1,5 +1,8 @@
-RELEASE_STATUS_CHECK
-- Check: https://github.com/SunMe1977/DiskRaptor/releases/tag/v0.1.6
-- Windows: uploaded (exe + msi)
-- macOS: uploaded (binary + dmg)
-- Linux: MISSING - need to build and upload
+RELEASE_STATUS_CHECK ✅ ALL OS RELEASES SUCCEEDED
+- Latest: v0.2.2
+- Check: https://github.com/SunMe1977/DiskRaptor/releases/tag/v0.2.2
+- Windows: ✅ uploaded (DiskRaptor-Windows-x64.exe)
+- macOS: ✅ uploaded (DiskRaptor-macOS-x64)
+- Linux: ✅ uploaded (DiskRaptor-Linux-x64)
+- CI Pipeline: ✅ all builds + release passed
+- Workflow: cross-platform matrix build with unique cache keys per OS

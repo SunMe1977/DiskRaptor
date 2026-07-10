@@ -21,15 +21,18 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary: diskraptor.exe
-            asset: DiskRaptor-Windows-x64.exe
+            asset_bin: DiskRaptor-Windows-x64.exe
+            install_wix: true
           - os: macos-latest
             target: x86_64-apple-darwin
             binary: diskraptor
-            asset: DiskRaptor-macOS-x64
+            asset_bin: DiskRaptor-macOS-x64
+            install_wix: false
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             binary: diskraptor
-            asset: DiskRaptor-Linux-x64
+            asset_bin: DiskRaptor-Linux-x64
+            install_wix: false
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -59,28 +62,46 @@ jobs:
             patchelf \
             libayatana-appindicator3-dev
 
-      - name: Install macOS dependencies
-        if: matrix.os == 'macos-latest'
+      - name: Install WiX (required for MSI on Windows)
+        if: matrix.install_wix
+        shell: pwsh
         run: |
-          brew update
+          choco install wixtoolset --no-progress --limit-output -y
 
-      - name: Build release binary
-        run: cargo build --manifest-path src-tauri/Cargo.toml --release --target ${{ matrix.target }}
+      - name: Build + bundle with Tauri
+        run: npx tauri build --bundles all --target ${{ matrix.target }}
 
       - name: Collect artifacts (Windows)
         if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          Copy-Item "src-tauri/target/${{ matrix.target }}/release/${{ matrix.binary }}" "artifacts/${{ matrix.asset }}" -Force -ErrorAction SilentlyContinue
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary }}" "artifacts/${{ matrix.asset }}" -Force -ErrorAction SilentlyContinue
+          $dir = "src-tauri/target/${{ matrix.target }}/release"
+          # Raw binary
+          if (Test-Path "$dir/${{ matrix.binary }}") {
+            Copy-Item "$dir/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}" -Force
+          }
+          # Bundle artifacts (MSI)
+          if (Test-Path "$dir/bundle") {
+            Get-ChildItem -Recurse -File "$dir/bundle" | ForEach-Object {
+              Copy-Item $_.FullName "artifacts/" -Force
+            }
+          }
           Get-ChildItem artifacts
 
       - name: Collect artifacts (Unix)
         if: matrix.os != 'windows-latest'
         run: |
           mkdir -p artifacts
-          cp "src-tauri/target/${{ matrix.target }}/release/${{ matrix.binary }}" "artifacts/${{ matrix.asset }}" || true
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "artifacts/${{ matrix.asset }}" || true
+          RELDIR="src-tauri/target/${{ matrix.target }}/release"
+          # Raw binary
+          if [ -f "$RELDIR/${{ matrix.binary }}" ]; then
+            cp "$RELDIR/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}"
+          fi
+          # Bundle artifacts (DMG/AppImage)
+          if [ -d "$RELDIR/bundle" ]; then
+            find "$RELDIR/bundle" -type f -exec cp {} artifacts/ \;
+          fi
           ls -la artifacts/
 
       - uses: actions/upload-artifact@v4
@@ -121,8 +142,8 @@ jobs:
             | Platform | Downloads |
             |----------|-----------|
             | **Windows** | `.msi` installer or `DiskRaptor-Windows-x64.exe` |
-            | **macOS** | `DiskRaptor-macOS-x64` binary |
-            | **Linux** | `DiskRaptor-Linux-x64` binary |
+            | **macOS** | `.dmg` or `DiskRaptor-macOS-x64` binary |
+            | **Linux** | `.AppImage` or `DiskRaptor-Linux-x64` binary |
 
             > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open. On Linux: `chmod +x && ./DiskRaptor-Linux-x64`.
           files: release_assets/**
