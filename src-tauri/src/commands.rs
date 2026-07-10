@@ -984,12 +984,12 @@ pub fn check_for_updates() -> Result<String, String> {
 
 /// Download and install the latest version.
 #[tauri::command]
-pub fn download_and_install(version: String) -> Result<(), String> {
+pub fn download_and_install(_version: String) -> Result<(), String> {
     #[cfg(windows)]
     {
         let msi_url = format!(
             "https://github.com/SunMe1977/DiskRaptor/releases/download/{}/DiskRaptor_0.1.0_x64_en-US.msi",
-            version
+            _version
         );
         let temp_dir = std::env::temp_dir();
         let msi_path = temp_dir.join("DiskRaptor_update.msi");

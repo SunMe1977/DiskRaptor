@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-#!/usr/bin/env node
 /**
  * Check DiskRaptor release health:
  * - Latest release has all 3 OS assets
