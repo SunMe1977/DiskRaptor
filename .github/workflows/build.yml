@@ -69,14 +69,14 @@ jobs:
           choco install wixtoolset --no-progress --limit-output -y
 
       - name: Build + bundle with Tauri
-        run: npx tauri build --bundles all --target ${{ matrix.target }}
+        run: npx tauri build
 
       - name: Collect artifacts (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          $dir = "src-tauri/target/${{ matrix.target }}/release"
+          $dir = "src-tauri/target/release"
           # Raw binary
           if (Test-Path "$dir/${{ matrix.binary }}") {
             Copy-Item "$dir/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}" -Force
@@ -93,7 +93,7 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           mkdir -p artifacts
-          RELDIR="src-tauri/target/${{ matrix.target }}/release"
+          RELDIR="src-tauri/target/release"
           # Raw binary
           if [ -f "$RELDIR/${{ matrix.binary }}" ]; then
             cp "$RELDIR/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}"
