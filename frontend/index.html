@@ -71,6 +71,25 @@
                         <h2 data-i18n="tree.title">Directory Tree</h2>
                         <span id="node-count" class="badge">0 <span data-i18n="tree.nodes">nodes</span></span>
                     </div>
+                    <!-- Drive usage bar -->
+                    <div id="drive-usage-bar" style="display:none;padding:6px 12px;border-bottom:1px solid var(--border)">
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <span id="du-icon" style="font-size:18px">💽</span>
+                            <div style="flex:1;min-width:0">
+                                <div style="display:flex;justify-content:space-between;font-size:11px">
+                                    <span id="du-path" style="font-weight:600"></span>
+                                    <span id="du-pct" style="font-weight:700;font-family:var(--font-mono)"></span>
+                                </div>
+                                <div style="height:4px;background:var(--bg-hover);border-radius:2px;margin:2px 0;overflow:hidden">
+                                    <div id="du-bar" style="height:100%;width:0%;border-radius:2px;transition:width .3s"></div>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted)">
+                                    <span id="du-free"></span>
+                                    <span id="du-total"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div id="filter-bar">
                         <input type="text" id="tree-filter" placeholder="Filter files by name, size, type..." />
                         <select id="filter-type">
@@ -78,6 +97,15 @@
                             <option value="file">Files</option>
                             <option value="dir">Directories</option>
                         </select>
+                    </div>
+                    <!-- Tree column headers (sortable) -->
+                    <div id="tree-col-headers" style="display:flex;padding:4px 12px;font-size:10px;color:var(--text-muted);border-bottom:1px solid var(--border);user-select:none">
+                        <span style="width:24px;flex-shrink:0"></span>
+                        <span class="tree-col-sortable" data-sort="name" style="flex:1;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Name <span class="sort-arrow"></span></span>
+                        <span class="tree-col-sortable" data-sort="dirs" style="width:50px;text-align:right;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Dirs <span class="sort-arrow"></span></span>
+                        <span class="tree-col-sortable" data-sort="files" style="width:55px;text-align:right;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Files <span class="sort-arrow"></span></span>
+                        <span class="tree-col-sortable" data-sort="size" style="width:75px;text-align:right;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Size <span class="sort-arrow"></span></span>
+                        <span class="tree-col-sortable" data-sort="pct" style="width:45px;text-align:right;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">% <span class="sort-arrow"></span></span>
                     </div>
                     <div id="tree-container">
                         <div id="tree-scroll">

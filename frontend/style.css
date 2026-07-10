@@ -553,14 +553,9 @@ button.primary:hover:not(:disabled) {
 .tree-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
-  padding: 3px var(--sp-3);
-  padding-left: calc(var(--depth, 0) * 16px + 8px);
   height: 28px;
   cursor: pointer;
   transition: background var(--fast);
-  border-radius: 0;
-  white-space: nowrap;
   font-size: var(--fs-base);
   color: var(--text-primary);
   user-select: none;
@@ -575,6 +570,37 @@ button.primary:hover:not(:disabled) {
 .tree-row.directory {
   font-weight: 500;
 }
+
+/* Tree column headers */
+.tree-col-sortable:hover { color: var(--text-primary); }
+.tree-col-sortable .sort-arrow { display:inline-block; font-size:8px; opacity:0.3; margin-left:2px; }
+.tree-col-sortable:hover .sort-arrow { opacity:0.8; }
+.tree-col-sortable.active .sort-arrow { opacity:1; color:var(--accent); }
+
+/* Tree row columns */
+.tree-col-name {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; gap: 2px;
+}
+.tree-col-dirs,
+.tree-col-files {
+  width: 55px; text-align: right;
+  font-size: 11px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums; padding-right: 4px;
+}
+.tree-col-size {
+  width: 75px; text-align: right;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-secondary); padding-right: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.tree-col-pct {
+  width: 45px; text-align: right;
+  font-size: 10px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tree-row.directory .tree-col-size { color: var(--text-primary); font-weight: 600; }
 
 /* Tree expand arrow */
 .tree-arrow {
