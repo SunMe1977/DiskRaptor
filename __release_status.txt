@@ -1,8 +1,5 @@
-RELEASE_STATUS_CHECK ✅ ALL OS RELEASES SUCCEEDED
-- Latest: v0.2.2
-- Check: https://github.com/SunMe1977/DiskRaptor/releases/tag/v0.2.2
-- Windows: ✅ uploaded (DiskRaptor-Windows-x64.exe)
-- macOS: ✅ uploaded (DiskRaptor-macOS-x64)
-- Linux: ✅ uploaded (DiskRaptor-Linux-x64)
-- CI Pipeline: ✅ all builds + release passed
-- Workflow: cross-platform matrix build with unique cache keys per OS
+RELEASE_STATUS_CHECK ✅ v0.2.2 COMPLETE WITH ALL INSTALLERS
+- Windows: DiskRaptor-Windows-x64.exe, DiskRaptor_0.1.0_x64-setup.exe, DiskRaptor_0.1.0_x64_en-US.msi
+- macOS: DiskRaptor-macOS-x64, DiskRaptor_0.1.0_aarch64.dmg
+- Linux: disk-raptor_0.1.0_amd64.AppImage, disk-raptor_0.1.0_amd64.deb, disk-raptor-0.1.0-1.x86_64.rpm
+- CI: all builds + release passed

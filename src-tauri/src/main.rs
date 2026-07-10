@@ -68,11 +68,19 @@ fn main() {
             .add_submenu(lang_submenu),
     );
 
+    // ── Tools menu ────────────────────────────────────────
+    let find_dupes =
+        CustomMenuItem::new("find_duplicates", "Find Duplicate Files…").accelerator("CmdOrCtrl+D");
+    let tools_menu = Submenu::new("Tools", Menu::new().add_item(find_dupes));
+
     let check_updates = CustomMenuItem::new("check_updates", "Check for Updates…");
     let about = CustomMenuItem::new("about", "About DiskRaptor").accelerator("CmdOrCtrl+I");
     let help_menu = Submenu::new("Help", Menu::new().add_item(check_updates).add_item(about));
 
-    let menu = Menu::new().add_submenu(view_menu).add_submenu(help_menu);
+    let menu = Menu::new()
+        .add_submenu(view_menu)
+        .add_submenu(tools_menu)
+        .add_submenu(help_menu);
 
     // ── System Tray ───────────────────────────────────────
     let tray_menu = SystemTrayMenu::new()
@@ -93,6 +101,9 @@ fn main() {
                 }
                 "view_treemap" => {
                     let _ = win.emit("menu-view-treemap", ());
+                }
+                "find_duplicates" => {
+                    let _ = win.emit("menu-find-duplicates", ());
                 }
                 "check_updates" => {
                     let _ = win.emit("menu-check-updates", ());
