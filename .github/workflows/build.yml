@@ -81,10 +81,13 @@ jobs:
           if (Test-Path "$dir/${{ matrix.binary }}") {
             Copy-Item "$dir/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}" -Force
           }
-          # Bundle artifacts (MSI)
-          if (Test-Path "$dir/bundle") {
-            Get-ChildItem -Recurse -File "$dir/bundle" | ForEach-Object {
-              Copy-Item $_.FullName "artifacts/" -Force
+          # Bundle artifacts — only final installers, not build internals
+          $bundleDirs = @("$dir/bundle/msi", "$dir/bundle/nsis")
+          foreach ($bd in $bundleDirs) {
+            if (Test-Path $bd) {
+              Get-ChildItem -File $bd | ForEach-Object {
+                Copy-Item $_.FullName "artifacts/" -Force
+              }
             }
           }
           Get-ChildItem artifacts
@@ -98,10 +101,12 @@ jobs:
           if [ -f "$RELDIR/${{ matrix.binary }}" ]; then
             cp "$RELDIR/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}"
           fi
-          # Bundle artifacts (DMG/AppImage)
-          if [ -d "$RELDIR/bundle" ]; then
-            find "$RELDIR/bundle" -type f -exec cp {} artifacts/ \;
-          fi
+          # Bundle artifacts — only final installers
+          for dir in "$RELDIR/bundle/msi" "$RELDIR/bundle/nsis" "$RELDIR/bundle/dmg" "$RELDIR/bundle/appimage" "$RELDIR/bundle/deb" "$RELDIR/bundle/rpm"; do
+            if [ -d "$dir" ]; then
+              cp "$dir"/* artifacts/ 2>/dev/null || true
+            fi
+          done
           ls -la artifacts/
 
       - uses: actions/upload-artifact@v4
