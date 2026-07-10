@@ -335,18 +335,31 @@
         </div>
 
         <div id="update-overlay">
-            <div class="about-card">
-                <div style="font-size: 48px; margin-bottom: 8px">📥</div>
-                <h2 data-i18n="update.title">Update Available</h2>
-                <p id="update-version" style="font-size:13px;color:var(--text-secondary);margin-bottom:8px"></p>
-                <p id="update-status" style="font-size:13px;color:var(--text-primary);margin-bottom:16px"></p>
-                <div id="update-actions" style="display:flex;gap:8px;justify-content:center">
-                    <button id="btn-update-download" class="primary" data-i18n="update.download">Download &amp; Install</button>
-                    <button id="btn-update-close" data-i18n="about.done">Later</button>
+            <div class="about-card" style="min-width:340px">
+                <!-- Icon changes based on state -->
+                <div id="update-icon" style="font-size: 52px; margin-bottom: 10px">🔄</div>
+                <h2 id="update-heading" data-i18n="update.title">Check for Updates</h2>
+
+                <!-- Status -->
+                <div id="update-body">
+                    <p id="update-status" style="font-size:14px;color:var(--text-primary);margin-bottom:4px">Checking…</p>
+                    <p id="update-version" style="font-size:12px;color:var(--text-secondary)"></p>
+                    <p id="update-currversion" style="font-size:11px;color:var(--text-muted);margin-top:4px">Current: v0.2.3</p>
                 </div>
-                <div id="update-progress" style="display:none;margin-top:12px">
-                    <div class="spinner-small" style="width:20px;height:20px;margin:0 auto 8px"></div>
-                    <p style="font-size:11px;color:var(--text-muted)" data-i18n="update.downloading">Downloading…</p>
+
+                <!-- Actions -->
+                <div id="update-actions" style="display:flex;gap:8px;justify-content:center;margin-top:16px">
+                    <button id="btn-update-download" class="primary" style="display:none">⬇ Download &amp; Install</button>
+                    <button id="btn-update-close">✓</button> OK</button>
+                </div>
+
+                <!-- Progress bar during download -->
+                <div id="update-progress" style="display:none;margin-top:14px">
+                    <div class="spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>
+                    <p style="font-size:12px;color:var(--text-secondary)">Downloading latest version…</p>
+                    <div style="height:4px;background:var(--bg-hover);border-radius:2px;margin-top:8px;overflow:hidden">
+                        <div id="update-progress-bar" style="height:100%;width:0%;background:var(--accent);border-radius:2px;transition:width .3s"></div>
+                    </div>
                 </div>
             </div>
         </div>

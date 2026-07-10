@@ -248,3 +248,159 @@
         } catch(e) { console.log("Menu event not available:", e.message); }
       }
     })();
+
+    // ── Update check ────────────────────────────────────────
+    (function initUpdateCheck() {
+      var overlay = document.getElementById("update-overlay");
+      var icon = document.getElementById("update-icon");
+      var heading = document.getElementById("update-heading");
+      var status = document.getElementById("update-status");
+      var version = document.getElementById("update-version");
+      var currVer = document.getElementById("update-currversion");
+      var actions = document.getElementById("update-actions");
+      var dlBtn = document.getElementById("btn-update-download");
+      var closeBtn = document.getElementById("btn-update-close");
+      var progress = document.getElementById("update-progress");
+      var progressBar = document.getElementById("update-progress-bar");
+
+      if (!overlay) return;
+
+      function resetDialog() {
+        icon.textContent = "🔄";
+        heading.textContent = "Check for Updates";
+        status.textContent = "";
+        version.textContent = "";
+        dlBtn.style.display = "none";
+        progress.style.display = "none";
+      }
+
+      function showUpToDate() {
+        icon.textContent = "✅";
+        heading.textContent = "Up to Date";
+        status.textContent = "You have the latest version.";
+        version.textContent = "";
+        dlBtn.style.display = "none";
+      }
+
+      function showUpdateAvailable(latestTag) {
+        icon.textContent = "📥";
+        heading.textContent = "Update Available";
+        status.textContent = "Version " + latestTag + " is ready!";
+        version.textContent = "New features and improvements";
+        dlBtn.style.display = "inline-flex";
+      }
+
+      function showError(msg) {
+        icon.textContent = "⚠️";
+        heading.textContent = "Could Not Check";
+        status.textContent = msg || "Could not reach GitHub.";
+        version.textContent = "Check your internet connection.";
+        dlBtn.style.display = "none";
+      }
+
+      function showDownloading() {
+        icon.textContent = "⏳";
+        heading.textContent = "Downloading…";
+        status.textContent = "Downloading latest version…";
+        version.textContent = "This may take a moment.";
+        actions.style.display = "none";
+        progress.style.display = "block";
+        progressBar.style.width = "0%";
+        // Animate progress bar
+        var p = 0;
+        var timer = setInterval(function() {
+          p += Math.random() * 8;
+          if (p > 85) { p = 85; clearInterval(timer); }
+          progressBar.style.width = p + "%";
+        }, 500);
+        window._updateTimer = timer;
+      }
+
+      function showInstalling() {
+        icon.textContent = "⚙️";
+        heading.textContent = "Installing…";
+        status.textContent = "Installing update…";
+        version.textContent = "The app will restart.";
+        progressBar.style.width = "100%";
+      }
+
+      closeBtn.onclick = function() {
+        overlay.classList.remove("active");
+        if (window._updateTimer) clearInterval(window._updateTimer);
+      };
+      overlay.addEventListener("click", function(e) {
+        if (e.target === overlay) overlay.classList.remove("active");
+      });
+
+      async function runUpdateCheck() {
+        resetDialog();
+        overlay.classList.add("active");
+        status.textContent = "Connecting to GitHub…";
+        version.textContent = "Fetching latest release…";
+
+        if (!window.__TAURI__ || !window.__TAURI__.invoke) {
+          showError("Backend not available");
+          return;
+        }
+
+        try {
+          var latestTag = await window.__TAURI__.invoke("check_for_updates");
+
+          if (!latestTag || latestTag === "v0.2.3" || latestTag === "0.2.3") {
+            showUpToDate();
+            version.textContent = "Current: v0.2.3 | Latest: " + (latestTag || "v0.2.3");
+          } else {
+            showUpdateAvailable(latestTag);
+            version.textContent = "Current: v0.2.3 → Latest: " + latestTag;
+
+            dlBtn.onclick = async function() {
+              showDownloading();
+              try {
+                await window.__TAURI__.invoke("download_and_install", { version: latestTag });
+                showInstalling();
+              } catch (e) {
+                icon.textContent = "❌";
+                status.textContent = "Download failed: " + e;
+                version.textContent = "Please try again or download manually.";
+                actions.style.display = "flex";
+                progress.style.display = "none";
+                dlBtn.style.display = "inline-flex";
+              }
+            };
+          }
+        } catch (e) {
+          showError(String(e));
+        }
+      }
+
+      // Button click
+      var btnDupDummy = document.getElementById("btn-duplicates");
+      // Hook into Help → Check for Updates menu
+      btnDupDummy = null; // not used
+
+      if (window.__TAURI__ && window.__TAURI__.event) {
+        try {
+          window.__TAURI__.event.listen("menu-check-updates", function() {
+            runUpdateCheck();
+          });
+        } catch(e) {}
+      }
+
+      // Also restore other menu events
+      if (window.__TAURI__ && window.__TAURI__.event) {
+        try {
+          window.__TAURI__.event.listen("menu-view-pie", function() {
+            var btn = document.querySelector('.diagram-mode[data-mode="pie"]');
+            if (btn) btn.click();
+          });
+          window.__TAURI__.event.listen("menu-view-treemap", function() {
+            var btn = document.querySelector('.diagram-mode[data-mode="treemap"]');
+            if (btn) btn.click();
+          });
+          window.__TAURI__.event.listen("menu-about", function() {
+            var aboutOverlay = document.getElementById("about-overlay");
+            if (aboutOverlay) aboutOverlay.classList.add("active");
+          });
+        } catch(e) {}
+      }
+    })();
