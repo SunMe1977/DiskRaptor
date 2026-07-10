@@ -43,6 +43,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: ${{ matrix.target }}
+          cache-key: "rust-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}"
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-22.04'
