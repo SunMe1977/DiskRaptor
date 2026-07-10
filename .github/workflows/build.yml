@@ -12,8 +12,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Windows Build + Release ───────────────────────────
-  build-windows:
+  build:
     name: Build Windows
     runs-on: windows-latest
     timeout-minutes: 30
@@ -21,279 +20,48 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      - name: Install Node dependencies
+      - name: Install npm deps
         run: npm install
-      - name: Update Rust
-        run: rustup update
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          cache: false
-      - name: Build binary
+      - name: Build release binary
         run: cargo build --manifest-path src-tauri/Cargo.toml --release
-      - name: Prepare Windows artifacts
+      - name: Collect artifacts
         run: |
-          New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
-          if (Test-Path "target/release/diskraptor.exe") {
-            Copy-Item "target/release/diskraptor.exe" "artifacts/windows/DiskRaptor-Windows-x64.exe" -Force
-          } elseif (Test-Path "src-tauri/target/release/diskraptor.exe") {
-            Copy-Item "src-tauri/target/release/diskraptor.exe" "artifacts/windows/DiskRaptor-Windows-x64.exe" -Force
-          } else {
-            Write-Error "Windows binary not found"
-            exit 1
-          }
-      - name: Bundle MSI (best-effort, continue on error)
-        continue-on-error: true
-        run: |
-          cd src-tauri
-          npx tauri build --bundles msi --ci --verbose 2>&1 || echo "MSI bundling failed — continuing"
-        shell: bash
-      - name: Collect bundled MSI (if any)
-        run: |
-          Get-ChildItem -Path "target/release/bundle/msi" -Recurse -Filter *.msi -ErrorAction SilentlyContinue |
-            Copy-Item -Destination "artifacts/windows" -Force
-          Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Recurse -Filter *.msi -ErrorAction SilentlyContinue |
-            Copy-Item -Destination "artifacts/windows" -Force 2>$null
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Copy-Item "src-tauri/target/release/diskraptor.exe" "artifacts/DiskRaptor-Windows-x64.exe" -Force -ErrorAction SilentlyContinue
+          Copy-Item "target/release/diskraptor.exe" "artifacts/DiskRaptor-Windows-x64.exe" -Force -ErrorAction SilentlyContinue
       - uses: actions/upload-artifact@v4
         with:
-          name: release-Windows
-          compression-level: 0
-          path: artifacts/windows/**
-          if-no-files-found: warn
+          name: release
+          path: artifacts/**
           retention-days: 7
 
-  # ── macOS Build ───────────────────────────────────────
-  build-macos:
-    name: Build macOS
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
-      - name: Install Node dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
-      - name: Update Rust
-        run: rustup update
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Build binary
-        run: cargo build --manifest-path src-tauri/Cargo.toml --release
-      - name: Prepare macOS artifacts (binary first)
-        run: |
-          mkdir -p artifacts/macos
-          if [ -f target/release/diskraptor ]; then
-            cp target/release/diskraptor artifacts/macos/DiskRaptor-macOS-x64
-            chmod +x artifacts/macos/DiskRaptor-macOS-x64
-          elif [ -f src-tauri/target/release/diskraptor ]; then
-            cp src-tauri/target/release/diskraptor artifacts/macos/DiskRaptor-macOS-x64
-            chmod +x artifacts/macos/DiskRaptor-macOS-x64
-          else
-            echo "macOS binary not found" >&2
-            exit 1
-          fi
-      - name: Bundle DMG (best-effort, continue on error)
-        continue-on-error: true
-        env:
-          TAURI_SKIP_MACOS_CODE_SIGNING: "true"
-        run: |
-          cd src-tauri
-          npx tauri build --bundles dmg --ci --verbose 2>&1 || echo "DMG bundling failed — continuing"
-      - name: Collect bundled DMG (if any)
-        run: |
-          find target/release/bundle/dmg src-tauri/target/release/bundle/dmg -type f -name '*.dmg' -exec cp {} artifacts/macos/ \; 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-macOS
-          compression-level: 0
-          path: artifacts/macos/**
-          if-no-files-found: warn
-          retention-days: 7
-
-  # ── Linux Build ───────────────────────────────────────
-  build-linux:
-    name: Build Linux
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
-      - name: Install Node dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          cache: false
-      - name: Update Rust
-        run: rustup update
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update -qq
-
-          # Tauri v1 may require either 4.0 or 4.1 depending on runner image.
-          if apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libwebkit2gtk-4.0-dev
-          elif apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
-          else
-            echo "No suitable WebKit2GTK dev package found" >&2
-            exit 1
-          fi
-
-          if apt-cache show libjavascriptcoregtk-4.0-dev >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libjavascriptcoregtk-4.0-dev
-          elif apt-cache show libjavascriptcoregtk-4.1-dev >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libjavascriptcoregtk-4.1-dev
-          else
-            echo "No suitable JavaScriptCoreGTK dev package found" >&2
-            exit 1
-          fi
-
-          sudo apt-get install -y -qq \
-            libgtk-3-dev \
-            librsvg2-dev \
-            libsoup2.4-dev \
-            patchelf
-
-          # Install exactly one tray indicator dev package to avoid apt conflicts.
-          if apt-cache show libayatana-appindicator3-dev >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libayatana-appindicator3-dev
-          elif apt-cache show libappindicator3-dev >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libappindicator3-dev
-          else
-            echo "No appindicator dev package found; continuing without it"
-          fi
-
-          if apt-cache show libfuse2 >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libfuse2
-          elif apt-cache show libfuse2t64 >/dev/null 2>&1; then
-            sudo apt-get install -y -qq libfuse2t64
-          else
-            echo "No suitable libfuse2 package found" >&2
-            exit 1
-          fi
-      - name: Build binary
-        run: cargo build --manifest-path src-tauri/Cargo.toml --release
-      - name: Prepare Linux artifacts (binary first)
-        run: |
-          mkdir -p artifacts/linux
-          if [ -f target/release/diskraptor ]; then
-            cp target/release/diskraptor artifacts/linux/DiskRaptor-Linux-x64
-            chmod +x artifacts/linux/DiskRaptor-Linux-x64
-          elif [ -f src-tauri/target/release/diskraptor ]; then
-            cp src-tauri/target/release/diskraptor artifacts/linux/DiskRaptor-Linux-x64
-            chmod +x artifacts/linux/DiskRaptor-Linux-x64
-          else
-            echo "Linux binary not found" >&2
-            exit 1
-          fi
-      - name: Bundle AppImage (best-effort, continue on error)
-        continue-on-error: true
-        run: |
-          cd src-tauri
-          npx tauri build --bundles appimage --ci --verbose 2>&1 || echo "AppImage bundling failed — continuing"
-      - name: Collect bundled AppImage (if any)
-        run: |
-          find target/release/bundle/appimage src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' -exec cp {} artifacts/linux/ \; 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-Linux
-          compression-level: 0
-          path: artifacts/linux/**
-          if-no-files-found: warn
-          retention-days: 7
-
-  # ── Create GitHub Release (only for tags) ─────────────────
   release:
     name: Create Release
     if: github.ref_type == 'tag'
-    needs: [build-windows]
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
-          name: release-Windows
-          path: artifacts/windows
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: release-macOS
-          path: artifacts/macos
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: release-Linux
-          path: artifacts/linux
-
+          name: release
+          path: artifacts
       - name: Prepare release assets
         run: |
           mkdir -p release_assets
-          echo "=== All downloaded files ==="
-          find artifacts -type f 2>/dev/null | sort
-
-          for f in $(find artifacts -type f); do
-            [ ! -f "$f" ] && continue
-            base=$(basename "$f")
-            case "$base" in
-              *.msi)
-                cp "$f" release_assets/
-                echo "  [Windows] $base"
-                ;;
-              *.dmg)
-                cp "$f" release_assets/DiskRaptor-macOS.dmg 2>/dev/null || cp "$f" release_assets/
-                echo "  [macOS] dmg"
-                ;;
-              *.AppImage)
-                cp "$f" release_assets/DiskRaptor-Linux.AppImage 2>/dev/null || cp "$f" release_assets/
-                echo "  [Linux] AppImage"
-                ;;
-              diskraptor.exe)
-                cp "$f" release_assets/DiskRaptor-Windows-x64.exe
-                echo "  [Windows] exe"
-                ;;
-              diskraptor)
-                chmod +x "$f"
-                if [[ "$(dirname "$f")" == *macos* ]] || [[ "$(dirname "$f")" == *osx* ]]; then
-                  cp "$f" release_assets/DiskRaptor-macOS-x64
-                  echo "  [macOS] binary"
-                else
-                  cp "$f" release_assets/DiskRaptor-Linux-x64
-                  echo "  [Linux] binary"
-                fi
-                ;;
-            esac
-          done
-
-      - name: List release assets
-        run: ls -lh release_assets/
-
+          ls -la artifacts/
+          if [ -f artifacts/DiskRaptor-Windows-x64.exe ]; then
+            cp artifacts/DiskRaptor-Windows-x64.exe release_assets/
+          fi
+          ls -la release_assets/
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: DiskRaptor ${{ github.ref_name }}
-          body: |
-            ## DiskRaptor ${{ github.ref_name }}
-
-            | Platform | Downloads |
-            |----------|-----------|
-            | **Windows** | `.msi` installer or `DiskRaptor-Windows-x64.exe` |
-            | **macOS** | `*.dmg` or `DiskRaptor-macOS-x64` binary |
-            | **Linux** | `*.AppImage` or `DiskRaptor-Linux-x64` binary |
-
-            > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open. On Linux: `chmod +x && ./DiskRaptor-Linux-x64`.
+          body: "DiskRaptor ${{ github.ref_name }} — Windows x64 binary"
           files: release_assets/**
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
