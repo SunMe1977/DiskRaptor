@@ -828,8 +828,6 @@ fn list_unix_drives() -> Vec<DriveInfo> {
     paths
         .into_iter()
         .filter_map(|p| {
-            use std::ffi::OsStr;
-            use std::os::unix::ffi::OsStrExt;
             // Best-effort: if we can't get stats, return basic entry
             Some(DriveInfo {
                 path: p,
@@ -963,9 +961,9 @@ fn format_size_dup(bytes: u64) -> String {
 /// Check GitHub for the latest release version.
 #[tauri::command]
 pub fn check_for_updates() -> Result<String, String> {
-    let url = "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest";
     #[cfg(windows)]
     {
+        let url = "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest";
         let script = format!(
             "try {{ $r = Invoke-RestMethod -Uri '{}' -Headers @{{'User-Agent'='DiskRaptor'}} -TimeoutSec 10; Write-Output $r.tag_name }} catch {{ Write-Output 'error' }}",
             url
@@ -987,16 +985,15 @@ pub fn check_for_updates() -> Result<String, String> {
 /// Download and install the latest version.
 #[tauri::command]
 pub fn download_and_install(version: String) -> Result<(), String> {
-    let msi_url = format!(
-        "https://github.com/SunMe1977/DiskRaptor/releases/download/{}/DiskRaptor_0.1.0_x64_en-US.msi",
-        version
-    );
-    let temp_dir = std::env::temp_dir();
-    let msi_path = temp_dir.join("DiskRaptor_update.msi");
-    let msi_str = msi_path.to_string_lossy().to_string();
-
     #[cfg(windows)]
     {
+        let msi_url = format!(
+            "https://github.com/SunMe1977/DiskRaptor/releases/download/{}/DiskRaptor_0.1.0_x64_en-US.msi",
+            version
+        );
+        let temp_dir = std::env::temp_dir();
+        let msi_path = temp_dir.join("DiskRaptor_update.msi");
+        let msi_str = msi_path.to_string_lossy().to_string();
         // Download via PowerShell
         let dl_script = format!(
             "Invoke-WebRequest -Uri '{}' -OutFile '{}' -TimeoutSec 120",
