@@ -900,6 +900,47 @@
       if (e.key === "Enter") btnScan.click();
     });
 
+    // ── Initialize modules ─────────────────────────────────
+    (function initModules() {
+      var modules = window.DiskRaptorModules || {};
+      var moduleKeys = Object.keys(modules);
+      if (moduleKeys.length === 0) return;
+
+      // Create a module container in the detail panel, after topfiles-card
+      var detailPanel = document.getElementById("detail-panel");
+      var topfilesCard = document.getElementById("topfiles-card");
+      if (!detailPanel || !topfilesCard) return;
+
+      var modContainer = document.createElement("div");
+      modContainer.id = "modules-container";
+      modContainer.style.cssText = "display:flex;flex-direction:column;gap:8px;margin-top:8px";
+      detailPanel.insertBefore(modContainer, topfilesCard.nextSibling);
+
+      moduleKeys.forEach(function (key) {
+        var ModuleClass = modules[key];
+        try {
+          var instance = new ModuleClass();
+          var panel = instance.createPanel();
+          if (panel) {
+            panel.dataset.module = key;
+            modContainer.appendChild(panel);
+            // Wire up the Run button
+            var runBtn = panel.querySelector(".module-run-btn");
+            if (runBtn) {
+              runBtn.addEventListener("click", function () {
+                instance.run(loader, scanPath.value);
+              });
+            }
+            // Show the panel (they default to display:none)
+            panel.style.display = "block";
+          }
+          console.log("[Modules] Initialized:", key);
+        } catch (e) {
+          console.warn("[Modules] Failed to init", key, e);
+        }
+      });
+    })();
+
     console.log("DiskRaptor ready.");
   }
 
