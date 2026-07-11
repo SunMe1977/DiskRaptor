@@ -1,26 +1,29 @@
 // DiskRaptor Scanner Integration Test
-// Tests the scanner against the project directory (small, fast).
+// Tests the scanner against a small temp directory (fast, reliable, cross-platform).
 // Run with: cd src-tauri && cargo test --test scanner_test -- --nocapture
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
-fn make_config(root: String) -> diskraptor_lib::scanner::walker::ScanConfig {
-    diskraptor_lib::scanner::walker::ScanConfig {
-        root_path: root,
-        skip_dirs: vec!["target".into(), ".git".into(), "node_modules".into()],
-        top_file_min_size: 0,
-        top_files_count: 50,
-    }
+fn create_test_dir(name: &str) -> PathBuf {
+    let tmp = std::env::temp_dir().join("diskraptor_test").join(name);
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp.join("sub1")).unwrap();
+    std::fs::create_dir_all(&tmp.join("sub1").join("sub2")).unwrap();
+    std::fs::write(tmp.join("root.txt"), "hello root").unwrap();
+    std::fs::write(tmp.join("sub1").join("a.rs"), "fn a() {}").unwrap();
+    std::fs::write(tmp.join("sub1").join("b.rs"), "fn b() {}").unwrap();
+    std::fs::write(tmp.join("sub1").join("sub2").join("c.rs"), "fn c() {}").unwrap();
+    std::fs::write(tmp.join("data.bin"), &[0u8; 4096]).unwrap();
+    tmp
 }
 
-/// Test the scanner against the project directory.
+/// Test the scanner against a small temp directory.
 /// This verifies that the scanner finds files and builds a tree.
 #[test]
-fn test_scan_project_dir() {
-    let root = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .to_string_lossy()
-        .to_string();
+fn test_scan_small_dir() {
+    let tmp = create_test_dir("scan");
+    let root = tmp.to_string_lossy().to_string();
 
     eprintln!("Testing scanner on: {}", root);
 
@@ -31,7 +34,12 @@ fn test_scan_project_dir() {
         files.store(f, std::sync::atomic::Ordering::Relaxed);
     });
 
-    let config = make_config(root.clone());
+    let config = diskraptor_lib::scanner::walker::ScanConfig {
+        root_path: root.clone(),
+        skip_dirs: vec![],
+        top_file_min_size: 0,
+        top_files_count: 50,
+    };
 
     let result = diskraptor_lib::scanner::walker::scan_directory_with_progress(config, cb);
     assert!(result.is_ok(), "Scan failed: {:?}", result.err());
@@ -50,15 +58,16 @@ fn test_scan_project_dir() {
     eprintln!("Scan time: {} ms", result.stats.scan_time_ms);
     eprintln!("Root size: {}", result.arena.nodes[0].size);
 
-    // Verify we found files
-    assert!(total_nodes > 0, "Tree must have at least 1 node (root)");
-    assert!(
-        total_files > 0 || total_dirs > 0,
-        "Expected files or dirs in project"
-    );
+    // Verify we found files (4 files + 3 dirs including root)
+    assert!(total_nodes >= 4, "Expected at least 4 nodes, got {}", total_nodes);
+    assert!(total_files >= 3, "Expected at least 3 files, got {}", total_files);
+    assert!(total_dirs >= 2, "Expected at least 2 dirs, got {}", total_dirs);
 
     // Verify stats are populated
-    assert!(result.stats.top_files.len() > 0, "Expected top files");
+    assert!(
+        result.stats.top_files.len() > 0,
+        "Expected top files"
+    );
     assert!(
         result.stats.file_type_breakdown.len() > 0,
         "Expected file type breakdown"
@@ -74,19 +83,24 @@ fn test_scan_project_dir() {
     eprintln!("  ✓ scan_directory_with_progress works");
     eprintln!("  ✓ tree building works");
     eprintln!("  ✓ stats generation works");
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }
 
 /// Test chunking of the tree.
 #[test]
 fn test_chunking() {
-    let root = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .to_string_lossy()
-        .to_string();
+    let tmp = create_test_dir("chunk");
+    let root = tmp.to_string_lossy().to_string();
 
     let cb: Box<dyn Fn(u64, u64, &str) + Send + Sync> = Box::new(|_, _, _| {});
 
-    let config = make_config(root);
+    let config = diskraptor_lib::scanner::walker::ScanConfig {
+        root_path: root,
+        skip_dirs: vec![],
+        top_file_min_size: 0,
+        top_files_count: 50,
+    };
 
     let result = diskraptor_lib::scanner::walker::scan_directory_with_progress(config, cb)
         .expect("Scan failed");
@@ -118,18 +132,23 @@ fn test_chunking() {
     eprintln!("  ✓ chunk_tree works");
     eprintln!("  ✓ get_root_info works");
     eprintln!("  ✓ chunk order is correct (parent before children)");
+
+    let _ = std::fs::remove_dir_all(&tmp.parent().unwrap());
 }
 
 /// Test tree node parent-child linking.
 #[test]
 fn test_tree_linking() {
-    let root = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .to_string_lossy()
-        .to_string();
+    let tmp = create_test_dir("linking");
+    let root = tmp.to_string_lossy().to_string();
 
     let cb: Box<dyn Fn(u64, u64, &str) + Send + Sync> = Box::new(|_, _, _| {});
-    let config = make_config(root);
+    let config = diskraptor_lib::scanner::walker::ScanConfig {
+        root_path: root,
+        skip_dirs: vec![],
+        top_file_min_size: 0,
+        top_files_count: 50,
+    };
 
     let result = diskraptor_lib::scanner::walker::scan_directory_with_progress(config, cb)
         .expect("Scan failed");
@@ -139,16 +158,12 @@ fn test_tree_linking() {
     // Verify all nodes (except root) have valid parents
     for (i, node) in arena.nodes.iter().enumerate() {
         if i == 0 {
-            // Root: no parent
             assert_eq!(node.parent, u32::MAX, "Root's parent must be u32::MAX");
         } else {
-            // Non-root: must have a valid parent index
             assert!(
                 node.parent < arena.nodes.len() as u32,
                 "Node {} (name={}) has invalid parent {}",
-                i,
-                node.name,
-                node.parent
+                i, node.name, node.parent
             );
         }
     }
@@ -159,34 +174,37 @@ fn test_tree_linking() {
             assert!(
                 node.first_child < arena.nodes.len() as u32,
                 "Node {} has invalid first_child {}",
-                i,
-                node.first_child
+                i, node.first_child
             );
         }
         if node.next_sibling != u32::MAX {
             assert!(
                 node.next_sibling < arena.nodes.len() as u32,
                 "Node {} has invalid next_sibling {}",
-                i,
-                node.next_sibling
+                i, node.next_sibling
             );
         }
     }
 
     eprintln!("  ✓ parent-child linking is valid");
     eprintln!("  ✓ sibling linking is valid");
+
+    let _ = std::fs::remove_dir_all(&tmp.parent().unwrap());
 }
 
 /// Test the get_children logic (used by frontend).
 #[test]
 fn test_get_children() {
-    let root = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .to_string_lossy()
-        .to_string();
+    let tmp = create_test_dir("children");
+    let root = tmp.to_string_lossy().to_string();
 
     let cb: Box<dyn Fn(u64, u64, &str) + Send + Sync> = Box::new(|_, _, _| {});
-    let config = make_config(root);
+    let config = diskraptor_lib::scanner::walker::ScanConfig {
+        root_path: root,
+        skip_dirs: vec![],
+        top_file_min_size: 0,
+        top_files_count: 50,
+    };
 
     let result = diskraptor_lib::scanner::walker::scan_directory_with_progress(config, cb)
         .expect("Scan failed");
@@ -202,23 +220,27 @@ fn test_get_children() {
     }
 
     eprintln!("Root has {} direct children", children.len());
-    assert!(children.len() > 0, "Root must have children");
-
-    // Verify children are sorted by size (descending) in the frontend
-    children.sort_unstable_by_key(|b| std::cmp::Reverse(b.size));
-    let first = &children[0];
-    eprintln!("  Largest child: {} ({} bytes)", first.name, first.size);
+    assert!(children.len() >= 1, "Root must have at least 1 child, got {}", children.len());
 
     eprintln!("  ✓ get_children logic works");
+
+    let _ = std::fs::remove_dir_all(&tmp.parent().unwrap());
 }
 
-/// Test the duplicate scanner logic.
+/// Test the duplicate scanner logic with a temp dir (guaranteed to have duplicates).
 #[test]
 fn test_duplicate_scanner() {
-    let root = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .to_string_lossy()
-        .to_string();
+    let tmp = std::env::temp_dir().join("diskraptor_test_dup");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    // Create files with SAME name + size in different dirs = duplicates
+    std::fs::create_dir(tmp.join("sub1")).unwrap();
+    std::fs::create_dir(tmp.join("sub2")).unwrap();
+    std::fs::write(tmp.join("sub1").join("dup.txt"), b"same content").unwrap();
+    std::fs::write(tmp.join("sub2").join("dup.txt"), b"same content").unwrap();
+    std::fs::write(tmp.join("unique.txt"), b"different").unwrap();
+
+    let root = tmp.to_string_lossy().to_string();
 
     eprintln!("Testing duplicate scanner on: {}", root);
 
@@ -226,13 +248,8 @@ fn test_duplicate_scanner() {
     use std::collections::HashMap;
     let mut file_map: HashMap<(u64, String), Vec<String>> = HashMap::new();
 
-    // Walk the project dir, skip large dirs
     for entry in walkdir::WalkDir::new(&root)
         .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            name != "target" && name != ".git" && name != "node_modules"
-        })
         .filter_map(|e| e.ok())
     {
         if entry.file_type().is_file() {
@@ -253,8 +270,8 @@ fn test_duplicate_scanner() {
         .collect();
 
     eprintln!("Duplicate groups found: {}", groups.len());
+    assert!(groups.len() >= 1, "Expected at least 1 duplicate group");
 
-    // No assertions on count (varies per project), just verify the logic runs
     for (size, files) in &groups {
         eprintln!("  {} bytes: {} files", size, files.len());
         assert!(files.len() > 1, "Group must have >1 file");
@@ -270,4 +287,6 @@ fn test_duplicate_scanner() {
 
     eprintln!("  ✓ test_format_size_dup works");
     eprintln!("  ✓ duplicate scanner logic works");
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }
