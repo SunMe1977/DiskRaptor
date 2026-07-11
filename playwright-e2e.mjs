@@ -18,7 +18,7 @@ const BINARY = path.join(
   APP_DIR,
   "src-tauri",
   "target",
-  "release",
+  "debug",
   "diskraptor.exe",
 );
 const TEST_PORT = "9222";
@@ -42,7 +42,7 @@ function startApp() {
     const env = {
       ...process.env,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
-        "--remote-debugging-port=" + TEST_PORT,
+        "--remote-debugging-port=" + TEST_PORT + " --enable-features=WebView2Debugging",
     };
     tp = spawn(BINARY, [], {
       cwd: path.join(APP_DIR, "src-tauri", "target", "release"),
@@ -349,7 +349,61 @@ async function run() {
   })();
 
   // ═════════════════════════════════════════════════════════════════════
-  //  8. Release scan
+  //  8. Duplicate scanner
+  // ═════════════════════════════════════════════════════════════════════
+  await test("find_duplicates starts background scan", async () => {
+    const r = await page.evaluate(async (p) => {
+      try {
+        const res = await window.__TAURI__.invoke("find_duplicates", { path: p });
+        return { ok: true, res };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    }, APP_DIR);
+    if (!r.ok) throw new Error(r.error);
+    if (r.res !== "started") throw new Error("Expected 'started', got: " + r.res);
+  })();
+
+  await test("duplicate progress shows files found", async () => {
+    let filesFound = 0;
+    for (let i = 0; i < 30; i++) {
+      await sleep(500);
+      const pp = await page.evaluate(async () => {
+        try {
+          return await window.__TAURI__.invoke("get_duplicate_progress");
+        } catch { return null; }
+      });
+      if (pp) {
+        filesFound = pp.files_found;
+        if (!pp.is_running) break;
+      }
+    }
+    if (filesFound === 0) throw new Error("No files scanned in duplicate search");
+    console.log("    dup files scanned: " + filesFound);
+  })();
+
+  await test("get_duplicate_results returns groups", async () => {
+    let groups = null;
+    for (let i = 0; i < 20; i++) {
+      await sleep(500);
+      groups = await page.evaluate(async () => {
+        try {
+          return await window.__TAURI__.invoke("get_duplicate_results");
+        } catch { return null; }
+      });
+      if (groups && groups.length > 0) break;
+    }
+    if (!groups) throw new Error("No duplicate groups returned or scan still running");
+    console.log("    duplicate groups: " + groups.length);
+    if (groups.length > 0) {
+      const g = groups[0];
+      if (!g.size_human || !g.count || !g.files) throw new Error("Invalid group structure");
+      console.log("    largest group: " + g.size_human + " " + g.count + "x");
+    }
+  })();
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  9. Release scan
   // ═════════════════════════════════════════════════════════════════════
   await test("release_scan works", async () => {
     if (!scanId) throw new Error("No scanId");

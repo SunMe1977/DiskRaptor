@@ -165,6 +165,8 @@ fn main() {
             commands::check_admin_needed,
             commands::restart_as_admin,
             commands::find_duplicates,
+            commands::get_duplicate_progress,
+            commands::get_duplicate_results,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DiskRaptor");

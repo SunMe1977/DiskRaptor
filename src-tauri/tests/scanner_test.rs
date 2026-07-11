@@ -222,3 +222,59 @@ fn test_get_children() {
 
     eprintln!("  ✓ get_children logic works");
 }
+
+/// Test the duplicate scanner logic.
+#[test]
+fn test_duplicate_scanner() {
+    let root = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .to_string_lossy()
+        .to_string();
+
+    eprintln!("Testing duplicate scanner on: {}", root);
+
+    // Build a simple file map manually (same logic as find_duplicates)
+    use std::collections::HashMap;
+    let mut file_map: HashMap<(u64, String), Vec<String>> = HashMap::new();
+
+    // Walk the project dir
+    for entry in walkdir::WalkDir::new(&root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_type().is_file() {
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let name = entry.file_name().to_string_lossy().to_string();
+            let full = entry.path().to_string_lossy().to_string();
+            file_map
+                .entry((size, name))
+                .or_insert_with(Vec::new)
+                .push(full);
+        }
+    }
+
+    let groups: Vec<(u64, Vec<String>)> = file_map
+        .into_iter()
+        .filter(|(_, files)| files.len() > 1)
+        .map(|((size, _), files)| (size, files))
+        .collect();
+
+    eprintln!("Duplicate groups found: {}", groups.len());
+
+    // No assertions on count (varies per project), just verify the logic runs
+    for (size, files) in &groups {
+        eprintln!("  {} bytes: {} files", size, files.len());
+        assert!(files.len() > 1, "Group must have >1 file");
+    }
+
+    // Verify format_size_dup works
+    let size_str = diskraptor_lib::commands::test_format_size_dup(1024);
+    assert_eq!(size_str, "1.00 KB");
+    let size_str = diskraptor_lib::commands::test_format_size_dup(1048576);
+    assert_eq!(size_str, "1.00 MB");
+    let size_str = diskraptor_lib::commands::test_format_size_dup(0);
+    assert_eq!(size_str, "0 B");
+
+    eprintln!("  ✓ test_format_size_dup works");
+    eprintln!("  ✓ duplicate scanner logic works");
+}

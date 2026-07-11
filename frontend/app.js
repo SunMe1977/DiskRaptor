@@ -299,38 +299,80 @@
         window.__TAURI__.event.listen("menu-about", function () {
           aboutOverlay.classList.add("active");
         });
+        window.__TAURI__.event.listen("menu-find-duplicates", function () {
+          var btnDup = document.getElementById("btn-duplicates");
+          if (btnDup) btnDup.click();
+        });
         window.__TAURI__.event.listen("menu-check-updates", async function () {
-          // Always show a status message, even if no update found
-          var sb = document.querySelector(".status-bar");
-          if (sb) sb.textContent = "Checking for updates…";
+          var overlay = document.getElementById("update-overlay");
+          if (!overlay) return;
+          // Show connecting state
+          var icon = document.getElementById("update-icon");
+          var status = document.getElementById("update-status");
+          var version = document.getElementById("update-version");
+          var actions = document.getElementById("update-actions");
+          var progress = document.getElementById("update-progress");
+          var dlBtn = document.getElementById("btn-update-download");
+          var closeBtn = document.getElementById("btn-update-close");
+          icon.textContent = "🔗";
+          status.textContent = "Connecting to GitHub…";
+          version.textContent = "";
+          actions.style.display = "none";
+          progress.style.display = "none";
+          overlay.classList.add("active");
+          closeBtn.onclick = function () { overlay.classList.remove("active"); };
+          overlay.addEventListener("click", function (e) {
+            if (e.target === overlay) overlay.classList.remove("active");
+          });
           try {
+            await sleep(800);
             var result = await window.__TAURI__.invoke("check_for_updates");
-            if (sb) sb.textContent = "Current: v0.1.0, Latest: " + result;
-            // Also show the overlay
-            var overlay = document.getElementById("update-overlay");
-            if (overlay) {
-              document.getElementById("update-version").textContent = "Latest: " + result;
-              document.getElementById("update-status").textContent = "A new version is available!";
-              document.getElementById("update-actions").style.display = "flex";
-              document.getElementById("update-progress").style.display = "none";
-              overlay.classList.add("active");
+            var currentVer = "v0.2.3";
+            var remoteVer = result.trim();
+            if (remoteVer > currentVer) {
+              icon.textContent = "⬇️";
+              status.textContent = "A new version is available!";
+              version.textContent = "Current: " + currentVer + " \u2192 Latest: " + remoteVer;
+              actions.style.display = "flex";
+              dlBtn.style.display = "inline-block";
+              dlBtn.onclick = async function () {
+                actions.style.display = "none";
+                progress.style.display = "block";
+                icon.textContent = "⏳";
+                status.textContent = "Downloading latest version…";
+                try {
+                  await window.__TAURI__.invoke("download_and_install", { version: remoteVer });
+                } catch (e) {
+                  icon.textContent = "❌";
+                  status.textContent = "Download failed: " + e;
+                  actions.style.display = "flex";
+                  dlBtn.style.display = "none";
+                  progress.style.display = "none";
+                }
+              };
+            } else {
+              icon.textContent = "✅";
+              status.textContent = "You\u2019re up to date!";
+              version.textContent = "Current: " + currentVer + " (latest)";
+              actions.style.display = "flex";
+              dlBtn.style.display = "none";
             }
           } catch (e) {
-            if (sb) sb.textContent = "No update available: " + e;
-            var overlay = document.getElementById("update-overlay");
-            if (overlay) {
-              document.getElementById("update-status").textContent = "No update available or could not check.";
-              document.getElementById("update-version").textContent = "";
-              document.getElementById("update-actions").style.display = "flex";
-              document.getElementById("update-progress").style.display = "none";
-              overlay.classList.add("active");
-            }
+            icon.textContent = "❌";
+            status.textContent = "Could not check for updates.";
+            version.textContent = e.message || "Network error";
+            actions.style.display = "flex";
+            dlBtn.style.display = "none";
           }
         });
         // Language menu: single event with language code as payload
         window.__TAURI__.event.listen("lang-changed", function (evt) {
-          var code = evt.payload || "en";
-          window.I18N.setLocale(code);
+          var code = evt && evt.payload;
+          if (typeof code === "string") {
+            if (code.length === 2 || code === "auto") {
+              window.I18N.setLocale(code);
+            }
+          }
         });
       } catch (e) {
         console.log("Menu events not available:", e.message);
@@ -725,16 +767,21 @@
       var btnDup = document.getElementById("btn-duplicates");
       var dupOverlay = document.getElementById("duplicates-overlay");
       var dupClose = document.getElementById("btn-duplicates-close");
-      var dupStatus = document.getElementById("duplicates-status");
-      var dupLoading = document.getElementById("duplicates-loading");
+      var dupProgress = document.getElementById("dup-progress");
       var dupResults = document.getElementById("duplicates-results");
       var dupSummary = document.getElementById("duplicates-summary");
       var dupBody = document.getElementById("duplicates-body");
+      var dupStats = document.getElementById("dup-stats");
+      var dupDiagramWrap = document.getElementById("dup-diagram-wrap");
 
       if (!btnDup || !dupOverlay) return;
 
       function closeDup() {
         dupOverlay.classList.remove("active");
+        if (window._dupPollTimer) {
+          clearInterval(window._dupPollTimer);
+          window._dupPollTimer = null;
+        }
       }
 
       if (dupClose) dupClose.addEventListener("click", closeDup);
@@ -751,6 +798,50 @@
         return (i === 0 ? b : v.toFixed(2)) + " " + units[i];
       }
 
+      // ── Duplicates Context Menu ──────────────────────────
+      var dupCtx = document.getElementById("dup-ctx-menu");
+      var dupCtxPath = null;
+
+      function closeDupCtx() {
+        if (dupCtx) dupCtx.style.display = "none";
+        dupCtxPath = null;
+      }
+
+      document.addEventListener("click", function (e) {
+        if (dupCtx && !dupCtx.contains(e.target)) closeDupCtx();
+      });
+
+      if (dupCtx) {
+        dupCtx.querySelectorAll(".tctx-item").forEach(function (item) {
+          item.addEventListener("click", async function () {
+            var action = this.getAttribute("data-dup-action");
+            var p = dupCtxPath;
+            closeDupCtx();
+            if (!p) return;
+            try {
+              if (action === "explorer") {
+                await window.__TAURI__.invoke("open_explorer", { path: p });
+              } else if (action === "terminal") {
+                await window.__TAURI__.invoke("open_terminal", { path: p });
+              } else if (action === "properties") {
+                await window.__TAURI__.invoke("open_properties", { path: p });
+              } else if (action === "copy") {
+                await navigator.clipboard.writeText(p);
+                document.querySelector(".status-bar").textContent = "Copied: " + p;
+              } else if (action === "delete") {
+                if (confirm("Delete this file?\n" + p)) {
+                  await window.__TAURI__.invoke("delete_path", { path: p });
+                  document.querySelector(".status-bar").textContent = "Deleted: " + p;
+                  btnDup.click();
+                }
+              }
+            } catch (e) {
+              alert("Action failed: " + e.message);
+            }
+          });
+        });
+      }
+
       btnDup.addEventListener("click", async function () {
         var path = scanPath.value.trim();
         if (!path) {
@@ -760,83 +851,200 @@
 
         dupOverlay.classList.add("active");
         dupStatus.style.display = "none";
-        dupLoading.style.display = "flex";
+        dupLoading.style.display = "none";
+        dupProgress.style.display = "none";
+        dupStats.style.display = "none";
+        dupDiagramWrap.style.display = "none";
         dupResults.style.display = "none";
         dupBody.innerHTML = "";
 
+        // Show progress with full live stats (like main scanner)
+        dupProgress.style.display = "block";
+        document.getElementById("dup-progress-label").textContent = "⚡ Scanning with the ultra-fast parallel Rust engine…";
+        document.getElementById("dup-progress-dir").textContent = path;
+        document.getElementById("dup-pstat-files").textContent = "0";
+        document.getElementById("dup-pstat-files-rate").textContent = "—";
+        document.getElementById("dup-pstat-size").textContent = "—";
+        document.getElementById("dup-progress-elapsed").textContent = "0s";
+
         try {
-          var groups = await window.__TAURI__.invoke("find_duplicates", {
-            path: path,
-          });
+          var started = await window.__TAURI__.invoke("find_duplicates", { path: path });
+          if (started !== "started") throw new Error("Failed to start");
 
-          dupLoading.style.display = "none";
+          var lastPoll = { files: 0, time: Date.now() };
 
-          if (!groups || groups.length === 0) {
+          for (var pi = 0; pi < 600; pi++) {
+            await sleep(500);
+            var pp = await window.__TAURI__.invoke("get_duplicate_progress").catch(function () { return null; });
+            if (!pp) continue;
+
+            var files = Number(pp.files_found || 0);
+            var elapsed = Number(pp.elapsed_secs || 0);
+
+            document.getElementById("dup-pstat-files").textContent = files.toLocaleString("en-US");
+
+            var pollNow = Date.now();
+            var dt = (pollNow - lastPoll.time) / 1000;
+            if (lastPoll.time > 0 && dt > 0) {
+              var fps = ((files - lastPoll.files) / dt).toFixed(0);
+              document.getElementById("dup-pstat-files-rate").textContent = fps + "/s";
+            } else if (elapsed > 0) {
+              document.getElementById("dup-pstat-files-rate").textContent = (files / elapsed).toFixed(0) + "/s";
+            }
+            lastPoll = { files: files, time: pollNow };
+
+            // Size estimate
+            var approxBytes = files * 512000;
+            var sizeStr = "—";
+            if (approxBytes > 1073741824) sizeStr = (approxBytes / 1073741824).toFixed(1) + " GB";
+            else if (approxBytes > 1048576) sizeStr = (approxBytes / 1048576).toFixed(0) + " MB";
+            else sizeStr = (approxBytes / 1024).toFixed(0) + " KB";
+            document.getElementById("dup-pstat-size").textContent = sizeStr;
+
+            var mins = Math.floor(elapsed / 60);
+            var secs = elapsed % 60;
+            document.getElementById("dup-progress-elapsed").textContent =
+              (mins > 0 ? mins + "m " : "") + secs + "s";
+
+            if (pp.current_dir) {
+              document.getElementById("dup-progress-dir").textContent = pp.current_dir;
+            }
+
+            if (!pp.is_running) {
+              await sleep(500);
+              break;
+            }
+          }
+
+          dupProgress.style.display = "none";
+
+          // Get results
+          try {
+            var dupResultsArr = await window.__TAURI__.invoke("get_duplicate_results");
+            if (dupResultsArr && dupResultsArr.length > 0) {
+              renderDupResults(dupResultsArr);
+            } else {
+              dupStatus.style.display = "block";
+              dupStatus.textContent = "No duplicate files found.";
+            }
+          } catch (e) {
             dupStatus.style.display = "block";
-            dupStatus.textContent = "No duplicate files found.";
-            return;
-          }
-
-          dupResults.style.display = "block";
-
-          var totalDups = 0;
-          groups.forEach(function (g) { totalDups += g.count; });
-          dupSummary.textContent =
-            "Found " +
-            groups.length +
-            " duplicate group" +
-            (groups.length === 1 ? "" : "s") +
-            " (" +
-            totalDups +
-            " total files" +
-            (groups.length > 0 ? ", " + fmtBytesDup(groups[0].size) + " wasted" : "") +
-            ")";
-
-          var html = "";
-          groups.forEach(function (g) {
-            html += "<tr>";
-            html += "<td>" + g.size_human + "</td>";
-            html += "<td>" + g.count + "</td>";
-            html += "<td>";
-            g.files.forEach(function (f) {
-              html +=
-                '<span class="dup-file-item" data-path="' +
-                escapeAttr(f) +
-                '">' +
-                escapeHtml(f) +
-                "</span>";
-            });
-            html += "</td></tr>";
-          });
-          dupBody.innerHTML = html;
-
-          // Click handler for each file path → copy to clipboard
-          dupBody.querySelectorAll(".dup-file-item").forEach(function (el) {
-            el.addEventListener("click", function () {
-              var p = this.getAttribute("data-path");
-              if (p) {
-                navigator.clipboard.writeText(p).then(function () {
-                  document.querySelector(".status-bar").textContent =
-                    "Copied: " + p;
-                  dupOverlay.classList.remove("active");
-                }).catch(function () {});
-              }
-            });
-          });
-
-          function escapeHtml(s) {
-            return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-          }
-          function escapeAttr(s) {
-            return String(s).replace(/"/g,"&quot;").replace(/&/g,"&amp;");
+            dupStatus.textContent = "Error: " + e.message;
           }
         } catch (err) {
-          dupLoading.style.display = "none";
+          dupProgress.style.display = "none";
           dupStatus.style.display = "block";
           dupStatus.textContent = "Error: " + err;
           dupStatus.style.color = "var(--accent-red)";
         }
       });
+
+      function renderDupResults(groups) {
+        dupResults.style.display = "block";
+        dupDiagramWrap.style.display = "block";
+
+        var totalDups = 0;
+        var totalWasted = 0;
+        groups.forEach(function (g) { totalDups += g.count; totalWasted += g.size * (g.count - 1); });
+        dupSummary.textContent =
+          groups.length + " group" + (groups.length === 1 ? "" : "s") +
+          " (" + totalDups + " files, " + fmtBytesDup(totalWasted) + " wasted)";
+
+        // Stats
+        dupStats.style.display = "flex";
+        document.getElementById("dup-stat-groups").textContent = groups.length;
+        document.getElementById("dup-stat-files").textContent = totalDups;
+        document.getElementById("dup-stat-wasted").textContent = fmtBytesDup(totalWasted);
+
+        var html = "";
+        groups.forEach(function (g) {
+          html += "<tr>";
+          html += "<td>" + g.size_human + "</td>";
+          html += "<td>" + g.count + "</td>";
+          html += "<td>";
+          g.files.forEach(function (f) {
+            html +=
+              '<span class="dup-file-item" data-path="' +
+              escapeAttr(f) +
+              '">' +
+              escapeHtml(f) +
+              "</span>";
+          });
+          html += "</td>";
+          // Delete button (trash icon)
+          html += '<td><button class="icon-btn dup-del-btn" style="font-size:14px;padding:4px 6px" data-path="' +
+            escapeAttr(g.files[0]) + '" title="Delete first file in group">🗑</button></td>';
+          html += "</tr>";
+        });
+        dupBody.innerHTML = html;
+
+        // Click handler for file items → show context menu
+        dupBody.querySelectorAll(".dup-file-item").forEach(function (el) {
+          el.addEventListener("click", function (e) {
+            var p = this.getAttribute("data-path");
+            if (p && dupCtx) {
+              dupCtxPath = p;
+              dupCtx.style.display = "block";
+              dupCtx.style.left = Math.min(e.clientX, window.innerWidth - 200) + "px";
+              dupCtx.style.top = Math.min(e.clientY, window.innerHeight - 200) + "px";
+            }
+          });
+        });
+
+        // Delete button handler
+        dupBody.querySelectorAll(".dup-del-btn").forEach(function (btn) {
+          btn.addEventListener("click", async function () {
+            var p = this.getAttribute("data-path");
+            if (!p || !confirm("Delete this file?\n" + p)) return;
+            try {
+              await window.__TAURI__.invoke("delete_path", { path: p });
+              document.querySelector(".status-bar").textContent = "Deleted: " + p;
+              btnDup.click();
+            } catch (e) {
+              alert("Delete failed: " + e.message);
+            }
+          });
+        });
+
+        // Small pie chart for top groups
+        var canvas = document.getElementById("dup-diagram");
+        if (canvas) {
+          canvas.width = canvas.parentElement.clientWidth || 400;
+          canvas.height = 120;
+          var ctx = canvas.getContext("2d");
+          var top = groups.slice(0, 10);
+          var total = top.reduce(function (s, g) { return s + g.size; }, 0) || 1;
+          var colors = ["#0078d4","#e74856","#ff8c00","#ffaa00","#00cc6a","#0099bc","#8764b8","#881798","#00b7c3","#6b69d6"];
+          var cx = 60, cy = 60, r = 50;
+          var startAngle = -Math.PI / 2;
+          top.forEach(function (g, i) {
+            var angle = (g.size / total) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.arc(cx, cy, r, startAngle, startAngle + angle);
+            ctx.closePath();
+            ctx.fillStyle = colors[i % colors.length];
+            ctx.fill();
+            startAngle += angle;
+          });
+          var lx = 130, ly = 10;
+          top.forEach(function (g, i) {
+            if (i >= 5) return;
+            ctx.fillStyle = colors[i % colors.length];
+            ctx.fillRect(lx, ly + i * 22, 10, 10);
+            ctx.fillStyle = "#e0e0e0";
+            ctx.font = "10px sans-serif";
+            ctx.fillText(g.size_human + " " + g.count + "x", lx + 14, ly + i * 22 + 9);
+          });
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      }
+      function escapeAttr(s) {
+        return String(s).replace(/"/g,"&quot;").replace(/&/g,"&amp;");
+      }
     })();
 
     // ── Drag & Drop on scan path ──────────────────────────

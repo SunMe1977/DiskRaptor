@@ -312,11 +312,29 @@
                     <button id="btn-duplicates-close" class="icon-btn" title="Close">✖</button>
                 </div>
 
-                <!-- Scan progress (like main scanner) -->
-                <div id="dup-progress" style="display:none;text-align:center;padding:16px">
-                    <div class="spinner" style="width:28px;height:28px;margin:8px auto"></div>
-                    <div id="dup-progress-files" style="font-size:22px;font-weight:700;color:var(--accent)">0</div>
-                    <div style="font-size:11px;color:var(--text-muted)">files scanned</div>
+                <!-- Scan progress (like main scanner with full stats) -->
+                <div id="dup-progress" style="display:none">
+                    <div class="spinner" style="width:32px;height:32px;margin:8px auto"></div>
+                    <p id="dup-progress-label" style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;margin:4px 0">⚡ Scanning with the ultra-fast parallel Rust engine…</p>
+                    <p id="dup-progress-dir" style="font-size:10px;color:var(--text-muted);text-align:center;word-break:break-all;font-family:var(--font-mono);margin:0 0 8px"></p>
+                    <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap">
+                        <div class="pstat">
+                            <span class="pstat-icon">📄</span>
+                            <span class="pstat-value" id="dup-pstat-files" style="color:var(--accent)">0</span>
+                            <span class="pstat-label">Files</span>
+                            <span class="pstat-rate" id="dup-pstat-files-rate">—</span>
+                        </div>
+                        <div class="pstat">
+                            <span class="pstat-icon">💾</span>
+                            <span class="pstat-value" id="dup-pstat-size" style="font-size:18px;color:var(--accent-orange)">—</span>
+                            <span class="pstat-label">Data Scanned</span>
+                        </div>
+                        <div class="pstat">
+                            <span class="pstat-icon">⏱</span>
+                            <span class="pstat-value" id="dup-progress-elapsed" style="font-size:18px;color:var(--text-secondary)">0s</span>
+                            <span class="pstat-label">Elapsed</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Summary stats -->
@@ -348,7 +366,7 @@
                     <div id="duplicates-table-wrap" class="duplicates-table-wrap">
                         <table id="duplicates-table">
                             <thead>
-                                <tr></thead>
+                                <tr>
                                     <th style="width:60px">Size</th>
                                     <th style="width:50px">Count</th>
                                     <th>Files</th>
@@ -358,6 +376,17 @@
                             <tbody id="duplicates-body"></tbody>
                         </table>
                     </div>
+                </div>
+
+                <!-- Context menu for duplicate files -->
+                <div id="dup-ctx-menu" class="tctx-menu" style="display:none;position:fixed;z-index:9999">
+                    <div class="tctx-item" data-dup-action="explorer">📂 Open in Explorer</div>
+                    <div class="tctx-item" data-dup-action="terminal">💻 Open Terminal Here</div>
+                    <div class="tctx-item" data-dup-action="properties">📋 Properties</div>
+                    <div class="tctx-sep"></div>
+                    <div class="tctx-item" data-dup-action="copy">📋 Copy Path</div>
+                    <div class="tctx-sep"></div>
+                    <div class="tctx-item tctx-del" data-dup-action="delete">🗑 Delete</div>
                 </div>
             </div>
         </div>

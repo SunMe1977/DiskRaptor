@@ -225,7 +225,8 @@ class DiagramRenderer {
         const mid = startAngle + sliceAngle / 2;
         const lx = cx + Math.cos(mid) * (r * 0.65);
         const ly = cy + Math.sin(mid) * (r * 0.65);
-        ctx.fillStyle = "#fff";
+        var isLight = document.body.classList.contains("light-theme");
+        ctx.fillStyle = isLight ? "#000" : "#fff";
         ctx.font = "bold 10px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -235,21 +236,68 @@ class DiagramRenderer {
       startAngle += sliceAngle;
     });
 
-    // Legend
+    // Legend with hover glow + clickable
     const lx = w - legendW - margin;
     let ly = 16;
     ctx.font = "10px sans-serif";
     ctx.textBaseline = "top";
     const maxLeg = Math.min(this.files.length, 18);
+    const legendH = 14;
     for (let i = 0; i < maxLeg; i++) {
       const f = this.files[i];
       const name = this._shortName(f.path);
       const pct = ((f.size / totalSize) * 100).toFixed(1);
-      ctx.fillStyle = colors[i % colors.length];
-      ctx.fillRect(lx, ly, 8, 8);
-      ctx.fillStyle = "#e6edf3";
+      const isLegHov = i === this._hoveredIndex;
+
+      // Highlight background on hover
+      if (isLegHov) {
+        ctx.save();
+        ctx.shadowColor = colors[i % colors.length];
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        const bgW = legendW + margin - 4;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(lx - 2, ly - 1, bgW, legendH + 2, 4);
+        } else {
+          ctx.rect(lx - 2, ly - 1, bgW, legendH + 2);
+        }
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Color box (with glow on hover)
+      if (isLegHov) {
+        ctx.save();
+        ctx.shadowColor = colors[i % colors.length];
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.fillRect(lx, ly, 8, 8);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.fillRect(lx, ly, 8, 8);
+      }
+
+      // Text — detect theme
+      var isLight = document.body.classList.contains("light-theme");
+      ctx.fillStyle = isLegHov ? (isLight ? "#000" : "#fff") : (isLight ? "#333" : "#e6edf3");
       ctx.textAlign = "left";
       ctx.fillText(name + " " + pct + "%", lx + 12, ly);
+
+      // Hit region for legend
+      this.hitRegions.push({
+        index: i,
+        path: f.path,
+        size: f.size,
+        size_human: f.size_human,
+        type: "legend",
+        x: lx - 2,
+        y: ly - 1,
+        w: legendW + margin - 2,
+        h: legendH + 2,
+      });
+
       ly += 15;
     }
     if (this.files.length > 18) {
@@ -454,7 +502,8 @@ class DiagramRenderer {
         var maxChars = Math.max(1, Math.floor((rw - 6) / 6));
         if (name.length > maxChars) name = name.substring(0, maxChars - 1) + "…";
 
-        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        var isLight = document.body.classList.contains("light-theme");
+        ctx.fillStyle = isLight ? "rgba(0,0,0,0.9)" : "rgba(255,255,255,0.95)";
         ctx.font = "bold 9px sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
@@ -462,7 +511,7 @@ class DiagramRenderer {
 
         // Size on second line if enough height
         if (rh >= 28) {
-          ctx.fillStyle = "rgba(255,255,255,0.6)";
+          ctx.fillStyle = isLight ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.6)";
           ctx.font = "8px sans-serif";
           var sizeStr = r.size_human;
           var maxSizeChars = Math.max(1, Math.floor((rw - 6) / 5));

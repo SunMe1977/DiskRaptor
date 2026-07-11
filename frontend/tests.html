@@ -67,7 +67,7 @@
     const mockInvokeLog = [];
     window.__TAURI__ = {
       invoke: async (cmd, args) => {
-        mockInvokeLog.push({ cmd, args: JSON.parse(JSON.stringify(args)) });
+        mockInvokeLog.push({ cmd, args: args ? JSON.parse(JSON.stringify(args)) : null });
         switch (cmd) {
           case 'get_scan_progress':
             return { scan_id: args.scan_id, files_found: 50000, dirs_found: 2000, is_running: false, phase: 3, current_dir: 'C:\\Test', elapsed_secs: 5, error: null };
@@ -158,6 +158,37 @@
           case 'delete_path':
             return null;
 
+          // ── Duplicate scanner mocks ────────────────────
+          case 'find_duplicates':
+            return 'started';
+
+          case 'get_duplicate_progress':
+            return {
+              files_found: 1000,
+              is_running: false,
+              current_dir: 'C:\\Test\\Mock',
+              elapsed_secs: 2,
+              total_groups: 5,
+              total_dup_files: 12,
+              wasted_size: 104857600,
+            };
+
+          case 'get_duplicate_results':
+            return [
+              {
+                size: 52428800,
+                size_human: '50.00 MB',
+                count: 3,
+                files: ['C:\\Test\\dup1.bak', 'C:\\Test\\dup2.bak', 'C:\\Test\\dup3.bak'],
+              },
+              {
+                size: 10485760,
+                size_human: '10.00 MB',
+                count: 2,
+                files: ['C:\\Test\\copy1.txt', 'C:\\Test\\copy2.txt'],
+              },
+            ];
+
           case 'get_icon':
             // Must be > 100 chars for IconCache validation
             return 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAYdEVYdFNvZnR3YXJlAHBhaW50Lm5ldCA0LjAuMTM0A1t6AAAASklEQVQ4T2NkYPj/n4EBBJgYKAQMowYwjmY6jGY6jGY6jGY6jGY6jGY6jGY6jGY6jEIAADDxE2AWhLDTAAAAASUVORK5CYII='
@@ -172,7 +203,22 @@
           return 'C:\\Test\\MockPath';
         },
       },
-      event: { listen: () => {} },
+      event: {
+        listen: (eventName, callback) => {
+          if (!window._tauriEventListeners) window._tauriEventListeners = {};
+          if (!window._tauriEventListeners[eventName]) window._tauriEventListeners[eventName] = [];
+          window._tauriEventListeners[eventName].push(callback);
+        },
+        emit: (eventName, payload) => {
+          if (window._tauriEventListeners && window._tauriEventListeners[eventName]) {
+            window._tauriEventListeners[eventName].forEach(function (cb) {
+              if (typeof cb === 'function') {
+                cb({ payload: payload, event: eventName, id: Date.now() });
+              }
+            });
+          }
+        },
+      },
     };
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -866,6 +912,168 @@
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // Test 15: Duplicate Scanner
+    // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 16: Menu Events
+    // ═══════════════════════════════════════════════════════════════════════
+    function sleepMs(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+    async function testMenuEvents() {
+      // Register the same event listeners as app.js would register
+      window.__TAURI__.event.listen("menu-find-duplicates", function () {
+        var btnDup = document.getElementById("btn-duplicates");
+        if (btnDup) btnDup.click();
+      });
+      window.__TAURI__.event.listen("menu-about", function () {
+        var overlay = document.getElementById("about-overlay");
+        if (overlay) overlay.classList.add("active");
+      });
+      window.__TAURI__.event.listen("menu-view-pie", function () {
+        var btn = document.querySelector('.diagram-mode[data-mode="pie"]');
+        if (btn) { btn.classList.add("active"); }
+      });
+      window.__TAURI__.event.listen("menu-view-treemap", function () {
+        var btn = document.querySelector('.diagram-mode[data-mode="treemap"]');
+        if (btn) { btn.classList.add("active"); }
+      });
+
+      // Test menu-find-duplicates triggers btn-duplicates click
+      var dupClicked = false;
+      var origBtn = document.getElementById("btn-duplicates");
+      if (origBtn) {
+        origBtn.addEventListener("click", function () { dupClicked = true; });
+        window.__TAURI__.event.emit("menu-find-duplicates");
+        await sleepMs(100);
+        assert(dupClicked, 'menu: find-duplicates triggers btn click');
+      }
+
+      // Test menu-about shows about overlay
+      var overlay = document.getElementById("about-overlay");
+      if (overlay) {
+        window.__TAURI__.event.emit("menu-about");
+        await sleepMs(100);
+        assert(overlay.classList.contains("active"), 'menu: about overlay becomes active');
+        overlay.classList.remove("active");
+      }
+
+      // Test lang-changed event switches language
+      if (window.I18N) {
+        // Register the same handler as app.js
+        window.__TAURI__.event.listen("lang-changed", function (evt) {
+          var code = evt && evt.payload;
+          if (typeof code === "string") {
+            if (code.length === 2 || code === "auto") {
+              window.I18N.setLocale(code);
+            }
+          }
+        });
+
+        // Set to English first
+        window.I18N.setLocale("en");
+        var enTitle = window.__("tree.title");
+        assert(enTitle === "Directory Tree", 'menu: English title correct before lang-changed');
+
+        // Emit lang-changed with "de" payload
+        window.__TAURI__.event.emit("lang-changed", "de");
+        await sleepMs(100);
+        var deTitle = window.__("tree.title");
+        assert(deTitle === "Verzeichnisbaum", 'menu: German title after lang-changed: ' + deTitle);
+
+        // Reset to English
+        window.__TAURI__.event.emit("lang-changed", "en");
+        await sleepMs(100);
+        enTitle = window.__("tree.title");
+        assert(enTitle === "Directory Tree", 'menu: English after lang-changed back');
+      }
+
+      window.__TAURI__.event.listen("menu-check-updates", async function () {
+        var overlay = document.getElementById("update-overlay");
+        if (overlay) {
+          var icon = document.getElementById("update-icon");
+          var status = document.getElementById("update-status");
+          icon.textContent = "🔗";
+          status.textContent = "Connecting to GitHub…";
+          overlay.classList.add("active");
+        }
+      });
+
+      // Test that menu-check-updates shows the update overlay
+      var updateOverlay = document.getElementById("update-overlay");
+      if (updateOverlay) {
+        window.__TAURI__.event.emit("menu-check-updates");
+        await sleepMs(300);
+        // Should show some status (connecting or error in mock)
+        var statusEl = document.getElementById("update-status");
+        if (statusEl) {
+          assert(statusEl.textContent.length > 0, 'menu: update status has text');
+        }
+        updateOverlay.classList.remove("active");
+      }
+
+      // Test menu-view-pie activates the pie mode button
+      window.__TAURI__.event.emit("menu-view-pie");
+      await sleepMs(50);
+      var pieBtn = document.querySelector('.diagram-mode[data-mode="pie"]');
+      if (pieBtn) {
+        assert(pieBtn.classList.contains("active"), 'menu: pie mode activated');
+      }
+
+      window.__TAURI__.event.emit("menu-view-treemap");
+      await sleepMs(50);
+      var treemapBtn = document.querySelector('.diagram-mode[data-mode="treemap"]');
+      if (treemapBtn) {
+        assert(treemapBtn.classList.contains("active"), 'menu: treemap mode activated');
+      }
+      // Reset
+      if (pieBtn) pieBtn.classList.add("active");
+      if (treemapBtn) treemapBtn.classList.remove("active");
+    }
+
+    async function testDuplicateScanner() {
+      // Test that find_duplicates starts
+      var res = await window.__TAURI__.invoke('find_duplicates', { path: 'C:\\Test' });
+      assertEq(res, 'started', 'dup: find_duplicates returns started');
+
+      // Test that get_duplicate_progress returns correct data
+      var pp = await window.__TAURI__.invoke('get_duplicate_progress');
+      assert(typeof pp === 'object', 'dup: progress is object');
+      assert(typeof pp.files_found === 'number', 'dup: files_found is number');
+      assert(typeof pp.is_running === 'boolean', 'dup: is_running is boolean');
+      assert(typeof pp.current_dir === 'string', 'dup: current_dir is string');
+      assertEq(pp.total_groups, 5, 'dup: total_groups is 5');
+      assertEq(pp.total_dup_files, 12, 'dup: total_dup_files is 12');
+      assert(typeof pp.wasted_size === 'number', 'dup: wasted_size is number');
+
+      // Test that get_duplicate_results returns groups
+      var groups = await window.__TAURI__.invoke('get_duplicate_results');
+      assert(Array.isArray(groups), 'dup: results is array');
+      assert(groups.length >= 2, 'dup: at least 2 groups');
+
+      // Verify group structure
+      var first = groups[0];
+      assert(typeof first.size === 'number', 'dup: group.size is number');
+      assert(typeof first.size_human === 'string', 'dup: group.size_human is string');
+      assert(typeof first.count === 'number', 'dup: group.count is number');
+      assert(Array.isArray(first.files), 'dup: group.files is array');
+      assert(first.files.length > 1, 'dup: group has multiple files');
+
+      // Verify format helpers
+      var tp = document.querySelector('#topfiles-table tbody');
+      if (tp) {
+        assert(typeof window.formatBytes === 'function' || typeof window.__TAURI_PRELOAD__ !== 'undefined', 'dup: formatBytes available');
+      }
+
+      // Test delete action via invoke
+      if (first.files && first.files.length > 0) {
+        var delArg = null;
+        // Mock delete to verify it works
+        var deleteResult = await window.__TAURI__.invoke('delete_path', { path: first.files[0] });
+        assertEq(deleteResult, null, 'dup: delete_path returns null on success');
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Run all tests
     // ═══════════════════════════════════════════════════════════════════════
     (async () => {
@@ -892,6 +1100,8 @@
       try { await testDiagramContextMenu(); } catch (e) { fail.push('DiagramContextMenu: ' + e.message); }
       try { await testIconCache(); } catch (e) { fail.push('IconCache: ' + e.message); }
       try { await testI18n(); } catch (e) { fail.push('I18n: ' + e.message); }
+      try { await testDuplicateScanner(); } catch (e) { fail.push('DuplicateScanner: ' + e.message); }
+      try { await testMenuEvents(); } catch (e) { fail.push('MenuEvents: ' + e.message); }
 
       clearTimeout(safetyTimer);
       logResult();

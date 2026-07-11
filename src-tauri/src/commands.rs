@@ -907,39 +907,165 @@ pub struct DuplicateGroup {
     pub files: Vec<String>,
 }
 
-/// Walk a directory and find groups of identical files (same size + filename).
-#[tauri::command]
-pub fn find_duplicates(path: String) -> Result<Vec<DuplicateGroup>, String> {
-    let mut file_map: HashMap<(u64, String), Vec<String>> = HashMap::new();
+// ── Duplicate scanner with live progress ──────────────────
 
-    for entry in walkdir::WalkDir::new(&path)
-        .into_iter()
-        .filter_map(|e| e.ok())
+static DUP_PROGRESS: OnceLock<Mutex<DupProgressState>> = OnceLock::new();
+
+struct DupProgressState {
+    pub total_files: u64,
+    pub is_running: bool,
+    pub current_dir: String,
+    pub start_time: u64,
+    pub groups: Option<Vec<DuplicateGroup>>,
+}
+
+fn dup_progress_state() -> &'static Mutex<DupProgressState> {
+    DUP_PROGRESS.get_or_init(|| {
+        Mutex::new(DupProgressState {
+            total_files: 0,
+            is_running: false,
+            current_dir: String::new(),
+            start_time: 0,
+            groups: None,
+        })
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DupProgressPayload {
+    pub files_found: u64,
+    pub is_running: bool,
+    pub current_dir: String,
+    pub elapsed_secs: u64,
+    pub total_groups: Option<usize>,
+    pub total_dup_files: Option<usize>,
+    pub wasted_size: Option<u64>,
+}
+
+/// Start duplicate scan in background thread. Returns immediately.
+#[tauri::command]
+pub fn find_duplicates(path: String) -> Result<String, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
     {
-        if entry.file_type().is_file() {
-            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-            let name = entry.file_name().to_string_lossy().to_string();
-            let full = entry.path().to_string_lossy().to_string();
-            file_map
-                .entry((size, name))
-                .or_insert_with(Vec::new)
-                .push(full);
-        }
+        let mut state = dup_progress_state().lock();
+        state.total_files = 0;
+        state.is_running = true;
+        state.current_dir = path.clone();
+        state.start_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        state.groups = None;
     }
 
-    let mut groups: Vec<DuplicateGroup> = file_map
-        .into_iter()
-        .filter(|(_, files)| files.len() > 1)
-        .map(|((size, _), files)| DuplicateGroup {
-            size,
-            size_human: format_size_dup(size),
-            count: files.len(),
-            files,
-        })
-        .collect();
-    groups.sort_by(|a, b| b.size.cmp(&a.size));
+    let path_c = path.clone();
+    std::thread::spawn(move || {
+        let mut file_map: HashMap<(u64, String), Vec<String>> = HashMap::new();
+        let mut count = 0u64;
 
-    Ok(groups)
+        for entry in walkdir::WalkDir::new(&path_c)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_file() {
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                let name = entry.file_name().to_string_lossy().to_string();
+                let full = entry.path().to_string_lossy().to_string();
+                count += 1;
+                if let Some(parent) = entry.path().parent() {
+                    let mut state = dup_progress_state().lock();
+                    state.total_files = count;
+                    state.current_dir = parent.to_string_lossy().to_string();
+                }
+                file_map
+                    .entry((size, name))
+                    .or_insert_with(Vec::new)
+                    .push(full);
+            }
+        }
+
+        let mut groups: Vec<DuplicateGroup> = file_map
+            .into_iter()
+            .filter(|(_, files)| files.len() > 1)
+            .map(|((size, _), files)| DuplicateGroup {
+                size,
+                size_human: format_size_dup(size),
+                count: files.len(),
+                files,
+            })
+            .collect();
+        groups.sort_by(|a, b| b.size.cmp(&a.size));
+
+        let mut state = dup_progress_state().lock();
+        state.total_files = count;
+        state.is_running = false;
+        state.groups = Some(groups);
+    });
+
+    Ok("started".to_string())
+}
+
+/// Poll the progress of a duplicate file scan.
+#[tauri::command]
+pub fn get_duplicate_progress() -> Result<DupProgressPayload, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let state = dup_progress_state().lock();
+
+    let _now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let elapsed = if state.start_time > 0 {
+        (_now - state.start_time) / 1000
+    } else {
+        0
+    };
+
+    let (total_groups, total_dup_files, wasted_size) = if !state.is_running {
+        if let Some(ref groups) = state.groups {
+            let tg = groups.len();
+            let mut tdf = 0usize;
+            let mut ws = 0u64;
+            for g in groups {
+                tdf += g.count;
+                ws += g.size * (g.count as u64 - 1);
+            }
+            (Some(tg), Some(tdf), Some(ws))
+        } else {
+            (None, None, None)
+        }
+    } else {
+        (None, None, None)
+    };
+
+    Ok(DupProgressPayload {
+        files_found: state.total_files,
+        is_running: state.is_running,
+        current_dir: state.current_dir.clone(),
+        elapsed_secs: elapsed,
+        total_groups,
+        total_dup_files,
+        wasted_size,
+    })
+}
+
+/// Fetch the completed duplicate scan results.
+#[tauri::command]
+pub fn get_duplicate_results() -> Result<Vec<DuplicateGroup>, String> {
+    let state = dup_progress_state().lock();
+    if state.is_running {
+        return Err("Scan still in progress".into());
+    }
+    state
+        .groups
+        .clone()
+        .ok_or_else(|| "No results available".into())
+}
+
+/// Public wrapper for testing.
+pub fn test_format_size_dup(bytes: u64) -> String {
+    format_size_dup(bytes)
 }
 
 fn format_size_dup(bytes: u64) -> String {

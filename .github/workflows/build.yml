@@ -12,6 +12,50 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ══════════════════════════════════════════════════════════════
+  # UI TEST MATRIX — runs on ALL three OS
+  # ══════════════════════════════════════════════════════════════
+  ui-test:
+    name: UI Test ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            display: Windows
+          - os: macos-latest
+            display: macOS
+          - os: ubuntu-22.04
+            display: Linux
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install npm deps
+        run: npm install
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+      - name: Run UI test matrix
+        id: test
+        run: node run-uitest.mjs --json --file=uitest-matrix.html
+        continue-on-error: true
+      - name: Save test results
+        shell: bash
+        run: |
+          node run-uitest.mjs --json --file=uitest-matrix.html > uitest-result-${{ matrix.display }}.json 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uitest-result-${{ matrix.display }}
+          path: uitest-result-${{ matrix.display }}.json
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════
+  # BUILD
+  # ══════════════════════════════════════════════════════════════
   build:
     name: Build ${{ matrix.os }}
     strategy:
@@ -77,11 +121,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $dir = "target/release"
-          # Raw binary
           if (Test-Path "$dir/${{ matrix.binary }}") {
             Copy-Item "$dir/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}" -Force
           }
-          # Bundle artifacts — only final installers, not build internals
           $bundleDirs = @("$dir/bundle/msi", "$dir/bundle/nsis")
           foreach ($bd in $bundleDirs) {
             if (Test-Path $bd) {
@@ -97,11 +139,9 @@ jobs:
         run: |
           mkdir -p artifacts
           RELDIR="target/release"
-          # Raw binary
           if [ -f "$RELDIR/${{ matrix.binary }}" ]; then
             cp "$RELDIR/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}"
           fi
-          # Bundle artifacts — only final installers
           for dir in "$RELDIR/bundle/msi" "$RELDIR/bundle/nsis" "$RELDIR/bundle/dmg" "$RELDIR/bundle/appimage" "$RELDIR/bundle/deb" "$RELDIR/bundle/rpm"; do
             if [ -d "$dir" ]; then
               cp "$dir"/* artifacts/ 2>/dev/null || true
@@ -115,25 +155,159 @@ jobs:
           path: artifacts/**
           retention-days: 7
 
-  release:
-    name: Create Release
-    if: github.ref_type == 'tag'
-    needs: [build]
+  # ══════════════════════════════════════════════════════════════
+  # README MATRIX GENERATION
+  # ══════════════════════════════════════════════════════════════
+  generate-matrix:
+    name: Generate Test Matrix
+    if: always()
+    needs: [ui-test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: uitest-result-*
+          merge-multiple: true
+          path: uitest-results
+
+      - name: Generate test matrix table
+        id: matrix
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const resultsDir = 'uitest-results';
+          const platforms = { 'Windows': null, 'macOS': null, 'Linux': null };
+
+          // Read all result files
+          const files = fs.readdirSync(resultsDir).filter(f => f.endsWith('.json'));
+          for (const file of files) {
+            const content = fs.readFileSync(path.join(resultsDir, file), 'utf8');
+            try {
+              const data = JSON.parse(content);
+              if (data && data.platform && platforms[data.platform] !== undefined) {
+                platforms[data.platform] = data;
+              }
+            } catch(e) {
+              console.log('Parse error for', file, e.message);
+            }
+          }
+
+          // Build test sets from all platforms
+          const allTestIds = new Set();
+          for (const p of Object.values(platforms)) {
+            if (p && p.tests) {
+              p.tests.forEach(t => allTestIds.add(t.id));
+            }
+          }
+
+          const testIds = [...allTestIds].sort();
+          // Define category names
+          const catNames = {
+            A: 'Toolbar & Header', B: 'Button Click Actions', C: 'Tree View',
+            D: 'Context Menus', E: 'Stats Panel', F: 'Selection Panel',
+            G: 'Top 50 Files', H: 'Diagram', I: 'Progress Overlay',
+            J: 'Language Switcher', K: 'Menu Events', L: 'Duplicate Scanner',
+            M: 'Edge Cases'
+          };
+          const catEmoji = { A: '🛠️', B: '🖱️', C: '🌳', D: '📋', E: '📊', F: '🔍',
+            G: '🏆', H: '📈', I: '⏳', J: '🌐', K: '📝', L: '🔎', M: '⚠️' };
+
+          // Generate markdown
+          let md = '## 🧪 Cross-Platform UI Test Matrix\\n\\n';
+          md += '> Last updated: ' + new Date().toISOString().split('T')[0] + '\\n\\n';
+          md += '| # | Test | Windows | macOS | Linux |\\n';
+          md += '|---|---|---|---|---|\\n';
+
+          let lastCat = '';
+          for (const id of testIds) {
+            const cat = id[0];
+            if (cat !== lastCat) {
+              const name = catNames[cat] || 'Unknown';
+              const emoji = catEmoji[cat] || '📌';
+              md += '| **' + cat + '** | **' + emoji + ' ' + name + '** | | | |\\n';
+              lastCat = cat;
+            }
+
+            const getStatus = (p) => {
+              if (!p || !p.tests) return '⚪ N/A';
+              const t = p.tests.find(x => x.id === id);
+              if (!t) return '⚪ N/A';
+              return t.status === 'passed' ? '🟢 Passed' : '🔴 Failed';
+            };
+
+            const w = getStatus(platforms.Windows);
+            const m = getStatus(platforms.macOS);
+            const l = getStatus(platforms.Linux);
+
+            // Get test name from any platform
+            let testName = id;
+            for (const p of Object.values(platforms)) {
+              if (p && p.tests) {
+                const t = p.tests.find(x => x.id === id);
+                if (t && t.name) { testName = t.name; break; }
+              }
+            }
+            md += '| ' + id + ' | ' + testName + ' | ' + w + ' | ' + m + ' | ' + l + ' |\\n';
+          }
+
+          // Summary row
+          md += '\\n### 📊 Platform Summary\\n\\n';
+          md += '| Platform | Passed | Failed | Total | Success Rate |\\n';
+          md += '|---|---|---|---|---|\\n';
+          for (const [name, data] of Object.entries(platforms)) {
+            if (data) {
+              const rate = data.total > 0 ? ((data.passed / data.total) * 100).toFixed(1) + '%' : 'N/A';
+              md += '| **' + name + '** | ' + data.passed + ' | ' + data.failed + ' | ' + data.total + ' | ' + rate + ' |\\n';
+            } else {
+              md += '| **' + name + '** | ❌ No data | ❌ No data | ❌ No data | ❌ |\\n';
+            }
+          }
+
+          fs.writeFileSync('TEST_MATRIX.md', md);
+          console.log('TEST_MATRIX.md generated');
+          "
+      - name: Upload test matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-matrix
+          path: TEST_MATRIX.md
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════
+  # RELEASE
+  # ══════════════════════════════════════════════════════════════
+  release:
+    name: Create Release
+    if: github.ref_type == 'tag'
+    needs: [build, generate-matrix]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
           merge-multiple: true
           path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-matrix
+          path: .
 
       - name: Prepare release assets
         run: |
           mkdir -p release_assets
           ls -la artifacts/
           cp artifacts/* release_assets/ 2>/dev/null || true
+          # Include test matrix
+          if [ -f TEST_MATRIX.md ]; then
+            cp TEST_MATRIX.md release_assets/
+          fi
           ls -la release_assets/
 
       - name: Create Release
@@ -149,6 +323,10 @@ jobs:
             | **Windows** | `.msi` installer or `DiskRaptor-Windows-x64.exe` |
             | **macOS** | `.dmg` or `DiskRaptor-macOS-x64` binary |
             | **Linux** | `.AppImage` or `DiskRaptor-Linux-x64` binary |
+
+            ## 🧪 UI Test Results
+
+            See [TEST_MATRIX.md](TEST_MATRIX.md) for the full cross-platform test matrix.
 
             > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open. On Linux: `chmod +x && ./DiskRaptor-Linux-x64`.
           files: release_assets/**
