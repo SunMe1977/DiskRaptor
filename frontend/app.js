@@ -327,7 +327,7 @@
           try {
             await sleep(800);
             var result = await window.__TAURI__.invoke("check_for_updates");
-            var currentVer = "v0.2.3";
+            var currentVer = "v0.2.4";
             var remoteVer = result.trim();
             if (remoteVer > currentVer) {
               icon.textContent = "⬇️";
