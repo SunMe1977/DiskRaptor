@@ -298,6 +298,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Clean old artifacts
+        run: rm -rf artifacts release_assets
+
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -308,11 +311,26 @@ jobs:
           name: test-matrix
           path: .
 
-      - name: Prepare release assets
+      - name: Prepare release assets (filter latest version only)
         run: |
           mkdir -p release_assets
           ls -la artifacts/
-          cp artifacts/* release_assets/ 2>/dev/null || true
+          # Only copy files matching the current tag version
+          for f in artifacts/*; do
+            base=$(basename "$f")
+            # Skip files that contain an older version number
+            if echo "$base" | grep -E "0\\.2\\.(0|1|2|3)" > /dev/null 2>&1; then
+              echo "Skipping old version: $base"
+              continue
+            fi
+            cp "$f" release_assets/
+            echo "Included: $base"
+          done
+          # Ensure at least something was copied
+          if [ -z "$(ls -A release_assets/)" ]; then
+            echo "WARNING: No assets matched! Copying all as fallback."
+            cp artifacts/* release_assets/ 2>/dev/null || true
+          fi
           # Include test matrix
           if [ -f TEST_MATRIX.md ]; then
             cp TEST_MATRIX.md release_assets/
