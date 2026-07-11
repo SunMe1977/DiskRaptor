@@ -102,6 +102,15 @@ async function main() {
 // ── OS-Specific Implementations ───────────────────────────────
 
 async function findInstaller() {
+  // Ensure artifacts directory exists
+  if (!fs.existsSync(ARCHIVE_DIR)) {
+    log(`  ⚠️ Artifacts directory not found: ${ARCHIVE_DIR}`);
+    // Try current directory
+    const cwdFiles = fs.readdirSync(".").filter(f => f.endsWith(".deb") || f.endsWith(".AppImage") || f.endsWith(".msi") || f.endsWith(".dmg"));
+    if (cwdFiles.length > 0) return path.resolve(cwdFiles[0]);
+    return null;
+  }
+
   const patterns = {
     win: [/.+\.msi$/i, /.+\.exe$/i],
     mac: [/.+\.dmg$/i],

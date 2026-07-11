@@ -308,6 +308,7 @@ jobs:
           path: artifacts
 
       - name: List artifacts
+        shell: bash
         run: ls -la artifacts/
 
       - name: Install and test (Windows)
