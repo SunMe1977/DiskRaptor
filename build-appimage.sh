@@ -1,39 +1,76 @@
 #!/bin/bash
-# DiskRaptor Self-Contained AppImage Builder
-# Creates a portable AppImage that works WITHOUT any system dependencies.
-# No libfuse2, no libwebkit2gtk — nothing needs to be installed.
-#
-# Usage:
-#   bash build-appimage.sh        # Build from source
-#   bash build-appimage.sh /path/to/diskraptor   # Wrap existing binary
+# DiskRaptor Portable AppImage Builder
+# Usage: bash build-appimage.sh [/path/to/diskraptor-binary]
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== DiskRaptor Portable AppImage Builder ==="
 
-# Find the binary
+# ── Helper: self-extracting AppImage fallback ─────────────────
+create_self_extracting() {
+  local appdir="$1" out="$2"
+  tar czf "${out}.tar.gz" -C "$appdir" .
+  cat > "$out" << 'WRAPPER'
+#!/bin/bash
+# DiskRaptor Portable (self-extracting)
+SKIP=$(grep -a -n "^#BINARY_START$" "$0" | cut -d: -f1)
+SKIP=$((SKIP + 1))
+TMPDIR=$(mktemp -d)
+tail -n +"$SKIP" "$0" | tar xz -C "$TMPDIR" 2>/dev/null
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
+export GTK_THEME=Adwaita
+export GDK_BACKEND=x11
+"$TMPDIR/usr/bin/diskraptor" "$@"
+RC=$?
+rm -rf "$TMPDIR"
+exit $RC
+#BINARY_START
+WRAPPER
+  cat "${out}.tar.gz" >> "$out"
+  chmod +x "$out"
+  rm -f "${out}.tar.gz"
+}
+
+# ── Find the binary ───────────────────────────────────────────
 BINARY=""
 if [ -n "${1:-}" ]; then
   BINARY="$1"
-elif [ -f "$SCRIPT_DIR/target/release/diskraptor" ]; then
-  BINARY="$SCRIPT_DIR/target/release/diskraptor"
-elif [ -f "$SCRIPT_DIR/src-tauri/target/release/diskraptor" ]; then
-  BINARY="$SCRIPT_DIR/src-tauri/target/release/diskraptor"
+else
+  for loc in \
+    "$SCRIPT_DIR/target/release/diskraptor" \
+    "$SCRIPT_DIR/src-tauri/target/release/diskraptor" \
+    "$SCRIPT_DIR/src-tauri/target/release/diskraptor_lib"
+  do
+    if [ -f "$loc" ] && [ -x "$loc" ]; then
+      BINARY="$loc"
+      break
+    fi
+  done
 fi
 
+# Search if still not found
 if [ -z "$BINARY" ]; then
-  echo "Building binary first..."
-  cd "$SCRIPT_DIR/src-tauri"
-  cargo build --release
-  BINARY="$SCRIPT_DIR/src-tauri/target/release/diskraptor"
-  cd "$SCRIPT_DIR"
+  BINARY=$(find "$SCRIPT_DIR" -name "diskraptor" -type f -executable 2>/dev/null | head -1)
+fi
+
+# Build if still not found
+if [ -z "$BINARY" ] || [ ! -f "$BINARY" ]; then
+  echo "Building binary..."
+  cargo build --release --bin diskraptor --manifest-path "$SCRIPT_DIR/src-tauri/Cargo.toml" 2>&1
+  BINARY=$(find "$SCRIPT_DIR/target" -name "diskraptor" -type f -executable 2>/dev/null | head -1)
+  if [ -z "$BINARY" ]; then
+    echo "❌ Binary not found after build"
+    find "$SCRIPT_DIR/target" -name "diskraptor*" -type f 2>/dev/null | head -5
+    exit 1
+  fi
 fi
 
 echo "  Binary: $BINARY"
+echo "  Size: $(du -h "$BINARY" | cut -f1)"
 echo ""
 
-# Create AppDir
+# ── Create AppDir ─────────────────────────────────────────────
 APPDIR="$SCRIPT_DIR/target/AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
@@ -43,22 +80,18 @@ mkdir -p "$APPDIR/usr/share/metainfo"
 
 cp "$BINARY" "$APPDIR/usr/bin/diskraptor"
 
-# AppRun — the entry point that handles everything
+# AppRun — handles FUSE, GTK, WebKit automatically
 cat > "$APPDIR/AppRun" << 'APPRUN'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "$0")")"
-
-# Self-extract if FUSE 2 missing (works on Ubuntu 24.4+)
+# Auto-detect: use extraction if FUSE 2 missing
 if [ -z "${APPIMAGE_EXTRACT_AND_RUN:-}" ] && ! command -v fusermount &>/dev/null; then
   export APPIMAGE_EXTRACT_AND_RUN=1
 fi
-
-# Environment for maximum compatibility
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 export GTK_THEME=Adwaita
 export GDK_BACKEND=x11
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
-
 exec "${HERE}/usr/bin/diskraptor" "$@"
 APPRUN
 chmod +x "$APPDIR/AppRun"
@@ -83,7 +116,7 @@ for icon in "$SCRIPT_DIR/icons/256x256.png" "$SCRIPT_DIR/images/logo6-256.png" "
   fi
 done
 
-# AppStream
+# AppStream metadata
 cat > "$APPDIR/usr/share/metainfo/diskraptor.appdata.xml" << 'APPDATA'
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop">
@@ -94,11 +127,14 @@ cat > "$APPDIR/usr/share/metainfo/diskraptor.appdata.xml" << 'APPDATA'
 </component>
 APPDATA
 
-# Check for appimagetool
+# ── Build AppImage ────────────────────────────────────────────
+OUTPUT="$SCRIPT_DIR/DiskRaptor-x86_64.AppImage"
+
+# Find or download appimagetool
 APPIMAGETOOL=""
 for tool in appimagetool "$SCRIPT_DIR/target/appimagetool"; do
   if command -v "$tool" &>/dev/null; then
-    APPIMAGETOOL="$tool"
+    APPIMAGETOOL=$(command -v "$tool")
     break
   fi
 done
@@ -106,24 +142,44 @@ done
 if [ -z "$APPIMAGETOOL" ]; then
   echo "Downloading appimagetool..."
   APPIMAGETOOL="$SCRIPT_DIR/target/appimagetool"
-  APPIMAGE_EXTRACT_AND_RUN=1 wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O "$APPIMAGETOOL" 2>/dev/null || \
-  curl -sL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -o "$APPIMAGETOOL"
-  chmod +x "$APPIMAGETOOL"
+  URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+  if command -v wget &>/dev/null; then
+    APPIMAGE_EXTRACT_AND_RUN=1 wget -q "$URL" -O "$APPIMAGETOOL" 2>/dev/null || \
+    curl -sL "$URL" -o "$APPIMAGETOOL"
+  else
+    curl -sL "$URL" -o "$APPIMAGETOOL"
+  fi
+  chmod +x "$APPIMAGETOOL" || true
 fi
 
-# Build AppImage
-OUTPUT="$SCRIPT_DIR/DiskRaptor-x86_64.AppImage"
+echo "Building AppImage..."
 export APPIMAGE_EXTRACT_AND_RUN=1
 export VERSION=0.2.5
 
-echo "Building AppImage..."
-"$APPIMAGETOOL" "$APPDIR" "$OUTPUT" 2>&1 || {
-  echo "appimagetool failed. Creating manual AppImage..."
-  # Fallback: just make a portable tar.gz with run script
-  tar czf "${OUTPUT}.tar.gz" -C "$APPDIR" .
-  cat > "$OUTPUT" << 'WRAPPER'
+if [ -x "$APPIMAGETOOL" ]; then
+  "$APPIMAGETOOL" "$APPDIR" "$OUTPUT" 2>&1 || {
+    echo "appimagetool failed. Creating self-extracting archive..."
+    create_self_extracting "$APPDIR" "$OUTPUT"
+  }
+else
+  echo "appimagetool not available. Creating self-extracting archive..."
+  create_self_extracting "$APPDIR" "$OUTPUT"
+fi
+
+echo ""
+echo "✅ AppImage: $OUTPUT"
+echo "   Size: $(du -h "$OUTPUT" | cut -f1)"
+echo ""
+echo "Run: chmod +x '$OUTPUT' && './$OUTPUT'"
+echo ""
+
+# ── Helper: self-extracting AppImage fallback ─────────────────
+create_self_extracting() {
+  local appdir="$1" out="$2"
+  tar czf "${out}.tar.gz" -C "$appdir" .
+  cat > "$out" << 'WRAPPER'
 #!/bin/bash
-# DiskRaptor Portable AppImage (self-extracting)
+# DiskRaptor Portable (self-extracting)
 SKIP=$(grep -a -n "^#BINARY_START$" "$0" | cut -d: -f1)
 SKIP=$((SKIP + 1))
 TMPDIR=$(mktemp -d)
@@ -131,21 +187,13 @@ tail -n +"$SKIP" "$0" | tar xz -C "$TMPDIR" 2>/dev/null
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 export GTK_THEME=Adwaita
 export GDK_BACKEND=x11
-exec "$TMPDIR/usr/bin/diskraptor" "$@"
-exit 1
+"$TMPDIR/usr/bin/diskraptor" "$@"
+RC=$?
+rm -rf "$TMPDIR"
+exit $RC
 #BINARY_START
 WRAPPER
-  cat "${OUTPUT}.tar.gz" >> "$OUTPUT"
-  chmod +x "$OUTPUT"
-  rm -f "${OUTPUT}.tar.gz"
+  cat "${out}.tar.gz" >> "$out"
+  chmod +x "$out"
+  rm -f "${out}.tar.gz"
 }
-
-echo ""
-echo "✅ AppImage created: $OUTPUT"
-echo "   Size: $(du -h "$OUTPUT" | cut -f1)"
-echo ""
-echo "Run with:"
-echo "  chmod +x '$OUTPUT' && './$OUTPUT'"
-echo ""
-echo "No installation needed. Works on ALL Linux distros."
-echo "No libraries need to be installed."
