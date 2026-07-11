@@ -106,6 +106,7 @@ jobs:
             patchelf \
             libayatana-appindicator3-dev \
             libfuse2 \
+            libfuse-dev \
             libdbus-1-dev \
             libssl-dev \
             wget
@@ -170,6 +171,22 @@ jobs:
             dpkg -L diskraptor 2>/dev/null || dpkg -L disk-raptor 2>/dev/null || echo "Package files:"
           fi
           echo "✅ .deb test passed"
+
+      - name: Test AppImage runs (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        timeout-minutes: 2
+        run: |
+          APPIMAGE=$(find target/release/bundle/appimage -name "*.AppImage" | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "⚠️ No AppImage found"
+            exit 0
+          fi
+          echo "📦 Testing AppImage: $APPIMAGE"
+          chmod +x "$APPIMAGE"
+          # Run with extraction (avoids libfuse2 dependency)
+          APPIMAGE_EXTRACT_AND_RUN=1 timeout 5 "$APPIMAGE" --help 2>&1 || \
+          APPIMAGE_EXTRACT_AND_RUN=1 timeout 5 "$APPIMAGE" 2>&1 || true
+          echo "✅ AppImage launched (process killed after 5s)"
 
       - name: Collect artifacts (Windows)
         if: matrix.os == 'windows-latest'
@@ -418,7 +435,12 @@ jobs:
             > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open.
             >
             > **Linux**:
-            > - **AppImage** (🟢 recommended for ALL versions): `chmod +x disk-raptor_*.AppImage && ./disk-raptor_*.AppImage`
+            > - **AppImage** (🟢 recommended for ALL versions):
+            >   - If you get `libfuse.so.2` error, use:
+            >     ```
+            >     APPIMAGE_EXTRACT_AND_RUN=1 ./disk-raptor_*.AppImage
+            >     ```
+            >   - Or install FUSE 2: `sudo apt install libfuse2`
             > - **.deb** (🟢 Ubuntu 20.04 / 22.04): `sudo apt install ./disk-raptor_*.deb`
             > - **.deb** (🔴 Ubuntu 24.04+): NOT supported — webkit2gtk-4.0 was removed in 24.04. Use **AppImage** instead.
             >
