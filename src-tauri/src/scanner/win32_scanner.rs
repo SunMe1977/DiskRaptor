@@ -107,12 +107,22 @@ pub fn scan_dir(root: &str) -> (u64, u64) {
 
 #[test]
 fn test_small() {
-    let dir = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .to_string_lossy()
-        .to_string();
+    use std::fs;
+    use std::path::PathBuf;
+    // Create a small temp directory with known content
+    let tmp = std::env::temp_dir().join("diskraptor_win32_test");
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).expect("create temp dir");
+    fs::write(tmp.join("a.txt"), "hello").unwrap();
+    fs::write(tmp.join("b.txt"), "world").unwrap();
+    fs::create_dir(tmp.join("sub")).unwrap();
+    fs::write(tmp.join("sub").join("c.txt"), "nested").unwrap();
+
+    let dir = tmp.to_string_lossy().to_string();
     eprintln!("Scanning: {}", dir);
     let (f, d) = scan_dir(&dir);
     eprintln!("Result: files={} dirs={}", f, d);
-    assert!(f > 0 || d > 0, "Expected at least some files or dirs");
+    assert_eq!(f, 3, "Expected 3 files");
+    assert_eq!(d, 2, "Expected 2 dirs (tmp + sub)");
+    let _ = fs::remove_dir_all(&tmp);
 }

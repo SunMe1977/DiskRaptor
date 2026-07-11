@@ -884,24 +884,26 @@ button.primary:hover:not(:disabled) {
   flex-shrink: 0;
 }
 
-/* Compact cards: Scan Summary + Selection use half space */
+/* Compact cards: Scan Summary + Selection — minimal size */
 .card.card-compact {
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-1) var(--sp-2);
+  max-height: 110px;
+  overflow-y: auto;
 }
 .card.card-compact h3 {
-  font-size: 9px;
-  margin-bottom: var(--sp-1);
-  letter-spacing: 0.4px;
+  font-size: 8px;
+  margin-bottom: 2px;
+  letter-spacing: 0.3px;
 }
 .card.card-compact h3::before {
   width: 2px;
-  height: 10px;
+  height: 8px;
 }
 
 /* Topfiles card fills remaining space */
 #topfiles-card {
-  flex: 1 1 auto;
-  min-height: 60px;
+  flex: 2 1 auto;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -946,17 +948,18 @@ button.primary:hover:not(:disabled) {
 
 /* Compact stat rows for summary + selection */
 .card-compact .stat-row {
-  padding: 1px 0;
+  padding: 0;
+  line-height: 1.3;
 }
 .card-compact .stat-label {
-  font-size: 9px;
+  font-size: 8px;
 }
 .card-compact .stat-value {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
 }
 .card-compact #stat-size {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 /* Selection panel */
@@ -971,9 +974,9 @@ button.primary:hover:not(:disabled) {
   font-weight: 500;
 }
 .sel-action {
-  font-size: 14px;
-  padding: 4px 6px;
-  min-width: 28px;
+  font-size: 12px;
+  padding: 2px 4px;
+  min-width: 22px;
   line-height: 1;
   border-radius: var(--r-md);
   border: 1px solid transparent;
@@ -1040,7 +1043,7 @@ button.primary:hover:not(:disabled) {
 }
 
 #topfiles-table tbody td {
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-1) var(--sp-2);
   border-bottom: 1px solid var(--border-light);
   overflow: hidden;
   text-overflow: ellipsis;

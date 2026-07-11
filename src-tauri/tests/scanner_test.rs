@@ -4,6 +4,15 @@
 
 use std::sync::Arc;
 
+fn make_config(root: String) -> diskraptor_lib::scanner::walker::ScanConfig {
+    diskraptor_lib::scanner::walker::ScanConfig {
+        root_path: root,
+        skip_dirs: vec!["target".into(), ".git".into(), "node_modules".into()],
+        top_file_min_size: 0,
+        top_files_count: 50,
+    }
+}
+
 /// Test the scanner against the project directory.
 /// This verifies that the scanner finds files and builds a tree.
 #[test]
@@ -22,12 +31,7 @@ fn test_scan_project_dir() {
         files.store(f, std::sync::atomic::Ordering::Relaxed);
     });
 
-    let config = diskraptor_lib::scanner::walker::ScanConfig {
-        root_path: root.clone(),
-        skip_dirs: vec![],
-        top_file_min_size: 0,
-        top_files_count: 50,
-    };
+    let config = make_config(root.clone());
 
     let result = diskraptor_lib::scanner::walker::scan_directory_with_progress(config, cb);
     assert!(result.is_ok(), "Scan failed: {:?}", result.err());
@@ -82,12 +86,7 @@ fn test_chunking() {
 
     let cb: Box<dyn Fn(u64, u64, &str) + Send + Sync> = Box::new(|_, _, _| {});
 
-    let config = diskraptor_lib::scanner::walker::ScanConfig {
-        root_path: root,
-        skip_dirs: vec![],
-        top_file_min_size: 0,
-        top_files_count: 50,
-    };
+    let config = make_config(root);
 
     let result = diskraptor_lib::scanner::walker::scan_directory_with_progress(config, cb)
         .expect("Scan failed");
@@ -130,12 +129,7 @@ fn test_tree_linking() {
         .to_string();
 
     let cb: Box<dyn Fn(u64, u64, &str) + Send + Sync> = Box::new(|_, _, _| {});
-    let config = diskraptor_lib::scanner::walker::ScanConfig {
-        root_path: root,
-        skip_dirs: vec![],
-        top_file_min_size: 0,
-        top_files_count: 50,
-    };
+    let config = make_config(root);
 
     let result = diskraptor_lib::scanner::walker::scan_directory_with_progress(config, cb)
         .expect("Scan failed");
@@ -192,12 +186,7 @@ fn test_get_children() {
         .to_string();
 
     let cb: Box<dyn Fn(u64, u64, &str) + Send + Sync> = Box::new(|_, _, _| {});
-    let config = diskraptor_lib::scanner::walker::ScanConfig {
-        root_path: root,
-        skip_dirs: vec![],
-        top_file_min_size: 0,
-        top_files_count: 50,
-    };
+    let config = make_config(root);
 
     let result = diskraptor_lib::scanner::walker::scan_directory_with_progress(config, cb)
         .expect("Scan failed");
@@ -237,9 +226,13 @@ fn test_duplicate_scanner() {
     use std::collections::HashMap;
     let mut file_map: HashMap<(u64, String), Vec<String>> = HashMap::new();
 
-    // Walk the project dir
+    // Walk the project dir, skip large dirs
     for entry in walkdir::WalkDir::new(&root)
         .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            name != "target" && name != ".git" && name != "node_modules"
+        })
         .filter_map(|e| e.ok())
     {
         if entry.file_type().is_file() {

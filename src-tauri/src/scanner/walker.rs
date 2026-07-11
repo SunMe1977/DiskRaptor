@@ -23,9 +23,9 @@ impl Default for ScanConfig {
             root_path: String::new(),
             skip_dirs: vec![
                 #[cfg(windows)]
-                {
-                    "C:\\Windows".into()
-                },
+                "C:\\Windows".into(),
+                "target".into(),
+                ".git".into(),
             ],
             top_file_min_size: 0,
             top_files_count: 100,
@@ -79,7 +79,6 @@ impl Default for FileTypeAccum {
     }
 }
 impl FileTypeAccum {
-    #[allow(dead_code)]
     fn add(&self, path: &str, size: u64) {
         let ext = Path::new(path)
             .extension()
@@ -917,7 +916,6 @@ mod platform {
             if full == root_path {
                 continue;
             }
-            progress(arena.nodes.len() as u64, 0, &full);
             let file_name = entry.file_name().to_string_lossy().to_string();
             let is_dir = entry.file_type().is_dir();
             let parent = entry
