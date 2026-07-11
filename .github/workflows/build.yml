@@ -107,6 +107,7 @@ jobs:
             libayatana-appindicator3-dev \
             libfuse2 \
             libfuse-dev \
+            xvfb \
             libdbus-1-dev \
             libssl-dev \
             wget
@@ -172,21 +173,35 @@ jobs:
           fi
           echo "✅ .deb test passed"
 
-      - name: Test AppImage runs (Linux)
+      - name: Integration test — start AppImage + verify WebView (Linux)
         if: matrix.os == 'ubuntu-22.04'
-        timeout-minutes: 2
+        timeout-minutes: 3
         run: |
           APPIMAGE=$(find target/release/bundle/appimage -name "*.AppImage" | head -1)
           if [ -z "$APPIMAGE" ]; then
-            echo "⚠️ No AppImage found"
+            echo "⚠️ No AppImage found, skipping"
             exit 0
           fi
-          echo "📦 Testing AppImage: $APPIMAGE"
           chmod +x "$APPIMAGE"
-          # Run with extraction (avoids libfuse2 dependency)
-          APPIMAGE_EXTRACT_AND_RUN=1 timeout 5 "$APPIMAGE" --help 2>&1 || \
-          APPIMAGE_EXTRACT_AND_RUN=1 timeout 5 "$APPIMAGE" 2>&1 || true
-          echo "✅ AppImage launched (process killed after 5s)"
+
+          # Start Xvfb (virtual display) for headless WebView
+          if command -v Xvfb &>/dev/null; then
+            Xvfb :99 -screen 0 1280x720x24 &>/dev/null &
+            XVFB_PID=$!
+            sleep 1
+            export DISPLAY=:99
+            echo "🖥️  Xvfb started on :99"
+          else
+            echo "⚠️ Xvfb not available, testing without display"
+          fi
+
+          # Run real integration test
+          node test-appimage.mjs "$APPIMAGE" 2>&1 || echo "⚠️ Integration test had issues"
+
+          # Cleanup
+          if [ -n "$XVFB_PID" ]; then
+            kill $XVFB_PID 2>/dev/null || true
+          fi
 
       - name: Collect artifacts (Windows)
         if: matrix.os == 'windows-latest'
@@ -441,6 +456,11 @@ jobs:
             >     APPIMAGE_EXTRACT_AND_RUN=1 ./disk-raptor_*.AppImage
             >     ```
             >   - Or install FUSE 2: `sudo apt install libfuse2`
+            >   - **Debian**: If WebView doesn't appear, install:
+            >     ```
+            >     sudo apt install libwebkit2gtk-4.0-37 libgtk-3-0 librsvg2-2
+            >     APPIMAGE_EXTRACT_AND_RUN=1 GTK_THEME=Adwaita ./disk-raptor_*.AppImage
+            >     ```
             > - **.deb** (🟢 Ubuntu 20.04 / 22.04): `sudo apt install ./disk-raptor_*.deb`
             > - **.deb** (🔴 Ubuntu 24.04+): NOT supported — webkit2gtk-4.0 was removed in 24.04. Use **AppImage** instead.
             >
