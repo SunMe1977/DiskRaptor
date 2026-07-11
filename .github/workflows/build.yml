@@ -131,7 +131,7 @@ jobs:
 
       - name: Build + bundle with Tauri (Linux)
         if: matrix.os == 'ubuntu-22.04'
-        run: npx tauri build --bundles appimage
+        run: npx tauri build --bundles appimage,deb
 
       - name: Collect artifacts (Windows)
         if: matrix.os == 'windows-latest'
@@ -175,7 +175,7 @@ jobs:
           if [ -f "$RELDIR/${{ matrix.binary }}" ]; then
             cp "$RELDIR/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}"
           fi
-          for dir in "$RELDIR/bundle/appimage"; do
+          for dir in "$RELDIR/bundle/appimage" "$RELDIR/bundle/deb"; do
             if [ -d "$dir" ]; then
               cp "$dir"/* artifacts/ 2>/dev/null || true
             fi
@@ -365,8 +365,9 @@ jobs:
 
             > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open.
             >
-            > **Linux**: Use the **AppImage** — no installation needed:
-            > `chmod +x disk-raptor_*.AppImage && ./disk-raptor_*.AppImage`
+            > **Linux**:
+            > - **AppImage** (recommended): `chmod +x disk-raptor_*.AppImage && ./disk-raptor_*.AppImage`
+            > - **.deb** (if AppImage doesn't work): `sudo apt install ./disk-raptor_*.deb`
             >
             > **Windows**: Run the `.msi` installer or the `.exe` directly.
           files: release_assets/**
