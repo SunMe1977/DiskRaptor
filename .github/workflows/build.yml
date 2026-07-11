@@ -131,13 +131,21 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: npx tauri build --bundles dmg
 
-      - name: Build + bundle with Tauri (Linux)
+      - name: Build + bundle with Tauri (Linux) — binary + .deb
         if: matrix.os == 'ubuntu-22.04'
         timeout-minutes: 20
         env:
           DEBIAN_FRONTEND: noninteractive
           TZ: UTC
-        run: npx tauri build --bundles appimage,deb
+        run: npx tauri build --bundles deb
+
+      - name: Build self-contained AppImage (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        timeout-minutes: 10
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          bash build-appimage.sh
 
       - name: Verify and test .deb package (Linux)
         if: matrix.os == 'ubuntu-22.04'
@@ -177,29 +185,25 @@ jobs:
         if: matrix.os == 'ubuntu-22.04'
         timeout-minutes: 3
         run: |
-          APPIMAGE=$(find target/release/bundle/appimage -name "*.AppImage" | head -1)
+          APPIMAGE=$(find . -name "DiskRaptor-x86_64.AppImage" -o -name "*.AppImage" | head -1)
           if [ -z "$APPIMAGE" ]; then
-            echo "⚠️ No AppImage found, skipping"
+            echo "⚠️ No AppImage found"
             exit 0
           fi
           chmod +x "$APPIMAGE"
 
-          # Start Xvfb (virtual display) for headless WebView
+          # Start Xvfb for headless display
           if command -v Xvfb &>/dev/null; then
             Xvfb :99 -screen 0 1280x720x24 &>/dev/null &
             XVFB_PID=$!
             sleep 1
             export DISPLAY=:99
-            echo "🖥️  Xvfb started on :99"
-          else
-            echo "⚠️ Xvfb not available, testing without display"
           fi
 
-          # Run real integration test
-          node test-appimage.mjs "$APPIMAGE" 2>&1 || echo "⚠️ Integration test had issues"
+          echo "Testing AppImage: $APPIMAGE"
+          node test-appimage.mjs "$APPIMAGE" 2>&1 || true
 
-          # Cleanup
-          if [ -n "$XVFB_PID" ]; then
+          if [ -n "${XVFB_PID:-}" ]; then
             kill $XVFB_PID 2>/dev/null || true
           fi
 
@@ -245,7 +249,12 @@ jobs:
           if [ -f "$RELDIR/${{ matrix.binary }}" ]; then
             cp "$RELDIR/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}"
           fi
-          for dir in "$RELDIR/bundle/appimage" "$RELDIR/bundle/deb"; do
+          # Custom self-contained AppImage (works on ALL distros)
+          if [ -f "DiskRaptor-x86_64.AppImage" ]; then
+            cp "DiskRaptor-x86_64.AppImage" artifacts/
+          fi
+          # Tauri-built .deb
+          for dir in "$RELDIR/bundle/deb"; do
             if [ -d "$dir" ]; then
               cp "$dir"/* artifacts/ 2>/dev/null || true
             fi
@@ -439,9 +448,8 @@ jobs:
             |----------|-----------|-------|
             | **Windows** | `.msi` installer or `.exe` | Windows 10+ |
             | **macOS** | `.dmg` or `DiskRaptor-macOS-x64` | macOS 11+ (unsigned) |
-            | **Linux** 🐧 | `.AppImage` | ✅ Works on ALL Ubuntu/Debian versions |
-            | **Linux (20.04/22.04)** 🐧 | `.deb` | ✅ Works on Ubuntu 20.04, 22.04 |
-            | **Linux (24.04+)** 🐧 | `.deb` | ❌ NOT supported — use **AppImage** instead |
+            | **Linux** 🐧 | `DiskRaptor-x86_64.AppImage` | ✅ Works on ALL distros — no install needed |
+            | **Linux** 🐧 | `disk-raptor_*.deb` | ✅ Ubuntu 20.04/22.04 |
 
             ## 🧪 UI Test Results
 
@@ -450,19 +458,11 @@ jobs:
             > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open.
             >
             > **Linux**:
-            > - **AppImage** (🟢 recommended for ALL versions):
-            >   - If you get `libfuse.so.2` error, use:
-            >     ```
-            >     APPIMAGE_EXTRACT_AND_RUN=1 ./disk-raptor_*.AppImage
-            >     ```
-            >   - Or install FUSE 2: `sudo apt install libfuse2`
-            >   - **Debian**: If WebView doesn't appear, install:
-            >     ```
-            >     sudo apt install libwebkit2gtk-4.0-37 libgtk-3-0 librsvg2-2
-            >     APPIMAGE_EXTRACT_AND_RUN=1 GTK_THEME=Adwaita ./disk-raptor_*.AppImage
-            >     ```
-            > - **.deb** (🟢 Ubuntu 20.04 / 22.04): `sudo apt install ./disk-raptor_*.deb`
-            > - **.deb** (🔴 Ubuntu 24.04+): NOT supported — webkit2gtk-4.0 was removed in 24.04. Use **AppImage** instead.
+            > - **AppImage (recommended ✅)** — works on ALL Linux distros, no install needed:
+            >   ```bash
+            >   chmod +x DiskRaptor-x86_64.AppImage && ./DiskRaptor-x86_64.AppImage
+            >   ```
+            > - **.deb** (Ubuntu 20.04 / 22.04): `sudo apt install ./disk-raptor_*.deb`
             >
             > **Windows**: Run the `.msi` installer or the `.exe` directly.
           files: release_assets/**
