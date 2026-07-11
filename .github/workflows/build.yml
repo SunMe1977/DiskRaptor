@@ -121,8 +121,17 @@ jobs:
         run: |
           choco install wixtoolset --no-progress --limit-output -y
 
-      - name: Build + bundle with Tauri
-        run: npx tauri build
+      - name: Build + bundle with Tauri (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npx tauri build --bundles msi
+
+      - name: Build + bundle with Tauri (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npx tauri build --bundles dmg
+
+      - name: Build + bundle with Tauri (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: npx tauri build --bundles appimage
 
       - name: Collect artifacts (Windows)
         if: matrix.os == 'windows-latest'
@@ -143,15 +152,30 @@ jobs:
           }
           Get-ChildItem artifacts
 
-      - name: Collect artifacts (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Collect artifacts (macOS)
+        if: matrix.os == 'macos-latest'
         run: |
           mkdir -p artifacts
           RELDIR="target/release"
           if [ -f "$RELDIR/${{ matrix.binary }}" ]; then
             cp "$RELDIR/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}"
           fi
-          for dir in "$RELDIR/bundle/msi" "$RELDIR/bundle/nsis" "$RELDIR/bundle/dmg" "$RELDIR/bundle/appimage" "$RELDIR/bundle/deb" "$RELDIR/bundle/rpm"; do
+          for dir in "$RELDIR/bundle/dmg"; do
+            if [ -d "$dir" ]; then
+              cp "$dir"/* artifacts/ 2>/dev/null || true
+            fi
+          done
+          ls -la artifacts/
+
+      - name: Collect artifacts (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          mkdir -p artifacts
+          RELDIR="target/release"
+          if [ -f "$RELDIR/${{ matrix.binary }}" ]; then
+            cp "$RELDIR/${{ matrix.binary }}" "artifacts/${{ matrix.asset_bin }}"
+          fi
+          for dir in "$RELDIR/bundle/appimage"; do
             if [ -d "$dir" ]; then
               cp "$dir"/* artifacts/ 2>/dev/null || true
             fi
@@ -311,27 +335,11 @@ jobs:
           name: test-matrix
           path: .
 
-      - name: Prepare release assets (filter latest version only)
+      - name: Prepare release assets
         run: |
           mkdir -p release_assets
           ls -la artifacts/
-          # Only copy files matching the current tag version
-          for f in artifacts/*; do
-            base=$(basename "$f")
-            # Skip files that contain an older version number
-            if echo "$base" | grep -E "0\\.2\\.(0|1|2|3)" > /dev/null 2>&1; then
-              echo "Skipping old version: $base"
-              continue
-            fi
-            cp "$f" release_assets/
-            echo "Included: $base"
-          done
-          # Ensure at least something was copied
-          if [ -z "$(ls -A release_assets/)" ]; then
-            echo "WARNING: No assets matched! Copying all as fallback."
-            cp artifacts/* release_assets/ 2>/dev/null || true
-          fi
-          # Include test matrix
+          cp artifacts/* release_assets/ 2>/dev/null || true
           if [ -f TEST_MATRIX.md ]; then
             cp TEST_MATRIX.md release_assets/
           fi
@@ -355,11 +363,12 @@ jobs:
 
             See [TEST_MATRIX.md](TEST_MATRIX.md) for the full cross-platform test matrix.
 
-            > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open. On Linux: `chmod +x && ./DiskRaptor-Linux-x64`.
+            > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open.
             >
-            > **Linux .deb note**: The .deb is unsigned (normal for OSS). Ubuntu may show "potentially unsafe" — this is harmless.
-            > Install with: `sudo dpkg -i DiskRaptor_*.deb && sudo apt-get install -f`
-            > Or use the **AppImage** which doesn't require installation: `chmod +x DiskRaptor*.AppImage && ./DiskRaptor*.AppImage`
+            > **Linux**: Use the **AppImage** — no installation needed:
+            > `chmod +x disk-raptor_*.AppImage && ./disk-raptor_*.AppImage`
+            >
+            > **Windows**: Run the `.msi` installer or the `.exe` directly.
           files: release_assets/**
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

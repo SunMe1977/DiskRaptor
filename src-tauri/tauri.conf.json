@@ -40,7 +40,7 @@
         "icons/icon.ico",
         "icons/icon.icns"
       ],
-      "targets": "all",
+      "targets": ["msi", "appimage", "dmg"],
       "category": "Utility",
       "shortDescription": "Ultra-fast disk space analyzer",
       "longDescription": "DiskRaptor is a modern, high-performance directory scanner built with Rust and Tauri. It scans directories at lightning speed and renders results in a virtual tree view capable of handling 10+ million files.",
