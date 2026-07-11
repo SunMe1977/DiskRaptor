@@ -27,8 +27,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: cargo test
-        run: cargo test --workspace --verbose
+      - name: Check compilation
+        run: cargo test --workspace --no-run --verbose
+
+      - name: Run tests with backtrace
+        run: cargo test --workspace --verbose 2>&1
+        env:
+          RUST_BACKTRACE: full
 
   # ════════════════════════════════════════════════════
   # 2. PLAYWRIGHT E2E + MENU TESTS (all platforms)
