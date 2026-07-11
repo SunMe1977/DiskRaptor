@@ -137,46 +137,39 @@ jobs:
           TZ: UTC
         run: npx tauri build --bundles appimage,deb
 
-      - name: Test .deb installation (Linux)
+      - name: Verify and test .deb package (Linux)
         if: matrix.os == 'ubuntu-22.04'
         timeout-minutes: 5
         run: |
           set -x
-          # Find the generated .deb
           DEB_FILE=$(find target/release/bundle/deb -name "*.deb" | head -1)
           if [ -z "$DEB_FILE" ]; then
-            echo "❌ No .deb file found in target/release/bundle/deb/"
+            echo "❌ No .deb file found"
             exit 1
           fi
           echo "📦 Found .deb: $DEB_FILE"
-          ls -la "$DEB_FILE"
 
-          # Verify package structure
-          dpkg-deb --info "$DEB_FILE" | head -20
-          dpkg-deb --contents "$DEB_FILE" | head -20
+          # Verify control file has runtime deps (not -dev)
+          dpkg-deb --info "$DEB_FILE" > deb_info.txt
+          grep -i "Depends:" deb_info.txt || echo "No Depends field"
+          if grep -q "-dev" deb_info.txt; then
+            echo "❌ ERROR: .deb contains -dev dependency!"
+            exit 1
+          fi
+          echo "✅ No -dev dependencies"
 
-          # Install using apt (handles dependencies, no hanging)
+          # Install with apt (auto-installs all required deps)
           echo "📦 Installing with apt..."
-          DEBIAN_FRONTEND=noninteractive sudo apt install -y --fix-broken "./$DEB_FILE" 2>&1 || \
-            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --fix-broken "./$DEB_FILE" 2>&1
+          DEBIAN_FRONTEND=noninteractive sudo apt install -y --fix-broken "./$DEB_FILE" 2>&1
+          echo "✅ apt install completed"
 
-          # Verify binary exists after installation
-          INSTALLED_BIN=$(find /usr -name "diskraptor" -type f 2>/dev/null | head -1)
-          if [ -n "$INSTALLED_BIN" ]; then
-            echo "✅ Binary installed at: $INSTALLED_BIN"
-            file "$INSTALLED_BIN"
+          # Verify binary
+          if command -v diskraptor &>/dev/null; then
+            echo "✅ Binary in PATH: $(which diskraptor)"
           else
-            echo "⚠️ Binary not found in /usr, checking dpkg..."
-            dpkg -L diskraptor 2>/dev/null || dpkg -L disk-raptor 2>/dev/null || echo "Package not found"
+            dpkg -L diskraptor 2>/dev/null || dpkg -L disk-raptor 2>/dev/null || echo "Package files:"
           fi
-
-          # Verify .desktop file
-          DESKTOP_FILE=$(find /usr -name "*diskraptor*.desktop" -type f 2>/dev/null | head -1)
-          if [ -n "$DESKTOP_FILE" ]; then
-            echo "✅ .desktop file: $DESKTOP_FILE"
-          fi
-
-          echo "✅ .deb installation test passed"
+          echo "✅ .deb test passed"
 
       - name: Collect artifacts (Windows)
         if: matrix.os == 'windows-latest'
