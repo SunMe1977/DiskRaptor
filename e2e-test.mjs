@@ -16,12 +16,13 @@ import path from "node:path";
 import fs from "node:fs";
 
 const APP_DIR = path.resolve(".");
+const BINARY_NAME = process.platform === "win32" ? "diskraptor.exe" : "diskraptor";
 const BINARY = path.join(
   APP_DIR,
   "src-tauri",
   "target",
   "release",
-  "diskraptor.exe",
+  BINARY_NAME,
 );
 const TEST_PORT = "9222";
 let tp = null;

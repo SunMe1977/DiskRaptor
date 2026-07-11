@@ -14,13 +14,13 @@ import path from "node:path";
 import fs from "node:fs";
 
 const APP_DIR = path.resolve(".");
-const BINARY = path.join(
-  APP_DIR,
-  "src-tauri",
-  "target",
-  "debug",
-  "diskraptor.exe",
-);
+const BINARY_NAME = process.platform === "win32" ? "diskraptor.exe" : "diskraptor";
+// Try release first, then debug
+const BINARY_CANDIDATES = [
+  path.join(APP_DIR, "src-tauri", "target", "release", BINARY_NAME),
+  path.join(APP_DIR, "src-tauri", "target", "debug", BINARY_NAME),
+];
+const BINARY = BINARY_CANDIDATES.find(f => fs.existsSync(f)) || BINARY_CANDIDATES[0];
 const TEST_PORT = "9222";
 let tp = null;
 let browser = null;
