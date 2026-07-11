@@ -403,11 +403,13 @@ jobs:
           body: |
             ## DiskRaptor ${{ github.ref_name }}
 
-            | Platform | Downloads |
-            |----------|-----------|
-            | **Windows** | `.msi` installer or `DiskRaptor-Windows-x64.exe` |
-            | **macOS** | `.dmg` or `DiskRaptor-macOS-x64` binary |
-            | **Linux** | `.AppImage` or `DiskRaptor-Linux-x64` binary |
+            | Platform | Downloads | Notes |
+            |----------|-----------|-------|
+            | **Windows** | `.msi` installer or `.exe` | Windows 10+ |
+            | **macOS** | `.dmg` or `DiskRaptor-macOS-x64` | macOS 11+ (unsigned) |
+            | **Linux** 🐧 | `.AppImage` | ✅ Works on ALL Ubuntu/Debian versions |
+            | **Linux (20.04/22.04)** 🐧 | `.deb` | ✅ Works on Ubuntu 20.04, 22.04 |
+            | **Linux (24.04+)** 🐧 | `.deb` | ❌ NOT supported — use **AppImage** instead |
 
             ## 🧪 UI Test Results
 
@@ -416,8 +418,9 @@ jobs:
             > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open.
             >
             > **Linux**:
-            > - **AppImage** (recommended): `chmod +x disk-raptor_*.AppImage && ./disk-raptor_*.AppImage`
-            > - **.deb** (if AppImage doesn't work): `sudo apt install ./disk-raptor_*.deb`
+            > - **AppImage** (🟢 recommended for ALL versions): `chmod +x disk-raptor_*.AppImage && ./disk-raptor_*.AppImage`
+            > - **.deb** (🟢 Ubuntu 20.04 / 22.04): `sudo apt install ./disk-raptor_*.deb`
+            > - **.deb** (🔴 Ubuntu 24.04+): NOT supported — webkit2gtk-4.0 was removed in 24.04. Use **AppImage** instead.
             >
             > **Windows**: Run the `.msi` installer or the `.exe` directly.
           files: release_assets/**
