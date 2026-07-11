@@ -104,7 +104,16 @@ jobs:
             libsoup2.4-dev \
             libglib2.0-dev \
             patchelf \
-            libayatana-appindicator3-dev
+            libayatana-appindicator3-dev \
+            libfuse2 \
+            libdbus-1-dev \
+            libssl-dev \
+            wget
+          # Ensure AppImage dependencies
+          if ! command -v appimagetool &> /dev/null; then
+            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool 2>/dev/null || true
+            chmod +x /usr/local/bin/appimagetool 2>/dev/null || true
+          fi
 
       - name: Install WiX (required for MSI on Windows)
         if: matrix.install_wix
@@ -329,6 +338,10 @@ jobs:
             See [TEST_MATRIX.md](TEST_MATRIX.md) for the full cross-platform test matrix.
 
             > ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open. On Linux: `chmod +x && ./DiskRaptor-Linux-x64`.
+            >
+            > **Linux .deb note**: The .deb is unsigned (normal for OSS). Ubuntu may show "potentially unsafe" — this is harmless.
+            > Install with: `sudo dpkg -i DiskRaptor_*.deb && sudo apt-get install -f`
+            > Or use the **AppImage** which doesn't require installation: `chmod +x DiskRaptor*.AppImage && ./DiskRaptor*.AppImage`
           files: release_assets/**
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
