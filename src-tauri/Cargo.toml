@@ -17,6 +17,9 @@ tauri-build = { version = "1", features = [] }
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = "1"
 
+[dev-dependencies]
+walkdir = "2"
+
 [dependencies]
 tauri = { version = "1", features = ["shell-open", "dialog-all", "fs-all", "system-tray"] }
 serde = { version = "1", features = ["derive"] }
