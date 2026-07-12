@@ -51,6 +51,7 @@ QStringList ModuleLoader::listModules()
 #else
         for (const auto &f : d.entryList({"*.so", "*.dylib"}, QDir::Files)) {
             modules.append(d.absoluteFilePath(f));
+        }
 #endif
     }
 
