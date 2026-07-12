@@ -5,6 +5,10 @@ RequestExecutionLevel admin
 
 !define PRODUCT_NAME "DiskRaptor"
 !define PRODUCT_VERSION "0.2.7"
+!ifdef VERSION
+  !undef PRODUCT_VERSION
+  !define PRODUCT_VERSION "${VERSION}"
+!endif
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "DiskRaptor_${PRODUCT_VERSION}_x64_Setup.exe"

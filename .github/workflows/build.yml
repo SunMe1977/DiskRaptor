@@ -121,7 +121,7 @@ jobs:
         run: |
           cd qt-app\build
           copy /y "%cd%\..\..\setup.nsi" "%cd%\"
-          "C:\nsis\nsis-3.09\makensis.exe" /DVERSION=0.2.7 "%cd%\setup.nsi"
+          "C:\nsis\nsis-3.09\makensis.exe" /DVERSION=${{ github.ref_name }} "%cd%\setup.nsi"
 
       - name: Upload core installer artifact
         uses: actions/upload-artifact@v4
