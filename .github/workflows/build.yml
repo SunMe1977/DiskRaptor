@@ -28,39 +28,35 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Cache Qt 6.11
-        id: cache-qt
-        uses: actions/cache@v4
+      - name: Install Qt 6.11
+        uses: jurplel/install-qt-action@v4
         with:
-          path: C:\Qt\6.11.1
-          key: qt-6.11.1-msvc2022
-
-      - name: Install Qt 6.11 (if not cached)
-        if: steps.cache-qt.outputs.cache-hit != 'true'
-        run: |
-          pip install aqtinstall
-          aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 --outputdir C:\Qt -m qtwebengine qtwebchannel qtwebsockets
-        shell: pwsh
+          version: '6.11.1'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtwebengine qtwebchannel qtwebsockets'
+          cache: 'true'
+          install-deps: 'true'
 
       - name: Install WiX
         run: choco install wixtoolset --no-progress -y
         shell: pwsh
 
       - name: Build Qt app + MSI
+        shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-          set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.11.1\msvc2022_64\bin;%PATH%
           cd qt-app
           if exist build rmdir /s /q build
           mkdir build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DQt6_DIR=C:\Qt\6.11.1\msvc2022_64
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           cmake --build . --config Release
           if not exist DiskRaptor.exe exit /b 1
           mkdir install\bin
           copy DiskRaptor.exe install\bin\
           windeployqt --release --no-translations --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
           cpack -G WIX -C Release -D CPACK_PACKAGE_FILE_NAME="DiskRaptor_0.2.7_x64_Qt"
-        shell: cmd
 
       - uses: actions/upload-artifact@v4
         with:
