@@ -200,11 +200,106 @@ jobs:
           if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════
+  # LINUX BUILD - DEB + AppImage
+  # ═══════════════════════════════════════════════════════════════
+  build-linux:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config libgl1-mesa-dev \
+            desktop-file-utils libfuse2
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.3'
+          host: 'linux'
+          target: 'desktop'
+          arch: 'gcc_64'
+          modules: 'qtwebengine qtwebchannel qtwebsockets'
+          cache: true
+
+      - name: Configure CMake
+        run: |
+          cd qt-app
+          mkdir build && cd build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install"
+
+      - name: Build
+        run: |
+          cd qt-app/build
+          cmake --build . --config Release
+          test -f DiskRaptor || exit 1
+
+      - name: Install to staging dir
+        run: |
+          cd qt-app/build
+          cmake --install . --config Release --prefix "$PWD/install"
+
+      - name: Deploy Qt libs (linuxdeployqt)
+        run: |
+          cd qt-app/build
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+          chmod +x linuxdeploy*.AppImage
+
+          # Prepare AppDir with installed files
+          mkdir -p AppDir/usr/bin
+          cp -r install/* AppDir/usr/
+
+          # Create .desktop file
+          cat > AppDir/usr/share/applications/DiskRaptor.desktop << 'DESK'
+          [Desktop Entry]
+          Name=DiskRaptor
+          Exec=DiskRaptor
+          Type=Application
+          Categories=Utility;
+          DESK
+
+          # Create AppRun symlink
+          ln -sf usr/bin/DiskRaptor AppDir/AppRun
+
+      - name: Package DEB
+        run: |
+          cd qt-app/build
+          cmake -DCPACK_GENERATOR=DEB \
+            -DCPACK_PACKAGE_NAME=DiskRaptor \
+            -DCPACK_PACKAGE_VERSION="${{ github.ref_name }}" \
+            -DCPACK_DEBIAN_PACKAGE_MAINTAINER="DiskRaptor Team" \
+            -DCPACK_PACKAGE_FILE_NAME="DiskRaptor_${{ github.ref_name }}_amd64" .
+          cpack -G DEB -C Release .
+          ls -lh *.deb
+
+      - name: Package AppImage
+        run: |
+          cd qt-app/build
+          export LDAI_OUTPUT="DiskRaptor_${{ github.ref_name }}_x86_64.AppImage"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
+          ls -lh *.AppImage
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            qt-app/build/DiskRaptor_*.deb
+            qt-app/build/DiskRaptor_*.AppImage
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════
   # 2. RELEASE — Create GitHub Release with all assets
   # ═══════════════════════════════════════════════════════════════
   release:
     if: github.ref_type == 'tag'
-    needs: [build-app, build-macos]
+    needs: [build-app, build-macos, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -220,7 +315,7 @@ jobs:
       - name: Prepare assets
         run: |
           mkdir -p release_assets
-          find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.dmg" \) -exec cp {} release_assets/ \;
+          find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -exec cp {} release_assets/ \;
           ls -lh release_assets/
 
       - name: Delete existing release (if re-run)
@@ -240,16 +335,18 @@ jobs:
             ### Download
             | File | Description |
             |------|-------------|
-            | `DiskRaptor_*_Setup.exe` | Core installer (~5 MB) — EXE + ModulePro + Qt DLLs |
-            | `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch |
+            | `DiskRaptor_*_Setup.exe` | Windows setup installer (~5 MB) — EXE + ModulePro + Qt DLLs |
+            | `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch (Windows) |
+            | `DiskRaptor_macOS_x64.dmg` | macOS disk image — drag to Applications |
+            | `DiskRaptor_*_amd64.deb` | Debian/Ubuntu package — `sudo dpkg -i *.deb` |
+            | `DiskRaptor_*_x86_64.AppImage` | Linux AppImage — portable, no install needed |
 
             ### How it works
-            1. Install the small core installer
-            2. Launch DiskRaptor — launcher detects missing WebEngine runtime
-            3. Runtime downloads and extracts automatically
-            4. App starts with full WebEngine capabilities
+            1. Install the small core installer (Windows) or drag to Applications (macOS) or run the AppImage (Linux)
+            2. Launch DiskRaptor — launcher downloads WebEngine runtime on first launch if needed
+            3. App starts with full WebEngine capabilities
 
-            > **Why two downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.
+            > **Why separate downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.
           files: release_assets/**
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
