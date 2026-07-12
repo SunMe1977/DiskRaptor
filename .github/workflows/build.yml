@@ -33,7 +33,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev
+            libayatana-appindicator3-dev librsvg2-dev \
+            libsoup2.4-dev
 
       - name: Check compilation
         run: cargo test --workspace --no-run --verbose
