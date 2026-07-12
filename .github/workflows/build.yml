@@ -36,7 +36,7 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtwebchannel qtwebsockets'
+          modules: 'qtwebengine qtwebchannel qtwebsockets qtpositioning'
           cache: true
           install-deps: true
 
