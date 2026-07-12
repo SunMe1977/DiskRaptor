@@ -28,18 +28,18 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Cache Qt 6.12
+      - name: Cache Qt 6.11
         id: cache-qt
         uses: actions/cache@v4
         with:
-          path: C:\Qt\6.12.0
-          key: qt-6.12.0-msvc2022
+          path: C:\Qt\6.11.1
+          key: qt-6.11.1-msvc2022
 
-      - name: Install Qt 6.12 (if not cached)
+      - name: Install Qt 6.11 (if not cached)
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
           pip install aqtinstall
-          aqt install-qt windows desktop 6.12.0 win64_msvc2022_64 --outputdir C:\Qt
+          aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 --outputdir C:\Qt
         shell: pwsh
 
       - name: Install WiX
@@ -49,11 +49,11 @@ jobs:
       - name: Build Qt app + MSI
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-          set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.12.0\msvc2022_64\bin;%PATH%
+          set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.11.1\msvc2022_64\bin;%PATH%
           cd qt-app
           if exist build rmdir /s /q build
           mkdir build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DQt6_DIR=C:\Qt\6.12.0\msvc2022_64
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DQt6_DIR=C:\Qt\6.11.1\msvc2022_64
           cmake --build . --config Release
           if not exist DiskRaptor.exe exit /b 1
           mkdir install\bin
