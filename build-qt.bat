@@ -86,8 +86,11 @@ REM ── Create NSIS installer ──
 echo.
 echo === Creating NSIS Installer ===
 copy /y "C:\dev\DiskRaptor\setup.nsi" "%cd%\" >nul
-if exist "C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe" (
-  "C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe" /DVERSION=0.2.7 "%cd%\setup.nsi" 2>&1
+set MAKENSIS=
+if exist "C:\Program Files (x86)\NSIS\makensis.exe" set MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe
+if exist "C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe" set MAKENSIS=C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe
+if defined MAKENSIS (
+  "%MAKENSIS%" /DVERSION=0.2.7 "%cd%\setup.nsi" 2>&1
   if exist "DiskRaptor_*.exe" (
     for %%f in ("DiskRaptor_*.exe") do echo ✅ NSIS Setup: %%f
   ) else (

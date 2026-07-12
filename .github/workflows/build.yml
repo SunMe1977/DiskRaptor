@@ -114,14 +114,24 @@ jobs:
 
       - name: Install NSIS (portable)
         run: |
-          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
-          powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\" 2>nul
+          choco install nsis.install --version 3.09 -y --no-progress 2>nul || (
+            echo Downloading NSIS directly...
+            curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
+            powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\" 2>nul
+          )
 
       - name: Build NSIS Installer
         run: |
           cd qt-app\build
           copy /y "%cd%\..\..\setup.nsi" "%cd%\"
-          "C:\nsis\nsis-3.09\makensis.exe" /DVERSION=${{ github.ref_name }} "%cd%\setup.nsi"
+          if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+            "C:\Program Files (x86)\NSIS\makensis.exe" /DVERSION=${{ github.ref_name }} "%cd%\setup.nsi"
+          ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
+            "C:\nsis\nsis-3.09\makensis.exe" /DVERSION=${{ github.ref_name }} "%cd%\setup.nsi"
+          ) else (
+            echo NSIS not found — failing
+            exit /b 1
+          )
 
       - name: Upload core installer artifact
         uses: actions/upload-artifact@v4
