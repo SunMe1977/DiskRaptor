@@ -3,7 +3,7 @@ REM DiskRaptor Qt 6 Build + Runtime Separation
 REM Produces: Core binaries for NSIS + WebEngine runtime archive
 
 call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.11.1\msvc2022_64\bin;%PATH%
+set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.12.0\msvc2022_64\bin;%PATH%
 
 cd /d C:\dev\DiskRaptor\qt-app
 set B=build_qt
@@ -12,7 +12,7 @@ mkdir %B%
 cd %B%
 
 echo [1/4] Configuring CMake...
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install" -DBUILD_SHARED_LIBS=OFF -DQt6_DIR=C:\Qt\6.11.1\msvc2022_64
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install" -DCMAKE_PREFIX_PATH="C:\Qt\6.12.0\msvc2022_64"
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo [2/4] Building...

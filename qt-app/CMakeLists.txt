@@ -46,7 +46,7 @@ endif()
 # ── Install ──────────────────────────────────────────────────
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 
-# Install core DLLs (windeployqt output) — exclude WebEngine ones
+# Install core DLLs (windeployqt output) — exclude WebEngine + avoid recursion
 install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
   DESTINATION bin
   FILES_MATCHING
@@ -56,7 +56,9 @@ install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
     PATTERN "*.dat"
     PATTERN "*.bin"
     PATTERN "Qt6WebEngine*" EXCLUDE
-  PATTERN "frontend" EXCLUDE
+    PATTERN "frontend" EXCLUDE
+    PATTERN "install" EXCLUDE
+    PATTERN "build_*" EXCLUDE
 )
 
 # Install plugin subdirectories (exclude QML/WebEngine)
