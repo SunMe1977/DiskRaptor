@@ -36,6 +36,11 @@ tools/wix_full/
 modulesPro/*.dll
 modulesPro/*.so
 modulesPro/*.dylib
+modulesPro/*.exp
+modulesPro/*.lib
+modulesPro/*.obj
+modulesPro/*/build/
+modulesPro/build/
 
 # Never commit this file
 raw/info.txt
