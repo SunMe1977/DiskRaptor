@@ -28,5 +28,9 @@ images/
 nul
 *.log
 
+# WiX tools (downloaded per build)
+tools/wix/
+tools/wix_full/
+
 # Never commit this file
 raw/info.txt
