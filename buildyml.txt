@@ -148,63 +148,11 @@ jobs:
           if-no-files-found: ignore
 
   # ═══════════════════════════════════════════════════════════════
-  # macOS BUILD
-  # ═══════════════════════════════════════════════════════════════
-  build-macos:
-    if: github.ref_type == 'tag'
-    runs-on: macos-latest
-    timeout-minutes: 45
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.10.3'
-          host: 'mac'
-          target: 'desktop'
-          arch: 'clang_64'
-          modules: 'qtwebengine qtwebchannel qtwebsockets'
-          cache: true
-
-      - name: Configure CMake
-        run: |
-          cd qt-app
-          mkdir build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$PWD/install"
-
-      - name: Build
-        run: |
-          cd qt-app/build
-          cmake --build . --config Release
-          test -f DiskRaptor.app/Contents/MacOS/DiskRaptor || exit 1
-
-      - name: Deploy Qt frameworks
-        run: |
-          cd qt-app/build
-          macdeployqt DiskRaptor.app -verbose=1
-
-      - name: Package DMG
-        run: |
-          cd qt-app/build
-          hdiutil create -volname "DiskRaptor" -srcfolder DiskRaptor.app \
-            -ov -format UDZO "DiskRaptor_macOS_x64.dmg"
-
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-macos
-          path: qt-app/build/DiskRaptor_macOS_x64.dmg
-          if-no-files-found: error
-
-  # ═══════════════════════════════════════════════════════════════
   # 2. RELEASE — Create GitHub Release with all assets
   # ═══════════════════════════════════════════════════════════════
   release:
     if: github.ref_type == 'tag'
-    needs: [build-app, build-macos]
+    needs: build-app
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -220,12 +168,8 @@ jobs:
       - name: Prepare assets
         run: |
           mkdir -p release_assets
-          find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.dmg" \) -exec cp {} release_assets/ \;
+          find artifacts -type f \( -name "*.exe" -o -name "*.zip" \) -exec cp {} release_assets/ \;
           ls -lh release_assets/
-
-      - name: Delete existing release (if re-run)
-        run: |
-          gh release delete "${{ github.ref_name }}" --repo "${{ github.repository }}" --yes 2>/dev/null || true
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
