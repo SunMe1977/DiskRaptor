@@ -40,12 +40,15 @@ jobs:
           cache: true
           install-deps: true
 
+      - name: Set up MSVC development environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Configure CMake
         run: |
           cd qt-app
           if exist build rmdir /s /q build
           mkdir build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install"
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install" -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe
 
       - name: Build
         run: |
