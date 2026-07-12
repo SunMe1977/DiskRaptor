@@ -14,12 +14,20 @@ Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "DiskRaptor_${PRODUCT_VERSION}_x64_Setup.exe"
 InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
 
+!define MUI_ICON "..\..\images\icon.ico"
+!define MUI_UNICON "..\..\images\icon.ico"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\DiskRaptorLauncher.exe"
+!define MUI_FINISHPAGE_RUN_CHECKED
+!define MUI_FINISHPAGE_RUN_TEXT "Start ${PRODUCT_NAME} now"
 !include "MUI2.nsh"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
+
+; Set the installer window icon
+BrandingText "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 
 Section "Core" SEC_CORE
   SetOutPath "$INSTDIR"
@@ -53,10 +61,10 @@ Section "Core" SEC_CORE
   ; ── Frontend ──
   File /nonfatal /r "install\share\DiskRaptor\frontend\*.*"
 
-  ; ── Shortcuts ──
+  ; ── Shortcuts (with icon from DiskRaptor.exe) ──
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
-  CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\DiskRaptorLauncher.exe"
-  CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\DiskRaptorLauncher.exe"
+  CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\DiskRaptorLauncher.exe" "" "$INSTDIR\DiskRaptor.exe"
+  CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\DiskRaptorLauncher.exe" "" "$INSTDIR\DiskRaptor.exe"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   ; ── Registry for uninstall ──
