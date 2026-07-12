@@ -1,60 +1,38 @@
 @echo off
-REM DiskRaptor Qt 6 Build Script (Windows)
-REM Requires: Visual Studio 2022, Qt 6.5+, CMake 3.20+, Ninja
+REM DiskRaptor Qt 6 MSI Builder — vollautomatisch
 
-setlocal enabledelayedexpansion
-set SCRIPT_DIR=%~dp0
-set BUILD_TYPE=%1
-if "%BUILD_TYPE%"=="" set BUILD_TYPE=release
+call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.12.0\msvc2022_64\bin;C:\dev\DiskRaptor\tools\wix_full;%PATH%
 
-echo === DiskRaptor Qt 6 Build (Windows) ===
-echo   Type: %BUILD_TYPE%
-echo.
+cd /d C:\dev\DiskRaptor\qt-app
+if exist build_qt rmdir /s /q build_qt
+mkdir build_qt
+cd build_qt
 
-REM Find Qt (adjust path as needed)
-if not defined Qt6_DIR (
-  for /d %%i in ("C:\Qt\6.*\msvc*") do (
-    if exist "%%i\bin\qmake.exe" set "Qt6_DIR=%%i"
-  )
-)
-if not defined Qt6_DIR (
-  echo Qt 6 not found. Install Qt 6.5+ or set Qt6_DIR.
-  exit /b 1
-)
-echo   Qt6: %Qt6_DIR%
+echo [1/5] Configuring...
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install" -DBUILD_SHARED_LIBS=OFF -DQt6_DIR=C:\Qt\6.12.0\msvc2022_64
+if %errorlevel% neq 0 exit /b %errorlevel%
 
-REM Setup Visual Studio environment
-if not defined VSCMD_ARG_TGT_ARCH (
-  for /f "tokens=*" %%i in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath') do (
-    call "%%i\VC\Auxiliary\Build\vcvars64.bat" 2>nul
-  )
+echo [2/5] Building...
+cmake --build . --config Release
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+echo [3/5] Deploying Qt DLLs...
+if not exist "%cd%\install\bin" mkdir "%cd%\install\bin"
+copy /y "%cd%\DiskRaptor.exe" "%cd%\install\bin\" >nul
+windeployqt --release --no-translations --no-opengl --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+if exist C:\Windows\System32\downlevel\api-ms-win-crt-*.dll (
+  copy /y C:\Windows\System32\downlevel\api-ms-win-crt-*.dll "%cd%\install\bin\" >nul
 )
 
-set BUILD_DIR=%SCRIPT_DIR%qt-app\build
-rmdir /s /q "%BUILD_DIR%" 2>nul
-mkdir "%BUILD_DIR%"
-cd /d "%BUILD_DIR%"
-
-echo [1/3] Configuring...
-cmake "%SCRIPT_DIR%qt-app" ^
-  -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
-  -DCMAKE_INSTALL_PREFIX="%BUILD_DIR%\install" ^
-  -DBUILD_SHARED_LIBS=OFF ^
-  -GNinja
-
-echo [2/3] Building...
-cmake --build . --config %BUILD_TYPE%
-
-echo [3/3] Copying runtime DLLs...
-if exist "%Qt6_DIR%\bin\Qt6WebEngineProcess.exe" (
-  copy "%Qt6_DIR%\bin\Qt6WebEngineProcess.exe" "%BUILD_DIR%\install\bin\" 2>nul
-  xcopy /s /i /y "%Qt6_DIR%\plugins" "%BUILD_DIR%\install\bin\plugins\" 2>nul
-  xcopy /s /i /y "%Qt6_DIR%\resources" "%BUILD_DIR%\install\bin\resources\" 2>nul
-  xcopy /s /i /y "%Qt6_DIR%\qml" "%BUILD_DIR%\install\bin\qml\" 2>nul
+echo [4/5] Creating MSI...
+cpack -G WIX -C Release -D CPACK_PACKAGE_FILE_NAME="DiskRaptor_0.2.6_x64_Qt"
+if %errorlevel% equ 0 (
+  echo ✅ MSI: %cd%\DiskRaptor_0.2.6_x64_Qt.msi
+) else (
+  echo MSI generation failed
 )
 
-echo.
-echo === Build Complete ===
-echo Binary: %BUILD_DIR%\install\bin\DiskRaptor.exe
-echo.
-echo Run: %BUILD_DIR%\install\bin\DiskRaptor.exe
+echo [5/5] Done!
+echo Binary: %cd%\install\bin\DiskRaptor.exe
+for %%f in ("%cd%\DiskRaptor_*.msi") do if exist %%f echo MSI: %%f

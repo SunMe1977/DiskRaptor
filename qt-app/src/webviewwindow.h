@@ -36,7 +36,6 @@ private slots:
     void onScanProgress(const ScanProgress &progress);
     void onScanComplete(const ScanResult &result);
     void onScanError(const QString &error);
-    void onJavaScriptConsoleMessage(const QString &message, int line, const QString &source);
 
 private:
     void setupUI();

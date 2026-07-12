@@ -15,9 +15,8 @@
 
 int main(int argc, char *argv[])
 {
-    // Initialize Qt WebEngine (must be called before QApplication)
-    // This initializes the Chromium sandbox and GPU process
-    QtWebEngine::initialize();
+    // Qt WebEngine is initialized automatically when QApplication is created
+    // No manual QtWebEngine::initialize() needed in Qt 6.5+
 
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");
@@ -25,19 +24,16 @@ int main(int argc, char *argv[])
     app.setOrganizationName("DiskRaptor");
 
     // ── WebEngine configuration ──────────────────────────────
-    // Enable GPU acceleration (disabled for software rendering fallback)
-    auto *globalSettings = QWebEngineSettings::globalSettings();
-    globalSettings->setAttribute(QWebEngineSettings::WebGLEnabled, true);
-    globalSettings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
-    globalSettings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
-    globalSettings->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
-    globalSettings->setAttribute(QWebEngineSettings::PluginsEnabled, false);
-    globalSettings->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
-    globalSettings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
-    globalSettings->setAttribute(QWebEngineSettings::LocalStorageEnabled, true);
-
-    // Custom profile for persistent storage
     auto *profile = QWebEngineProfile::defaultProfile();
+    auto *settings = profile->settings();
+    settings->setAttribute(QWebEngineSettings::WebGLEnabled, true);
+    settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
+    settings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
+    settings->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
+    settings->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
+    settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
+    settings->setAttribute(QWebEngineSettings::LocalStorageEnabled, true);
+
     profile->setHttpCacheType(QWebEngineProfile::MemoryHttpCache);
     profile->setPersistentStoragePath(
         QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/webengine");
@@ -45,9 +41,9 @@ int main(int argc, char *argv[])
     // ── Find frontend directory ──────────────────────────────
     QString frontendPath;
     QStringList searchPaths = {
-        QDir::currentPath() + "/frontend",                    // Running from build dir
-        QApplication::applicationDirPath() + "/frontend",      // Running from install dir
-        QDir::currentPath() + "/../frontend",                  // Development layout
+        QDir::currentPath() + "/frontend",
+        QApplication::applicationDirPath() + "/frontend",
+        QDir::currentPath() + "/../frontend",
     };
 
     for (const auto &path : searchPaths) {
@@ -73,7 +69,7 @@ int main(int argc, char *argv[])
     window.resize(1280, 860);
     window.showMaximized();
 
-    qDebug() << "[DiskRaptor] Started successfully (Qt" << Qt6_VERSION << ")";
+    qDebug() << "[DiskRaptor] Started successfully";
 
     return app.exec();
 }

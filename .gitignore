@@ -1,5 +1,11 @@
-# Rust build artifacts
+# Build artifacts
 target/
+qt-app/build*
+qt-app/build_qt/
+*.msi
+*.AppImage
+*.deb
+*.dmg
 
 # Node
 node_modules/

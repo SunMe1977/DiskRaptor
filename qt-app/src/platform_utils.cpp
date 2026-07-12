@@ -2,6 +2,7 @@
 #include "platform_utils.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QThread>
@@ -11,7 +12,6 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <shellapi.h>
-#include <shlobj.h>
 #endif
 
 QString PlatformUtils::appDataPath()
@@ -33,10 +33,10 @@ QStringList PlatformUtils::listDrives()
 bool PlatformUtils::showInExplorer(const QString &path)
 {
 #ifdef Q_OS_WIN
-    HRESULT hr = ShellExecuteW(nullptr, L"open", L"explorer.exe",
+    HINSTANCE result = ShellExecuteW(nullptr, L"open", L"explorer.exe",
         (L"/select,\"" + path.toStdWString() + L"\"").c_str(),
         nullptr, SW_SHOWNORMAL);
-    return reinterpret_cast<INT_PTR>(hr) > 32;
+    return reinterpret_cast<INT_PTR>(result) > 32;
 #else
     QString dir = QFileInfo(path).isDir() ? path : QFileInfo(path).absolutePath();
     return QProcess::startDetached("xdg-open", {dir});
@@ -56,9 +56,9 @@ bool PlatformUtils::openTerminal(const QString &dir)
 bool PlatformUtils::showProperties(const QString &path)
 {
 #ifdef Q_OS_WIN
-    HRESULT hr = ShellExecuteW(nullptr, L"properties",
+    HINSTANCE result = ShellExecuteW(nullptr, L"properties",
         path.toStdWString().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    return reinterpret_cast<INT_PTR>(hr) > 32;
+    return reinterpret_cast<INT_PTR>(result) > 32;
 #else
     Q_UNUSED(path)
     return false;

@@ -12,7 +12,6 @@ MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     setupWebEngine(frontendPath);
     setupConnections();
 
-    // Status bar
     m_statusLabel = new QLabel("Ready");
     statusBar()->addWidget(m_statusLabel, 1);
 
@@ -22,9 +21,7 @@ MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     m_progressBar->hide();
     statusBar()->addPermanentWidget(m_progressBar);
 
-    // Auto-detect home directory
     m_pathInput->setText(QDir::homePath());
-
     qDebug() << "[DiskRaptor] Window initialized";
 }
 
@@ -38,27 +35,23 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupUI()
 {
-    // Central widget with vertical layout
     auto *centralWidget = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(centralWidget);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // ── Toolbar ──────────────────────────────────────────────
+    // Toolbar
     auto *toolbar = new QWidget();
     auto *toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(8, 6, 8, 6);
 
-    // Logo
     auto *logo = new QLabel("🦅 DiskRaptor");
     logo->setStyleSheet("font-size: 16px; font-weight: 700; margin-right: 12px;");
 
-    // Path input
     m_pathInput = new QLineEdit();
     m_pathInput->setPlaceholderText("Select or enter a directory path…");
     m_pathInput->setMinimumWidth(300);
 
-    // Buttons
     m_btnBrowse = new QPushButton("📂 Browse");
     m_btnScan = new QPushButton("⚡ Scan");
     m_btnScan->setStyleSheet(
@@ -77,16 +70,9 @@ void MainWindow::setupUI()
 
     mainLayout->addWidget(toolbar);
 
-    // ── WebView ──────────────────────────────────────────────
+    // WebView
     m_webView = new QWebEngineView();
     m_webView->setMinimumSize(800, 400);
-
-    // Enable context menu with developer tools in debug builds
-#ifdef QT_DEBUG
-    m_webView->page()->settings()->setAttribute(
-        QWebEngineSettings::JavascriptCanAccessClipboard, true);
-#endif
-
     mainLayout->addWidget(m_webView, 1);
 
     setCentralWidget(centralWidget);
@@ -94,27 +80,18 @@ void MainWindow::setupUI()
 
 void MainWindow::setupWebEngine(const QString &frontendPath)
 {
-    // Create IPC bridge
     m_scanner = new Scanner(this);
     m_ipcBridge = new IpcBridge(m_scanner, this);
 
-    // Setup QWebChannel
     m_webChannel = new QWebChannel(this);
     m_webChannel->registerObject("bridge", m_ipcBridge);
     m_webView->page()->setWebChannel(m_webChannel);
 
-    // Load the frontend
     QString indexPath = QDir(frontendPath).filePath("index.html");
     QString url = QUrl::fromLocalFile(indexPath).toString();
-
     qDebug() << "[DiskRaptor] Loading:" << url;
     m_webView->load(QUrl(url));
 
-    // Connect console messages
-    connect(m_webView->page(), &QWebEnginePage::javaScriptConsoleMessage,
-            this, &MainWindow::onJavaScriptConsoleMessage);
-
-    // Connect page load events
     connect(m_webView, &QWebEngineView::loadFinished, this, [this](bool ok) {
         if (ok) {
             qDebug() << "[DiskRaptor] Frontend loaded successfully";
@@ -125,26 +102,19 @@ void MainWindow::setupWebEngine(const QString &frontendPath)
         }
     });
 
-    // Intercept file:// requests for local content
     m_webView->page()->setBackgroundColor(QColor("#0d1117"));
 }
 
 void MainWindow::setupConnections()
 {
-    // Button clicks
     connect(m_btnScan, &QPushButton::clicked, this, &MainWindow::onScanClicked);
     connect(m_btnBrowse, &QPushButton::clicked, this, &MainWindow::onBrowseClicked);
     connect(m_btnCancel, &QPushButton::clicked, this, &MainWindow::onCancelClicked);
 
-    // Scanner signals → IPC bridge
-    connect(m_scanner, &Scanner::progressUpdated,
-            this, &MainWindow::onScanProgress);
-    connect(m_scanner, &Scanner::scanComplete,
-            this, &MainWindow::onScanComplete);
-    connect(m_scanner, &Scanner::scanError,
-            this, &MainWindow::onScanError);
+    connect(m_scanner, &Scanner::progressUpdated, this, &MainWindow::onScanProgress);
+    connect(m_scanner, &Scanner::scanComplete, this, &MainWindow::onScanComplete);
+    connect(m_scanner, &Scanner::scanError, this, &MainWindow::onScanError);
 
-    // Enter key in path input triggers scan
     connect(m_pathInput, &QLineEdit::returnPressed, this, &MainWindow::onScanClicked);
 }
 
@@ -173,7 +143,7 @@ void MainWindow::onScanClicked()
     qDebug() << "[DiskRaptor] Starting scan:" << path;
     m_scanner->startScan(path);
 
-    // Notify the frontend via JavaScript
+    // Notify frontend via JavaScript
     QString js = QString(
         "if (window.__TAURI__ && window.__TAURI__.events) {"
         "  window.__TAURI__.events.dispatchEvent(new CustomEvent('scan-started', "
@@ -204,7 +174,6 @@ void MainWindow::onCancelClicked()
 
 void MainWindow::onScanProgress(const ScanProgress &progress)
 {
-    // Notify frontend via JavaScript
     QString js = QString(
         "if (window.__TAURI__ && window.__TAURI__.events) {"
         "  window.__TAURI__.events.dispatchEvent(new CustomEvent('scan-progress', "
@@ -235,7 +204,6 @@ void MainWindow::onScanComplete(const ScanResult &result)
             .arg(result.totalDirs)
             .arg(formatBytes(result.totalSize)));
 
-    // Notify frontend
     QString json = result.toJson();
     QString js = QString(
         "if (window.__TAURI__ && window.__TAURI__.events) {"
@@ -255,24 +223,5 @@ void MainWindow::onScanError(const QString &error)
     m_btnCancel->setEnabled(false);
     m_progressBar->hide();
     m_statusLabel->setText("Error: " + error);
-
     qWarning() << "[DiskRaptor] Scan error:" << error;
-}
-
-void MainWindow::onJavaScriptConsoleMessage(
-    const QString &message, int line, const QString &source)
-{
-    if (message.contains("[DiskRaptor]") || message.contains("error")) {
-        qDebug() << "[JS]" << message << "(" << source << ":" << line << ")";
-    }
-}
-
-QString MainWindow::readFile(const QString &path)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return QString();
-    }
-    QTextStream in(&file);
-    return in.readAll();
 }

@@ -201,7 +201,53 @@ jobs:
           if-no-files-found: ignore
 
   # ════════════════════════════════════════════════════
-  # 4. INSTALL TEST (installs real MSI/DMG/DEB + smoke test)
+  # 4a. QT 6 BUILD (Windows — Qt + Chromium MSI)
+  # ════════════════════════════════════════════════════
+  build-qt:
+    if: github.ref_type == 'tag'
+    needs: playwright-test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.12
+        run: |
+          pip install aqtinstall
+          aqt install-qt windows desktop 6.12.0 win64_msvc2022_64 --outputdir C:\Qt
+        shell: pwsh
+
+      - name: Install WiX
+        run: choco install wixtoolset --no-progress -y
+        shell: pwsh
+
+      - name: Build Qt app
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+          set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.12.0\msvc2022_64\bin;%PATH%
+          cd qt-app
+          if exist build rmdir /s /q build
+          mkdir build
+          cd build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DQt6_DIR=C:\Qt\6.12.0\msvc2022_64
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          cmake --build . --config Release
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          mkdir install\bin
+          copy DiskRaptor.exe install\bin\
+          windeployqt --release --no-translations --no-opengl --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+          cpack -G WIX -C Release -D CPACK_PACKAGE_FILE_NAME="DiskRaptor_0.2.6_x64_Qt"
+        shell: cmd
+
+      - name: Upload Qt MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-qt
+          path: qt-app/build/DiskRaptor_*.msi
+          retention-days: 7
+
+  # ════════════════════════════════════════════════════
+  # 4b. INSTALL TEST (installs real MSI/DMG/DEB + smoke test)
   # ════════════════════════════════════════════════════
   install-test:
     if: github.ref_type == 'tag'
@@ -292,7 +338,7 @@ jobs:
   # ════════════════════════════════════════════════════
   release:
     if: github.ref_type == 'tag'
-    needs: [build, install-test, generate-matrix]
+    needs: [build, build-qt, install-test, generate-matrix]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -302,6 +348,10 @@ jobs:
         with:
           pattern: release-*
           merge-multiple: true
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows-qt
           path: artifacts
 
       - name: Prepare release assets
