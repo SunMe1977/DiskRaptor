@@ -32,5 +32,10 @@ nul
 tools/wix/
 tools/wix_full/
 
+# Pro Modules (closed source binary)
+modulesPro/*.dll
+modulesPro/*.so
+modulesPro/*.dylib
+
 # Never commit this file
 raw/info.txt

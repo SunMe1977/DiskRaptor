@@ -9,8 +9,8 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebEngineWidgets WebChannel Network)
 
-set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/scanner.cpp src/platform_utils.cpp)
-set(HEADERS src/webviewwindow.h src/ipcbridge.h src/scanner.h src/platform_utils.h)
+set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/scanner.cpp src/platform_utils.cpp src/modules/module_loader.cpp)
+set(HEADERS src/webviewwindow.h src/ipcbridge.h src/scanner.h src/platform_utils.h src/modules/module_loader.h)
 set(RESOURCES resources/resources.qrc)
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${RESOURCES})
@@ -27,9 +27,11 @@ elseif(UNIX AND NOT APPLE)
   target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_LINUX)
 endif()
 
-# Copy frontend after build
+# Copy frontend + modules after build
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/frontend")
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../modulesPro" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/modulesPro")
 
 # Install
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
