@@ -39,7 +39,7 @@ jobs:
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
           pip install aqtinstall
-          aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 --outputdir C:\Qt
+          aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 --outputdir C:\Qt -m qtwebengine qtwebchannel qtwebsockets
         shell: pwsh
 
       - name: Install WiX
@@ -58,7 +58,7 @@ jobs:
           if not exist DiskRaptor.exe exit /b 1
           mkdir install\bin
           copy DiskRaptor.exe install\bin\
-          windeployqt --release --no-translations --no-opengl --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+          windeployqt --release --no-translations --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
           cpack -G WIX -C Release -D CPACK_PACKAGE_FILE_NAME="DiskRaptor_0.2.7_x64_Qt"
         shell: cmd
 
