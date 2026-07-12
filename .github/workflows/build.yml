@@ -28,10 +28,10 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Install Qt 6.11
+      - name: Install Qt 6.10
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.11.1'
+          version: '6.10.3'
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
