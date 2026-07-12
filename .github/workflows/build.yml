@@ -124,6 +124,8 @@ jobs:
         run: |
           cd qt-app\build
           copy /y "%cd%\..\..\setup.nsi" "%cd%\"
+          copy /y "%cd%\..\..\images\icon.ico" "%cd%\"
+          powershell -Command "(Get-Content 'setup.nsi') -replace '\\.\.\\\.\.\\images\\icon\\.ico', 'icon.ico' | Set-Content 'setup.nsi' -Encoding OEM"
           if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
             "C:\Program Files (x86)\NSIS\makensis.exe" /DVERSION=${{ github.ref_name }} "%cd%\setup.nsi"
           ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
@@ -165,7 +167,7 @@ jobs:
           host: 'mac'
           target: 'desktop'
           arch: 'clang_64'
-          modules: 'qtwebengine qtwebchannel qtwebsockets'
+          modules: 'qtwebengine qtwebchannel qtwebsockets qtpositioning'
           cache: true
 
       - name: Configure CMake
@@ -223,7 +225,7 @@ jobs:
           host: 'linux'
           target: 'desktop'
           arch: 'gcc_64'
-          modules: 'qtwebengine qtwebchannel qtwebsockets'
+          modules: 'qtwebengine qtwebchannel'
           cache: true
 
       - name: Configure CMake
