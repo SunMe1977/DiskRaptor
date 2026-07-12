@@ -44,3 +44,11 @@ modulesPro/build/
 
 # Never commit this file
 raw/info.txt
+
+tools/
+qt-app/build*/
+*.exe
+*.zip
+*.7z
+qtwebengine_runtime/
+qtwebengine_*.zip

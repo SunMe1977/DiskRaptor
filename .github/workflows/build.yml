@@ -7,28 +7,29 @@ on:
   pull_request:
     branches: [main, master]
 
-env:
-  CARGO_TERM_COLOR: always
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ════════════════════════════════════════════════════
-  # 1. QT 6 BUILD (Windows — Qt + Chromium MSI)
-  # ════════════════════════════════════════════════════
-  build-qt:
+  # ═══════════════════════════════════════════════════════════════
+  # 1. BUILD — Full Qt app + separate WebEngine runtime
+  # ═══════════════════════════════════════════════════════════════
+  build-app:
     if: github.ref_type == 'tag'
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        shell: cmd
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Install Qt 6.10
+      - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.10.3'
@@ -36,67 +37,150 @@ jobs:
           target: 'desktop'
           arch: 'win64_msvc2022_64'
           modules: 'qtwebengine qtwebchannel qtwebsockets'
-          cache: 'true'
-          install-deps: 'true'
+          cache: true
+          install-deps: true
 
-      - name: Install WiX
-        run: choco install wixtoolset --no-progress -y
-        shell: pwsh
-
-      - name: Build Qt app + MSI
-        shell: cmd
+      - name: Configure CMake
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
           cd qt-app
           if exist build rmdir /s /q build
           mkdir build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install"
+
+      - name: Build
+        run: |
+          cd qt-app\build
           cmake --build . --config Release
           if not exist DiskRaptor.exe exit /b 1
-          mkdir install\bin
-          copy DiskRaptor.exe install\bin\
-          windeployqt --release --no-translations --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
-          cpack -G WIX -C Release -D CPACK_PACKAGE_FILE_NAME="DiskRaptor_0.2.7_x64_Qt"
 
-      - uses: actions/upload-artifact@v4
+      - name: Deploy Qt DLLs (windeployqt)
+        run: |
+          cd qt-app\build
+          if not exist install\bin mkdir install\bin
+          copy /y DiskRaptor.exe install\bin\
+          copy /y DiskRaptorLauncher.exe install\bin\
+          windeployqt --release --no-translations --no-opengl --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+          cmake --install . --config Release --prefix "%cd%\install" 2>nul
+
+      - name: Separate WebEngine Runtime
+        run: |
+          cd qt-app\build
+          set CORE_DIR=%cd%\install\bin
+          set RUNTIME_DIR=%cd%\qtwebengine_runtime
+          mkdir %RUNTIME_DIR%
+
+          REM Move WebEngine DLLs to runtime package
+          for %%f in (Qt6WebEngineCore Qt6WebEngineWidgets Qt6WebEngineQuick Qt6WebEngineQuickDelegatesQml) do (
+            if exist "%CORE_DIR%\%%f.dll" move /y "%CORE_DIR%\%%f.dll" "%RUNTIME_DIR%" >nul
+            if exist "%CORE_DIR%\%%f.pdb" del "%CORE_DIR%\%%f.pdb" 2>nul
+          )
+          if exist "%CORE_DIR%\QtWebEngineProcess.exe" move /y "%CORE_DIR%\QtWebEngineProcess.exe" "%RUNTIME_DIR%" >nul
+          if exist "%CORE_DIR%\QtWebEngineProcess.pdb" del "%CORE_DIR%\QtWebEngineProcess.pdb" 2>nul
+
+          REM Move Qt Quick/QML DLLs needed by WebEngine
+          for %%f in ("%CORE_DIR%\Qt6Quick*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
+          for %%f in ("%CORE_DIR%\Qt6Qml*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
+          for %%f in ("%CORE_DIR%\Qt6OpenGL*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
+          for %%f in ("%CORE_DIR%\Qt6Svg*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
+          for %%f in ("%CORE_DIR%\Qt6ShaderTools*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
+          for %%f in ("%CORE_DIR%\Qt6BundledProtocol*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
+
+          REM Move QML dir
+          if exist "%CORE_DIR%\qml" move /y "%CORE_DIR%\qml" "%RUNTIME_DIR%\qml" >nul
+
+          REM Remove WebEngine-related pdb files from core
+          del "%CORE_DIR%\*WebEngine*.pdb" 2>nul
+          del "%CORE_DIR%\*WebEngine*.lib" 2>nul
+
+          echo === Core files (small) ===
+          dir "%CORE_DIR%"
+
+          echo === Runtime files (WebEngine) ===
+          dir "%RUNTIME_DIR%"
+
+      - name: Package WebEngine Runtime (ZIP)
+        run: |
+          cd qt-app\build
+          if exist "%cd%\qtwebengine_runtime\Qt6WebEngineCore.dll" (
+            REM Use PowerShell Compress-Archive (built-in on Windows)
+            powershell -Command "Compress-Archive -Path '%cd%\qtwebengine_runtime\*' -DestinationPath '%cd%\qtwebengine_runtime.zip' -Force"
+            echo ✅ Runtime ZIP created
+          ) else (
+            echo ⚠ No WebEngine DLLs found
+          )
+
+      - name: Install NSIS (portable)
+        run: |
+          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
+          powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\" 2>nul
+
+      - name: Build NSIS Installer
+        run: |
+          cd qt-app\build
+          copy /y "%cd%\..\..\setup.nsi" "%cd%\"
+          "C:\nsis\nsis-3.09\makensis.exe" /DVERSION=0.2.7 "%cd%\setup.nsi"
+
+      - name: Upload core installer artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: release-windows-qt
-          path: qt-app/build/DiskRaptor_*.msi
+          name: release-windows-core
+          path: qt-app\build\DiskRaptor_*.exe
           if-no-files-found: error
 
-  # ════════════════════════════════════════════════════
-  # 2. GITHUB RELEASE
-  # ════════════════════════════════════════════════════
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qtwebengine-runtime
+          path: qt-app\build\qtwebengine_runtime.zip
+          if-no-files-found: ignore
+
+  # ═══════════════════════════════════════════════════════════════
+  # 2. RELEASE — Create GitHub Release with all assets
+  # ═══════════════════════════════════════════════════════════════
   release:
     if: github.ref_type == 'tag'
-    needs: build-qt
+    needs: build-app
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: release-windows-qt
           path: artifacts
 
       - name: Prepare assets
         run: |
           mkdir -p release_assets
-          cp -r artifacts/* release_assets/ 2>/dev/null || true
+          find artifacts -type f \( -name "*.exe" -o -name "*.zip" \) -exec cp {} release_assets/ \;
+          ls -lh release_assets/
 
-      - uses: softprops/action-gh-release@v2
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: DiskRaptor ${{ github.ref_name }}
           body: |
             ## DiskRaptor ${{ github.ref_name }}
 
-            **Qt 6 + Chromium Edition** — no WebView2, no GTK, no WebKitGTK needed.
+            **Qt 6 Edition** — WebEngine runtime downloaded on first launch.
 
-            | Platform | Download |
-            |----------|----------|
-            | **Windows** | `DiskRaptor_*_Qt.msi` |
+            ### Download
+            | File | Description |
+            |------|-------------|
+            | `DiskRaptor_*_Setup.exe` | Core installer (~5 MB) — EXE + ModulePro + Qt DLLs |
+            | `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch |
+
+            ### How it works
+            1. Install the small core installer
+            2. Launch DiskRaptor — launcher detects missing WebEngine runtime
+            3. Runtime downloads and extracts automatically
+            4. App starts with full WebEngine capabilities
+
+            > **Why two downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.
           files: release_assets/**
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

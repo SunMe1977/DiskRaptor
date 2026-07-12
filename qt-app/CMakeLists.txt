@@ -33,27 +33,44 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../modulesPro" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/modulesPro")
 
-# Install
-install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
-install(DIRECTORY ../frontend/ DESTINATION share/${PROJECT_NAME}/frontend)
-
-# CPack for MSI
-set(CPACK_PACKAGE_NAME "DiskRaptor")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_PACKAGE_VENDOR "DiskRaptor Team")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Ultra-fast disk space analyzer")
-
+# ── Launcher (no Qt deps, Win32 only) ──────────────────────────
 if(WIN32)
-  set(CPACK_GENERATOR "WIX")
-  set(CPACK_WIX_UPGRADE_GUID "8A2E5B3C-9D4F-4E6B-8C7D-1F2A3B4C5D6E")
-  set(CPACK_WIX_PRODUCT_GUID "1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D")
-  set(CPACK_WIX_LANG "en-US")
-  set(CPACK_PACKAGE_FILE_NAME "DiskRaptor_${PROJECT_VERSION}_x64_Qt")
-elseif(UNIX AND NOT APPLE)
-  set(CPACK_GENERATOR "DEB;TGZ")
-  set(CPACK_DEBIAN_PACKAGE_MAINTAINER "DiskRaptor Team")
+  add_executable(DiskRaptorLauncher WIN32 src/launcher.cpp)
+  target_link_libraries(DiskRaptorLauncher PRIVATE
+    kernel32 user32 shell32 wininet)
+  set_target_properties(DiskRaptorLauncher PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
+  install(TARGETS DiskRaptorLauncher RUNTIME DESTINATION bin)
 endif()
 
-include(CPack)
+# ── Install ──────────────────────────────────────────────────
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+
+# Install core DLLs (windeployqt output) — exclude WebEngine ones
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
+  DESTINATION bin
+  FILES_MATCHING
+    PATTERN "*.dll"
+    PATTERN "*.exe"
+    PATTERN "*.pak"
+    PATTERN "*.dat"
+    PATTERN "*.bin"
+    PATTERN "Qt6WebEngine*" EXCLUDE
+  PATTERN "frontend" EXCLUDE
+)
+
+# Install plugin subdirectories (exclude QML/WebEngine)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/platforms/" DESTINATION bin/platforms OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles/" DESTINATION bin/styles OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/imageformats/" DESTINATION bin/imageformats OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/tls/" DESTINATION bin/tls OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/iconengines/" DESTINATION bin/iconengines OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/generic/" DESTINATION bin/generic OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/networkinformation/" DESTINATION bin/networkinformation OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/resources/" DESTINATION bin/resources OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/translations/" DESTINATION bin/translations OPTIONAL)
+
+# Install frontend
+install(DIRECTORY ../frontend/ DESTINATION share/${PROJECT_NAME}/frontend)
 
 message(STATUS "DiskRaptor ${PROJECT_VERSION} — Qt ${Qt6_VERSION}")
