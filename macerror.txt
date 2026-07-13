@@ -1,12 +1,6 @@
-aptor/qt-app/../src-tauri/target/release/diskraptor_scanner.dll
-  — scan will be unavailable
-
-
--- DiskRaptor 0.0.7 â€” Qt 6.11.1
--- Configuring done (15.2s)
--- Generating done (0.7s)
+-- Generating done (0.9s)
 -- Build files have been written to: /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build
-[7/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o
+[5/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o
 FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o 
 /usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src -isystem /usr/local/opt/qt/lib/QtCore.framework/Headers -iframework /usr/local/opt/qt/lib -isystem /usr/local/opt/qt/share/qt/mkspecs/macx-clang -isystem /usr/local/opt/qt/include -isystem /usr/local/opt/qt/lib/QtGui.framework/Headers -isystem /usr/local/opt/qt/lib/QtWidgets.framework/Headers -isystem /usr/local/opt/qt/lib/QtWebEngineWidgets.framework/Headers -isystem /usr/local/opt/qt/lib/QtWebEngineCore.framework/Headers -isystem /usr/local/opt/qt/lib/QtNetwork.framework/Headers -isystem /usr/local/opt/qt/lib/QtQuick.framework/Headers -isystem /usr/local/opt/qt/lib/QtQml.framework/Headers -isystem /usr/local/opt/qt/include/QtQmlIntegration -isystem /usr/local/opt/qt/lib/QtOpenGL.framework/Headers -isystem /usr/local/opt/qt/lib/QtWebChannel.framework/Headers -isystem /usr/local/opt/qt/lib/QtPositioning.framework/Headers -isystem /usr/local/opt/qt/lib/QtPrintSupport.framework/Headers -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o -MF CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o.d -o CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o -c /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp
 /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:28:10: error: use of undeclared identifier 'loadRustLibrary'
@@ -104,6 +98,6 @@ FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o
     ^
 fatal error: too many errors emitted, stopping now [-ferror-limit=]
 20 errors generated.
-[9/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/webviewwindow.cpp.o
+[9/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/main.cpp.o
 ninja: build stopped: subcommand failed.
 hjh@Hansjoergs-Mac DiskRaptor % 
