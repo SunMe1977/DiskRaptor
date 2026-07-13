@@ -15,48 +15,62 @@ else
   echo "[1] Homebrew: $(brew --version 2>/dev/null | head -1)"
 fi
 
-# ── Install missing tools ─────────────────────
-echo ""
-echo "[2] Checking tools..."
-# Single brew call for all formulae (much faster than 3 separate calls)
-if brew ls --formula qt@6 cmake ninja &>/dev/null; then
-  echo "  All tools present"
-else
-  echo "  Installing missing tools..."
-  brew install qt@6 cmake ninja
-fi
-
-# ── Rust ──────────────────────────────────────
-# Source cargo env in case shell hasn't loaded it
+# Source cargo env so rustc/cargo are on PATH
 if [ -f "$HOME/.cargo/env" ]; then
   . "$HOME/.cargo/env"
 fi
+
+# ── Install missing tools ─────────────────────
 echo ""
-echo "[3] Rust: $(rustc --version 2>/dev/null || echo 'not found')"
-if ! command -v rustc &>/dev/null; then
-  echo "  Installing Rust..."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  . "$HOME/.cargo/env"
+echo "[2] Checking tools..."
+NEEDS=""
+# Use command -v (shell builtin, instant) instead of brew ls
+command -v cmake  &>/dev/null || NEEDS="$NEEDS cmake"
+command -v ninja  &>/dev/null || NEEDS="$NEEDS ninja"
+command -v node   &>/dev/null || NEEDS="$NEEDS node"
+command -v rustc  &>/dev/null || NEEDS="$NEEDS rust"
+# For Qt, just check if the prefix directory exists (no brew invocation)
+if [ -d "/usr/local/opt/qt@6" ] || [ -d "/opt/homebrew/opt/qt@6" ]; then
+  : # qt@6 found
+else
+  NEEDS="$NEEDS qt@6"
 fi
 
-# ── Node deps ─────────────────────────────────
-echo ""
-echo "[4] Node: $(node --version 2>/dev/null || echo 'not found')"
-if ! command -v node &>/dev/null; then
-  echo "  Installing Node..."
-  brew install node
+if [ -n "$NEEDS" ]; then
+  echo "  Installing:$NEEDS"
+  case "$NEEDS" in
+    *rust*) curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y ;;
+  esac
+  # Remove rust from NEEDS before passing to brew
+  BREW_NEEDS=$(echo "$NEEDS" | sed 's/ rust//g; s/^ *//')
+  if [ -n "$BREW_NEEDS" ]; then
+    brew install $BREW_NEEDS
+  fi
+else
+  echo "  All tools present"
 fi
-if [ ! -d node_modules ]; then
-  npm install --ignore-scripts 2>/dev/null || true
+
+# Cache Qt prefix path (avoids multiple slow brew --prefix calls)
+if [ -d "/usr/local/opt/qt@6" ]; then
+  QT_PREFIX="/usr/local/opt/qt@6"
+elif [ -d "/opt/homebrew/opt/qt@6" ]; then
+  QT_PREFIX="/opt/homebrew/opt/qt@6"
+else
+  QT_PREFIX="$(brew --prefix qt@6 2>/dev/null || echo '/usr/local/opt/qt@6')"
 fi
 
 # ── Build ─────────────────────────────────────
 echo ""
-echo "[5] Building..."
+echo "[3] Building..."
 
-export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6"
-export CMAKE_PREFIX_PATH="$(brew --prefix qt@6)"
-export PATH="$(brew --prefix qt@6)/bin:$PATH"
+# Install Node deps if needed
+if [ -f package.json ] && [ ! -d node_modules ] && command -v npm &>/dev/null; then
+  npm install --ignore-scripts 2>/dev/null || true
+fi
+
+export Qt6_DIR="$QT_PREFIX/lib/cmake/Qt6"
+export CMAKE_PREFIX_PATH="$QT_PREFIX"
+export PATH="$QT_PREFIX/bin:$PATH"
 echo "  Qt6_DIR: $Qt6_DIR"
 
 # Rust scanner (Cargo handles incremental builds automatically)
@@ -123,8 +137,8 @@ fi
 cp -r frontend dist/DiskRaptor.app/Contents/Resources/
 cp -r images dist/DiskRaptor.app/Contents/Resources/ 2>/dev/null || true
 
-# Copy Qt runtime libs (skip if unchanged — use rsync-style check)
-qt_path="$(brew --prefix qt@6)"
+# Copy Qt runtime libs (skip if unchanged)
+qt_path="$QT_PREFIX"
 for lib in Qt6Core Qt6Gui Qt6Widgets Qt6WebEngine Qt6WebChannel Qt6Network \
            Qt6OpenGL Qt6Positioning Qt6PrintSupport Qt6Qml Qt6Quick \
            Qt6SerialPort Qt6Svg; do
