@@ -3,7 +3,19 @@ REM DiskRaptor Qt 6 Build + Runtime Separation
 REM Produces: Core binaries for NSIS + WebEngine runtime archive
 
 call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.12.0\msvc2022_64\bin;%PATH%
+set QT_DIR=
+for %%v in (6.12.0 6.11.1 6.10.3) do (
+  if exist "C:\Qt\%%v\msvc2022_64\bin\windeployqt.exe" if exist "C:\Qt\%%v\msvc2022_64\bin\Qt6Core.dll" (
+    set QT_DIR=C:\Qt\%%v\msvc2022_64
+    goto :qt_found
+  )
+)
+echo ERROR: No complete Qt msvc2022_64 install found (need windeployqt + Qt6Core.dll).
+exit /b 1
+
+:qt_found
+echo Using Qt from %QT_DIR%
+set PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;%QT_DIR%\bin;%PATH%
 
 cd /d C:\dev\DiskRaptor\qt-app
 set B=build_qt
@@ -12,7 +24,7 @@ mkdir %B%
 cd %B%
 
 echo [1/4] Configuring CMake...
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install" -DCMAKE_PREFIX_PATH="C:\Qt\6.12.0\msvc2022_64"
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install" -DCMAKE_PREFIX_PATH="%QT_DIR%"
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo [2/4] Building...
@@ -25,7 +37,11 @@ copy /y "%cd%\DiskRaptor.exe" "%cd%\install\bin\" >nul
 copy /y "%cd%\DiskRaptorLauncher.exe" "%cd%\install\bin\" >nul
 
 REM Deploy ALL Qt DLLs first (including WebEngine)
-windeployqt --release --no-translations --no-opengl --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+windeployqt --release --no-translations --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+
+REM Ensure OpenGL DLLs are present even if windeployqt skips them on some setups
+if exist "%QT_DIR%\bin\Qt6OpenGL.dll" copy /y "%QT_DIR%\bin\Qt6OpenGL.dll" "%cd%\install\bin\" >nul
+if exist "%QT_DIR%\bin\Qt6OpenGLWidgets.dll" copy /y "%QT_DIR%\bin\Qt6OpenGLWidgets.dll" "%cd%\install\bin\" >nul
 
 REM Copy VC++ runtime
 if exist C:\Windows\System32\downlevel\api-ms-win-crt-*.dll (
@@ -73,7 +89,12 @@ REM Package runtime as ZIP
 echo.
 echo === Packaging WebEngine Runtime ===
 if exist "%RUNTIME_DIR%\Qt6WebEngineCore.dll" (
-  "C:\Program Files\7-Zip\7z.exe" a -tzip "%cd%\qtwebengine_runtime.zip" "%RUNTIME_DIR%\*" >nul
+  if exist "%cd%\qtwebengine_runtime.zip" del /q "%cd%\qtwebengine_runtime.zip"
+  if exist "C:\Program Files\7-Zip\7z.exe" (
+    "C:\Program Files\7-Zip\7z.exe" a -tzip "%cd%\qtwebengine_runtime.zip" "%RUNTIME_DIR%\*" >nul
+  ) else (
+    powershell -Command "Compress-Archive -Path '%RUNTIME_DIR%\*' -DestinationPath '%cd%\qtwebengine_runtime.zip' -Force"
+  )
   echo   Runtime ZIP: %cd%\qtwebengine_runtime.zip
 
   dir "%RUNTIME_DIR%" | find "Qt6WebEngineCore"
@@ -90,7 +111,7 @@ set MAKENSIS=
 if exist "C:\Program Files (x86)\NSIS\makensis.exe" set MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe
 if exist "C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe" set MAKENSIS=C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe
 if defined MAKENSIS (
-  "%MAKENSIS%" /DVERSION=0.2.7 "%cd%\setup.nsi" 2>&1
+  "%MAKENSIS%" /DVERSION=0.3.15 "%cd%\setup.nsi" 2>&1
   if exist "DiskRaptor_*.exe" (
     for %%f in ("DiskRaptor_*.exe") do echo ✅ NSIS Setup: %%f
   ) else (

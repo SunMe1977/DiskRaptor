@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");
-    app.setApplicationVersion("0.2.6");
+    app.setApplicationVersion("0.3.15");
     app.setOrganizationName("DiskRaptor");
 
     // ── WebEngine configuration ──────────────────────────────
@@ -41,9 +41,15 @@ int main(int argc, char *argv[])
     // ── Find frontend directory ──────────────────────────────
     QString frontendPath;
     QStringList searchPaths = {
+        QDir::currentPath(),
         QDir::currentPath() + "/frontend",
+        QApplication::applicationDirPath(),
         QApplication::applicationDirPath() + "/frontend",
         QDir::currentPath() + "/../frontend",
+        QApplication::applicationDirPath() + "/share/DiskRaptor/frontend",
+        QApplication::applicationDirPath() + "/../share/DiskRaptor/frontend",
+        QDir::currentPath() + "/share/DiskRaptor/frontend",
+        QDir::currentPath() + "/../share/DiskRaptor/frontend",
     };
 
     for (const auto &path : searchPaths) {

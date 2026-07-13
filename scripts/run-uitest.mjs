@@ -20,7 +20,7 @@ const args = process.argv.slice(2);
 const formatJson = args.includes("--json");
 const testFile = args.find((a) => a.startsWith("--file="));
 const testFileName = testFile ? testFile.split("=")[1] : "uitest-matrix.html";
-const htmlPath = path.join(__dirname, "frontend", testFileName);
+const htmlPath = path.join(__dirname, "..", "frontend", testFileName);
 const fileUrl = "file://" + htmlPath.replace(/\\/g, "/");
 
 const platform = process.platform; // win32, darwin, linux

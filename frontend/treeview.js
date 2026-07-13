@@ -342,7 +342,7 @@ class TreeView {
   async rebuild() {
     this.visibleNodes = [];
     try {
-      await this._buildList(0, 0);
+      await this._buildList(0, 0, new Set());
     } catch (e) {
       console.warn("_buildList error:", e);
     }
@@ -394,7 +394,10 @@ class TreeView {
         " visible";
   }
 
-  async _buildList(arenaIdx, depth) {
+  async _buildList(arenaIdx, depth, visited) {
+    if (visited.has(arenaIdx)) return;
+    visited.add(arenaIdx);
+
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
     this.visibleNodes.push(arenaIdx);
@@ -432,8 +435,9 @@ class TreeView {
         return (nb ? nb.size : 0) - (na ? na.size : 0);
       });
       for (const childIdx of sorted) {
+        if (childIdx === arenaIdx) continue;
         const childNode = this.loader.getNode(childIdx);
-        if (childNode) await this._buildList(childIdx, depth + 1);
+        if (childNode) await this._buildList(childIdx, depth + 1, visited);
       }
     }
   }

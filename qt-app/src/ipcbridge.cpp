@@ -164,7 +164,7 @@ QString IpcBridge::listDrives()
 QString IpcBridge::checkForUpdates()
 {
     // Simple version check — in production, query GitHub releases API
-    return resultToJson(true, "v0.2.6");
+    return resultToJson(true, "v0.3.15");
 }
 
 QString IpcBridge::findDuplicates(const QString &path)

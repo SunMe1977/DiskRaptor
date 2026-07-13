@@ -21,7 +21,6 @@ MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     m_progressBar->hide();
     statusBar()->addPermanentWidget(m_progressBar);
 
-    m_pathInput->setText(QDir::homePath());
     qDebug() << "[DiskRaptor] Window initialized";
 }
 
@@ -40,37 +39,7 @@ void MainWindow::setupUI()
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // Toolbar
-    auto *toolbar = new QWidget();
-    auto *toolbarLayout = new QHBoxLayout(toolbar);
-    toolbarLayout->setContentsMargins(8, 6, 8, 6);
-
-    auto *logo = new QLabel("🦅 DiskRaptor");
-    logo->setStyleSheet("font-size: 16px; font-weight: 700; margin-right: 12px;");
-
-    m_pathInput = new QLineEdit();
-    m_pathInput->setPlaceholderText("Select or enter a directory path…");
-    m_pathInput->setMinimumWidth(300);
-
-    m_btnBrowse = new QPushButton("📂 Browse");
-    m_btnScan = new QPushButton("⚡ Scan");
-    m_btnScan->setStyleSheet(
-        "QPushButton { background: #0078d4; color: white; padding: 6px 20px;"
-        "  border-radius: 6px; font-weight: 600; }"
-        "QPushButton:hover { background: #106ebe; }"
-        "QPushButton:disabled { background: #555; }");
-    m_btnCancel = new QPushButton("✕ Cancel");
-    m_btnCancel->setEnabled(false);
-
-    toolbarLayout->addWidget(logo);
-    toolbarLayout->addWidget(m_pathInput, 1);
-    toolbarLayout->addWidget(m_btnBrowse);
-    toolbarLayout->addWidget(m_btnScan);
-    toolbarLayout->addWidget(m_btnCancel);
-
-    mainLayout->addWidget(toolbar);
-
-    // WebView
+    // WebView fills the entire window (frontend handles its own toolbar)
     m_webView = new QWebEngineView();
     m_webView->setMinimumSize(800, 400);
     mainLayout->addWidget(m_webView, 1);
@@ -107,69 +76,9 @@ void MainWindow::setupWebEngine(const QString &frontendPath)
 
 void MainWindow::setupConnections()
 {
-    connect(m_btnScan, &QPushButton::clicked, this, &MainWindow::onScanClicked);
-    connect(m_btnBrowse, &QPushButton::clicked, this, &MainWindow::onBrowseClicked);
-    connect(m_btnCancel, &QPushButton::clicked, this, &MainWindow::onCancelClicked);
-
     connect(m_scanner, &Scanner::progressUpdated, this, &MainWindow::onScanProgress);
     connect(m_scanner, &Scanner::scanComplete, this, &MainWindow::onScanComplete);
     connect(m_scanner, &Scanner::scanError, this, &MainWindow::onScanError);
-
-    connect(m_pathInput, &QLineEdit::returnPressed, this, &MainWindow::onScanClicked);
-}
-
-void MainWindow::onScanClicked()
-{
-    if (m_isScanning) return;
-
-    QString path = m_pathInput->text().trimmed();
-    if (path.isEmpty()) {
-        QMessageBox::information(this, "DiskRaptor", "Please enter a directory path.");
-        return;
-    }
-
-    if (!QDir(path).exists()) {
-        QMessageBox::warning(this, "DiskRaptor",
-            "Directory does not exist:\n" + path);
-        return;
-    }
-
-    m_isScanning = true;
-    m_btnScan->setEnabled(false);
-    m_btnCancel->setEnabled(true);
-    m_statusLabel->setText("Scanning: " + path);
-    m_progressBar->show();
-
-    qDebug() << "[DiskRaptor] Starting scan:" << path;
-    m_scanner->startScan(path);
-
-    // Notify frontend via JavaScript
-    QString js = QString(
-        "if (window.__TAURI__ && window.__TAURI__.events) {"
-        "  window.__TAURI__.events.dispatchEvent(new CustomEvent('scan-started', "
-        "    { detail: { path: '%1' } }));"
-        "}"
-    ).arg(path);
-    m_webView->page()->runJavaScript(js);
-}
-
-void MainWindow::onBrowseClicked()
-{
-    QString dir = QFileDialog::getExistingDirectory(this,
-        "Select Directory to Scan", m_pathInput->text());
-    if (!dir.isEmpty()) {
-        m_pathInput->setText(dir);
-    }
-}
-
-void MainWindow::onCancelClicked()
-{
-    m_scanner->cancel();
-    m_isScanning = false;
-    m_btnScan->setEnabled(true);
-    m_btnCancel->setEnabled(false);
-    m_progressBar->hide();
-    m_statusLabel->setText("Cancelled");
 }
 
 void MainWindow::onScanProgress(const ScanProgress &progress)
@@ -193,11 +102,6 @@ void MainWindow::onScanProgress(const ScanProgress &progress)
 
 void MainWindow::onScanComplete(const ScanResult &result)
 {
-    m_isScanning = false;
-    m_btnScan->setEnabled(true);
-    m_btnCancel->setEnabled(false);
-    m_progressBar->hide();
-
     m_statusLabel->setText(
         QString("Complete — %1 files, %2 dirs, %3")
             .arg(result.totalFiles)
@@ -213,15 +117,31 @@ void MainWindow::onScanComplete(const ScanResult &result)
     ).arg(json);
 
     m_webView->page()->runJavaScript(js);
+
+    // Also update progress bar to "done" state briefly
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(100);
+    QTimer::singleShot(2000, this, [this]() {
+        m_progressBar->hide();
+        m_progressBar->setRange(0, 0);
+    });
+
     qDebug() << "[DiskRaptor] Scan complete:" << result.totalFiles << "files";
 }
 
 void MainWindow::onScanError(const QString &error)
 {
-    m_isScanning = false;
-    m_btnScan->setEnabled(true);
-    m_btnCancel->setEnabled(false);
-    m_progressBar->hide();
     m_statusLabel->setText("Error: " + error);
+    m_progressBar->hide();
+
+    QString escaped = QString(error).replace("'", "\\'");
+    QString js = QString(
+        "if (window.__TAURI__ && window.__TAURI__.events) {"
+        "  window.__TAURI__.events.dispatchEvent(new CustomEvent('scan-error', "
+        "    { detail: { error: '%1' } }));"
+        "}"
+    ).arg(escaped);
+
+    m_webView->page()->runJavaScript(js);
     qWarning() << "[DiskRaptor] Scan error:" << error;
 }

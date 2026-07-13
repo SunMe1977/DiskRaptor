@@ -8,13 +8,23 @@
     console.log("DiskRaptor booting...");
 
     const bridgeReady = new Promise((resolve) => {
-      if (window.__TAURI__ && typeof window.__TAURI__.invoke === "function") {
+      if (
+        window.__TAURI__ &&
+        typeof window.__TAURI__.invoke === "function" &&
+        window.__TAURI__.__qtBridgeReady === true
+      ) {
         resolve(true);
         return;
       }
-      window.addEventListener("tauri-bridge-ready", () => resolve(true), {
-        once: true,
-      });
+      window.addEventListener(
+        "tauri-bridge-ready",
+        () => {
+          if (window.__TAURI__ && window.__TAURI__.__qtBridgeReady === true) {
+            resolve(true);
+          }
+        },
+        { once: true },
+      );
     });
 
     const timeout = new Promise((_, reject) =>
@@ -466,7 +476,8 @@
         var initScan = await window.__TAURI__.invoke("start_scan", {
           path: path,
         });
-        var scanId = initScan.scan_id;
+        var scanId =
+          (initScan && (initScan.scan_id || initScan.scanId)) || 1;
 
         // Poll
         var done = false;
@@ -482,6 +493,9 @@
           var files = Number(p.files_found || 0);
           var dirs = Number(p.dirs_found || 0);
           var elapsed = Number(p.elapsed_secs || 0);
+          if (!files && p.filesFound) files = Number(p.filesFound || 0);
+          if (!dirs && p.dirsFound) dirs = Number(p.dirsFound || 0);
+          if (!elapsed && p.elapsedSecs) elapsed = Number(p.elapsedSecs || 0);
 
           // Update counts
           document.getElementById("pstat-files").textContent =
@@ -545,7 +559,11 @@
           document.getElementById("progress-elapsed").textContent =
             (mins > 0 ? mins + "m " : "") + secs + "s";
 
-          if (!p.is_running || p.phase === 3) {
+          var running =
+            typeof p.is_running !== "undefined"
+              ? p.is_running
+              : p.isRunning;
+          if (running === false || p.phase === 3) {
             await sleep(500);
             done = true;
             break;
@@ -569,6 +587,19 @@
 
         clearTimeout(safetyTimer);
         progressOverlay.classList.remove("active");
+
+        if (!result.stats) {
+          result.stats = {
+            total_files: Number(result.totalFiles || result.total_files || 0),
+            total_dirs: Number(result.totalDirs || result.total_dirs || 0),
+            total_size: Number(result.totalSize || result.total_size || 0),
+            scan_time_ms: Number(result.scanTimeMs || result.scan_time_ms || 0),
+            top_files: result.topFiles || result.top_files || [],
+          };
+        }
+        if (!result.root_info) {
+          result.root_info = { total_nodes: 0, total_chunks: 0 };
+        }
 
         currentStats = result.stats;
 
