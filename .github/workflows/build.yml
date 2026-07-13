@@ -211,14 +211,12 @@ jobs:
           copy /y "..\..\setup.nsi" .
           echo === setup.nsi exists? ===
           if exist setup.nsi (echo YES) else (echo NO && exit /b 1)
-          
-          if exist "C:\nsis\nsis-3.10\makensis.exe" (
-            set NSIS_EXE=C:\nsis\nsis-3.10\makensis.exe
-          ) else if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-            set NSIS_EXE=C:\Program Files (x86)\NSIS\makensis.exe
-          ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
-            set NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe
-          ) else (
+
+          set "NSIS_EXE="
+          if exist "C:\nsis\nsis-3.10\makensis.exe" set "NSIS_EXE=C:\nsis\nsis-3.10\makensis.exe"
+          if not defined NSIS_EXE if exist "C:\Program Files (x86)\NSIS\makensis.exe" set "NSIS_EXE=C:\Program Files (x86)\NSIS\makensis.exe"
+          if not defined NSIS_EXE if exist "C:\nsis\nsis-3.09\makensis.exe" set "NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe"
+          if not defined NSIS_EXE (
             echo CRITICAL: No makensis.exe found
             dir /s "C:\Program Files (x86)\NSIS\makensis.exe" 2>nul
             dir /s C:\nsis\makensis.exe 2>nul
