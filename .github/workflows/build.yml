@@ -124,12 +124,10 @@ jobs:
         run: |
           cd qt-app\build
           copy /y "..\..\setup.nsi" .
-          copy /y "..\..\images\icon.ico" .
-          powershell -Command "(Get-Content 'setup.nsi') -replace '\.\.\\.\.\\images\\icon\.ico', 'icon.ico' | Set-Content 'setup.nsi' -Encoding OEM"
           if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-            "C:\Program Files (x86)\NSIS\makensis.exe" /DVERSION=${{ github.ref_name }} setup.nsi
+            "C:\Program Files (x86)\NSIS\makensis.exe" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi
           ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
-            "C:\nsis\nsis-3.09\makensis.exe" /DVERSION=${{ github.ref_name }} setup.nsi
+            "C:\nsis\nsis-3.09\makensis.exe" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi
           ) else (
             echo NSIS not found — failing
             exit /b 1
@@ -215,8 +213,8 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config libgl1-mesa-dev \
-            desktop-file-utils libfuse2
+          sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev \
+            desktop-file-utils libfuse2 libdl-dev 2>/dev/null || true
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -225,8 +223,9 @@ jobs:
           host: 'linux'
           target: 'desktop'
           arch: 'gcc_64'
-          modules: 'qtwebengine qtwebchannel'
+          modules: 'qtwebengine qtwebchannel qtwebsockets qtpositioning'
           cache: true
+          install-deps: true
 
       - name: Configure CMake
         run: |

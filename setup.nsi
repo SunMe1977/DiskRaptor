@@ -14,8 +14,12 @@ Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "DiskRaptor_${PRODUCT_VERSION}_x64_Setup.exe"
 InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
 
-!define MUI_ICON "..\..\images\icon.ico"
-!define MUI_UNICON "..\..\images\icon.ico"
+!ifndef MUI_ICON
+  !define MUI_ICON "..\..\images\icon.ico"
+!endif
+!ifndef MUI_UNICON
+  !define MUI_UNICON "..\..\images\icon.ico"
+!endif
 !define MUI_FINISHPAGE_RUN "$INSTDIR\DiskRaptorLauncher.exe"
 !define MUI_FINISHPAGE_RUN_CHECKED
 !define MUI_FINISHPAGE_RUN_TEXT "Start ${PRODUCT_NAME} now"
@@ -32,13 +36,13 @@ BrandingText "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 Section "Core" SEC_CORE
   SetOutPath "$INSTDIR"
 
-  ; ── Main executable ──
+  ; ● Main executable ●
   File "install\bin\DiskRaptor.exe"
 
-  ; ── Launcher (runtime downloader) ──
+  ; ● Launcher (runtime downloader) ●
   File "install\bin\DiskRaptorLauncher.exe"
 
-  ; ── Core Qt DLLs (NO WebEngine) ──
+  ; ● Core Qt DLLs (NO WebEngine) ●
   File "install\bin\Qt6Core.dll"
   File "install\bin\Qt6Gui.dll"
   File "install\bin\Qt6Widgets.dll"
@@ -46,7 +50,7 @@ Section "Core" SEC_CORE
   File "install\bin\Qt6WebChannel.dll"
   File /nonfatal "install\bin\d3dcompiler_47.dll"
 
-  ; ── Qt plugins ──
+  ; ● Qt plugins ●
   File /nonfatal /r "install\bin\platforms\*.dll"
   File /nonfatal /r "install\bin\imageformats\*.dll"
   File /nonfatal /r "install\bin\styles\*.dll"
@@ -55,19 +59,19 @@ Section "Core" SEC_CORE
   File /nonfatal /r "install\bin\generic\*.dll"
   File /nonfatal /r "install\bin\networkinformation\*.dll"
 
-  ; ── Module Pro ──
+  ; ● Module Pro ●
   File /nonfatal "modulesPro\duplicateScan.dll"
 
-  ; ── Frontend ──
+  ; ● Frontend ●
   File /nonfatal /r "install\share\DiskRaptor\frontend\*.*"
 
-  ; ── Shortcuts (with icon from DiskRaptor.exe) ──
+  ; ● Shortcuts (with icon from DiskRaptor.exe) ●
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\DiskRaptorLauncher.exe" "" "$INSTDIR\DiskRaptor.exe"
   CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\DiskRaptorLauncher.exe" "" "$INSTDIR\DiskRaptor.exe"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  ; ── Registry for uninstall ──
+  ; ● Registry for uninstall ●
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
     "DisplayName" "${PRODUCT_NAME} ${PRODUCT_VERSION}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
