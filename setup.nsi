@@ -61,8 +61,6 @@ InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRO
 !insertmacro MUI_LANGUAGE "German"
 
 ; ── Reserve files (faster start) ─────────────────────────────
-ReserveFile "${NSISDIR}\Plugins\x86-unicode\AdvSplash.dll"
-
 ; ── Installer details ─────────────────────────────────────────
 BrandingText "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 
