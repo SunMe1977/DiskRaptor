@@ -12,13 +12,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ═══════════════════════════════════════════════════════════════
+  # 1. BUILD — Full Qt app + separate WebEngine runtime
+  # ═══════════════════════════════════════════════════════════════
   build-app:
     if: github.ref_type == 'tag'
     runs-on: windows-latest
     timeout-minutes: 45
+
     defaults:
       run:
         shell: cmd
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,47 +71,72 @@ jobs:
           set CORE_DIR=%cd%\install\bin
           set RUNTIME_DIR=%cd%\qtwebengine_runtime
           mkdir %RUNTIME_DIR%
+
+          REM Move WebEngine DLLs to runtime package
           for %%f in (Qt6WebEngineCore Qt6WebEngineWidgets Qt6WebEngineQuick Qt6WebEngineQuickDelegatesQml) do (
             if exist "%CORE_DIR%\%%f.dll" move /y "%CORE_DIR%\%%f.dll" "%RUNTIME_DIR%" >nul
             if exist "%CORE_DIR%\%%f.pdb" del "%CORE_DIR%\%%f.pdb" 2>nul
           )
           if exist "%CORE_DIR%\QtWebEngineProcess.exe" move /y "%CORE_DIR%\QtWebEngineProcess.exe" "%RUNTIME_DIR%" >nul
           if exist "%CORE_DIR%\QtWebEngineProcess.pdb" del "%CORE_DIR%\QtWebEngineProcess.pdb" 2>nul
+
+          REM Move Qt Quick/QML DLLs needed by WebEngine
           for %%f in ("%CORE_DIR%\Qt6Quick*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
           for %%f in ("%CORE_DIR%\Qt6Qml*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
           for %%f in ("%CORE_DIR%\Qt6OpenGL*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
           for %%f in ("%CORE_DIR%\Qt6Svg*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
           for %%f in ("%CORE_DIR%\Qt6ShaderTools*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
           for %%f in ("%CORE_DIR%\Qt6BundledProtocol*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%" >nul
+
+          REM Move QML dir
           if exist "%CORE_DIR%\qml" move /y "%CORE_DIR%\qml" "%RUNTIME_DIR%\qml" >nul
+
+          REM ═══ Move WebEngine resource files (.pak, .dat, .bin) ═══
           echo Moving WebEngine resource files...
           move /y "%CORE_DIR%\icudtl.dat"           "%RUNTIME_DIR%" 2>nul
           move /y "%CORE_DIR%\v8_context_snapshot.bin" "%RUNTIME_DIR%" 2>nul
           move /y "%CORE_DIR%\qtwebengine_*.pak"     "%RUNTIME_DIR%" 2>nul
+
+          REM Move qtwebengine_locales if it exists
           if exist "%CORE_DIR%\qtwebengine_locales" (
             move /y "%CORE_DIR%\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
-            echo qtwebengine_locales moved
-          ) else (echo No qtwebengine_locales found in core)
+            echo ✅ qtwebengine_locales moved
+          ) else (
+            echo ⚠ No qtwebengine_locales found in core
+          )
+
+          REM Move resources dir (Qt translations, qt.conf)
           if exist "%CORE_DIR%\resources" (
             move /y "%CORE_DIR%\resources" "%RUNTIME_DIR%\resources" >nul
-            echo resources moved
+            echo ✅ resources moved
           )
+
+          REM Remove WebEngine-related pdb files from core
           del "%CORE_DIR%\*WebEngine*.pdb" 2>nul
           del "%CORE_DIR%\*WebEngine*.lib" 2>nul
           del "%CORE_DIR%\*.pdb" 2>nul
           del "%CORE_DIR%\*.lib" 2>nul
+
           echo === Core files (small) ===
           dir "%CORE_DIR%"
+
           echo === Runtime files (WebEngine) ===
           dir "%RUNTIME_DIR%"
+          if exist "%RUNTIME_DIR%\qtwebengine_locales" (
+            echo --- qtwebengine_locales ---
+            dir "%RUNTIME_DIR%\qtwebengine_locales"
+          )
 
       - name: Package WebEngine Runtime (ZIP)
         run: |
           cd qt-app\build
           if exist "%cd%\qtwebengine_runtime\Qt6WebEngineCore.dll" (
+            REM Use PowerShell Compress-Archive (built-in on Windows)
             powershell -Command "Compress-Archive -Path '%cd%\qtwebengine_runtime\*' -DestinationPath '%cd%\qtwebengine_runtime.zip' -Force"
-            echo Runtime ZIP created
-          ) else (echo No WebEngine DLLs found)
+            echo ✅ Runtime ZIP created
+          ) else (
+            echo ⚠ No WebEngine DLLs found
+          )
 
       - name: Compress with UPX (smaller installer)
         shell: cmd
@@ -115,44 +145,51 @@ jobs:
           SET CORE_DIR=%cd%\install\bin
           echo === Before UPX ===
           dir "%CORE_DIR%\*.exe" "%CORE_DIR%\Qt6*.dll"
+
+          REM Download UPX
           echo Downloading UPX...
           powershell -Command "Invoke-WebRequest -Uri 'https://github.com/upx/upx/releases/download/v5.0.0/upx-5.0.0-win64.zip' -OutFile '%TEMP%\upx.zip' -UseBasicParsing"
           powershell -Command "Expand-Archive -Path '%TEMP%\upx.zip' -DestinationPath '%TEMP%\upx\' -Force"
           FOR /R "%TEMP%\upx\" %%F IN (upx.exe) DO SET UPXEXE=%%F
+
           echo === Compressing EXEs ===
           "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\DiskRaptor.exe"
           "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\DiskRaptorLauncher.exe"
+
           echo === Compressing Qt6 DLLs ===
           "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6Core.dll"
           "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6Gui.dll"
           "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6Widgets.dll"
           "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6Network.dll"
           "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6WebChannel.dll"
+
           echo === After UPX ===
           dir "%CORE_DIR%\*.exe" "%CORE_DIR%\Qt6*.dll"
 
       - name: Install NSIS (portable)
         run: |
-          echo === Installing NSIS portable ===
-          echo --- Download NSIS 3.10 ---
-          REM Use literal space in URL to avoid CMD batch %% expansion issues
-          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS 3/3.10/nsis-3.10.zip/download" -o nsis.zip
+          echo Downloading NSIS 3.10 portable...
+          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -o nsis.zip
           if not exist nsis.zip (
-            echo --- Try NSIS 3.09 ---
-            curl -sL "https://sourceforge.net/projects/nsis/files/NSIS 3/3.09/nsis-3.09.zip/download" -o nsis.zip
+            echo NSIS 3.10 failed, trying 3.09...
+            curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
           )
-          if not exist nsis.zip (
-            echo --- Try generic SF latest ---
-            curl -sL "https://sourceforge.net/projects/nsis/files/latest/download" -o nsis.zip
-          )
-          if not exist nsis.zip (
-            echo CRITICAL: All NSIS download attempts failed
+          if exist nsis.zip (
+            echo Extracting NSIS to C:\nsis...
+            powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\"
+          ) else (
+            echo CRITICAL: Could not download NSIS
             exit /b 1
           )
-          echo === Extracting NSIS ===
-          powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\ -Force"
-          echo === NSIS files ===
-          dir /s C:\nsis\*.exe
+          if exist "C:\nsis\nsis-3.10\makensis.exe" (
+            echo NSIS 3.10 extracted
+          ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
+            echo NSIS 3.09 extracted
+          ) else (
+            echo CRITICAL: NSIS not extracted to C:\nsis
+            dir C:\nsis
+            exit /b 1
+          )
 
       - name: Build NSIS Installer
         run: |
@@ -160,28 +197,23 @@ jobs:
           copy /y "..\..\setup.nsi" .
           echo === setup.nsi exists? ===
           if exist setup.nsi (echo YES) else (echo NO && exit /b 1)
+          
           if exist "C:\nsis\nsis-3.10\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.10\makensis.exe
           ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe
           ) else (
-            set NSIS_EXE=
-            for %%I in (makensis.exe) do if not defined NSIS_EXE set "NSIS_EXE=%%~$PATH:I"
-            if not defined NSIS_EXE (
-              for /r "C:\nsis" %%F in (makensis.exe) do if exist %%F set NSIS_EXE=%%F
-            )
-          )
-          if not defined NSIS_EXE (
-            echo CRITICAL: No makensis.exe found anywhere
+            echo CRITICAL: No makensis.exe found
             dir /s C:\nsis\makensis.exe 2>nul
-            where makensis.exe 2>nul
             exit /b 1
           )
+          
           echo Using: %NSIS_EXE%
           echo === Plugin dir ===
-          for %%I in ("%NSIS_EXE%") do dir "%%~dpI..\Plugins" 2>nul || dir "%%~dpIPlugins" 2>nul || echo No Plugins dir found
+          dir "C:\nsis\nsis-3.10\Plugins" 2>nul || dir "C:\nsis\nsis-3.09\Plugins" 2>nul
+          
           echo === Running makensis... ===
-          "%NSIS_EXE%" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=%cd%\..\..\images\icon.ico" setup.nsi 2>&1
+          "%NSIS_EXE%" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi 2>&1
           if errorlevel 1 (
             echo === makensis FAILED with exit code %errorlevel% ===
             exit /b %errorlevel%
@@ -189,7 +221,9 @@ jobs:
           echo === makensis OK ===
 
       - name: Show installer size
-        run: echo === Final Installer Size === & dir qt-app\build\DiskRaptor_*.exe
+        run: |
+          echo === Final Installer Size ===
+          dir qt-app\build\DiskRaptor_*.exe
 
       - name: Upload core installer artifact
         uses: actions/upload-artifact@v4
@@ -205,12 +239,17 @@ jobs:
           path: qt-app\build\qtwebengine_runtime.zip
           if-no-files-found: ignore
 
+  # ═══════════════════════════════════════════════════════════════
+  # macOS BUILD
+  # ═══════════════════════════════════════════════════════════════
   build-macos:
     if: github.ref_type == 'tag'
     runs-on: macos-latest
     timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
@@ -221,14 +260,31 @@ jobs:
           modules: 'qtwebengine qtwebchannel qtpositioning'
           cache: true
           install-deps: true
+
       - name: Configure CMake
-        run: cd qt-app && mkdir build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/install"
+        run: |
+          cd qt-app
+          mkdir build && cd build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install"
+
       - name: Build
-        run: cd qt-app/build && cmake --build . --config Release -- -v 2>&1 && test -f DiskRaptor.app/Contents/MacOS/DiskRaptor || exit 1
+        run: |
+          cd qt-app/build
+          cmake --build . --config Release -- -v 2>&1
+          test -f DiskRaptor.app/Contents/MacOS/DiskRaptor || exit 1
+
       - name: Deploy Qt frameworks
-        run: cd qt-app/build && macdeployqt DiskRaptor.app -verbose=1
+        run: |
+          cd qt-app/build
+          macdeployqt DiskRaptor.app -verbose=1
+
       - name: Package DMG
-        run: cd qt-app/build && hdiutil create -volname "DiskRaptor" -srcfolder DiskRaptor.app -ov -format UDZO "DiskRaptor_macOS_x64.dmg"
+        run: |
+          cd qt-app/build
+          hdiutil create -volname "DiskRaptor" -srcfolder DiskRaptor.app \
+            -ov -format UDZO "DiskRaptor_macOS_x64.dmg"
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
@@ -236,48 +292,97 @@ jobs:
           path: qt-app/build/DiskRaptor_macOS_x64.dmg
           if-no-files-found: error
 
+  # ═══════════════════════════════════════════════════════════════
+  # LINUX BUILD - DEB + AppImage
+  # ═══════════════════════════════════════════════════════════════
   build-linux:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev desktop-file-utils libfuse2 libdl-dev 2>/dev/null || true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev \
+            desktop-file-utils libfuse2 libdl-dev 2>/dev/null || true
+
       - name: Install Qt (from apt)
         run: |
           export DEBIAN_FRONTEND=noninteractive
-          for i in 1 2 3; do sudo apt-get install -y --no-install-recommends qt6-base-dev qt6-webengine-dev qt6-webchannel-dev qt6-positioning-dev && break; echo "Attempt $i failed, retrying in 10s..."; sleep 10; done
-          sudo apt-get install -y libglx-dev libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-x11-dev libfontconfig1-dev libdbus-1-dev libxcb-cursor-dev
+          # Retry loop in case of slow mirrors
+          for i in 1 2 3; do
+            sudo apt-get install -y --no-install-recommends \
+              qt6-base-dev qt6-webengine-dev \
+              qt6-webchannel-dev qt6-positioning-dev && break
+            echo "Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          sudo apt-get install -y \
+            libglx-dev libgl1-mesa-dev \
+            libegl1-mesa-dev libxkbcommon-x11-dev libfontconfig1-dev \
+            libdbus-1-dev libxcb-cursor-dev
+
       - name: Configure CMake
-        run: cd qt-app && mkdir build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/install"
+        run: |
+          cd qt-app
+          mkdir build && cd build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install"
+
       - name: Build
-        run: cd qt-app/build && cmake --build . --config Release && test -f DiskRaptor || exit 1
+        run: |
+          cd qt-app/build
+          cmake --build . --config Release
+          test -f DiskRaptor || exit 1
+
       - name: Install to staging dir
-        run: cd qt-app/build && cmake --install . --config Release --prefix "$PWD/install"
+        run: |
+          cd qt-app/build
+          cmake --install . --config Release --prefix "$PWD/install"
+
       - name: Deploy Qt libs (linuxdeployqt)
         run: |
           cd qt-app/build
           wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
           wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
           chmod +x linuxdeploy*.AppImage
-          mkdir -p AppDir/usr/bin && cp -r install/* AppDir/usr/
+
+          # Prepare AppDir with installed files
+          mkdir -p AppDir/usr/bin
+          cp -r install/* AppDir/usr/
+
+          # Create .desktop file with icon
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
           cp "${{ github.workspace }}/src-tauri/icons/256x256.png" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png
           cat > AppDir/usr/share/applications/DiskRaptor.desktop << 'DESK'
-[Desktop Entry]
-Name=DiskRaptor
-Exec=DiskRaptor
-Icon=diskraptor
-Type=Application
-Categories=Utility;
-DESK
+          [Desktop Entry]
+          Name=DiskRaptor
+          Exec=DiskRaptor
+          Icon=diskraptor
+          Type=Application
+          Categories=Utility;
+          DESK
+
+          # Create AppRun symlink
           ln -sf usr/bin/DiskRaptor AppDir/AppRun
+
       - name: Package DEB
-        run: cd qt-app/build && cpack -G DEB -C Release -D CPACK_PACKAGE_VERSION="${{ github.ref_name }}" -D CPACK_PACKAGE_FILE_NAME="DiskRaptor_${{ github.ref_name }}_amd64" . && ls -lh *.deb
+        run: |
+          cd qt-app/build
+          cpack -G DEB -C Release -D CPACK_PACKAGE_VERSION="${{ github.ref_name }}" -D CPACK_PACKAGE_FILE_NAME="DiskRaptor_${{ github.ref_name }}_amd64" .
+          ls -lh *.deb
+
       - name: Package AppImage
-        run: cd qt-app/build && export LDAI_OUTPUT="DiskRaptor_${{ github.ref_name }}_x86_64.AppImage" && ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage && ls -lh *.AppImage
+        run: |
+          cd qt-app/build
+          export LDAI_OUTPUT="DiskRaptor_${{ github.ref_name }}_x86_64.AppImage"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
+          ls -lh *.AppImage
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -287,25 +392,34 @@ DESK
             qt-app/build/DiskRaptor_*.AppImage
           if-no-files-found: error
 
+  # ═══════════════════════════════════════════════════════════════
+  # 2. RELEASE — Create GitHub Release with all assets
+  # ═══════════════════════════════════════════════════════════════
   release:
     if: github.ref_type == 'tag'
     needs: [build-app, build-macos, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
       - name: Prepare assets
         run: |
           mkdir -p release_assets
           find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -exec cp {} release_assets/ \;
           ls -lh release_assets/
+
       - name: Delete existing release (if re-run)
-        run: gh release delete "${{ github.ref_name }}" --repo "${{ github.repository }}" --yes 2>/dev/null || true
+        run: |
+          gh release delete "${{ github.ref_name }}" --repo "${{ github.repository }}" --yes 2>/dev/null || true
+
       - name: Publish Release
         shell: bash
         env:
@@ -315,8 +429,11 @@ DESK
           IS_PRERELEASE="${{ contains(github.ref_name, '-') }}"
           PRERELEASE_FLAG=""
           [ "$IS_PRERELEASE" = "true" ] && PRERELEASE_FLAG="--prerelease"
+
           echo "Creating release ${{ github.ref_name }} with assets:"
           ls -lh release_assets/
+
+          # Write release body to temp file (using printf to avoid heredoc indent issues)
           printf '%s\n' \
             '## DiskRaptor ${{ github.ref_name }}' \
             '' \
@@ -325,11 +442,11 @@ DESK
             '### Download' \
             '| File | Description |' \
             '|------|-------------|' \
-            '| `DiskRaptor_*_Setup.exe` | Windows setup installer (~3-4 MB) |' \
-            '| `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) |' \
-            '| `DiskRaptor_macOS_x64.dmg` | macOS disk image |' \
-            '| `DiskRaptor_*_amd64.deb` | Debian/Ubuntu package |' \
-            '| `DiskRaptor_*_x86_64.AppImage` | Linux AppImage |' \
+            '| `DiskRaptor_*_Setup.exe` | Windows setup installer (~3-4 MB) — EXE + ModulePro + Qt DLLs (UPX + LZMA) |' \
+            '| `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch |' \
+            '| `DiskRaptor_macOS_x64.dmg` | macOS disk image — drag to Applications |' \
+            '| `DiskRaptor_*_amd64.deb` | Debian/Ubuntu package — `sudo dpkg -i *.deb` |' \
+            '| `DiskRaptor_*_x86_64.AppImage` | Linux AppImage — portable, no install needed |' \
             '' \
             '### How it works' \
             '1. Install the small core installer (Windows) or drag to Applications (macOS) or run the AppImage (Linux)' \
@@ -338,12 +455,20 @@ DESK
             '' \
             '> **Why separate downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.' \
             > /tmp/release_body.md
+
+          # Build asset file list (passed as positional args)
           ASSET_FILES=()
-          for f in release_assets/*; do [ -f "$f" ] && ASSET_FILES+=("$f"); done
+          for f in release_assets/*; do
+            [ -f "$f" ] && ASSET_FILES+=("$f")
+          done
+
+          echo "Asset files: ${ASSET_FILES[*]}"
+
           gh release create "${{ github.ref_name }}" \
             --title "DiskRaptor ${{ github.ref_name }}" \
             --notes-file /tmp/release_body.md \
             "${ASSET_FILES[@]}" \
             $PRERELEASE_FLAG \
             --verify-tag
-          echo "Release published successfully"
+
+          echo "✅ Release published successfully"
