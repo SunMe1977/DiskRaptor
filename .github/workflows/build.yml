@@ -341,28 +341,28 @@ jobs:
           echo "Creating release ${{ github.ref_name }} with assets:"
           ls -lh release_assets/
 
-          # Write release body to temp file
-          cat > /tmp/release_body.md <<- 'BODYEOF'
-          ## DiskRaptor ${{ github.ref_name }}
-
-          **Qt 6 Edition** — WebEngine runtime downloaded on first launch.
-
-          ### Download
-          | File | Description |
-          |------|-------------|
-          | `DiskRaptor_*_Setup.exe` | Windows setup installer (~5 MB) — EXE + ModulePro + Qt DLLs |
-          | `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch (Windows) |
-          | `DiskRaptor_macOS_x64.dmg` | macOS disk image — drag to Applications |
-          | `DiskRaptor_*_amd64.deb` | Debian/Ubuntu package — `sudo dpkg -i *.deb` |
-          | `DiskRaptor_*_x86_64.AppImage` | Linux AppImage — portable, no install needed |
-
-          ### How it works
-          1. Install the small core installer (Windows) or drag to Applications (macOS) or run the AppImage (Linux)
-          2. Launch DiskRaptor — launcher downloads WebEngine runtime on first launch if needed
-          3. App starts with full WebEngine capabilities
-
-          > **Why separate downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.
-          BODYEOF
+          # Write release body to temp file (using printf to avoid heredoc indent issues)
+          printf '%s\n' \
+            '## DiskRaptor ${{ github.ref_name }}' \
+            '' \
+            '**Qt 6 Edition** — WebEngine runtime downloaded on first launch.' \
+            '' \
+            '### Download' \
+            '| File | Description |' \
+            '|------|-------------|' \
+            '| `DiskRaptor_*_Setup.exe` | Windows setup installer (~5 MB) — EXE + ModulePro + Qt DLLs |' \
+            '| `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch (Windows) |' \
+            '| `DiskRaptor_macOS_x64.dmg` | macOS disk image — drag to Applications |' \
+            '| `DiskRaptor_*_amd64.deb` | Debian/Ubuntu package — `sudo dpkg -i *.deb` |' \
+            '| `DiskRaptor_*_x86_64.AppImage` | Linux AppImage — portable, no install needed |' \
+            '' \
+            '### How it works' \
+            '1. Install the small core installer (Windows) or drag to Applications (macOS) or run the AppImage (Linux)' \
+            '2. Launch DiskRaptor — launcher downloads WebEngine runtime on first launch if needed' \
+            '3. App starts with full WebEngine capabilities' \
+            '' \
+            '> **Why separate downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.' \
+            > /tmp/release_body.md
 
           # Build asset list for gh CLI
           ASSET_ARGS=()
