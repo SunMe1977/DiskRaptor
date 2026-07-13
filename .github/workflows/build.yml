@@ -168,18 +168,19 @@ jobs:
 
       - name: Install NSIS (portable)
         run: |
-          echo === Installing NSIS portable ===
+          echo === Installing NSIS portable (curl) ===
+          where curl && curl --version | findstr /i curl
 
-          REM Use PowerShell for download — no %203 CMD escaping issues, handles SourceForge redirects
-          echo --- Downloading NSIS 3.10 ---
-          powershell -Command "$wc = New-Object System.Net.WebClient; $wc.DownloadFile('https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download', 'nsis.zip')"
+          REM Try multiple SourceForge download strategies
+          echo --- Try 1: NSIS 3.10 via curl ---
+          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -o nsis.zip
           if not exist nsis.zip (
-            echo --- 3.10 failed, trying NSIS 3.09 ---
-            powershell -Command "$wc = New-Object System.Net.WebClient; $wc.DownloadFile('https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download', 'nsis.zip')"
+            echo --- Try 2: NSIS 3.09 via curl ---
+            curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
           )
           if not exist nsis.zip (
-            echo --- 3.09 failed, trying SourceForge generic latest ---
-            powershell -Command "$wc = New-Object System.Net.WebClient; $wc.DownloadFile('https://sourceforge.net/projects/nsis/files/latest/download', 'nsis.zip')"
+            echo --- Try 3: SourceForge generic latest ---
+            curl -sL "https://sourceforge.net/projects/nsis/files/latest/download" -o nsis.zip
           )
 
           if not exist nsis.zip (
@@ -193,7 +194,10 @@ jobs:
 
           echo === NSIS installation check ===
           dir /s C:\nsis\makensis.exe
-          if not exist C:\nsis\makensis.exe (dir /s C:\nsis\*.exe)
+          if not exist C:\nsis\makensis.exe (
+            echo --- No makensis found in C:\nsis, listing contents ---
+            dir /s C:\nsis
+          )
 
       - name: Build NSIS Installer
         run: |
