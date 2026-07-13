@@ -364,18 +364,18 @@ jobs:
             '> **Why separate downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.' \
             > /tmp/release_body.md
 
-          # Build asset list for gh CLI
-          ASSET_ARGS=()
+          # Build asset file list (passed as positional args)
+          ASSET_FILES=()
           for f in release_assets/*; do
-            [ -f "$f" ] && ASSET_ARGS+=("--assets-file" "$f")
+            [ -f "$f" ] && ASSET_FILES+=("$f")
           done
 
-          echo "Asset files: ${ASSET_ARGS[*]}"
+          echo "Asset files: ${ASSET_FILES[*]}"
 
           gh release create "${{ github.ref_name }}" \
             --title "DiskRaptor ${{ github.ref_name }}" \
             --notes-file /tmp/release_body.md \
-            "${ASSET_ARGS[@]}" \
+            "${ASSET_FILES[@]}" \
             $PRERELEASE_FLAG \
             --verify-tag
 
