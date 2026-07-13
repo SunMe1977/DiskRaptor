@@ -11,17 +11,18 @@
 #include <shldisp.h>
 #include <strsafe.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #pragma comment(lib, "kernel32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "wininet.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "version.lib")
 
 #define RUNTIME_DIR L"runtime"
 #define RUNTIME_ZIP  L"qtwebengine_runtime.zip"
 #define RUNTIME_MARKER L"runtime\\runtime_ready.marker"
-#define RELEASE_URL_PINNED L"https://github.com/SunMe1977/DiskRaptor/releases/download/v0.3.4/qtwebengine_runtime.zip"
 #define RELEASE_URL_LATEST L"https://github.com/SunMe1977/DiskRaptor/releases/latest/download/qtwebengine_runtime.zip"
 #define APP_EXE     L"DiskRaptor.exe"
 
@@ -235,6 +236,74 @@ BOOL RuntimeMarkerExists(LPCWSTR baseDir) {
     return (GetFileAttributesW(markerPath) != INVALID_FILE_ATTRIBUTES);
 }
 
+BOOL GetFileVersionU64(LPCWSTR filePath, ULONGLONG *outVersion) {
+    if (!outVersion) return FALSE;
+
+    DWORD handle = 0;
+    DWORD size = GetFileVersionInfoSizeW(filePath, &handle);
+    if (size == 0) return FALSE;
+
+    BYTE *buf = (BYTE*)HeapAlloc(GetProcessHeap(), 0, size);
+    if (!buf) return FALSE;
+
+    BOOL ok = FALSE;
+    VS_FIXEDFILEINFO *ffi = NULL;
+    UINT ffiLen = 0;
+
+    if (GetFileVersionInfoW(filePath, 0, size, buf) &&
+        VerQueryValueW(buf, L"\\", (LPVOID*)&ffi, &ffiLen) &&
+        ffi && ffiLen >= sizeof(VS_FIXEDFILEINFO)) {
+        *outVersion = ((ULONGLONG)ffi->dwFileVersionMS << 32) | ffi->dwFileVersionLS;
+        ok = TRUE;
+    }
+
+    HeapFree(GetProcessHeap(), 0, buf);
+    return ok;
+}
+
+BOOL RuntimeVersionMatches(LPCWSTR baseDir) {
+    WCHAR coreQtPath[MAX_PATH];
+    WCHAR runtimeWebEnginePath[MAX_PATH];
+
+    StringCchCopyW(coreQtPath, MAX_PATH, baseDir);
+    StringCchCatW(coreQtPath, MAX_PATH, L"\\Qt6Core.dll");
+
+    StringCchCopyW(runtimeWebEnginePath, MAX_PATH, baseDir);
+    StringCchCatW(runtimeWebEnginePath, MAX_PATH, L"\\");
+    StringCchCatW(runtimeWebEnginePath, MAX_PATH, RUNTIME_DIR);
+    StringCchCatW(runtimeWebEnginePath, MAX_PATH, L"\\Qt6WebEngineCore.dll");
+
+    ULONGLONG coreVer = 0;
+    ULONGLONG runtimeVer = 0;
+    if (!GetFileVersionU64(coreQtPath, &coreVer)) return FALSE;
+    if (!GetFileVersionU64(runtimeWebEnginePath, &runtimeVer)) return FALSE;
+
+    return coreVer == runtimeVer;
+}
+
+void DeleteRuntimeDirectory(LPCWSTR baseDir) {
+    WCHAR runtimePath[MAX_PATH];
+    StringCchCopyW(runtimePath, MAX_PATH, baseDir);
+    StringCchCatW(runtimePath, MAX_PATH, L"\\");
+    StringCchCatW(runtimePath, MAX_PATH, RUNTIME_DIR);
+
+    if (GetFileAttributesW(runtimePath) == INVALID_FILE_ATTRIBUTES)
+        return;
+
+    WCHAR from[MAX_PATH + 2];
+    ZeroMemory(from, sizeof(from));
+    StringCchCopyW(from, MAX_PATH + 2, runtimePath);
+    size_t len = 0;
+    StringCchLengthW(from, MAX_PATH + 2, &len);
+    from[len + 1] = L'\0';
+
+    SHFILEOPSTRUCTW op = {0};
+    op.wFunc = FO_DELETE;
+    op.pFrom = from;
+    op.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+    SHFileOperationW(&op);
+}
+
 void WriteRuntimeMarker(LPCWSTR baseDir) {
     WCHAR markerPath[MAX_PATH];
     StringCchCopyW(markerPath, MAX_PATH, baseDir);
@@ -302,7 +371,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
     BOOL runtimePresent = RuntimeExists(appDir);
     BOOL markerPresent = RuntimeMarkerExists(appDir);
-    BOOL needRuntimeSetup = (!runtimePresent) || (!markerPresent);
+    BOOL runtimeVersionOk = runtimePresent ? RuntimeVersionMatches(appDir) : FALSE;
+    BOOL needRuntimeSetup = (!runtimePresent) || (!markerPresent) || (!runtimeVersionOk);
 
     // Check if runtime setup is needed
     if (needRuntimeSetup) {
@@ -323,6 +393,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         StringCchCopyW(runtimeDir, MAX_PATH, appDir);
         StringCchCatW(runtimeDir, MAX_PATH, L"\\");
         StringCchCatW(runtimeDir, MAX_PATH, RUNTIME_DIR);
+        DeleteRuntimeDirectory(appDir);
         CreateDirectoryW(runtimeDir, NULL);
 
         // Always fetch runtime ZIP externally so the package remains out-of-band.
@@ -342,10 +413,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         }
 
         DeleteFileW(zipPath);
-        BOOL downloaded = DownloadFile(RELEASE_URL_PINNED, zipPath);
-        if (!downloaded) {
-            downloaded = DownloadFile(RELEASE_URL_LATEST, zipPath);
-        }
+        BOOL downloaded = DownloadFile(RELEASE_URL_LATEST, zipPath);
 
         if (hwnd) DestroyWindow(hwnd);
 
@@ -360,6 +428,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         // Extract into runtime directory (shows progress dialog to user)
         if (!ExtractZip(zipPath, runtimeDir)) {
             MessageBoxW(NULL, L"Failed to extract the runtime package.", L"DiskRaptor", MB_ICONERROR);
+            return 1;
+        }
+
+        if (!RuntimeVersionMatches(appDir)) {
+            MessageBoxW(NULL,
+                L"The downloaded WebEngine runtime version does not match this installer.\n"
+                L"Please install the latest DiskRaptor build and try again.",
+                L"DiskRaptor — Runtime Version Mismatch", MB_ICONERROR);
             return 1;
         }
 
