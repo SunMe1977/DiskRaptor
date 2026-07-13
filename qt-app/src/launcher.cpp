@@ -7,6 +7,8 @@
 #include <shellapi.h>
 #include <wininet.h>
 #include <shlobj.h>
+#include <shlguid.h>
+#include <shldisp.h>
 #include <strsafe.h>
 #include <stdio.h>
 
@@ -14,6 +16,7 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "ole32.lib")
 
 #define RUNTIME_DIR L"runtime"
 #define RUNTIME_ZIP  L"qtwebengine_runtime.zip"
@@ -46,28 +49,154 @@ BOOL DownloadFile(LPCWSTR url, LPCWSTR destPath) {
     return ok;
 }
 
-// ── Extract ZIP using Shell API (Windows 10+ built-in) ──────
+// ── Extract ZIP using Shell.Application COM (Windows 10+ built-in) ────
 BOOL ExtractZip(LPCWSTR zipPath, LPCWSTR destDir) {
-    // Create destination directory
-    CreateDirectoryW(destDir, NULL);
+    // Create destination directory if it doesn't exist
+    if (!CreateDirectoryW(destDir, NULL)) {
+        if (GetLastError() != ERROR_ALREADY_EXISTS)
+            return FALSE;
+    }
 
-    // Use Shell32 to copy the zip contents
-    WCHAR destDirDouble[1024];
-    StringCchCopyW(destDirDouble, 1024, destDir);
-    StringCchCatW(destDirDouble, 1024, L"\\");
+    // Initialize COM for this thread
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr))
+        return FALSE;
 
-    SHFILEOPSTRUCTW op = {0};
-    WCHAR from[MAX_PATH];
-    StringCchCopyW(from, MAX_PATH, zipPath);
-    from[wcslen(from)+1] = 0; // double null terminate
+    BOOL success = FALSE;
+    IShellDispatch *pShell = NULL;
+    Folder *pZipFolder = NULL;
+    Folder *pDestFolder = NULL;
+    FolderItems *pItems = NULL;
 
-    op.wFunc = FO_COPY;
-    op.pFrom = from;
-    op.pTo = destDirDouble;
-    op.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOF_NO_UI;
+    do {
+        // 1. Create Shell.Application object
+        hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER,
+                              IID_IShellDispatch, (void**)&pShell);
+        if (FAILED(hr) || !pShell)
+            break;
 
-    int ret = SHFileOperationW(&op);
-    return (ret == 0);
+        // 2. Get the ZIP file as a folder namespace (treat ZIP as directory)
+        VARIANT zipV;
+        VariantInit(&zipV);
+        zipV.vt = VT_BSTR;
+        zipV.bstrVal = SysAllocString(zipPath);
+        hr = pShell->NameSpace(zipV, &pZipFolder);
+        SysFreeString(zipV.bstrVal);
+        if (FAILED(hr) || !pZipFolder)
+            break;
+
+        // 3. Count items in ZIP to detect empty archives early
+        LONG itemCount = 0;
+        {
+            FolderItems *pCountItems = NULL;
+            if (SUCCEEDED(pZipFolder->Items(&pCountItems)) && pCountItems) {
+                pCountItems->Count(&itemCount);
+                pCountItems->Release();
+            }
+        }
+
+        // Empty ZIP is valid — nothing to extract
+        if (itemCount == 0) {
+            success = TRUE;
+            break;
+        }
+
+        // 4. Get the destination folder namespace
+        VARIANT destV;
+        VariantInit(&destV);
+        destV.vt = VT_BSTR;
+        destV.bstrVal = SysAllocString(destDir);
+        hr = pShell->NameSpace(destV, &pDestFolder);
+        SysFreeString(destV.bstrVal);
+        if (FAILED(hr) || !pDestFolder)
+            break;
+
+        // 5. Get the items (files) from the ZIP
+        hr = pZipFolder->Items(&pItems);
+        if (FAILED(hr) || !pItems)
+            break;
+
+        // 6. Call CopyHere to extract with progress dialog visible to user
+        //    Options: 0x10c = FOF_NO_CONFIRMMKDIR | FOF_SIMPLEPROGRESS
+        //    - FOF_NO_CONFIRMMKDIR  (0x100): auto-create missing dirs
+        //    - FOF_SIMPLEPROGRESS    (0x010): show a progress dialog
+        //    - Combined: 0x110 (256 + 16)... actually let me be precise:
+        //      FOF_NO_CONFIRMMKDIR = 0x0100 (256)
+        //      FOF_SIMPLEPROGRESS  = 0x0010 (16)
+        //      FOF_NOERRORUI       = 0x0400 (1024) - suppress error dialogs
+        //      Total = 0x0510 (1296)
+        VARIANT itemV, optV;
+        VariantInit(&itemV);
+        VariantInit(&optV);
+
+        itemV.vt = VT_DISPATCH;
+        itemV.pdispVal = pItems;  // FolderItems implements IDispatch
+
+        optV.vt = VT_I4;
+        optV.lVal = 0x510;  // FOF_NO_CONFIRMMKDIR | FOF_SIMPLEPROGRESS | FOF_NOERRORUI
+
+        hr = pDestFolder->CopyHere(itemV, optV);
+        VariantClear(&itemV);
+        VariantClear(&optV);
+
+        // CopyHere returns S_OK immediately (operation is async).
+        // 7. Wait for extraction to finish by polling the destination for files.
+        int maxWaits = 90;  // ~90 second timeout (generous for large runtimes)
+        while (maxWaits-- > 0) {
+            Sleep(1000);
+
+            WIN32_FIND_DATAW ffd;
+            WCHAR searchPath[MAX_PATH];
+            StringCchCopyW(searchPath, MAX_PATH, destDir);
+            StringCchCatW(searchPath, MAX_PATH, L"\\*");
+
+            HANDLE hFind = FindFirstFileW(searchPath, &ffd);
+            if (hFind != INVALID_HANDLE_VALUE) {
+                BOOL hasEntries = FALSE;
+                do {
+                    if (wcscmp(ffd.cFileName, L".") != 0 &&
+                        wcscmp(ffd.cFileName, L"..") != 0) {
+                        hasEntries = TRUE;
+                        break;
+                    }
+                } while (FindNextFileW(hFind, &ffd));
+                FindClose(hFind);
+
+                if (hasEntries)
+                    break;  // Extraction produced at least one file/directory
+            }
+        }
+
+        // 8. Verify extraction really succeeded (final check)
+        {
+            WIN32_FIND_DATAW vfd;
+            WCHAR verifyPath[MAX_PATH];
+            StringCchCopyW(verifyPath, MAX_PATH, destDir);
+            StringCchCatW(verifyPath, MAX_PATH, L"\\*");
+
+            HANDLE hVerify = FindFirstFileW(verifyPath, &vfd);
+            if (hVerify != INVALID_HANDLE_VALUE) {
+                do {
+                    if (wcscmp(vfd.cFileName, L".") != 0 &&
+                        wcscmp(vfd.cFileName, L"..") != 0) {
+                        success = TRUE;
+                        break;
+                    }
+                } while (FindNextFileW(hVerify, &vfd));
+                FindClose(hVerify);
+            }
+        }
+
+    } while (0);
+
+    // Cleanup COM interfaces
+    if (pItems)      pItems->Release();
+    if (pDestFolder) pDestFolder->Release();
+    if (pZipFolder)  pZipFolder->Release();
+    if (pShell)      pShell->Release();
+
+    CoUninitialize();
+    return success;
 }
 
 // ── Check if runtime directory exists and has DLLs ──────────
@@ -154,7 +283,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             return 1;
         }
 
-        // Extract into runtime directory
+        // Extract into runtime directory (shows progress dialog to user)
         if (!ExtractZip(zipPath, runtimeDir)) {
             MessageBoxW(NULL, L"Failed to extract the runtime package.", L"DiskRaptor", MB_ICONERROR);
             return 1;
