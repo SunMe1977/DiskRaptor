@@ -178,7 +178,7 @@ jobs:
       - name: Build
         run: |
           cd qt-app/build
-          cmake --build . --config Release
+          cmake --build . --config Release 2>&1
           test -f DiskRaptor.app/Contents/MacOS/DiskRaptor || exit 1
 
       - name: Deploy Qt frameworks
