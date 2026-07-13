@@ -1,29 +1,3 @@
-ld: warning: dylib (/usr/local/opt/qt/lib/QtCore.framework/Versions/A/QtCore) was built for newer macOS version (14.0) than being linked (13.3)
-
-  Creating DiskRaptor.app bundle...
-  Generating icon.icns...
-  icon.icns created
-
-==========================================
-  BUILD COMPLETE
-==========================================
-
-  App: dist/DiskRaptor.app
-
-  Run with: open dist/DiskRaptor.app
-  Or: dist/DiskRaptor.app/Contents/MacOS/DiskRaptor
-
-hjh@Hansjoergs-Mac DiskRaptor % sh build.sh
-==========================================
-  DiskRaptor - macOS Build
-==========================================
-
-[1] Homebrew: Homebrew 6.0.9
-
-[2] Checking tools...
-  All tools present
-
-[3] Rust: rustc 1.97.1 (8bab26f4f 2026-07-14)
 
 [4] Node: v26.5.0
 
@@ -31,187 +5,35 @@ hjh@Hansjoergs-Mac DiskRaptor % sh build.sh
   Qt6_DIR: /usr/local/opt/qt/lib/cmake/Qt6
   Rust scanner...
    Compiling diskraptor v0.6.1 (/Users/hjh/Documents/GitHub/DiskRaptor/src-tauri)
-error[E0425]: cannot find value `FTS_LOGICAL` in crate `libc`
-    --> src/scanner/walker.rs:1021:29
+error[E0133]: call to unsafe function `platform::fts_close` is unsafe and requires unsafe function or block
+    --> src/scanner/walker.rs:1228:9
      |
-1021 |         let options = libc::FTS_LOGICAL | libc::FTS_NOCHDIR;
-     |                             ^^^^^^^^^^^ not found in `libc`
+1228 |         fts_close(ftsp);
+     |         ^^^^^^^^^^^^^^^ call to unsafe function
+     |
+     = note: consult the function's documentation for information on how to avoid undefined behavior
 
-error[E0425]: cannot find value `FTS_NOCHDIR` in crate `libc`
-    --> src/scanner/walker.rs:1021:49
+error[E0382]: borrow of moved value: `full`
+    --> src/scanner/walker.rs:1222:55
      |
-1021 |         let options = libc::FTS_LOGICAL | libc::FTS_NOCHDIR;
-     |                                                 ^^^^^^^^^^^ not found in `libc`
+1126 |                 let full = CStr::from_ptr(path_ptr).to_string_lossy().to_string();
+     |                     ----   ------------------------------------------------------ this reinitialization might get skipped
+     |                     |
+     |                     move occurs because `full` has type `std::string::String`, which does not implement the `Copy` trait
+...
+1180 |                     ptix.insert(full, ci);
+     |                                 ---- value moved here
+...
+1222 |                     progress(files_found, dirs_found, &full);
+     |                                                       ^^^^^ value borrowed here after move
+     |
+     = note: borrow occurs due to deref coercion to `str`
+help: consider cloning the value if the performance cost is acceptable
+     |
+1180 |                     ptix.insert(full.clone(), ci);
+     |                                     ++++++++
 
-error[E0425]: cannot find function `fts_open` in crate `libc`
-    --> src/scanner/walker.rs:1023:35
-     |
-1023 |         let ftsp = unsafe { libc::fts_open(argv.as_mut_ptr(), options as libc::c_int, None) };
-     |                                   ^^^^^^^^ not found in `libc`
-
-error[E0425]: cannot find function `fts_read` in crate `libc`
-    --> src/scanner/walker.rs:1034:31
-     |
-1034 |                 let p = libc::fts_read(ftsp);
-     |                               ^^^^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_D` in crate `libc`
-    --> src/scanner/walker.rs:1061:27
-     |
-1061 |                     libc::FTS_D | libc::FTS_DC | libc::FTS_DEFAULT |
-     |                           ^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_DC` in crate `libc`
-    --> src/scanner/walker.rs:1061:41
-     |
-1061 |                     libc::FTS_D | libc::FTS_DC | libc::FTS_DEFAULT |
-     |                                         ^^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_DEFAULT` in crate `libc`
-    --> src/scanner/walker.rs:1061:56
-     |
-1061 |                     libc::FTS_D | libc::FTS_DC | libc::FTS_DEFAULT |
-     |                                                        ^^^^^^^^^^^
-     |
-    ::: /Users/hjh/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/bsd/apple/mod.rs:3590:1
-     |
-3590 | pub const AI_DEFAULT: c_int = AI_V4MAPPED_CFG | AI_ADDRCONFIG;
-     | --------------------------- similarly named constant `AI_DEFAULT` defined here
-     |
-help: a constant with a similar name exists
-     |
-1061 -                     libc::FTS_D | libc::FTS_DC | libc::FTS_DEFAULT |
-1061 +                     libc::FTS_D | libc::FTS_DC | libc::AI_DEFAULT |
-     |
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_DP` in crate `libc`
-    --> src/scanner/walker.rs:1062:27
-     |
-1062 |                     libc::FTS_DP | libc::FTS_SL | libc::FTS_SLNONE
-     |                           ^^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_SL` in crate `libc`
-    --> src/scanner/walker.rs:1062:42
-     |
-1062 |                     libc::FTS_DP | libc::FTS_SL | libc::FTS_SLNONE
-     |                                          ^^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_SLNONE` in crate `libc`
-    --> src/scanner/walker.rs:1062:57
-     |
-1062 |                     libc::FTS_DP | libc::FTS_SL | libc::FTS_SLNONE
-     |                                                         ^^^^^^^^^^ not found in `libc`
-
-error[E0425]: cannot find value `FTS_D` in crate `libc`
-    --> src/scanner/walker.rs:1065:39
-     |
-1065 |                     fts_info == libc::FTS_D || fts_info == libc::FTS_DC || fts_info == libc::FTS_DP
-     |                                       ^^^^^ not found in `libc`
-
-error[E0425]: cannot find value `FTS_DC` in crate `libc`
-    --> src/scanner/walker.rs:1065:66
-     |
-1065 |                     fts_info == libc::FTS_D || fts_info == libc::FTS_DC || fts_info == libc::FTS_DP
-     |                                                                  ^^^^^^ not found in `libc`
-
-error[E0425]: cannot find value `FTS_DP` in crate `libc`
-    --> src/scanner/walker.rs:1065:94
-     |
-1065 |                     fts_info == libc::FTS_D || fts_info == libc::FTS_DC || fts_info == libc::FTS_DP
-     |                                                                                              ^^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_F` in crate `libc`
-    --> src/scanner/walker.rs:1070:27
-     |
-1070 |                     libc::FTS_F | libc::FTS_SL | libc::FTS_SLNONE | libc::FTS_DEFAULT
-     |                           ^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_SL` in crate `libc`
-    --> src/scanner/walker.rs:1070:41
-     |
-1070 |                     libc::FTS_F | libc::FTS_SL | libc::FTS_SLNONE | libc::FTS_DEFAULT
-     |                                         ^^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_SLNONE` in crate `libc`
-    --> src/scanner/walker.rs:1070:56
-     |
-1070 |                     libc::FTS_F | libc::FTS_SL | libc::FTS_SLNONE | libc::FTS_DEFAULT
-     |                                                        ^^^^^^^^^^ not found in `libc`
-
-error[E0531]: cannot find unit struct, unit variant or constant `FTS_DEFAULT` in crate `libc`
-    --> src/scanner/walker.rs:1070:75
-     |
-1070 |                     libc::FTS_F | libc::FTS_SL | libc::FTS_SLNONE | libc::FTS_DEFAULT
-     |                                                                           ^^^^^^^^^^^
-     |
-    ::: /Users/hjh/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/bsd/apple/mod.rs:3590:1
-     |
-3590 | pub const AI_DEFAULT: c_int = AI_V4MAPPED_CFG | AI_ADDRCONFIG;
-     | --------------------------- similarly named constant `AI_DEFAULT` defined here
-     |
-help: a constant with a similar name exists
-     |
-1070 -                     libc::FTS_F | libc::FTS_SL | libc::FTS_SLNONE | libc::FTS_DEFAULT
-1070 +                     libc::FTS_F | libc::FTS_SL | libc::FTS_SLNONE | libc::AI_DEFAULT
-     |
-
-error[E0425]: cannot find value `FTS_ERR` in crate `libc`
-    --> src/scanner/walker.rs:1075:42
-     |
-1075 |                     if fts_info == libc::FTS_ERR || fts_info == libc::FTS_NS {
-     |                                          ^^^^^^^ not found in `libc`
-
-error[E0425]: cannot find value `FTS_NS` in crate `libc`
-    --> src/scanner/walker.rs:1075:71
-     |
-1075 |                     if fts_info == libc::FTS_ERR || fts_info == libc::FTS_NS {
-     |                                                                       ^^^^^^ not found in `libc`
-
-error[E0425]: cannot find function `fts_set` in crate `libc`
-    --> src/scanner/walker.rs:1106:35
-     |
-1106 | ...                   libc::fts_set(ftsp, ent as *const _ as *mut _, libc::FTS_SKIP);
-     |                             ^^^^^^^ not found in `libc`
-
-error[E0425]: cannot find value `FTS_SKIP` in crate `libc`
-    --> src/scanner/walker.rs:1106:82
-     |
-1106 | ...                   libc::fts_set(ftsp, ent as *const _ as *mut _, libc::FTS_SKIP);
-     |                                                                            ^^^^^^^^ not found in `libc`
-
-error[E0425]: cannot find function `fts_close` in crate `libc`
-    --> src/scanner/walker.rs:1176:24
-     |
-1176 |         unsafe { libc::fts_close(ftsp); }
-     |                        ^^^^^^^^^
-     |
-    ::: /Users/hjh/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/mod.rs:642:5
-     |
- 642 |     pub fn fclose(file: *mut FILE) -> c_int;
-     |     ---------------------------------------- similarly named function `fclose` defined here
-     |
-help: a function with a similar name exists
-     |
-1176 -         unsafe { libc::fts_close(ftsp); }
-1176 +         unsafe { libc::fclose(ftsp); }
-     |
-
-warning: unused import: `std::path::PathBuf`
-   --> src/scanner/walker.rs:970:9
-    |
-970 |     use std::path::PathBuf;
-    |         ^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `std::os::unix::ffi::OsStrExt`
-   --> src/scanner/walker.rs:969:9
-    |
-969 |     use std::os::unix::ffi::OsStrExt;
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Some errors have detailed explanations: E0425, E0531.
-For more information about an error, try `rustc --explain E0425`.
-warning: `diskraptor` (lib) generated 2 warnings
-error: could not compile `diskraptor` (lib) due to 22 previous errors; 2 warnings emitted
+Some errors have detailed explanations: E0133, E0382.
+For more information about an error, try `rustc --explain E0133`.
+error: could not compile `diskraptor` (lib) due to 2 previous errors
 hjh@Hansjoergs-Mac DiskRaptor % 
