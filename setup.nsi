@@ -251,9 +251,7 @@ Section "${PRODUCT_NAME} Core" SEC_CORE
 
   ; ● Module Pro ●
   DetailPrint "Copying modules..."
-  ${If} ${FileExists} "modulesPro\duplicateScan.dll"
-    File "modulesPro\duplicateScan.dll"
-  ${EndIf}
+  File /nonfatal "modulesPro\duplicateScan.dll"
 
   ; ● Frontend ●
   DetailPrint "Copying frontend files..."
