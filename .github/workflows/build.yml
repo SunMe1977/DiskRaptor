@@ -212,11 +212,10 @@ jobs:
           ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe
           ) else (
-            where makensis.exe >nul 2>nul
-            if %errorlevel% equ 0 (
-              REM makensis is on PATH (e.g. chocolatey install)
-              set NSIS_EXE=makensis.exe
-            ) else (
+            REM Use %%~$PATH:I to resolve makensis.exe from PATH (avoids %%errorlevel%% stale-expansion bug)
+            set NSIS_EXE=
+            for %%I in (makensis.exe) do if not defined NSIS_EXE set "NSIS_EXE=%%~$PATH:I"
+            if not defined NSIS_EXE (
               REM Fallback: crawl C:\nsis recursively for makensis.exe
               for /r "C:\nsis" %%F in (makensis.exe) do if exist %%F set NSIS_EXE=%%F
             )
