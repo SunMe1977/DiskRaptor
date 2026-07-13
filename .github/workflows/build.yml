@@ -170,23 +170,21 @@ jobs:
         run: |
           echo === Installing NSIS portable ===
 
-          REM Use curl.exe which handles SourceForge redirects reliably
+          REM Use PowerShell for download — no %203 CMD escaping issues, handles SourceForge redirects
           echo --- Downloading NSIS 3.10 ---
-          curl -sL --retry 3 "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -o nsis.zip
-          if %errorlevel% neq 0 (
-            echo NSIS 3.10 download FAILED (exit code %errorlevel%)
+          powershell -Command "$wc = New-Object System.Net.WebClient; $wc.DownloadFile('https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download', 'nsis.zip')"
+          if not exist nsis.zip (
+            echo --- 3.10 failed, trying NSIS 3.09 ---
+            powershell -Command "$wc = New-Object System.Net.WebClient; $wc.DownloadFile('https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download', 'nsis.zip')"
           )
           if not exist nsis.zip (
-            echo --- Trying NSIS 3.09 ---
-            curl -sL --retry 3 "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
-          )
-          if not exist nsis.zip (
-            echo --- Trying SourceForge generic latest ---
-            curl -sL --retry 3 "https://sourceforge.net/projects/nsis/files/latest/download" -o nsis.zip
+            echo --- 3.09 failed, trying SourceForge generic latest ---
+            powershell -Command "$wc = New-Object System.Net.WebClient; $wc.DownloadFile('https://sourceforge.net/projects/nsis/files/latest/download', 'nsis.zip')"
           )
 
           if not exist nsis.zip (
             echo CRITICAL: All NSIS download attempts failed
+            dir nsis.zip 2>nul
             exit /b 1
           )
 
@@ -215,7 +213,7 @@ jobs:
               REM makensis is on PATH (e.g. chocolatey install)
               set NSIS_EXE=makensis.exe
             ) else (
-              REM Fallback: crawl C:\nsis recursively
+              REM Fallback: crawl C:\nsis recursively for makensis.exe
               for /r "C:\nsis" %%F in (makensis.exe) do if exist %%F set NSIS_EXE=%%F
             )
           )
