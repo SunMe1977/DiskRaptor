@@ -164,7 +164,7 @@ jobs:
           version: '6.10.3'
           host: 'mac'
           target: 'desktop'
-          arch: 'clang_arm64'
+          arch: 'clang_64'
           modules: 'qtwebengine qtwebchannel qtpositioning'
           cache: true
           install-deps: true
@@ -273,6 +273,7 @@ jobs:
         run: |
           cd qt-app/build
           cmake -DCPACK_GENERATOR=DEB \
+            -DCPACK_PROJECT_NAME=DiskRaptor \
             -DCPACK_PACKAGE_NAME=DiskRaptor \
             -DCPACK_PACKAGE_VERSION="${{ github.ref_name }}" \
             -DCPACK_DEBIAN_PACKAGE_MAINTAINER="DiskRaptor Team" \
