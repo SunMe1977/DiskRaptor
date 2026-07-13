@@ -91,7 +91,7 @@ jobs:
           REM Move QML dir
           if exist "%CORE_DIR%\qml" move /y "%CORE_DIR%\qml" "%RUNTIME_DIR%\qml" >nul
 
-          REM ═══ Move WebEngine resource files (.pak, .dat, .bin) ═══
+          REM Move WebEngine resource files (.pak, .dat, .bin)
           echo Moving WebEngine resource files...
           move /y "%CORE_DIR%\icudtl.dat"           "%RUNTIME_DIR%" 2>nul
           move /y "%CORE_DIR%\v8_context_snapshot.bin" "%RUNTIME_DIR%" 2>nul
@@ -100,15 +100,15 @@ jobs:
           REM Move qtwebengine_locales if it exists
           if exist "%CORE_DIR%\qtwebengine_locales" (
             move /y "%CORE_DIR%\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
-            echo ✅ qtwebengine_locales moved
+            echo qtwebengine_locales moved
           ) else (
-            echo ⚠ No qtwebengine_locales found in core
+            echo No qtwebengine_locales found in core
           )
 
           REM Move resources dir (Qt translations, qt.conf)
           if exist "%CORE_DIR%\resources" (
             move /y "%CORE_DIR%\resources" "%RUNTIME_DIR%\resources" >nul
-            echo ✅ resources moved
+            echo resources moved
           )
 
           REM Remove WebEngine-related pdb files from core
@@ -131,11 +131,10 @@ jobs:
         run: |
           cd qt-app\build
           if exist "%cd%\qtwebengine_runtime\Qt6WebEngineCore.dll" (
-            REM Use PowerShell Compress-Archive (built-in on Windows)
             powershell -Command "Compress-Archive -Path '%cd%\qtwebengine_runtime\*' -DestinationPath '%cd%\qtwebengine_runtime.zip' -Force"
-            echo ✅ Runtime ZIP created
+            echo Runtime ZIP created
           ) else (
-            echo ⚠ No WebEngine DLLs found
+            echo No WebEngine DLLs found
           )
 
       - name: Compress with UPX (smaller installer)
@@ -168,36 +167,27 @@ jobs:
 
       - name: Install NSIS (portable)
         run: |
-          echo === Installing NSIS portable (curl) ===
-          where curl && curl --version | findstr /i curl
-
-          REM Try multiple SourceForge download strategies
-          echo --- Try 1: NSIS 3.10 via curl ---
-          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -o nsis.zip
-          if not exist nsis.zip (
-            echo --- Try 2: NSIS 3.09 via curl ---
-            curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
+          echo === Installing NSIS portable ===
+          REM Use separate powershell call for download to avoid CMD %% expansion on URL
+          powershell -Command "& { try { Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download' -OutFile nsis.zip -UserAgent 'curl/8.0' -UseBasicParsing -ErrorAction Stop; Write-Host 'Downloaded 3.10 OK' } catch { Write-Host '3.10 failed: ' $_.Exception.Message; exit 1 } }"
+          if %errorlevel% neq 0 (
+            powershell -Command "& { try { Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download' -OutFile nsis.zip -UserAgent 'curl/8.0' -UseBasicParsing -ErrorAction Stop; Write-Host 'Downloaded 3.09 OK' } catch { Write-Host '3.09 failed: ' $_.Exception.Message; exit 1 } }"
           )
-          if not exist nsis.zip (
-            echo --- Try 3: SourceForge generic latest ---
-            curl -sL "https://sourceforge.net/projects/nsis/files/latest/download" -o nsis.zip
+          if %errorlevel% neq 0 (
+            powershell -Command "& { try { Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/latest/download' -OutFile nsis.zip -UserAgent 'curl/8.0' -UseBasicParsing -ErrorAction Stop; Write-Host 'Downloaded latest OK' } catch { Write-Host 'Latest failed: ' $_.Exception.Message; exit 1 } }"
           )
 
           if not exist nsis.zip (
             echo CRITICAL: All NSIS download attempts failed
-            dir nsis.zip 2>nul
             exit /b 1
           )
 
           echo === Extracting NSIS ===
           powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\ -Force"
+          echo === Extracted OK ===
 
-          echo === NSIS installation check ===
-          dir /s C:\nsis\makensis.exe
-          if not exist C:\nsis\makensis.exe (
-            echo --- No makensis found in C:\nsis, listing contents ---
-            dir /s C:\nsis
-          )
+          echo === NSIS files ===
+          dir /s C:\nsis\*.exe
 
       - name: Build NSIS Installer
         run: |
@@ -206,17 +196,15 @@ jobs:
           echo === setup.nsi exists? ===
           if exist setup.nsi (echo YES) else (echo NO && exit /b 1)
 
-          REM Find makensis.exe — search standard paths + PATH + full C:\nsis scan
+          REM Find makensis.exe — search standard paths first, then PATH, then full crawl
           if exist "C:\nsis\nsis-3.10\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.10\makensis.exe
           ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe
           ) else (
-            REM Use %%~$PATH:I to resolve makensis.exe from PATH (avoids %%errorlevel%% stale-expansion bug)
             set NSIS_EXE=
             for %%I in (makensis.exe) do if not defined NSIS_EXE set "NSIS_EXE=%%~$PATH:I"
             if not defined NSIS_EXE (
-              REM Fallback: crawl C:\nsis recursively for makensis.exe
               for /r "C:\nsis" %%F in (makensis.exe) do if exist %%F set NSIS_EXE=%%F
             )
           )
@@ -233,7 +221,7 @@ jobs:
           for %%I in ("%NSIS_EXE%") do dir "%%~dpI..\Plugins" 2>nul || dir "%%~dpIPlugins" 2>nul || echo No Plugins dir found
 
           echo === Running makensis... ===
-          "%NSIS_EXE%" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi 2>&1
+          "%NSIS_EXE%" /DVERSION=v0.3.9 "/DMUI_ICON=%cd%\..\..\images\icon.ico" setup.nsi 2>&1
           if errorlevel 1 (
             echo === makensis FAILED with exit code %errorlevel% ===
             exit /b %errorlevel%
@@ -332,7 +320,6 @@ jobs:
       - name: Install Qt (from apt)
         run: |
           export DEBIAN_FRONTEND=noninteractive
-          # Retry loop in case of slow mirrors
           for i in 1 2 3; do
             sudo apt-get install -y --no-install-recommends \
               qt6-base-dev qt6-webengine-dev \
@@ -370,11 +357,9 @@ jobs:
           wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
           chmod +x linuxdeploy*.AppImage
 
-          # Prepare AppDir with installed files
           mkdir -p AppDir/usr/bin
           cp -r install/* AppDir/usr/
 
-          # Create .desktop file with icon
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
           cp "${{ github.workspace }}/src-tauri/icons/256x256.png" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png
@@ -387,7 +372,6 @@ jobs:
           Categories=Utility;
           DESK
 
-          # Create AppRun symlink
           ln -sf usr/bin/DiskRaptor AppDir/AppRun
 
       - name: Package DEB
@@ -453,7 +437,6 @@ jobs:
           echo "Creating release ${{ github.ref_name }} with assets:"
           ls -lh release_assets/
 
-          # Write release body to temp file (using printf to avoid heredoc indent issues)
           printf '%s\n' \
             '## DiskRaptor ${{ github.ref_name }}' \
             '' \
@@ -476,7 +459,6 @@ jobs:
             '> **Why separate downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.' \
             > /tmp/release_body.md
 
-          # Build asset file list (passed as positional args)
           ASSET_FILES=()
           for f in release_assets/*; do
             [ -f "$f" ] && ASSET_FILES+=("$f")
@@ -491,4 +473,4 @@ jobs:
             $PRERELEASE_FLAG \
             --verify-tag
 
-          echo "✅ Release published successfully"
+          echo "Release published successfully"
