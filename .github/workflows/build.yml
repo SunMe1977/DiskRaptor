@@ -176,7 +176,7 @@ jobs:
           )
           if exist nsis.zip (
             echo Extracting NSIS to C:\nsis...
-            powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\"
+            powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis"
           ) else (
             echo CRITICAL: Could not download NSIS
             exit /b 1
@@ -244,7 +244,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════
   build-macos:
     if: github.ref_type == 'tag'
-    runs-on: macos-latest
+    runs-on: macos-13
     timeout-minutes: 45
 
     steps:
@@ -256,7 +256,7 @@ jobs:
           version: '6.10.3'
           host: 'mac'
           target: 'desktop'
-          arch: 'clang_arm64'
+          arch: 'clang_64'
           modules: 'qtwebengine qtwebchannel qtpositioning'
           cache: true
           install-deps: true
@@ -359,7 +359,12 @@ jobs:
           # Create .desktop file with icon
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp "${{ github.workspace }}/images/256x256.png" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png
+          if [ -f "${{ github.workspace }}/images/256x256.png" ]; then
+            cp "${{ github.workspace }}/images/256x256.png" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png
+          elif [ -f "${{ github.workspace }}/images/icon.ico" ]; then
+            # Convert .ico to .png as fallback
+            cp "${{ github.workspace }}/images/icon.ico" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png 2>/dev/null || true
+          fi
           cat > AppDir/usr/share/applications/DiskRaptor.desktop << 'DESK'
           [Desktop Entry]
           Name=DiskRaptor
