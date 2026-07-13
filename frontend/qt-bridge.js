@@ -1,11 +1,10 @@
 /**
  * DiskRaptor Qt WebChannel Bridge
- * Replaces the Tauri IPC bridge for Qt 6 + QtWebEngine.
- *
- * This file provides the same window.__TAURI__ API that the existing
+ * Provides the same window.__TAURI__ API that the existing
  * frontend code expects, but routes calls through QWebChannel to C++.
  *
- * No changes needed to the existing frontend code.
+ * When QWebChannel is not available (Tauri standalone mode),
+ * the existing Tauri IPC invoke is left intact.
  */
 
 (function () {
@@ -13,11 +12,16 @@
 
   var bridge = null;
   var bridgeReady = false;
+  var isQtMode = false;
   var pendingInvokes = [];
+  var tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
+    ? window.__TAURI__.invoke
+    : null;
 
   // ── Initialize QWebChannel ─────────────────────────────────
   function init() {
     if (typeof QWebChannel !== "undefined") {
+      isQtMode = true;
       new QWebChannel(qt.webChannelTransport, function (channel) {
         bridge = channel.objects.bridge;
         console.log("[DiskRaptor] Qt WebChannel bridge connected");
@@ -35,20 +39,21 @@
 
         // Signal ready
         bridgeReady = true;
+        if (!window.__TAURI__) window.__TAURI__ = {};
         window.__TAURI__.__qtBridgeReady = true;
         window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
-        // Flush any pending invokes
         flushPending();
       });
     } else {
-      console.warn("[DiskRaptor] QWebChannel not available (running outside Qt?)");
-      // Fallback: mark bridge as ready so app.js doesn't hang forever
+      console.warn("[DiskRaptor] QWebChannel not available — running in Tauri mode");
+      // Signal ready without overwriting the Tauri invoke
       setTimeout(function () {
         bridgeReady = true;
-        if (window.__TAURI__) window.__TAURI__.__qtBridgeReady = true;
+        if (!window.__TAURI__) window.__TAURI__ = {};
+        window.__TAURI__.__qtBridgeReady = true;
         window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
         flushPending();
-      }, 1000);
+      }, 100);
     }
   }
 
@@ -64,52 +69,67 @@
   }
 
   // ── Tauri-compatible invoke() ──────────────────────────────
+  // In Qt mode: routes through QWebChannel bridge to C++
+  // In Tauri mode: falls through to the original Tauri IPC invoke
   function invoke(cmd, args) {
     return new Promise(function (resolve, reject) {
       function doInvoke() {
-        if (!bridge || typeof bridge.invoke !== "function") {
-          reject(new Error("Bridge not ready: " + cmd));
-          return;
-        }
-
-        try {
-          var result = bridge.invoke(cmd, args || {});
-          // Result is a JSON string from C++
+        // Qt mode — use the QWebChannel bridge
+        if (isQtMode) {
+          if (!bridge || typeof bridge.invoke !== "function") {
+            reject(new Error("Bridge not ready: " + cmd));
+            return;
+          }
           try {
-            var parsed = JSON.parse(result);
-            if (parsed.success) {
-              if (typeof parsed.data === "string") {
-                try {
-                  var nested = JSON.parse(parsed.data);
-                  resolve(nested);
-                } catch {
+            var result = bridge.invoke(cmd, args || {});
+            try {
+              var parsed = JSON.parse(result);
+              if (parsed.success) {
+                if (typeof parsed.data === "string") {
+                  try {
+                    var nested = JSON.parse(parsed.data);
+                    resolve(nested);
+                  } catch {
+                    resolve(parsed.data);
+                  }
+                } else {
                   resolve(parsed.data);
                 }
               } else {
-                resolve(parsed.data);
+                reject(new Error(parsed.error || "Command failed: " + cmd));
               }
-            } else {
-              reject(new Error(parsed.error || "Command failed: " + cmd));
+            } catch (e) {
+              resolve(result);
             }
           } catch (e) {
-            resolve(result);
+            reject(new Error("invoke error: " + e.message));
           }
-        } catch (e) {
-          reject(new Error("invoke error: " + e.message));
+          return;
+        }
+
+        // Tauri mode — use the original Tauri IPC invoke
+        if (typeof tauriInvoke === "function") {
+          try {
+            tauriInvoke(cmd, args).then(resolve).catch(reject);
+          } catch (e) {
+            reject(e);
+          }
+        } else {
+          reject(new Error("No IPC bridge available: " + cmd));
         }
       }
 
       if (bridgeReady) {
         doInvoke();
       } else {
-        // Queue the call — will be flushed when bridge becomes ready
+        // Queue the call — flushed when bridge becomes ready
         pendingInvokes.push(doInvoke);
-        // Also set a safety timeout so we don't hang forever
         setTimeout(function () {
-          // Remove from pending if still there
           var idx = pendingInvokes.indexOf(doInvoke);
-          if (idx !== -1) pendingInvokes.splice(idx, 1);
-          reject(new Error("Bridge not ready: " + cmd));
+          if (idx !== -1) {
+            pendingInvokes.splice(idx, 1);
+            reject(new Error("Bridge not ready: " + cmd));
+          }
         }, 15000);
       }
     });
@@ -123,7 +143,6 @@
       eventListeners[eventName] = [];
     }
     eventListeners[eventName].push(callback);
-    console.log("[DiskRaptor] Event listener registered:", eventName);
   }
 
   function emit(eventName, payload) {
@@ -138,29 +157,32 @@
   }
 
   // ── Expose as window.__TAURI__ ─────────────────────────────
-  window.__TAURI__ = {
-    invoke: invoke,
-    __qtBridgeReady: bridgeReady,
-    event: {
-      listen: listen,
-      emit: emit,
-    },
-    dialog: {
+  // Preserve existing properties (like invoke from tauri-api-bridge.js)
+  if (!window.__TAURI__) {
+    window.__TAURI__ = {};
+  }
+  window.__TAURI__.invoke = invoke;
+  window.__TAURI__.__qtBridgeReady = bridgeReady;
+  window.__TAURI__.event = window.__TAURI__.event || {
+    listen: listen,
+    emit: emit,
+  };
+  if (!window.__TAURI__.dialog) {
+    window.__TAURI__.dialog = {
       open: function (opts) {
         return invoke("pick_directory", opts || {});
       },
+    };
+  }
+  window.__TAURI__.events = window.__TAURI__.events || {
+    dispatchEvent: function (event) {
+      emit(event.type, event.detail);
     },
-    events: {
-      dispatchEvent: function (event) {
-        emit(event.type, event.detail);
-      },
-      addEventListener: function (name, cb) {
-        listen(name, cb);
-      },
+    addEventListener: function (name, cb) {
+      listen(name, cb);
     },
   };
 
-  // Backward compatibility for code checking typeof window.__TAURI__
   window.__TAURI_PRELOAD__ = true;
 
   // ── Initialize ─────────────────────────────────────────────
