@@ -219,13 +219,19 @@ jobs:
 
       - name: Install Qt (from apt)
         run: |
-          # Ubuntu 24.04 has qt6-webengine-dev available
-          sudo apt-get install -y qt6-base-dev qt6-webengine-dev \
-            qt6-webchannel-dev qt6-positioning-dev libglx-dev libgl1-mesa-dev \
+          export DEBIAN_FRONTEND=noninteractive
+          # Retry loop in case of slow mirrors
+          for i in 1 2 3; do
+            sudo apt-get install -y --no-install-recommends \
+              qt6-base-dev qt6-webengine-dev \
+              qt6-webchannel-dev qt6-positioning-dev && break
+            echo "Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          sudo apt-get install -y \
+            libglx-dev libgl1-mesa-dev \
             libegl1-mesa-dev libxkbcommon-x11-dev libfontconfig1-dev \
             libdbus-1-dev libxcb-cursor-dev
-
- 
 
       - name: Configure CMake
         run: |
