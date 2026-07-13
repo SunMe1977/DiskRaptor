@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   # ═══════════════════════════════════════════════════════════════
@@ -169,25 +169,37 @@ jobs:
       - name: Install NSIS (portable)
         shell: powershell
         run: |
-          Write-Host "Downloading NSIS 3.10 portable..."
-          $nsisUrl = "https://github.com/NSIS-Dev/NSIS/releases/download/v3.10/nsis-3.10.zip"
-          $outFile = "nsis.zip"
-          try {
-            Invoke-WebRequest -Uri $nsisUrl -OutFile $outFile -UseBasicParsing -ErrorAction Stop
-          } catch {
-            Write-Host "NSIS 3.10 failed (using GitHub), trying 3.09..."
-            $nsisUrl = "https://github.com/NSIS-Dev/NSIS/releases/download/v3.09/nsis-3.09.zip"
-            Invoke-WebRequest -Uri $nsisUrl -OutFile $outFile -UseBasicParsing -ErrorAction Stop
+          $ErrorActionPreference = "Stop"
+
+          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") {
+            Write-Host "NSIS already available at C:\Program Files (x86)\NSIS\makensis.exe"
+            exit 0
           }
-          Write-Host "Extracting NSIS to C:\nsis..."
+
+          Write-Host "Installing NSIS via Chocolatey..."
+          try {
+            choco install nsis.install -y --no-progress
+          } catch {
+            Write-Host "Chocolatey install failed: $($_.Exception.Message)"
+          }
+
+          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") {
+            Write-Host "NSIS installed via Chocolatey"
+            exit 0
+          }
+
+          Write-Host "Chocolatey path missing, using SourceForge portable fallback..."
+          $outFile = "nsis.zip"
+          $nsisUrl = "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download"
+          Invoke-WebRequest -Uri $nsisUrl -OutFile $outFile -UseBasicParsing
           Expand-Archive -Path $outFile -DestinationPath C:\nsis -Force
-          if (Test-Path "C:\nsis\nsis-3.10\makensis.exe") {
-            Write-Host "NSIS 3.10 extracted"
-          } elseif (Test-Path "C:\nsis\nsis-3.09\makensis.exe") {
-            Write-Host "NSIS 3.09 extracted"
+
+          if (Test-Path "C:\nsis\nsis-3.09\makensis.exe") {
+            Write-Host "NSIS portable fallback extracted"
           } else {
-            Write-Host "CRITICAL: NSIS not extracted to C:\nsis"
-            Get-ChildItem C:\nsis -Recurse -Depth 1
+            Write-Host "CRITICAL: NSIS not found after all install attempts"
+            Get-ChildItem "C:\Program Files (x86)" -Directory | Select-Object Name
+            if (Test-Path "C:\nsis") { Get-ChildItem C:\nsis -Recurse -Depth 2 }
             exit 1
           }
 
@@ -200,10 +212,13 @@ jobs:
           
           if exist "C:\nsis\nsis-3.10\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.10\makensis.exe
+          ) else if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+            set NSIS_EXE=C:\Program Files (x86)\NSIS\makensis.exe
           ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe
           ) else (
             echo CRITICAL: No makensis.exe found
+            dir /s "C:\Program Files (x86)\NSIS\makensis.exe" 2>nul
             dir /s C:\nsis\makensis.exe 2>nul
             exit /b 1
           )
@@ -361,9 +376,8 @@ jobs:
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
           if [ -f "${{ github.workspace }}/images/256x256.png" ]; then
             cp "${{ github.workspace }}/images/256x256.png" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png
-          elif [ -f "${{ github.workspace }}/images/icon.ico" ]; then
-            # Convert .ico to .png as fallback
-            cp "${{ github.workspace }}/images/icon.ico" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png 2>/dev/null || true
+          else
+            echo "No 256x256 icon found; continuing without bundled PNG icon"
           fi
           cat > AppDir/usr/share/applications/DiskRaptor.desktop << 'DESK'
           [Desktop Entry]
@@ -424,6 +438,8 @@ jobs:
           ls -lh release_assets/
 
       - name: Delete existing release (if re-run)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete "${{ github.ref_name }}" -R "${{ github.repository }}" --yes 2>/dev/null || true
 
@@ -468,6 +484,11 @@ jobs:
           for f in release_assets/*; do
             [ -f "$f" ] && ASSET_FILES+=("$f")
           done
+
+          if [ ${#ASSET_FILES[@]} -eq 0 ]; then
+            echo "No release assets found; failing release step"
+            exit 1
+          fi
 
           echo "Asset files: ${ASSET_FILES[*]}"
 
