@@ -90,7 +90,7 @@ BOOL ExtractZip(LPCWSTR zipPath, LPCWSTR destDir) {
         {
             FolderItems *pCountItems = NULL;
             if (SUCCEEDED(pZipFolder->Items(&pCountItems)) && pCountItems) {
-                pCountItems->Count(&itemCount);
+                pCountItems->get_Count(&itemCount);
                 pCountItems->Release();
             }
         }
