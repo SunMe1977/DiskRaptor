@@ -52,7 +52,9 @@ endif()
 
 # ── Install ──────────────────────────────────────────────────
 # Install core binary - platform agnostic
-install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+install(TARGETS ${PROJECT_NAME}
+  RUNTIME DESTINATION bin
+  BUNDLE DESTINATION bin)
 
 if(WIN32)
   # Install core DLLs (windeployqt output) — exclude WebEngine + avoid recursion
@@ -86,10 +88,11 @@ endif()
 install(DIRECTORY ../frontend/ DESTINATION share/${PROJECT_NAME}/frontend)
 
 # ── CPack ──────────────────────────────────────────────────────────
-include(CPack)
+# IMPORTANT: set CPack variables BEFORE include(CPack) — CPack reads them at include time
 set(CPACK_PACKAGE_NAME "DiskRaptor")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_FILE_NAME "DiskRaptor_${PROJECT_VERSION}_amd64")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "DiskRaptor Team")
+include(CPack)
 
 message(STATUS "DiskRaptor ${PROJECT_VERSION} — Qt ${Qt6_VERSION}")
