@@ -329,11 +329,26 @@ jobs:
           gh release delete "${{ github.ref_name }}" --repo "${{ github.repository }}" --yes 2>/dev/null || true
 
       - name: Publish Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: DiskRaptor ${{ github.ref_name }}
-          body: |
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          IS_PRERELEASE="${{ contains(github.ref_name, '-') }}"
+          PRERELEASE_FLAG=""
+          [ "$IS_PRERELEASE" = "true" ] && PRERELEASE_FLAG="--prerelease"
+
+          echo "Creating release ${{ github.ref_name }} with assets:"
+          ls -lh release_assets/
+
+          # Build asset list for gh CLI — one --assets-file per file (gh handles spaces)
+          ASSET_ARGS=()
+          for f in release_assets/*; do
+            [ -f "$f" ] && ASSET_ARGS+=("--assets-file" "$f")
+          done
+
+          gh release create "${{ github.ref_name }}" \
+            --title "DiskRaptor ${{ github.ref_name }}" \
+            --notes-file <(cat <<'BODYEOF'
             ## DiskRaptor ${{ github.ref_name }}
 
             **Qt 6 Edition** — WebEngine runtime downloaded on first launch.
@@ -353,6 +368,10 @@ jobs:
             3. App starts with full WebEngine capabilities
 
             > **Why separate downloads?** Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.
-          files: release_assets/**
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+            BODYEOF
+            ) \
+            "${ASSET_ARGS[@]}" \
+            $PRERELEASE_FLAG \
+            --verify-tag
+
+          echo "✅ Release published successfully"
