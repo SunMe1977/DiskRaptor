@@ -26,6 +26,12 @@ if(WIN32)
   target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_WINDOWS)
 elseif(UNIX AND NOT APPLE)
   target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_LINUX)
+elseif(APPLE)
+  set_target_properties(${PROJECT_NAME} PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.diskraptor.app"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
 endif()
 
 # Copy frontend + modules after build
@@ -45,33 +51,36 @@ if(WIN32)
 endif()
 
 # ── Install ──────────────────────────────────────────────────
+# Install core binary - platform agnostic
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 
-# Install core DLLs (windeployqt output) — exclude WebEngine + avoid recursion
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
-  DESTINATION bin
-  FILES_MATCHING
-    PATTERN "*.dll"
-    PATTERN "*.exe"
-    PATTERN "*.pak"
-    PATTERN "*.dat"
-    PATTERN "*.bin"
-    PATTERN "Qt6WebEngine*" EXCLUDE
-    PATTERN "frontend" EXCLUDE
-    PATTERN "install" EXCLUDE
-    PATTERN "build_*" EXCLUDE
-)
+if(WIN32)
+  # Install core DLLs (windeployqt output) — exclude WebEngine + avoid recursion
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
+    DESTINATION bin
+    FILES_MATCHING
+      PATTERN "*.dll"
+      PATTERN "*.exe"
+      PATTERN "*.pak"
+      PATTERN "*.dat"
+      PATTERN "*.bin"
+      PATTERN "Qt6WebEngine*" EXCLUDE
+      PATTERN "frontend" EXCLUDE
+      PATTERN "install" EXCLUDE
+      PATTERN "build_*" EXCLUDE
+  )
 
-# Install plugin subdirectories (exclude QML/WebEngine)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/platforms/" DESTINATION bin/platforms OPTIONAL)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles/" DESTINATION bin/styles OPTIONAL)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/imageformats/" DESTINATION bin/imageformats OPTIONAL)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/tls/" DESTINATION bin/tls OPTIONAL)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/iconengines/" DESTINATION bin/iconengines OPTIONAL)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/generic/" DESTINATION bin/generic OPTIONAL)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/networkinformation/" DESTINATION bin/networkinformation OPTIONAL)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/resources/" DESTINATION bin/resources OPTIONAL)
-install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/translations/" DESTINATION bin/translations OPTIONAL)
+  # Install plugin subdirectories (exclude QML/WebEngine)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/platforms/" DESTINATION bin/platforms OPTIONAL)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles/" DESTINATION bin/styles OPTIONAL)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/imageformats/" DESTINATION bin/imageformats OPTIONAL)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/tls/" DESTINATION bin/tls OPTIONAL)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/iconengines/" DESTINATION bin/iconengines OPTIONAL)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/generic/" DESTINATION bin/generic OPTIONAL)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/networkinformation/" DESTINATION bin/networkinformation OPTIONAL)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/resources/" DESTINATION bin/resources OPTIONAL)
+  install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/translations/" DESTINATION bin/translations OPTIONAL)
+endif()
 
 # Install frontend
 install(DIRECTORY ../frontend/ DESTINATION share/${PROJECT_NAME}/frontend)
