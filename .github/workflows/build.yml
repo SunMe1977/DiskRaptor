@@ -36,7 +36,7 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtwebchannel qtwebsockets qtpositioning'
+          modules: 'qtwebengine qtwebchannel'
           cache: true
           install-deps: true
 
@@ -165,7 +165,7 @@ jobs:
           host: 'mac'
           target: 'desktop'
           arch: 'clang_64'
-          modules: 'qtwebengine qtwebchannel qtwebsockets qtpositioning'
+          modules: 'qtwebengine qtwebchannel'
           cache: true
 
       - name: Configure CMake
@@ -223,7 +223,7 @@ jobs:
           host: 'linux'
           target: 'desktop'
           arch: 'gcc_64'
-          modules: 'qtwebengine qtwebchannel qtwebsockets qtpositioning'
+          modules: 'qtwebengine qtwebchannel'
           cache: true
           install-deps: true
 
