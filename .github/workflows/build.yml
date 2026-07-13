@@ -259,7 +259,7 @@ jobs:
           # Create .desktop file with icon
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp "${{ github.workspace }}/images/256x256.png" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png
+          cp "${{ github.workspace }}/src-tauri/icons/256x256.png" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png
           cat > AppDir/usr/share/applications/DiskRaptor.desktop << 'DESK'
           [Desktop Entry]
           Name=DiskRaptor
