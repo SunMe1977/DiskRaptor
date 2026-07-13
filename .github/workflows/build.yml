@@ -167,29 +167,29 @@ jobs:
           dir "%CORE_DIR%\*.exe" "%CORE_DIR%\Qt6*.dll"
 
       - name: Install NSIS (portable)
+        shell: powershell
         run: |
-          echo Downloading NSIS 3.10 portable...
-          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -o nsis.zip
-          if not exist nsis.zip (
-            echo NSIS 3.10 failed, trying 3.09...
-            curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
-          )
-          if exist nsis.zip (
-            echo Extracting NSIS to C:\nsis...
-            powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis"
-          ) else (
-            echo CRITICAL: Could not download NSIS
-            exit /b 1
-          )
-          if exist "C:\nsis\nsis-3.10\makensis.exe" (
-            echo NSIS 3.10 extracted
-          ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
-            echo NSIS 3.09 extracted
-          ) else (
-            echo CRITICAL: NSIS not extracted to C:\nsis
-            dir C:\nsis
-            exit /b 1
-          )
+          Write-Host "Downloading NSIS 3.10 portable..."
+          $nsisUrl = "https://github.com/NSIS-Dev/NSIS/releases/download/v3.10/nsis-3.10.zip"
+          $outFile = "nsis.zip"
+          try {
+            Invoke-WebRequest -Uri $nsisUrl -OutFile $outFile -UseBasicParsing -ErrorAction Stop
+          } catch {
+            Write-Host "NSIS 3.10 failed (using GitHub), trying 3.09..."
+            $nsisUrl = "https://github.com/NSIS-Dev/NSIS/releases/download/v3.09/nsis-3.09.zip"
+            Invoke-WebRequest -Uri $nsisUrl -OutFile $outFile -UseBasicParsing -ErrorAction Stop
+          }
+          Write-Host "Extracting NSIS to C:\nsis..."
+          Expand-Archive -Path $outFile -DestinationPath C:\nsis -Force
+          if (Test-Path "C:\nsis\nsis-3.10\makensis.exe") {
+            Write-Host "NSIS 3.10 extracted"
+          } elseif (Test-Path "C:\nsis\nsis-3.09\makensis.exe") {
+            Write-Host "NSIS 3.09 extracted"
+          } else {
+            Write-Host "CRITICAL: NSIS not extracted to C:\nsis"
+            Get-ChildItem C:\nsis -Recurse -Depth 1
+            exit 1
+          }
 
       - name: Build NSIS Installer
         run: |
