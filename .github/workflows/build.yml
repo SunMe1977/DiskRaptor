@@ -216,16 +216,15 @@ jobs:
           sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev \
             desktop-file-utils libfuse2 libdl-dev 2>/dev/null || true
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.10.3'
-          host: 'linux'
-          target: 'desktop'
-          arch: 'gcc_64'
-          modules: 'qtwebengine qtwebchannel'
-          cache: true
-          install-deps: true
+      - name: Install Qt (from apt)
+        run: |
+          # Ubuntu 24.04 has qt6-webengine-dev available
+          sudo apt-get install -y qt6-base-dev qt6-webengine-dev \
+            qt6-webchannel-dev qt6-positioning-dev libglx-dev libgl1-mesa-dev \
+            libegl1-mesa-dev libxkbcommon-x11-dev libfontconfig1-dev \
+            libdbus-1-dev libxcb-cursor-dev
+
+ 
 
       - name: Configure CMake
         run: |
