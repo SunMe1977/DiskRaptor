@@ -168,35 +168,34 @@ jobs:
 
       - name: Install NSIS (portable)
         run: |
-          echo "=== Installing NSIS via chocolatey ==="
-          choco install nsis.install --version 3.09 -y --no-progress
+          echo === Installing NSIS portable ===
+
+          REM Use curl.exe which handles SourceForge redirects reliably
+          echo --- Downloading NSIS 3.10 ---
+          curl -sL --retry 3 "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -o nsis.zip
           if %errorlevel% neq 0 (
-            echo "Chocolatey install failed, trying alternative NSIS download..."
-            echo "Downloading NSIS through Invoke-WebRequest..."
-            powershell -Command "Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download' -OutFile 'nsis.zip' -UserAgent 'Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.0' -UseBasicParsing"
-            if exist nsis.zip (
-              echo "Extracting NSIS to C:\nsis..."
-              powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\ -Force"
-            ) else (
-              echo "Download failed, trying with generic latest link..."
-              powershell -Command "Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/latest/download' -OutFile 'nsis.zip' -UserAgent 'Mozilla/5.0' -UseBasicParsing"
-              if exist nsis.zip (
-                echo "Extracting NSIS to C:\nsis..."
-                mkdir C:\nsis\nsis-tmp
-                powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\nsis-tmp\ -Force"
-                dir /s C:\nsis\nsis-tmp\makensis.exe
-              ) else (
-                echo "CRITICAL: All NSIS download attempts failed"
-                exit /b 1
-              )
-            )
+            echo NSIS 3.10 download FAILED (exit code %errorlevel%)
           )
-          echo "=== NSIS installation check ==="
-          where makensis 2>nul || echo "makensis not in PATH"
-          if exist "C:\Program Files (x86)\NSIS\makensis.exe" echo "Found: C:\Program Files (x86)\NSIS"
-          dir /s C:\nsis\makensis.exe 2>nul || echo "No NSIS in C:\nsis"
-          dir /s C:\ProgramData\chocolatey\makensis.exe 2>nul || echo "No NSIS in chocolatey"
-          echo "=== End NSIS installation check ===
+          if not exist nsis.zip (
+            echo --- Trying NSIS 3.09 ---
+            curl -sL --retry 3 "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
+          )
+          if not exist nsis.zip (
+            echo --- Trying SourceForge generic latest ---
+            curl -sL --retry 3 "https://sourceforge.net/projects/nsis/files/latest/download" -o nsis.zip
+          )
+
+          if not exist nsis.zip (
+            echo CRITICAL: All NSIS download attempts failed
+            exit /b 1
+          )
+
+          echo === Extracting NSIS ===
+          powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\ -Force"
+
+          echo === NSIS installation check ===
+          dir /s C:\nsis\makensis.exe
+          if not exist C:\nsis\makensis.exe (dir /s C:\nsis\*.exe)
 
       - name: Build NSIS Installer
         run: |
@@ -204,21 +203,34 @@ jobs:
           copy /y "..\..\setup.nsi" .
           echo === setup.nsi exists? ===
           if exist setup.nsi (echo YES) else (echo NO && exit /b 1)
-          
+
+          REM Find makensis.exe — search standard paths + PATH + full C:\nsis scan
           if exist "C:\nsis\nsis-3.10\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.10\makensis.exe
           ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
             set NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe
           ) else (
-            echo CRITICAL: No makensis.exe found
+            where makensis.exe >nul 2>nul
+            if %errorlevel% equ 0 (
+              REM makensis is on PATH (e.g. chocolatey install)
+              set NSIS_EXE=makensis.exe
+            ) else (
+              REM Fallback: crawl C:\nsis recursively
+              for /r "C:\nsis" %%F in (makensis.exe) do if exist %%F set NSIS_EXE=%%F
+            )
+          )
+
+          if not defined NSIS_EXE (
+            echo CRITICAL: No makensis.exe found anywhere
             dir /s C:\nsis\makensis.exe 2>nul
+            where makensis.exe 2>nul
             exit /b 1
           )
-          
+
           echo Using: %NSIS_EXE%
           echo === Plugin dir ===
-          dir "C:\nsis\nsis-3.10\Plugins" 2>nul || dir "C:\nsis\nsis-3.09\Plugins" 2>nul
-          
+          for %%I in ("%NSIS_EXE%") do dir "%%~dpI..\Plugins" 2>nul || dir "%%~dpIPlugins" 2>nul || echo No Plugins dir found
+
           echo === Running makensis... ===
           "%NSIS_EXE%" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi 2>&1
           if errorlevel 1 (
