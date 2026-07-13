@@ -112,6 +112,34 @@ jobs:
             echo ⚠ No WebEngine DLLs found
           )
 
+      - name: Compress with UPX (smaller installer)
+        shell: cmd
+        run: |
+          cd /d "%cd%\qt-app\build"
+          SET CORE_DIR=%cd%\install\bin
+          echo === Before UPX ===
+          dir "%CORE_DIR%\*.exe" "%CORE_DIR%\Qt6*.dll"
+
+          REM Download UPX
+          echo Downloading UPX...
+          powershell -Command "Invoke-WebRequest -Uri 'https://github.com/upx/upx/releases/download/v5.0.0/upx-5.0.0-win64.zip' -OutFile '%TEMP%\upx.zip' -UseBasicParsing"
+          powershell -Command "Expand-Archive -Path '%TEMP%\upx.zip' -DestinationPath '%TEMP%\upx\' -Force"
+          FOR /R "%TEMP%\upx\" %%F IN (upx.exe) DO SET UPXEXE=%%F
+
+          echo === Compressing EXEs ===
+          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\DiskRaptor.exe"
+          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\DiskRaptorLauncher.exe"
+
+          echo === Compressing Qt6 DLLs ===
+          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6Core.dll"
+          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6Gui.dll"
+          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6Widgets.dll"
+          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6Network.dll"
+          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\Qt6WebChannel.dll"
+
+          echo === After UPX ===
+          dir "%CORE_DIR%\*.exe" "%CORE_DIR%\Qt6*.dll"
+
       - name: Install NSIS (portable)
         run: |
           choco install nsis.install --version 3.09 -y --no-progress 2>nul || (
@@ -132,6 +160,11 @@ jobs:
             echo NSIS not found — failing
             exit /b 1
           )
+
+      - name: Show installer size
+        run: |
+          echo === Final Installer Size ===
+          dir qt-app\build\DiskRaptor_*.exe
 
       - name: Upload core installer artifact
         uses: actions/upload-artifact@v4
@@ -350,8 +383,8 @@ jobs:
             '### Download' \
             '| File | Description |' \
             '|------|-------------|' \
-            '| `DiskRaptor_*_Setup.exe` | Windows setup installer (~5 MB) — EXE + ModulePro + Qt DLLs |' \
-            '| `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch (Windows) |' \
+            '| `DiskRaptor_*_Setup.exe` | Windows setup installer (~3-4 MB) — EXE + ModulePro + Qt DLLs (UPX + LZMA) |' \
+            '| `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch |' \
             '| `DiskRaptor_macOS_x64.dmg` | macOS disk image — drag to Applications |' \
             '| `DiskRaptor_*_amd64.deb` | Debian/Ubuntu package — `sudo dpkg -i *.deb` |' \
             '| `DiskRaptor_*_x86_64.AppImage` | Linux AppImage — portable, no install needed |' \
