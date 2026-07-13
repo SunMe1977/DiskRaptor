@@ -168,28 +168,35 @@ jobs:
 
       - name: Install NSIS (portable)
         run: |
-          echo Downloading NSIS 3.10 portable...
-          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -o nsis.zip
-          if not exist nsis.zip (
-            echo NSIS 3.10 failed, trying 3.09...
-            curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
+          echo "=== Installing NSIS via chocolatey ==="
+          choco install nsis.install --version 3.09 -y --no-progress
+          if %errorlevel% neq 0 (
+            echo "Chocolatey install failed, trying alternative NSIS download..."
+            echo "Downloading NSIS through Invoke-WebRequest..."
+            powershell -Command "Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download' -OutFile 'nsis.zip' -UserAgent 'Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.0' -UseBasicParsing"
+            if exist nsis.zip (
+              echo "Extracting NSIS to C:\nsis..."
+              powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\ -Force"
+            ) else (
+              echo "Download failed, trying with generic latest link..."
+              powershell -Command "Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/latest/download' -OutFile 'nsis.zip' -UserAgent 'Mozilla/5.0' -UseBasicParsing"
+              if exist nsis.zip (
+                echo "Extracting NSIS to C:\nsis..."
+                mkdir C:\nsis\nsis-tmp
+                powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\nsis-tmp\ -Force"
+                dir /s C:\nsis\nsis-tmp\makensis.exe
+              ) else (
+                echo "CRITICAL: All NSIS download attempts failed"
+                exit /b 1
+              )
+            )
           )
-          if exist nsis.zip (
-            echo Extracting NSIS to C:\nsis...
-            powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\"
-          ) else (
-            echo CRITICAL: Could not download NSIS
-            exit /b 1
-          )
-          if exist "C:\nsis\nsis-3.10\makensis.exe" (
-            echo NSIS 3.10 extracted
-          ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
-            echo NSIS 3.09 extracted
-          ) else (
-            echo CRITICAL: NSIS not extracted to C:\nsis
-            dir C:\nsis
-            exit /b 1
-          )
+          echo "=== NSIS installation check ==="
+          where makensis 2>nul || echo "makensis not in PATH"
+          if exist "C:\Program Files (x86)\NSIS\makensis.exe" echo "Found: C:\Program Files (x86)\NSIS"
+          dir /s C:\nsis\makensis.exe 2>nul || echo "No NSIS in C:\nsis"
+          dir /s C:\ProgramData\chocolatey\makensis.exe 2>nul || echo "No NSIS in chocolatey"
+          echo "=== End NSIS installation check ===
 
       - name: Build NSIS Installer
         run: |
