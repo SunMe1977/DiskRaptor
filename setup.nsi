@@ -72,19 +72,19 @@ Var PREVIOUS_INSTDIR
 
 ; ── Functions ─────────────────────────────────────────────────
 
-; Check if the app is currently running
+; Check if the app is currently running (uses only built-in Windows tools)
 Function IsAppRunning
-  FindProcDLL::FindProc "DiskRaptor.exe"
-  Pop $R0
-  StrCmp $R0 1 0 +2
-  Push 1
-  Return
-  FindProcDLL::FindProc "DiskRaptorLauncher.exe"
-  Pop $R0
-  StrCmp $R0 1 0 +2
-  Push 1
-  Return
-  Push 0
+  Push $0
+  nsExec::ExecToStack '"$SYSDIR\tasklist.exe" /NH /FI "IMAGENAME eq DiskRaptor.exe" 2>nul'
+  Pop $0
+  Pop $0
+  StrLen $0 $0
+  ${If} $0 < 10
+    Push 0
+  ${Else}
+    Push 1
+  ${EndIf}
+  Exch $0
 FunctionEnd
 
 ; Detect and silently remove old installation
@@ -333,23 +333,27 @@ LangString DESC_SEC_SHORTCUTS ${LANG_GERMAN} "Startmenü-Verknüpfungen (empfohl
 Section "Uninstall"
   DetailPrint "Removing ${PRODUCT_NAME}..."
 
-  ; Check if app is running
-  FindProcDLL::FindProc "DiskRaptor.exe"
+  ; Check if app is running (using built-in Windows tools)
+  nsExec::ExecToStack '"$SYSDIR\tasklist.exe" /NH /FI "IMAGENAME eq DiskRaptor.exe" 2>nul'
   Pop $R0
-  ${If} $R0 = 1
+  Pop $R0
+  StrLen $R0 $R0
+  ${If} $R0 > 10
     MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION \
       "${PRODUCT_NAME} is still running.$\r$\nPlease close it first." \
       /SD IDOK IDOK kill_proc IDCANCEL abort_un
     kill_proc:
-      KillProcDLL::KillProc "DiskRaptor.exe"
+      nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "DiskRaptor.exe" 2>nul'
     abort_un:
       Abort
   ${EndIf}
 
-  FindProcDLL::FindProc "DiskRaptorLauncher.exe"
+  nsExec::ExecToStack '"$SYSDIR\tasklist.exe" /NH /FI "IMAGENAME eq DiskRaptorLauncher.exe" 2>nul'
   Pop $R0
-  ${If} $R0 = 1
-    KillProcDLL::KillProc "DiskRaptorLauncher.exe"
+  Pop $R0
+  StrLen $R0 $R0
+  ${If} $R0 > 10
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "DiskRaptorLauncher.exe" 2>nul'
   ${EndIf}
 
   ; Remove installed files
