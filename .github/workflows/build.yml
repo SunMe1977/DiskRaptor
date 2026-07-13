@@ -168,30 +168,57 @@ jobs:
 
       - name: Install NSIS (portable)
         run: |
-          choco install nsis.install --version 3.09 -y --no-progress 2>nul || (
-            echo Downloading NSIS directly...
+          echo Downloading NSIS 3.10 portable...
+          curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -o nsis.zip
+          if not exist nsis.zip (
+            echo NSIS 3.10 failed, trying 3.09...
             curl -sL "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download" -o nsis.zip
-            powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\" 2>nul
+          )
+          if exist nsis.zip (
+            echo Extracting NSIS to C:\nsis...
+            powershell -Command "Expand-Archive -Path nsis.zip -DestinationPath C:\nsis\"
+          ) else (
+            echo CRITICAL: Could not download NSIS
+            exit /b 1
+          )
+          if exist "C:\nsis\nsis-3.10\makensis.exe" (
+            echo NSIS 3.10 extracted
+          ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
+            echo NSIS 3.09 extracted
+          ) else (
+            echo CRITICAL: NSIS not extracted to C:\nsis
+            dir C:\nsis
+            exit /b 1
           )
 
       - name: Build NSIS Installer
         run: |
           cd qt-app\build
           copy /y "..\..\setup.nsi" .
-          dir setup.nsi
-          if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-            echo Found NSIS at C:\Program Files (x86)\NSIS
-            dir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode\"
-            "C:\Program Files (x86)\NSIS\makensis.exe" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi
-            if errorlevel 1 exit /b 1
+          echo === setup.nsi exists? ===
+          if exist setup.nsi (echo YES) else (echo NO && exit /b 1)
+          
+          if exist "C:\nsis\nsis-3.10\makensis.exe" (
+            set NSIS_EXE=C:\nsis\nsis-3.10\makensis.exe
           ) else if exist "C:\nsis\nsis-3.09\makensis.exe" (
-            echo Found NSIS at C:\nsis
-            "C:\nsis\nsis-3.09\makensis.exe" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi
-            if errorlevel 1 exit /b 1
+            set NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe
           ) else (
-            echo NSIS not found — failing
+            echo CRITICAL: No makensis.exe found
+            dir /s C:\nsis\makensis.exe 2>nul
             exit /b 1
           )
+          
+          echo Using: %NSIS_EXE%
+          echo === Plugin dir ===
+          dir "C:\nsis\nsis-3.10\Plugins" 2>nul || dir "C:\nsis\nsis-3.09\Plugins" 2>nul
+          
+          echo === Running makensis... ===
+          "%NSIS_EXE%" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi 2>&1
+          if errorlevel 1 (
+            echo === makensis FAILED with exit code %errorlevel% ===
+            exit /b %errorlevel%
+          )
+          echo === makensis OK ===
 
       - name: Show installer size
         run: |
