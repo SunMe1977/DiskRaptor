@@ -6,6 +6,7 @@ qt-app/build_qt/
 *.AppImage
 *.deb
 *.dmg
+*.obj
 
 # Node
 node_modules/
@@ -44,6 +45,8 @@ modulesPro/build/
 
 # Never commit this file
 raw/info.txt
+analysis.txt
+ci_status.json
 
 tools/
 qt-app/build*/
