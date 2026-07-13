@@ -272,13 +272,7 @@ jobs:
       - name: Package DEB
         run: |
           cd qt-app/build
-          cmake -DCPACK_GENERATOR=DEB \
-            -DCPACK_PROJECT_NAME=DiskRaptor \
-            -DCPACK_PACKAGE_NAME=DiskRaptor \
-            -DCPACK_PACKAGE_VERSION="${{ github.ref_name }}" \
-            -DCPACK_DEBIAN_PACKAGE_MAINTAINER="DiskRaptor Team" \
-            -DCPACK_PACKAGE_FILE_NAME="DiskRaptor_${{ github.ref_name }}_amd64" .
-          cpack -G DEB -C Release .
+          cpack -G DEB -C Release -D CPACK_PACKAGE_VERSION="${{ github.ref_name }}" -D CPACK_PACKAGE_FILE_NAME="DiskRaptor_${{ github.ref_name }}_amd64" .
           ls -lh *.deb
 
       - name: Package AppImage

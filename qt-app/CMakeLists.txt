@@ -76,4 +76,11 @@ install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/translations/" DESTINATION
 # Install frontend
 install(DIRECTORY ../frontend/ DESTINATION share/${PROJECT_NAME}/frontend)
 
+# ── CPack ──────────────────────────────────────────────────────────
+include(CPack)
+set(CPACK_PACKAGE_NAME "DiskRaptor")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_FILE_NAME "DiskRaptor_${PROJECT_VERSION}_amd64")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "DiskRaptor Team")
+
 message(STATUS "DiskRaptor ${PROJECT_VERSION} — Qt ${Qt6_VERSION}")
