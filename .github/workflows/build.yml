@@ -91,15 +91,41 @@ jobs:
           REM Move QML dir
           if exist "%CORE_DIR%\qml" move /y "%CORE_DIR%\qml" "%RUNTIME_DIR%\qml" >nul
 
+          REM ═══ Move WebEngine resource files (.pak, .dat, .bin) ═══
+          echo Moving WebEngine resource files...
+          move /y "%CORE_DIR%\icudtl.dat"           "%RUNTIME_DIR%" 2>nul
+          move /y "%CORE_DIR%\v8_context_snapshot.bin" "%RUNTIME_DIR%" 2>nul
+          move /y "%CORE_DIR%\qtwebengine_*.pak"     "%RUNTIME_DIR%" 2>nul
+
+          REM Move qtwebengine_locales if it exists
+          if exist "%CORE_DIR%\qtwebengine_locales" (
+            move /y "%CORE_DIR%\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
+            echo ✅ qtwebengine_locales moved
+          ) else (
+            echo ⚠ No qtwebengine_locales found in core
+          )
+
+          REM Move resources dir (Qt translations, qt.conf)
+          if exist "%CORE_DIR%\resources" (
+            move /y "%CORE_DIR%\resources" "%RUNTIME_DIR%\resources" >nul
+            echo ✅ resources moved
+          )
+
           REM Remove WebEngine-related pdb files from core
           del "%CORE_DIR%\*WebEngine*.pdb" 2>nul
           del "%CORE_DIR%\*WebEngine*.lib" 2>nul
+          del "%CORE_DIR%\*.pdb" 2>nul
+          del "%CORE_DIR%\*.lib" 2>nul
 
           echo === Core files (small) ===
           dir "%CORE_DIR%"
 
           echo === Runtime files (WebEngine) ===
           dir "%RUNTIME_DIR%"
+          if exist "%RUNTIME_DIR%\qtwebengine_locales" (
+            echo --- qtwebengine_locales ---
+            dir "%RUNTIME_DIR%\qtwebengine_locales"
+          )
 
       - name: Package WebEngine Runtime (ZIP)
         run: |
