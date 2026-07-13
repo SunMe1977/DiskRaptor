@@ -1,9 +1,49 @@
-vld: warning: dylib (/usr/local/opt/qt/lib/QtNetwork.framework/Versions/A/QtNetwork) was built for newer macOS version (14.0) than being linked (13.3)
-ld: warning: dylib (/usr/local/opt/qt/lib/QtCore.framework/Versions/A/QtCore) was built for newer macOS version (14.0) than being linked (13.3)
+
+[3] Building...
+  Qt6_DIR: /usr/local/opt/qt@6/lib/cmake/Qt6
+  Rust scanner...
+warning: constant `FTS_NOSTAT` is never used
+    --> src/scanner/walker.rs:1033:11
+     |
+1033 |     const FTS_NOSTAT: c_int  = 0x0008;
+     |           ^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `FTS_DNR` is never used
+    --> src/scanner/walker.rs:1039:11
+     |
+1039 |     const FTS_DNR: c_int      = 4;  // directory with unreadable contents
+     |           ^^^^^^^
+
+warning: constant `FTS_DOT` is never used
+    --> src/scanner/walker.rs:1040:11
+     |
+1040 |     const FTS_DOT: c_int      = 5;  // dot or dot-dot
+     |           ^^^^^^^
+
+warning: constant `FTS_INIT` is never used
+    --> src/scanner/walker.rs:1044:11
+     |
+1044 |     const FTS_INIT: c_int     = 9;  // initialized only
+     |           ^^^^^^^^
+
+warning: constant `FTS_NSOK` is never used
+    --> src/scanner/walker.rs:1046:11
+     |
+1046 |     const FTS_NSOK: c_int     = 11; // no stat requested
+     |           ^^^^^^^^
+
+warning: `diskraptor` (lib) generated 5 warnings
+    Finished `release` profile [optimized] target(s) in 0.40s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+  Qt app...
+ninja: no work to do.
 
   Creating DiskRaptor.app bundle...
-  Generating icon.icns...
-  icon.icns created
+  icon.icns copied from images/
+  Rust scanner: libdiskraptor_scanner.dylib
 
 ==========================================
   BUILD COMPLETE
@@ -60,7 +100,7 @@ warning: constant `FTS_NSOK` is never used
      |           ^^^^^^^^
 
 warning: `diskraptor` (lib) generated 5 warnings
-    Finished `release` profile [optimized] target(s) in 0.40s
+    Finished `release` profile [optimized] target(s) in 0.38s
 warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
 note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
   Qt app...
