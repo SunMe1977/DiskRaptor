@@ -164,7 +164,7 @@ jobs:
           version: '6.10.3'
           host: 'mac'
           target: 'desktop'
-          arch: 'clang_64'
+          arch: 'clang_arm64'
           modules: 'qtwebengine qtwebchannel qtpositioning'
           cache: true
           install-deps: true
@@ -179,7 +179,7 @@ jobs:
       - name: Build
         run: |
           cd qt-app/build
-          cmake --build . --config Release 2>&1
+          cmake --build . --config Release -- -v 2>&1
           test -f DiskRaptor.app/Contents/MacOS/DiskRaptor || exit 1
 
       - name: Deploy Qt frameworks
@@ -257,6 +257,7 @@ jobs:
           cp -r install/* AppDir/usr/
 
           # Create .desktop file
+          mkdir -p AppDir/usr/share/applications
           cat > AppDir/usr/share/applications/DiskRaptor.desktop << 'DESK'
           [Desktop Entry]
           Name=DiskRaptor
