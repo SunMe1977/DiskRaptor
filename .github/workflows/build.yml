@@ -62,7 +62,9 @@ jobs:
           if not exist install\bin mkdir install\bin
           copy /y DiskRaptor.exe install\bin\
           copy /y DiskRaptorLauncher.exe install\bin\
-          windeployqt --release --no-translations --no-opengl --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+          windeployqt --release --no-translations --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+          if exist "%QT_ROOT_DIR%\bin\Qt6OpenGL.dll" copy /y "%QT_ROOT_DIR%\bin\Qt6OpenGL.dll" "%cd%\install\bin\" >nul
+          if exist "%QT_ROOT_DIR%\bin\Qt6OpenGLWidgets.dll" copy /y "%QT_ROOT_DIR%\bin\Qt6OpenGLWidgets.dll" "%cd%\install\bin\" >nul
           cmake --install . --config Release --prefix "%cd%\install" 2>nul
 
       - name: Separate WebEngine Runtime
@@ -258,7 +260,7 @@ jobs:
   # macOS BUILD
   # ═══════════════════════════════════════════════════════════════
   build-macos:
-    if: github.ref_type == 'tag'
+    if: ${{ false }} # temporarily disabled; keep definition for later re-enable
     runs-on: macos-13
     timeout-minutes: 45
 
@@ -312,7 +314,7 @@ jobs:
   # LINUX BUILD - DEB + AppImage
   # ═══════════════════════════════════════════════════════════════
   build-linux:
-    if: github.ref_type == 'tag'
+    if: ${{ false }} # temporarily disabled; keep definition for later re-enable
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -418,7 +420,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════
   release:
     if: github.ref_type == 'tag' && !cancelled()
-    needs: [build-app, build-macos, build-linux]
+    needs: [build-app]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -434,7 +436,7 @@ jobs:
       - name: Prepare assets
         run: |
           mkdir -p release_assets
-          find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -exec cp {} release_assets/ \;
+          find artifacts -type f \( -name "*.exe" -o -name "*.zip" \) -exec cp {} release_assets/ \;
           ls -lh release_assets/
 
       - name: Delete existing release (if re-run)
@@ -467,12 +469,9 @@ jobs:
             '|------|-------------|' \
             '| `DiskRaptor_*_Setup.exe` | Windows setup installer (~3-4 MB) — EXE + ModulePro + Qt DLLs (UPX + LZMA) |' \
             '| `qtwebengine_runtime.zip` | WebEngine runtime (~80 MB) — auto-downloaded on first launch |' \
-            '| `DiskRaptor_macOS_x64.dmg` | macOS disk image — drag to Applications |' \
-            '| `DiskRaptor_*_amd64.deb` | Debian/Ubuntu package — `sudo dpkg -i *.deb` |' \
-            '| `DiskRaptor_*_x86_64.AppImage` | Linux AppImage — portable, no install needed |' \
             '' \
             '### How it works' \
-            '1. Install the small core installer (Windows) or drag to Applications (macOS) or run the AppImage (Linux)' \
+            '1. Install the small Windows core installer' \
             '2. Launch DiskRaptor — launcher downloads WebEngine runtime on first launch if needed' \
             '3. App starts with full WebEngine capabilities' \
             '' \

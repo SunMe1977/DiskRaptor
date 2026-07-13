@@ -20,7 +20,9 @@
 
 #define RUNTIME_DIR L"runtime"
 #define RUNTIME_ZIP  L"qtwebengine_runtime.zip"
-#define RELEASE_URL L"https://github.com/SunMe1977/DiskRaptor/releases/latest/download/"
+#define RUNTIME_MARKER L"runtime\\runtime_ready.marker"
+#define RELEASE_URL_PINNED L"https://github.com/SunMe1977/DiskRaptor/releases/download/v0.3.4/qtwebengine_runtime.zip"
+#define RELEASE_URL_LATEST L"https://github.com/SunMe1977/DiskRaptor/releases/latest/download/qtwebengine_runtime.zip"
 #define APP_EXE     L"DiskRaptor.exe"
 
 // ── Download file via HTTPS ──────────────────────────────────
@@ -210,11 +212,42 @@ BOOL RuntimeExists(LPCWSTR baseDir) {
     if (attr == INVALID_FILE_ATTRIBUTES || !(attr & FILE_ATTRIBUTE_DIRECTORY))
         return FALSE;
 
-    // Check for a key DLL
+    // Require both WebEngine and OpenGL runtime DLLs
     WCHAR dllPath[MAX_PATH];
     StringCchCopyW(dllPath, MAX_PATH, runtimePath);
     StringCchCatW(dllPath, MAX_PATH, L"\\Qt6WebEngineCore.dll");
-    return (GetFileAttributesW(dllPath) != INVALID_FILE_ATTRIBUTES);
+    if (GetFileAttributesW(dllPath) == INVALID_FILE_ATTRIBUTES)
+        return FALSE;
+
+    StringCchCopyW(dllPath, MAX_PATH, runtimePath);
+    StringCchCatW(dllPath, MAX_PATH, L"\\Qt6OpenGL.dll");
+    if (GetFileAttributesW(dllPath) == INVALID_FILE_ATTRIBUTES)
+        return FALSE;
+
+    return TRUE;
+}
+
+BOOL RuntimeMarkerExists(LPCWSTR baseDir) {
+    WCHAR markerPath[MAX_PATH];
+    StringCchCopyW(markerPath, MAX_PATH, baseDir);
+    StringCchCatW(markerPath, MAX_PATH, L"\\");
+    StringCchCatW(markerPath, MAX_PATH, RUNTIME_MARKER);
+    return (GetFileAttributesW(markerPath) != INVALID_FILE_ATTRIBUTES);
+}
+
+void WriteRuntimeMarker(LPCWSTR baseDir) {
+    WCHAR markerPath[MAX_PATH];
+    StringCchCopyW(markerPath, MAX_PATH, baseDir);
+    StringCchCatW(markerPath, MAX_PATH, L"\\");
+    StringCchCatW(markerPath, MAX_PATH, RUNTIME_MARKER);
+
+    HANDLE h = CreateFileW(markerPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        const char *msg = "runtime_ready\r\n";
+        DWORD written = 0;
+        WriteFile(h, msg, (DWORD)strlen(msg), &written, NULL);
+        CloseHandle(h);
+    }
 }
 
 // ── Get our own directory ────────────────────────────────────
@@ -224,13 +257,55 @@ void GetAppDir(LPWSTR buf, DWORD size) {
     if (p) *p = 0;
 }
 
+// Configure environment so DiskRaptor.exe can resolve DLLs from the runtime directory.
+BOOL ConfigureRuntimeEnvironment(LPCWSTR appDir) {
+    WCHAR runtimeDir[MAX_PATH];
+    StringCchCopyW(runtimeDir, MAX_PATH, appDir);
+    StringCchCatW(runtimeDir, MAX_PATH, L"\\");
+    StringCchCatW(runtimeDir, MAX_PATH, RUNTIME_DIR);
+
+    if (!RuntimeExists(appDir))
+        return FALSE;
+
+    WCHAR oldPath[32767] = {0};
+    DWORD oldLen = GetEnvironmentVariableW(L"PATH", oldPath, 32767);
+    if (oldLen >= 32767)
+        oldPath[0] = 0;
+
+    WCHAR newPath[32767] = {0};
+    StringCchCopyW(newPath, 32767, runtimeDir);
+    StringCchCatW(newPath, 32767, L";");
+    StringCchCatW(newPath, 32767, appDir);
+    if (oldPath[0] != 0) {
+        StringCchCatW(newPath, 32767, L";");
+        StringCchCatW(newPath, 32767, oldPath);
+    }
+    SetEnvironmentVariableW(L"PATH", newPath);
+
+    WCHAR webEngineProcessPath[MAX_PATH];
+    StringCchCopyW(webEngineProcessPath, MAX_PATH, runtimeDir);
+    StringCchCatW(webEngineProcessPath, MAX_PATH, L"\\QtWebEngineProcess.exe");
+    SetEnvironmentVariableW(L"QTWEBENGINEPROCESS_PATH", webEngineProcessPath);
+
+    WCHAR qmlPath[MAX_PATH];
+    StringCchCopyW(qmlPath, MAX_PATH, runtimeDir);
+    StringCchCatW(qmlPath, MAX_PATH, L"\\qml");
+    SetEnvironmentVariableW(L"QML2_IMPORT_PATH", qmlPath);
+
+    return TRUE;
+}
+
 // ── Entry point ──────────────────────────────────────────────
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     WCHAR appDir[MAX_PATH];
     GetAppDir(appDir, MAX_PATH);
 
-    // Check if runtime exists
-    if (!RuntimeExists(appDir)) {
+    BOOL runtimePresent = RuntimeExists(appDir);
+    BOOL markerPresent = RuntimeMarkerExists(appDir);
+    BOOL needRuntimeSetup = (!runtimePresent) || (!markerPresent);
+
+    // Check if runtime setup is needed
+    if (needRuntimeSetup) {
         // Show download dialog
         int ret = MessageBoxW(NULL,
             L"DiskRaptor needs the Qt WebEngine runtime (~80 MB) for the first launch.\n\n"
@@ -250,17 +325,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         StringCchCatW(runtimeDir, MAX_PATH, RUNTIME_DIR);
         CreateDirectoryW(runtimeDir, NULL);
 
-        // Download
+        // Always fetch runtime ZIP externally so the package remains out-of-band.
         WCHAR zipPath[MAX_PATH];
         StringCchCopyW(zipPath, MAX_PATH, appDir);
         StringCchCatW(zipPath, MAX_PATH, L"\\");
         StringCchCatW(zipPath, MAX_PATH, RUNTIME_ZIP);
 
-        WCHAR url[MAX_PATH];
-        StringCchCopyW(url, MAX_PATH, RELEASE_URL);
-        StringCchCatW(url, MAX_PATH, RUNTIME_ZIP);
-
-        // Show downloading message
         HWND hwnd = CreateWindowExW(0, L"STATIC",
             L"Downloading Qt WebEngine runtime...\nThis may take a minute.",
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
@@ -271,15 +341,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             UpdateWindow(hwnd);
         }
 
-        BOOL downloaded = DownloadFile(url, zipPath);
+        DeleteFileW(zipPath);
+        BOOL downloaded = DownloadFile(RELEASE_URL_PINNED, zipPath);
+        if (!downloaded) {
+            downloaded = DownloadFile(RELEASE_URL_LATEST, zipPath);
+        }
 
         if (hwnd) DestroyWindow(hwnd);
 
         if (!downloaded) {
             MessageBoxW(NULL,
-                L"Failed to download the WebEngine runtime.\n"
+                L"Failed to get the WebEngine runtime package.\n"
                 L"Please check your internet connection and try again.",
-                L"DiskRaptor — Download Failed", MB_ICONERROR);
+                L"DiskRaptor — Runtime Package Missing", MB_ICONERROR);
             return 1;
         }
 
@@ -289,9 +363,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             return 1;
         }
 
-        // Clean up zip
-        DeleteFileW(zipPath);
+        WriteRuntimeMarker(appDir);
+
+        // Keep bundled/downloaded ZIP for future repairs.
     }
+
+    ConfigureRuntimeEnvironment(appDir);
 
     // Launch the real app
     WCHAR exePath[MAX_PATH];
