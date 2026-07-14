@@ -38,7 +38,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
-          modules: qtwebengine qtwebchannel
+          modules: qtwebengine qtwebchannel qtpositioning
           cache: true
 
       - name: Build DiskRaptor
@@ -92,10 +92,10 @@ jobs:
           Compress-Archive -Path "$rtDir/*" -DestinationPath "build_qt/qtwebengine_runtime.zip" -Force
 
       - name: Create Installer (NSIS)
-        working-directory: qt-app
+        working-directory: qt-app/build_qt
         run: |
-          # NSIS is pre-installed on GitHub Windows runners
-          makensis setup.nsi
+          Copy-Item "../../setup.nsi" ".\setup.nsi" -Force
+          makensis /DVERSION=${{ github.ref_name }} setup.nsi
         continue-on-error: true
 
       - name: Upload Artifact
