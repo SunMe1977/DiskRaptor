@@ -387,15 +387,15 @@ jobs:
 
       - name: Extract runtime into install dir (bypass launcher download)
         run: |
-          $runtimeZip = Join-Path ${{ github.workspace }} "runtime-artifact\qtwebengine_runtime.zip"
+          $runtimeZip = Join-Path '${{ github.workspace }}' 'runtime-artifact\qtwebengine_runtime.zip'
           if (-not (Test-Path $runtimeZip)) {
-            Write-Host "⚠ No runtime artifact found — launcher will download it"
+            Write-Host "No runtime artifact found — launcher will download it"
             exit 0
           }
           $targetDir = "C:\Program Files\DiskRaptor\runtime"
           New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
           Expand-Archive -Path $runtimeZip -DestinationPath $targetDir -Force
-          Write-Host "✅ WebEngine runtime extracted to $targetDir"
+          Write-Host "WebEngine runtime extracted to $targetDir"
 
       - name: Run E2E tests
         id: e2e
@@ -408,11 +408,11 @@ jobs:
             $env:PATH = "$runtimeDir;C:\Program Files\DiskRaptor;$env:PATH"
             Write-Host "Added runtime to PATH: $runtimeDir"
           }
-          $testScript = Join-Path ${{ github.workspace }} "scripts\playwright-qt-e2e.mjs"
+          $testScript = Join-Path '${{ github.workspace }}' 'scripts\playwright-qt-e2e.mjs'
 
           if (-not (Test-Path $testScript)) {
-            Write-Host "⚠ Qt-specific test script not found, falling back to generic test"
-            $testScript = Join-Path ${{ github.workspace }} "scripts\playwright-e2e.mjs"
+            Write-Host "Qt-specific test script not found, falling back to generic test"
+            $testScript = Join-Path '${{ github.workspace }}' 'scripts\playwright-e2e.mjs'
           }
 
           Write-Host "Running E2E tests from: $testScript"
@@ -489,10 +489,10 @@ jobs:
         shell: powershell
         run: |
           $env:DISKraptor_CDP_PORT = "${{ env.CDP_PORT }}"
-          $testScript = Join-Path ${{ github.workspace }} "scripts\playwright-qt-e2e.mjs"
+          $testScript = Join-Path '${{ github.workspace }}' 'scripts\playwright-qt-e2e.mjs'
 
           if (-not (Test-Path $testScript)) {
-            Write-Host "⚠ Qt test script missing, skipping"
+            Write-Host "Qt test script missing, skipping"
             exit 0
           }
 
