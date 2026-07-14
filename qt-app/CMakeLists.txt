@@ -14,7 +14,10 @@ set(HEADERS src/webviewwindow.h src/ipcbridge.h src/scanner.h src/platform_utils
 set(RESOURCES resources/resources.qrc)
 
 if(WIN32)
-  list(APPEND SOURCES resources/windows/app.rc)
+  set(APP_ICON_PATH "${CMAKE_SOURCE_DIR}/../images/icon.ico")
+  configure_file(resources/windows/app.rc.in ${CMAKE_BINARY_DIR}/app-icon.rc @ONLY)
+  configure_file(resources/windows/launcher.rc.in ${CMAKE_BINARY_DIR}/launcher-icon.rc @ONLY)
+  list(APPEND SOURCES ${CMAKE_BINARY_DIR}/app-icon.rc)
 endif()
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${RESOURCES})
@@ -46,7 +49,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 
 # ── Launcher (no Qt deps, Win32 only) ──────────────────────────
 if(WIN32)
-  add_executable(DiskRaptorLauncher WIN32 src/launcher.cpp resources/windows/launcher.rc)
+  add_executable(DiskRaptorLauncher WIN32 src/launcher.cpp ${CMAKE_BINARY_DIR}/launcher-icon.rc)
   target_link_libraries(DiskRaptorLauncher PRIVATE
     kernel32 user32 shell32 wininet)
   set_target_properties(DiskRaptorLauncher PROPERTIES

@@ -4,7 +4,7 @@ REM Produces: Core binaries for NSIS + WebEngine runtime archive
 
 call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set QT_DIR=
-for %%v in (6.12.0 6.11.1 6.10.3) do (
+for %%v in (6.10.3 6.11.1 6.12.0) do (
   if exist "C:\Qt\%%v\msvc2022_64\bin\windeployqt.exe" if exist "C:\Qt\%%v\msvc2022_64\bin\Qt6Core.dll" (
     set QT_DIR=C:\Qt\%%v\msvc2022_64
     goto :qt_found
@@ -38,6 +38,21 @@ copy /y "%cd%\DiskRaptorLauncher.exe" "%cd%\install\bin\" >nul
 
 REM Deploy ALL Qt DLLs first (including WebEngine)
 windeployqt --release --no-translations --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
+
+REM Clean up stray plugin DLLs that windeployqt sometimes drops at root level
+REM These belong in platforms/, imageformats/, etc. — not the app root
+del /q "%cd%\install\bin\qwindows.dll" 2>nul
+del /q "%cd%\install\bin\qgif.dll" 2>nul
+del /q "%cd%\install\bin\qico.dll" 2>nul
+del /q "%cd%\install\bin\qjpeg.dll" 2>nul
+del /q "%cd%\install\bin\qsvg.dll" 2>nul
+del /q "%cd%\install\bin\qsvgicon.dll" 2>nul
+del /q "%cd%\install\bin\qmodernwindowsstyle.dll" 2>nul
+del /q "%cd%\install\bin\qstylekitstyle.dll" 2>nul
+del /q "%cd%\install\bin\qtuiotouchplugin.dll" 2>nul
+del /q "%cd%\install\bin\qnetworklistmanager.dll" 2>nul
+del /q "%cd%\install\bin\qcertonlybackend.dll" 2>nul
+del /q "%cd%\install\bin\qschannelbackend.dll" 2>nul
 
 REM Ensure OpenGL DLLs are present even if windeployqt skips them on some setups
 if exist "%QT_DIR%\bin\Qt6OpenGL.dll" copy /y "%QT_DIR%\bin\Qt6OpenGL.dll" "%cd%\install\bin\" >nul
