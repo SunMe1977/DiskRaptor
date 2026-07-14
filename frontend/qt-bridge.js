@@ -13,6 +13,8 @@
   var bridge = null;
   var bridgeReady = false;
   var isQtMode = false;
+  var initStartedAt = Date.now();
+  var maxInitWaitMs = 15000;
   var pendingInvokes = [];
   var tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
     ? window.__TAURI__.invoke
@@ -20,11 +22,20 @@
 
   // ── Initialize QWebChannel ─────────────────────────────────
   function init() {
-    if (typeof QWebChannel !== "undefined") {
-      isQtMode = true;
-      new QWebChannel(qt.webChannelTransport, function (channel) {
-        bridge = channel.objects.bridge;
-        console.log("[DiskRaptor] Qt WebChannel bridge connected");
+    var hasQWebChannel = typeof QWebChannel !== "undefined";
+    var hasQtTransport =
+      typeof qt !== "undefined" &&
+      qt &&
+      qt.webChannelTransport;
+
+    // In Qt mode, qwebchannel.js can load before qt.webChannelTransport is ready.
+    // Retry for a short window instead of falling through to a broken state.
+    if (hasQWebChannel && hasQtTransport) {
+      try {
+        isQtMode = true;
+        new QWebChannel(qt.webChannelTransport, function (channel) {
+          bridge = channel.objects.bridge;
+          console.log("[DiskRaptor] Qt WebChannel bridge connected");
 
         // Wire backend events after bridge is available.
         try {
@@ -37,23 +48,32 @@
           console.log("[DiskRaptor] Event signal not available:", e.message);
         }
 
-        // Signal ready
-        bridgeReady = true;
-        if (!window.__TAURI__) window.__TAURI__ = {};
-        window.__TAURI__.__qtBridgeReady = true;
-        window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
-        flushPending();
-      });
+          // Signal ready
+          bridgeReady = true;
+          if (!window.__TAURI__) window.__TAURI__ = {};
+          window.__TAURI__.__qtBridgeReady = true;
+          window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
+          flushPending();
+        });
+      } catch (e) {
+        console.warn("[DiskRaptor] QWebChannel init failed, retrying:", e.message);
+        if (Date.now() - initStartedAt < maxInitWaitMs) {
+          setTimeout(init, 100);
+        }
+      }
     } else {
-      console.warn("[DiskRaptor] QWebChannel not available — running in Tauri mode");
-      // Signal ready without overwriting the Tauri invoke
-      setTimeout(function () {
-        bridgeReady = true;
-        if (!window.__TAURI__) window.__TAURI__ = {};
-        window.__TAURI__.__qtBridgeReady = true;
-        window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
-        flushPending();
-      }, 100);
+      if (Date.now() - initStartedAt < maxInitWaitMs) {
+        setTimeout(init, 100);
+        return;
+      }
+
+      // Outside Qt (or if Qt transport never appeared), fall back to Tauri invoke.
+      console.warn("[DiskRaptor] Qt transport unavailable; falling back to Tauri mode");
+      bridgeReady = true;
+      if (!window.__TAURI__) window.__TAURI__ = {};
+      window.__TAURI__.__qtBridgeReady = true;
+      window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
+      flushPending();
     }
   }
 
@@ -130,7 +150,7 @@
             pendingInvokes.splice(idx, 1);
             reject(new Error("Bridge not ready: " + cmd));
           }
-        }, 15000);
+        }, 30000);
       }
     });
   }
