@@ -28,6 +28,13 @@ images/
 # Temp
 nul
 *.log
+build_report.txt
+build_test_log.txt
+vs_env.txt
+_install.bat
+_build.bat
+run_build_test.ps1
+test_write.txt
 
 # WiX tools (downloaded per build)
 tools/wix/
