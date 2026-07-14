@@ -3,8 +3,12 @@
 
 #include <QMainWindow>
 #include <QWebEngineView>
+#include <QWebEnginePage>
 #include <QWebChannel>
 #include <QLabel>
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
 #include <QVBoxLayout>
 #include <QStatusBar>
 #include <QProgressBar>
@@ -28,10 +32,22 @@ private slots:
     void onScanComplete(const ScanResult &result);
     void onScanError(const QString &error);
 
+    // Menu action slots
+    void onViewPie();
+    void onViewTreemap();
+    void onFindDuplicates();
+    void onCheckUpdates();
+    void onAbout();
+    void onLanguageChanged(const QString &code);
+
 private:
     void setupUI();
+    void setupMenuBar();
     void setupWebEngine(const QString &frontendPath);
     void setupConnections();
+
+    // Helper: run JS in the webview
+    void runJS(const QString &js);
 
     // UI elements
     QWebEngineView *m_webView = nullptr;
@@ -41,6 +57,11 @@ private:
 
     QLabel *m_statusLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;
+
+    // Menu items
+    QMenu *m_viewMenu = nullptr;
+    QAction *m_viewPieAction = nullptr;
+    QAction *m_viewTreemapAction = nullptr;
 
     QString m_frontendPath;
 };

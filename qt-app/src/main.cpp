@@ -18,6 +18,11 @@ int main(int argc, char *argv[])
     // Qt WebEngine is initialized automatically when QApplication is created
     // No manual QtWebEngine::initialize() needed in Qt 6.5+
 
+    // Enable remote debugging for Playwright tests via env var
+    // Set DISKraptor_CDP_PORT=9222 before launching to enable
+    // Qt WebEngine DevTools on that port.
+    qputenv("QTWEBENGINE_REMOTE_DEBUGGING", qgetenv("DISKraptor_CDP_PORT"));
+
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");
     app.setApplicationVersion("0.3.19");

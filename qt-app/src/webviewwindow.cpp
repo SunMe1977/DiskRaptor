@@ -9,6 +9,7 @@ MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     : QMainWindow(parent), m_frontendPath(frontendPath)
 {
     setupUI();
+    setupMenuBar();
     setupWebEngine(frontendPath);
     setupConnections();
 
@@ -47,6 +48,71 @@ void MainWindow::setupUI()
     setCentralWidget(centralWidget);
 }
 
+void MainWindow::setupMenuBar()
+{
+    // ── View Menu ──────────────────────────────────────
+    m_viewMenu = menuBar()->addMenu(tr("&View"));
+
+    m_viewPieAction = m_viewMenu->addAction(tr("Pie Chart"));
+    m_viewPieAction->setShortcut(QKeySequence("Ctrl+1"));
+    connect(m_viewPieAction, &QAction::triggered, this, &MainWindow::onViewPie);
+
+    m_viewTreemapAction = m_viewMenu->addAction(tr("Treemap"));
+    m_viewTreemapAction->setShortcut(QKeySequence("Ctrl+2"));
+    connect(m_viewTreemapAction, &QAction::triggered, this, &MainWindow::onViewTreemap);
+
+    m_viewMenu->addSeparator();
+
+    // Language submenu
+    auto *langMenu = m_viewMenu->addMenu(tr("&Language"));
+    auto *langAuto = langMenu->addAction(QString::fromUtf8("🌐 Auto (System)"));
+    langAuto->setData("auto");
+    connect(langAuto, &QAction::triggered, this, [this]() {
+        onLanguageChanged("auto");
+    });
+
+    // Common languages
+    struct LangEntry { QString code; QString label; };
+    QList<LangEntry> langs = {
+        {"en", QString::fromUtf8("English")},
+        {"de", QString::fromUtf8("Deutsch")},
+        {"fr", QString::fromUtf8("Français")},
+        {"es", QString::fromUtf8("Español")},
+        {"it", QString::fromUtf8("Italiano")},
+        {"pt", QString::fromUtf8("Português")},
+        {"nl", QString::fromUtf8("Nederlands")},
+        {"pl", QString::fromUtf8("Polski")},
+        {"ru", QString::fromUtf8("Русский")},
+        {"zh", QString::fromUtf8("简体中文")},
+        {"ja", QString::fromUtf8("日本語")},
+        {"ko", QString::fromUtf8("한국어")},
+    };
+    for (const auto &lang : langs) {
+        auto *act = langMenu->addAction(lang.label);
+        act->setData(lang.code);
+        connect(act, &QAction::triggered, this, [this, code = lang.code]() {
+            onLanguageChanged(code);
+        });
+    }
+
+    // ── Tools Menu ─────────────────────────────────────
+    auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
+    auto *findDupes = toolsMenu->addAction(tr("Find Duplicate Files…"));
+    findDupes->setShortcut(QKeySequence("Ctrl+D"));
+    connect(findDupes, &QAction::triggered, this, &MainWindow::onFindDuplicates);
+
+    // ── Help Menu ──────────────────────────────────────
+    auto *helpMenu = menuBar()->addMenu(tr("&Help"));
+    auto *checkUpdates = helpMenu->addAction(tr("Check for Updates…"));
+    connect(checkUpdates, &QAction::triggered, this, &MainWindow::onCheckUpdates);
+
+    helpMenu->addSeparator();
+
+    auto *aboutAct = helpMenu->addAction(tr("About DiskRaptor"));
+    aboutAct->setShortcut(QKeySequence("Ctrl+I"));
+    connect(aboutAct, &QAction::triggered, this, &MainWindow::onAbout);
+}
+
 void MainWindow::setupWebEngine(const QString &frontendPath)
 {
     m_scanner = new Scanner(this);
@@ -55,6 +121,9 @@ void MainWindow::setupWebEngine(const QString &frontendPath)
     m_webChannel = new QWebChannel(this);
     m_webChannel->registerObject("bridge", m_ipcBridge);
     m_webView->page()->setWebChannel(m_webChannel);
+
+    // Disable browser's built-in right-click context menu
+    m_webView->setContextMenuPolicy(Qt::NoContextMenu);
 
     QString indexPath = QDir(frontendPath).filePath("index.html");
     QString url = QUrl::fromLocalFile(indexPath).toString();
@@ -81,6 +150,88 @@ void MainWindow::setupConnections()
     connect(m_scanner, &Scanner::scanError, this, &MainWindow::onScanError);
 }
 
+void MainWindow::runJS(const QString &js)
+{
+    m_webView->page()->runJavaScript(js);
+}
+
+// ── Menu Action Slots ───────────────────────────────────────────
+
+void MainWindow::onViewPie()
+{
+    runJS("document.querySelectorAll('.diagram-mode').forEach(function(b){b.classList.remove('active')});"
+          "var btn = document.querySelector('.diagram-mode[data-mode=\"pie\"]');"
+          "if(btn)btn.classList.add('active');"
+          "if(window.diagram)window.diagram.setMode('pie');");
+}
+
+void MainWindow::onViewTreemap()
+{
+    runJS("document.querySelectorAll('.diagram-mode').forEach(function(b){b.classList.remove('active')});"
+          "var btn = document.querySelector('.diagram-mode[data-mode=\"treemap\"]');"
+          "if(btn)btn.classList.add('active');"
+          "if(window.diagram)window.diagram.setMode('treemap');");
+}
+
+void MainWindow::onFindDuplicates()
+{
+    runJS("var btn = document.getElementById('btn-duplicates'); if(btn)btn.click();");
+}
+
+void MainWindow::onCheckUpdates()
+{
+    runJS("var overlay = document.getElementById('update-overlay');"
+          "if(!overlay)return;"
+          "overlay.classList.add('active');"
+          "var icon = document.getElementById('update-icon');"
+          "var status = document.getElementById('update-status');"
+          "var version = document.getElementById('update-version');"
+          "var actions = document.getElementById('update-actions');"
+          "var dlBtn = document.getElementById('btn-update-download');"
+          "icon.textContent = '\U0001F310';"
+          "status.textContent = 'Connecting to GitHub\u2026';"
+          "version.textContent = '';"
+          "actions.style.display = 'none';"
+          "dlBtn.style.display = 'none';"
+          "window.__TAURI__.invoke('check_for_updates').then(function(result){"
+          "  var currentVer = 'v0.3.19';"
+          "  var remoteVer = (result||'').trim();"
+          "  if(remoteVer > currentVer){"
+          "    icon.textContent = '\u2B07\uFE0F';"
+          "    status.textContent = 'A new version is available!';"
+          "    version.textContent = 'Current: '+currentVer+' \u2192 Latest: '+remoteVer;"
+          "    actions.style.display = 'flex';"
+          "    dlBtn.style.display = 'inline-block';"
+          "  } else {"
+          "    icon.textContent = '\u2705';"
+          "    status.textContent = 'You\u2019re up to date!';"
+          "    version.textContent = 'Current: '+currentVer+' (latest)';"
+          "    actions.style.display = 'flex';"
+          "    dlBtn.style.display = 'none';"
+          "  }"
+          "}).catch(function(e){"
+          "  icon.textContent = '\u274C';"
+          "  status.textContent = 'Could not check for updates.';"
+          "  version.textContent = e.message || 'Network error';"
+          "  actions.style.display = 'flex';"
+          "  dlBtn.style.display = 'none';"
+          "});");
+}
+
+void MainWindow::onAbout()
+{
+    runJS("var overlay = document.getElementById('about-overlay'); if(overlay)overlay.classList.add('active');");
+}
+
+void MainWindow::onLanguageChanged(const QString &code)
+{
+    QString escaped = code;
+    escaped.replace("'", "\\'");
+    runJS(QString("if(window.I18N)window.I18N.setLocale('%1');").arg(escaped));
+}
+
+// ── Scan Callbacks ──────────────────────────────────────────────
+
 void MainWindow::onScanProgress(const ScanProgress &progress)
 {
     QString js = QString(
@@ -94,16 +245,16 @@ void MainWindow::onScanProgress(const ScanProgress &progress)
      .arg(progress.currentDir)
      .arg(progress.elapsedSecs);
 
-    m_webView->page()->runJavaScript(js);
+    runJS(js);
     m_statusLabel->setText(
-        QString("Scanning… %1 files, %2 dirs")
+        QString("Scanning\u2026 %1 files, %2 dirs")
             .arg(progress.filesFound).arg(progress.dirsFound));
 }
 
 void MainWindow::onScanComplete(const ScanResult &result)
 {
     m_statusLabel->setText(
-        QString("Complete — %1 files, %2 dirs, %3")
+        QString("Complete \u2014 %1 files, %2 dirs, %3")
             .arg(result.totalFiles)
             .arg(result.totalDirs)
             .arg(formatBytes(result.totalSize)));
@@ -116,7 +267,7 @@ void MainWindow::onScanComplete(const ScanResult &result)
         "}"
     ).arg(json);
 
-    m_webView->page()->runJavaScript(js);
+    runJS(js);
 
     // Also update progress bar to "done" state briefly
     m_progressBar->setRange(0, 100);
@@ -142,6 +293,6 @@ void MainWindow::onScanError(const QString &error)
         "}"
     ).arg(escaped);
 
-    m_webView->page()->runJavaScript(js);
+    runJS(js);
     qWarning() << "[DiskRaptor] Scan error:" << error;
 }

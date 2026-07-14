@@ -5,6 +5,9 @@
  *
  * When QWebChannel is not available (Tauri standalone mode),
  * the existing Tauri IPC invoke is left intact.
+ *
+ * Queues invoke() calls until the bridge is ready to avoid
+ * "Bridge not ready" race conditions on startup.
  */
 
 (function () {
@@ -14,7 +17,8 @@
   var bridgeReady = false;
   var isQtMode = false;
   var initStartedAt = Date.now();
-  var maxInitWaitMs = 15000;
+  var maxInitWaitMs = 60000;
+  var initRetryTimer = null;
   var pendingInvokes = [];
   var tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
     ? window.__TAURI__.invoke
@@ -22,6 +26,10 @@
 
   // ── Initialize QWebChannel ─────────────────────────────────
   function init() {
+    if (bridgeReady) {
+      return;
+    }
+
     var hasQWebChannel = typeof QWebChannel !== "undefined";
     var hasQtTransport =
       typeof qt !== "undefined" &&
@@ -37,20 +45,19 @@
           bridge = channel.objects.bridge;
           console.log("[DiskRaptor] Qt WebChannel bridge connected");
 
-        // Wire backend events after bridge is available.
-        try {
-          if (bridge && bridge.eventEmitted && bridge.eventEmitted.connect) {
-            bridge.eventEmitted.connect(function (eventName, payload) {
-              emit(eventName, payload);
-            });
+          // Wire backend events after bridge is available.
+          try {
+            if (bridge && typeof bridge.eventEmitted === "object" && typeof bridge.eventEmitted.connect === "function") {
+              bridge.eventEmitted.connect(function (eventName, payload) {
+                emit(eventName, payload);
+              });
+            }
+          } catch (e) {
+            console.log("[DiskRaptor] Event signal not available:", e.message);
           }
-        } catch (e) {
-          console.log("[DiskRaptor] Event signal not available:", e.message);
-        }
 
           // Signal ready
           bridgeReady = true;
-          if (!window.__TAURI__) window.__TAURI__ = {};
           window.__TAURI__.__qtBridgeReady = true;
           window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
           flushPending();
@@ -58,34 +65,48 @@
       } catch (e) {
         console.warn("[DiskRaptor] QWebChannel init failed, retrying:", e.message);
         if (Date.now() - initStartedAt < maxInitWaitMs) {
-          setTimeout(init, 100);
+          if (!initRetryTimer) {
+            initRetryTimer = setTimeout(function () {
+              initRetryTimer = null;
+              init();
+            }, 100);
+          }
         }
       }
     } else {
-      if (Date.now() - initStartedAt < maxInitWaitMs) {
-        setTimeout(init, 100);
+      // In Tauri mode (no Qt WebChannel), fall back immediately if
+      // the low-level Tauri IPC exists — don't wait 60 seconds.
+      if (typeof tauriInvoke === "function") {
+        console.warn("[DiskRaptor] Qt transport unavailable; falling back to Tauri invoke");
+        bridgeReady = true;
+        if (!window.__TAURI__) window.__TAURI__ = {};
+        window.__TAURI__.__qtBridgeReady = true;
+        window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
+        flushPending();
         return;
       }
 
-      // Outside Qt (or if Qt transport never appeared), fall back to Tauri invoke.
-      console.warn("[DiskRaptor] Qt transport unavailable; falling back to Tauri mode");
-      bridgeReady = true;
-      if (!window.__TAURI__) window.__TAURI__ = {};
-      window.__TAURI__.__qtBridgeReady = true;
-      window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
-      flushPending();
+      // No Tauri IPC either — keep retrying for Qt transport up to maxInitWaitMs
+      if (Date.now() - initStartedAt < maxInitWaitMs) {
+        if (!initRetryTimer) {
+          initRetryTimer = setTimeout(function () {
+            initRetryTimer = null;
+            init();
+          }, 100);
+        }
+        return;
+      }
+
+      console.error("[DiskRaptor] Qt transport unavailable and no Tauri fallback; keeping bridge pending");
     }
   }
 
   function flushPending() {
-    for (var i = 0; i < pendingInvokes.length; i++) {
-      try {
-        pendingInvokes[i]();
-      } catch (e) {
-        console.error("[DiskRaptor] Pending invoke error:", e);
-      }
-    }
+    var q = pendingInvokes;
     pendingInvokes = [];
+    q.forEach(function (fn) {
+      try { fn(); } catch (e) { console.error("[DiskRaptor] Pending invoke error:", e); }
+    });
   }
 
   // ── Tauri-compatible invoke() ──────────────────────────────
@@ -97,7 +118,14 @@
         // Qt mode — use the QWebChannel bridge
         if (isQtMode) {
           if (!bridge || typeof bridge.invoke !== "function") {
-            reject(new Error("Bridge not ready: " + cmd));
+            // Re-queue until channel object is actually available.
+            pendingInvokes.push(doInvoke);
+            if (!initRetryTimer) {
+              initRetryTimer = setTimeout(function () {
+                initRetryTimer = null;
+                init();
+              }, 100);
+            }
             return;
           }
           try {
@@ -144,13 +172,6 @@
       } else {
         // Queue the call — flushed when bridge becomes ready
         pendingInvokes.push(doInvoke);
-        setTimeout(function () {
-          var idx = pendingInvokes.indexOf(doInvoke);
-          if (idx !== -1) {
-            pendingInvokes.splice(idx, 1);
-            reject(new Error("Bridge not ready: " + cmd));
-          }
-        }, 30000);
       }
     });
   }
