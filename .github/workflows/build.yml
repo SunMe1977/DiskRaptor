@@ -101,8 +101,8 @@ jobs:
           move /y "%CORE_DIR%\qtwebengine_*.pak"     "%RUNTIME_DIR%" 2>nul
 
           REM Move qtwebengine_locales if it exists
-          if exist "%CORE_DIR%\qtwebengine_locales" (
-            move /y "%CORE_DIR%\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
+          if exist "%CORE_DIR%\translations\qtwebengine_locales" (
+            move /y "%CORE_DIR%\translations\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
             echo ✅ qtwebengine_locales moved
           ) else (
             echo ⚠ No qtwebengine_locales found in core

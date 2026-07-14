@@ -85,6 +85,12 @@ if exist "%CORE_DIR%\qml" (
   echo   Moved qml/ to runtime
 )
 
+REM Move WebEngine locales to runtime
+if exist "%CORE_DIR%\translations\qtwebengine_locales" (
+  move /y "%CORE_DIR%\translations\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
+  echo   Moved qtwebengine_locales/ to runtime
+)
+
 REM Package runtime as ZIP
 echo.
 echo === Packaging WebEngine Runtime ===

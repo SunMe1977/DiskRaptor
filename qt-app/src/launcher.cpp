@@ -584,7 +584,40 @@ BOOL ConfigureRuntimeEnvironment(LPCWSTR appDir) {
     WCHAR qmlPath[MAX_PATH];
     StringCchCopyW(qmlPath, MAX_PATH, runtimeDir);
     StringCchCatW(qmlPath, MAX_PATH, L"\\qml");
-    SetEnvironmentVariableW(L"QML2_IMPORT_PATH", qmlPath);
+
+    // Prefer runtime/qml, fallback to appDir/qml if runtime qml is absent.
+    if (GetFileAttributesW(qmlPath) != INVALID_FILE_ATTRIBUTES) {
+        SetEnvironmentVariableW(L"QML2_IMPORT_PATH", qmlPath);
+    } else {
+        WCHAR appQmlPath[MAX_PATH];
+        StringCchCopyW(appQmlPath, MAX_PATH, appDir);
+        StringCchCatW(appQmlPath, MAX_PATH, L"\\qml");
+        if (GetFileAttributesW(appQmlPath) != INVALID_FILE_ATTRIBUTES) {
+            SetEnvironmentVariableW(L"QML2_IMPORT_PATH", appQmlPath);
+        }
+    }
+
+    // WebEngine process uses these for pak/dat and locales lookup.
+    WCHAR resourcesPath[MAX_PATH];
+    StringCchCopyW(resourcesPath, MAX_PATH, runtimeDir);
+    StringCchCatW(resourcesPath, MAX_PATH, L"\\resources");
+    if (GetFileAttributesW(resourcesPath) != INVALID_FILE_ATTRIBUTES) {
+        SetEnvironmentVariableW(L"QTWEBENGINE_RESOURCES_PATH", resourcesPath);
+    }
+
+    WCHAR localesPath[MAX_PATH];
+    StringCchCopyW(localesPath, MAX_PATH, runtimeDir);
+    StringCchCatW(localesPath, MAX_PATH, L"\\qtwebengine_locales");
+    if (GetFileAttributesW(localesPath) != INVALID_FILE_ATTRIBUTES) {
+        SetEnvironmentVariableW(L"QTWEBENGINE_LOCALES_PATH", localesPath);
+    } else {
+        WCHAR fallbackLocalesPath[MAX_PATH];
+        StringCchCopyW(fallbackLocalesPath, MAX_PATH, appDir);
+        StringCchCatW(fallbackLocalesPath, MAX_PATH, L"\\translations\\qtwebengine_locales");
+        if (GetFileAttributesW(fallbackLocalesPath) != INVALID_FILE_ATTRIBUTES) {
+            SetEnvironmentVariableW(L"QTWEBENGINE_LOCALES_PATH", fallbackLocalesPath);
+        }
+    }
 
     return TRUE;
 }
