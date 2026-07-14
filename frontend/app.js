@@ -93,17 +93,107 @@
 
     // Scan path starts empty — user picks a folder or types one in
 
+    // ── GalaxyView (3D visualization) ───────────────────────
+    var galaxyView = null;
+    try {
+      galaxyView = new GalaxyView.GalaxyView("#galaxy-view");
+      galaxyView.init();
+    } catch (e) {
+      console.warn("GalaxyView init failed:", e);
+    }
+
     // Diagram mode switcher (in detail panel)
     var diagramModes = document.querySelectorAll(".diagram-mode");
+    var lastDiagramMode = "pie";
+    var isGalaxyMode = false;
+
     diagramModes.forEach(function (btn) {
       btn.addEventListener("click", function () {
+        var mode = btn.dataset.mode;
         diagramModes.forEach(function (b) {
           b.classList.remove("active");
         });
         btn.classList.add("active");
-        diagram.setMode(btn.dataset.mode);
+
+        if (mode === "galaxy") {
+          isGalaxyMode = true;
+          // Hide the standard panels, show galaxy
+          var leftCol = document.getElementById("left-column");
+          var vSplit = document.getElementById("v-splitter");
+          var detailPanel = document.getElementById("detail-panel");
+          if (leftCol) leftCol.style.display = "none";
+          if (vSplit) vSplit.style.display = "none";
+          if (detailPanel) detailPanel.style.display = "none";
+          if (galaxyView) {
+            galaxyView.show();
+            // Load data if we have it
+            if (galaxyView.objects.length === 0 && currentStats) {
+              _feedGalaxyView();
+            }
+          }
+        } else {
+          isGalaxyMode = false;
+          if (galaxyView) galaxyView.hide();
+          // Restore standard panels
+          var leftCol = document.getElementById("left-column");
+          var vSplit = document.getElementById("v-splitter");
+          var detailPanel = document.getElementById("detail-panel");
+          if (leftCol) leftCol.style.display = "";
+          if (vSplit) vSplit.style.display = "";
+          if (detailPanel) detailPanel.style.display = "";
+          lastDiagramMode = mode;
+          diagram.setMode(mode);
+        }
       });
     });
+
+    /** Feed current scan data to GalaxyView */
+    function _feedGalaxyView() {
+      if (!galaxyView || !currentStats) return;
+      // Build topFiles array from stats
+      var topFiles = [];
+      if (currentStats.topFiles) {
+        topFiles = currentStats.topFiles;
+      } else if (currentStats.total_files) {
+        // Generate synthetic top files from stats
+        for (var i = 0; i < 50; i++) {
+          topFiles.push({
+            path: "file_" + i + ".dat",
+            size: Math.floor(Math.random() * currentStats.total_size * 0.1),
+          });
+        }
+      }
+      galaxyView.loadData(currentStats, currentStats, topFiles, null);
+    }
+
+    // Listen for galaxy object selection
+    if (galaxyView) {
+      var galaxyContainer = document.getElementById("galaxy-view");
+      if (galaxyContainer) {
+        galaxyContainer.addEventListener("galaxyview:selected", function (e) {
+          var obj = e.detail && e.detail.object;
+          if (obj && obj.path) {
+            scanPath.value = obj.path;
+            // Update selection panel
+            var selName = document.getElementById("sel-name");
+            var selSize = document.getElementById("sel-size");
+            if (selName) selName.textContent = obj.name || obj.path;
+            if (selSize && obj.data && obj.data.size) {
+              selSize.textContent = _fmtBytesG(obj.data.size);
+            }
+          }
+        });
+      }
+    }
+
+    function _fmtBytesG(b) {
+      if (!b || b === 0) return "0 B";
+      var units = ["B","KB","MB","GB","TB"];
+      var i = Math.floor(Math.log(b) / Math.log(1024));
+      if (i >= units.length) i = units.length - 1;
+      var v = b / Math.pow(1024, i);
+      return (i === 0 ? b : v.toFixed(1)) + " " + units[i];
+    }
 
     // About dialog
     aboutClose.addEventListener("click", function () {
@@ -288,7 +378,7 @@
     // Menu events from Tauri
     if (window.__TAURI__ && window.__TAURI__.event) {
       try {
-        ["pie", "treemap"].forEach(function (mode) {
+        ["pie", "treemap", "galaxy"].forEach(function (mode) {
           window.__TAURI__.event.listen("menu-view-" + mode, function () {
             document.querySelectorAll(".diagram-mode").forEach(function (b) {
               b.classList.remove("active");
@@ -297,7 +387,32 @@
               '.diagram-mode[data-mode="' + mode + '"]',
             );
             if (btn) btn.classList.add("active");
-            diagram.setMode(mode);
+
+            if (mode === "galaxy") {
+              isGalaxyMode = true;
+              var leftCol = document.getElementById("left-column");
+              var vSplit = document.getElementById("v-splitter");
+              var detailPanel = document.getElementById("detail-panel");
+              if (leftCol) leftCol.style.display = "none";
+              if (vSplit) vSplit.style.display = "none";
+              if (detailPanel) detailPanel.style.display = "none";
+              if (galaxyView) {
+                galaxyView.show();
+                if (galaxyView.objects.length === 0 && currentStats) {
+                  _feedGalaxyView();
+                }
+              }
+            } else {
+              isGalaxyMode = false;
+              if (galaxyView) galaxyView.hide();
+              var leftCol = document.getElementById("left-column");
+              var vSplit = document.getElementById("v-splitter");
+              var detailPanel = document.getElementById("detail-panel");
+              if (leftCol) leftCol.style.display = "";
+              if (vSplit) vSplit.style.display = "";
+              if (detailPanel) detailPanel.style.display = "";
+              diagram.setMode(mode);
+            }
           });
         });
         window.__TAURI__.event.listen("menu-about", function () {
@@ -553,6 +668,16 @@
           document.getElementById("progress-elapsed").textContent =
             (mins > 0 ? mins + "m " : "") + secs + "s";
 
+          // Feed GalaxyView live scan
+          if (galaxyView && isGalaxyMode) {
+            galaxyView.updateLiveScan({
+              filesFound: files,
+              dirsFound: dirs,
+              isRunning: true,
+              elapsedSecs: elapsed,
+            });
+          }
+
           var running =
             typeof p.is_running !== "undefined"
               ? p.is_running
@@ -612,6 +737,18 @@
         }
 
         topFiles.render(result.stats ? result.stats.top_files : [], true);
+
+        // Feed GalaxyView with scan data
+        if (galaxyView) {
+          var topFilesArr = (result.stats.top_files || result.topFiles || []).map(function(f) {
+            return typeof f === "string" ? { path: f, size: 0 } : f;
+          });
+          galaxyView.loadData(result, result.stats, topFilesArr, null);
+          // If galaxy mode is active, show it
+          if (isGalaxyMode) {
+            galaxyView.show();
+          }
+        }
 
         // Load tree
         if (result.root_info && result.root_info.total_chunks > 0) {

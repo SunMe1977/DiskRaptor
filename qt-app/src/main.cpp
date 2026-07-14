@@ -1,5 +1,5 @@
-// DiskRaptor Qt 6 + QtWebEngine
-// Main entry point — no GTK, no WebKitGTK, no GLib
+﻿// DiskRaptor Qt 6 + QtWebEngine
+// Main entry point â€” no GTK, no WebKitGTK, no GLib
 
 #include <QApplication>
 #include <QtWebEngineWidgets/qtwebenginewidgetsglobal.h>
@@ -25,10 +25,10 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");
-    app.setApplicationVersion("0.3.19");
+    app.setApplicationVersion("0.4.0");
     app.setOrganizationName("DiskRaptor");
 
-    // ── WebEngine configuration ──────────────────────────────
+    // â”€â”€ WebEngine configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     auto *profile = QWebEngineProfile::defaultProfile();
     auto *settings = profile->settings();
     settings->setAttribute(QWebEngineSettings::WebGLEnabled, true);
@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
     profile->setPersistentStoragePath(
         QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/webengine");
 
-    // ── Find frontend directory ──────────────────────────────
+    // â”€â”€ Find frontend directory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     QString frontendPath;
     QStringList searchPaths = {
         QDir::currentPath(),
@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
 
     qDebug() << "[DiskRaptor] Frontend:" << frontendPath;
 
-    // ── Create main window ───────────────────────────────────
+    // â”€â”€ Create main window â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     MainWindow window(frontendPath);
     window.setWindowTitle("DiskRaptor " + app.applicationVersion());
     window.resize(1280, 860);

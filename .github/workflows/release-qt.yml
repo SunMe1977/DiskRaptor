@@ -1,0 +1,316 @@
+name: Build + Release Qt
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: write
+
+env:
+  QT_VERSION: "6.5.3"
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Windows (MSVC 2022 + Qt 6)
+  # ──────────────────────────────────────────────────────────────
+  build-windows:
+    name: "Windows x64"
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup Qt SDK
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          modules: qtwebengine qtwebchannel
+          cache: true
+
+      - name: Build DiskRaptor
+        working-directory: qt-app
+        run: |
+          cmake -B build_qt -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_INSTALL_PREFIX=build_qt/install
+          cmake --build build_qt --config Release --parallel
+          cmake --install build_qt --config Release
+
+      - name: Package WebEngine Runtime
+        working-directory: qt-app
+        run: |
+          # Collect runtime DLLs needed for QtWebEngine
+          $runtimeDir = "build_qt/install/bin"
+          $webEngineDlls = @(
+            "Qt6WebEngineCore.dll", "Qt6WebEngineWidgets.dll",
+            "Qt6Quick.dll", "Qt6Qml.dll", "Qt6QmlMeta.dll",
+            "Qt6QmlModels.dll", "Qt6QmlWorkerScript.dll",
+            "Qt6QuickTemplates2.dll", "Qt6QuickWidgets.dll",
+            "Qt6OpenGL.dll", "Qt6OpenGLWidgets.dll", "Qt6Svg.dll",
+            "Qt6Network.dll", "Qt6Positioning.dll",
+            "Qt6WebChannel.dll"
+          )
+          $rtDir = "build_qt/qtwebengine_runtime"
+          New-Item -ItemType Directory -Force -Path $rtDir | Out-Null
+          foreach ($dll in $webEngineDlls) {
+            if (Test-Path "$runtimeDir/$dll") {
+              Copy-Item "$runtimeDir/$dll" "$rtDir/$dll" -Force
+            }
+          }
+          # QtWebEngineProcess.exe
+          if (Test-Path "$runtimeDir/QtWebEngineProcess.exe") {
+            Copy-Item "$runtimeDir/QtWebEngineProcess.exe" "$rtDir/" -Force
+          }
+          # Locales
+          $locales = "$runtimeDir/qtwebengine_locales"
+          if (Test-Path $locales) {
+            Copy-Item $locales "$rtDir/qtwebengine_locales" -Recurse -Force
+          }
+          # Additional runtime deps
+          $extraDeps = @("Qt6Qml", "Qt6Quick", "Qt6Svg", "Qt6OpenGL")
+          Get-ChildItem "$runtimeDir" -Filter "*.dll" | Where-Object {
+            $_.Name -like "d3dcompiler*" -or $_.Name -like "opengl*" -or
+            $_.Name -like "dxcompiler*" -or $_.Name -like "dxil*"
+          } | ForEach-Object {
+            Copy-Item $_.FullName "$rtDir/" -Force
+          }
+          # Zip runtime
+          Compress-Archive -Path "$rtDir/*" -DestinationPath "build_qt/qtwebengine_runtime.zip" -Force
+
+      - name: Create Installer (NSIS)
+        working-directory: qt-app
+        run: |
+          # NSIS is pre-installed on GitHub Windows runners
+          makensis setup.nsi
+        continue-on-error: true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiskRaptor-Windows-x64
+          path: |
+            qt-app/build_qt/DiskRaptor.exe
+            qt-app/build_qt/DiskRaptorLauncher.exe
+            qt-app/build_qt/qtwebengine_runtime.zip
+            qt-app/build_qt/DiskRaptor_*_Setup.exe
+            qt-app/build_qt/install/bin/*.dll
+            qt-app/build_qt/install/bin/platforms/
+            qt-app/build_qt/install/bin/styles/
+            qt-app/build_qt/install/bin/iconengines/
+            qt-app/build_qt/install/bin/imageformats/
+            qt-app/build_qt/install/bin/tls/
+            qt-app/build_qt/install/bin/networkinformation/
+            qt-app/build_qt/install/bin/position/
+          compression-level: 9
+
+  # ──────────────────────────────────────────────────────────────
+  # Linux (Ubuntu + Qt 6)
+  # ──────────────────────────────────────────────────────────────
+  build-linux:
+    name: "Linux x64"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt + Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential cmake ninja-build \
+            qt6-base-dev qt6-webengine-dev qt6-webchannel-dev \
+            libqt6webenginewidgets6 qt6-webengine-dev-tools \
+            libxkbcommon-dev libdbus-1-dev libgl1-mesa-dev \
+            libegl1-mesa-dev libfontconfig1-dev libx11-xcb-dev \
+            libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev \
+            libxcb-randr0-dev libxcb-render-util0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
+            libxcb-xv0-dev libxcomposite-dev libxcursor-dev \
+            libxdamage-dev libxi-dev libxrender-dev libxrandr-dev \
+            libxtst-dev libpulse-dev libpcre2-dev
+
+      - name: Build DiskRaptor
+        working-directory: qt-app
+        run: |
+          cmake -B build_qt -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local
+          cmake --build build_qt --config Release --parallel $(nproc)
+          cmake --install build_qt --config Release
+
+      - name: Package AppImage
+        working-directory: qt-app
+        run: |
+          # Bundle into a simple tarball with launcher script
+          mkdir -p bundle/DiskRaptor
+          cp build_qt/DiskRaptor bundle/DiskRaptor/
+          cp build_qt/DiskRaptorLauncher bundle/DiskRaptor/ 2>/dev/null || true
+          cp -r build_qt/install/bin/* bundle/DiskRaptor/ 2>/dev/null || true
+          cp -r frontend bundle/DiskRaptor/frontend
+          echo '#!/bin/bash' > bundle/DiskRaptor/diskraptor.sh
+          echo 'DIR="$(cd "$(dirname "$0")" && pwd)"' >> bundle/DiskRaptor/diskraptor.sh
+          echo 'cd "$DIR" && exec ./DiskRaptor "$@"' >> bundle/DiskRaptor/diskraptor.sh
+          chmod +x bundle/DiskRaptor/diskraptor.sh
+          tar -czf DiskRaptor-Linux-x64.tar.gz -C bundle DiskRaptor
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiskRaptor-Linux-x64
+          path: qt-app/DiskRaptor-Linux-x64.tar.gz
+          compression-level: 9
+
+  # ──────────────────────────────────────────────────────────────
+  # macOS (Qt 6)
+  # ──────────────────────────────────────────────────────────────
+  build-macos:
+    name: "macOS arm64"
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        run: |
+          brew update
+          brew install qt@6
+
+      - name: Build DiskRaptor
+        working-directory: qt-app
+        run: |
+          export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"
+          export CMAKE_PREFIX_PATH="/opt/homebrew/opt/qt@6"
+          cmake -B build_qt -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=build_qt/install
+          cmake --build build_qt --config Release --parallel $(sysctl -n hw.ncpu)
+          cmake --install build_qt --config Release
+
+      - name: Bundle .app
+        working-directory: qt-app
+        run: |
+          mkdir -p bundle/DiskRaptor.app/Contents/MacOS
+          mkdir -p bundle/DiskRaptor.app/Contents/Resources
+          cp build_qt/DiskRaptor bundle/DiskRaptor.app/Contents/MacOS/
+          cp -r build_qt/install/bin/* bundle/DiskRaptor.app/Contents/MacOS/ 2>/dev/null || true
+          cp -r frontend bundle/DiskRaptor.app/Contents/Resources/
+          # Info.plist
+          cat > bundle/DiskRaptor.app/Contents/Info.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>DiskRaptor</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.diskraptor.app</string>
+              <key>CFBundleName</key>
+              <string>DiskRaptor</string>
+              <key>CFBundleVersion</key>
+              <string>0.3.19</string>
+              <key>CFBundleShortVersionString</key>
+              <string>0.3.19</string>
+          </dict>
+          </plist>
+          EOF
+          hdiutil create -srcfolder bundle/DiskRaptor.app DiskRaptor-macOS-arm64.dmg
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiskRaptor-macOS-arm64
+          path: qt-app/DiskRaptor-macOS-arm64.dmg
+          compression-level: 9
+
+  # ──────────────────────────────────────────────────────────────
+  # E2E Tests (Windows only, requires Qt)
+  # ──────────────────────────────────────────────────────────────
+  test-e2e-windows:
+    name: "E2E Tests (Windows)"
+    needs: [build-windows]
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DiskRaptor-Windows-x64
+          path: qt-app/build_qt
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright
+        working-directory: .
+        run: npm install --save-dev playwright ws
+
+      - name: Run E2E Tests
+        working-directory: .
+        run: |
+          $env:DISKraptor_CDP_PORT = "9222"
+          node scripts/playwright-qt-e2e.mjs
+        timeout-minutes: 5
+
+  # ──────────────────────────────────────────────────────────────
+  # Create GitHub Release (on tag push only)
+  # ──────────────────────────────────────────────────────────────
+  release:
+    name: "Create Release"
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: DiskRaptor ${{ github.ref_name }}
+          body: |
+            ## DiskRaptor ${{ github.ref_name }}
+
+            ### 🦖 What's New
+            - GalaxyView — 3D file system visualization with WebGL/Canvas2D
+            - WASD flight, mouse orbit, click-to-explore navigation
+            - AI-powered insights overlay
+            - Time Travel mode (Today → 90 days)
+            - Live scan visualization with meteor showers
+            - Plugin architecture for custom celestial bodies
+
+            ### 📦 Downloads
+            - **Windows:** DiskRaptor-Windows-x64 artifact
+            - **Linux:** DiskRaptor-Linux-x64 artifact  
+            - **macOS:** DiskRaptor-macOS-arm64 artifact
+
+            ### ⚡ Performance
+            See the README for system requirements and build instructions.
+          files: |
+            artifacts/DiskRaptor-Windows-x64/DiskRaptor_*_Setup.exe
+            artifacts/DiskRaptor-Windows-x64/qtwebengine_runtime.zip
+            artifacts/DiskRaptor-Linux-x64/DiskRaptor-Linux-x64.tar.gz
+            artifacts/DiskRaptor-macOS-arm64/DiskRaptor-macOS-arm64.dmg
+          generate_release_notes: true

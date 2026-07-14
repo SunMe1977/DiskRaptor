@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><title>DiskRaptor Diagnostic</title></head>
+<body style="background:#1e1e2e;color:#cdd6f4;font-family:monospace;padding:20px">
+<h1>Diagnostic</h1>
+<pre id="out">Loading...</pre>
+<script>
+(async function() {
+  var out = document.getElementById('out');
+  function log(m) { out.textContent += m + '\n'; }
+  
+  log('window.__TAURI__: ' + (window.__TAURI__ ? 'EXISTS' : 'UNDEFINED'));
+  if (window.__TAURI__) {
+    log('__TAURI__.invoke: ' + (typeof window.__TAURI__.invoke === 'function' ? 'function' : typeof window.__TAURI__.invoke));
+    log('__qtBridgeReady: ' + window.__TAURI__.__qtBridgeReady);
+  }
+  
+  // Test invoke
+  if (window.__TAURI__ && window.__TAURI__.invoke) {
+    try {
+      log('\nTesting list_drives...');
+      var drives = await window.__TAURI__.invoke('list_drives');
+      log('list_drives OK: ' + JSON.stringify(drives));
+    } catch(e) {
+      log('list_drives FAILED: ' + e);
+    }
+    
+    try {
+      log('\nTesting start_scan with C:\\Users\\hansj...');
+      var scanPromise = window.__TAURI__.invoke('start_scan', { path: 'C:\\Users\\hansj' });
+      var timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT after 10s')), 10000));
+      var result = await Promise.race([scanPromise, timeout]);
+      log('start_scan OK: ' + JSON.stringify(result));
+    } catch(e) {
+      log('start_scan FAILED: ' + e);
+    }
+  } else {
+    log('Cannot test - __TAURI__.invoke not available');
+  }
+})();
+</script>
+</body>
+</html>

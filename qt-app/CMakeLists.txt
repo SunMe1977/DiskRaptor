@@ -1,6 +1,6 @@
-# DiskRaptor Qt 6 + QtWebEngine
+﻿# DiskRaptor Qt 6 + QtWebEngine
 cmake_minimum_required(VERSION 3.20)
-project(DiskRaptor VERSION 0.2.8 DESCRIPTION "Ultra-fast disk space analyzer — Qt 6 Edition" LANGUAGES CXX)
+project(DiskRaptor VERSION 0.2.8 DESCRIPTION "Ultra-fast disk space analyzer â€” Qt 6 Edition" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,7 +47,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../modulesPro" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/modulesPro")
 
-# ── Launcher (no Qt deps, Win32 only) ──────────────────────────
+# â”€â”€ Launcher (no Qt deps, Win32 only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if(WIN32)
   add_executable(DiskRaptorLauncher WIN32 src/launcher.cpp ${CMAKE_BINARY_DIR}/launcher-icon.rc)
   target_link_libraries(DiskRaptorLauncher PRIVATE
@@ -57,14 +57,14 @@ if(WIN32)
   install(TARGETS DiskRaptorLauncher RUNTIME DESTINATION bin)
 endif()
 
-# ── Install ──────────────────────────────────────────────────
+# â”€â”€ Install â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Install core binary - platform agnostic
 install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin
   BUNDLE DESTINATION bin)
 
 if(WIN32)
-  # Install core DLLs (windeployqt output) — exclude WebEngine + avoid recursion
+  # Install core DLLs (windeployqt output) â€” exclude WebEngine + avoid recursion
   install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
     DESTINATION bin
     FILES_MATCHING
@@ -94,12 +94,12 @@ endif()
 # Install frontend
 install(DIRECTORY ../frontend/ DESTINATION share/${PROJECT_NAME}/frontend)
 
-# ── CPack ──────────────────────────────────────────────────────────
-# IMPORTANT: set CPack variables BEFORE include(CPack) — CPack reads them at include time
+# â”€â”€ CPack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# IMPORTANT: set CPack variables BEFORE include(CPack) â€” CPack reads them at include time
 set(CPACK_PACKAGE_NAME "DiskRaptor")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_FILE_NAME "DiskRaptor_${PROJECT_VERSION}_amd64")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "DiskRaptor Team")
 include(CPack)
 
-message(STATUS "DiskRaptor ${PROJECT_VERSION} — Qt ${Qt6_VERSION}")
+message(STATUS "DiskRaptor ${PROJECT_VERSION} â€” Qt ${Qt6_VERSION}")

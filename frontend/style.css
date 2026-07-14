@@ -1628,3 +1628,271 @@ body.light-theme #topfiles-table tbody tr:nth-child(even) {
 body.light-theme #topfiles-table tbody tr:nth-child(even):hover {
   background: var(--bg-hover);
 }
+
+/* ================================================================
+   GalaxyView — 3D File System Visualization
+   ================================================================ */
+
+#galaxy-view {
+  display: none;
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: #0a0a1a;
+  min-height: 300px;
+}
+
+#galaxy-view.active {
+  display: flex;
+  flex-direction: column;
+}
+
+.galaxy-canvas {
+  display: block;
+  width: 100%;
+  flex: 1;
+  cursor: grab;
+  touch-action: none;
+}
+
+.galaxy-canvas:active {
+  cursor: grabbing;
+}
+
+/* ── Empty State ───────────────────────────────────────── */
+.galaxy-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.3);
+  pointer-events: none;
+}
+.galaxy-empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+.galaxy-empty-text {
+  font-size: 15px;
+  font-weight: 400;
+}
+
+/* ── Toolbar ───────────────────────────────────────────── */
+.galaxy-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(10,10,26,0.9);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.gbtn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.7);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.gbtn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+.g-separator {
+  width: 1px;
+  height: 20px;
+  background: rgba(255,255,255,0.1);
+  margin: 0 4px;
+}
+.g-fps {
+  font-size: 11px;
+  font-family: monospace;
+  color: rgba(255,255,255,0.4);
+  margin-left: auto;
+}
+
+/* ── Scan Stats Overlay ────────────────────────────────── */
+.galaxy-scan-stats {
+  position: absolute;
+  top: 50px;
+  right: 12px;
+  display: flex;
+  gap: 12px;
+  background: rgba(10,10,26,0.8);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+  pointer-events: none;
+  z-index: 10;
+}
+.scan-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.scan-stat-icon { font-size: 14px; }
+.scan-stat-val {
+  font-family: monospace;
+  font-size: 13px;
+  color: rgba(255,255,255,0.9);
+  font-weight: 600;
+}
+.galaxy-scan-complete {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: rgba(100,255,100,0.8);
+  background: rgba(10,10,26,0.5);
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+}
+
+/* ── AI Insight Overlay ────────────────────────────────── */
+.galaxy-insight-overlay {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+}
+.galaxy-insight-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(10,10,26,0.85);
+  border: 1px solid rgba(100,100,200,0.25);
+  border-radius: 10px;
+  padding: 10px 16px;
+  max-width: 420px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.insight-icon { font-size: 20px; flex-shrink: 0; }
+.insight-content { flex: 1; min-width: 0; }
+.insight-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(100,100,200,0.7);
+  margin-bottom: 2px;
+}
+.insight-text {
+  font-size: 13px;
+  color: rgba(255,255,255,0.85);
+  line-height: 1.4;
+}
+.insight-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.3);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+  pointer-events: all;
+}
+.insight-close:hover { color: rgba(255,255,255,0.7); }
+
+/* ── Timeline ───────────────────────────────────────────── */
+.galaxy-timeline-wrap {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  padding: 10px 20px;
+  background: linear-gradient(transparent, rgba(10,10,26,0.95) 40%);
+}
+.galaxy-timeline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.timeline-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+}
+.timeline-icon { font-size: 16px; }
+.timeline-slider-wrap {
+  flex: 1;
+}
+.timeline-slider {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+  outline: none;
+}
+.timeline-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(100,100,255,0.8);
+  cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.3);
+  box-shadow: 0 0 10px rgba(100,100,255,0.3);
+}
+.timeline-marks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 9px;
+  color: rgba(255,255,255,0.3);
+}
+
+/* ── Hover label styling ───────────────────────────────── */
+.galaxy-hover-label {
+  /* Styled inline */
+}
+
+/* ── View toggle button for Galaxy ─────────────────────── */
+.diagram-mode[data-mode="galaxy"] {
+  /* Shares existing diagram-mode styling */
+}
+
+/* Light theme overrides */
+body.light-theme #galaxy-view {
+  background: #e8e8f0;
+}
+body.light-theme .galaxy-canvas {
+  /* Inverted bg handled by canvas content */
+}
+body.light-theme .galaxy-empty-text {
+  color: rgba(0,0,0,0.3);
+}
+body.light-theme .galaxy-toolbar {
+  background: rgba(232,232,240,0.95);
+  border-bottom-color: rgba(0,0,0,0.08);
+}
+body.light-theme .gbtn {
+  background: rgba(0,0,0,0.05);
+  border-color: rgba(0,0,0,0.1);
+  color: rgba(0,0,0,0.7);
+}
+body.light-theme .gbtn:hover {
+  background: rgba(0,0,0,0.1);
+  color: #000;
+}
+body.light-theme .g-fps {
+  color: rgba(0,0,0,0.4);
+}
