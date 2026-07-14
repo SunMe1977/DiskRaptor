@@ -338,7 +338,7 @@ jobs:
   # 2. E2E TESTS — Run Playwright tests against the built app
   # ═══════════════════════════════════════════════════════════════
   e2e-test:
-    if: false  # temporarily disabled for version fix build
+    if: github.ref_type == 'tag'
     needs: [build-app]
     runs-on: windows-latest
     timeout-minutes: 15
