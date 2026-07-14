@@ -170,6 +170,9 @@
       });
 
       // Empty state
+      // Nearby treemap overlay
+      this._createNearbyTreemap();
+
       this.emptyState = document.createElement("div");
       this.emptyState.className = "galaxy-empty";
       this.emptyState.innerHTML = `
@@ -212,6 +215,7 @@
 
       this.scanData = scanResult;
       this.stats = stats;
+      this.topFiles = topFiles || (scanResult && scanResult.topFiles) || (stats && stats.topFiles) || [];
 
       // Map data to galaxy objects
       this.objects = this.dataMapper.mapData(scanResult, stats, topFiles);
@@ -242,6 +246,223 @@
     updateLiveScan(progress) {
       if (!this.active) return;
       this.liveScan.update(progress);
+    }
+
+    // ── Nearby Treemap ────────────────────────────────────────
+
+    /** Create the nearby treemap overlay */
+    _createNearbyTreemap() {
+      this.treemapWrap = document.createElement("div");
+      this.treemapWrap.className = "galaxy-nearby-treemap";
+      this.treemapWrap.innerHTML = `
+        <div class="galaxy-nearby-treemap-header">
+          <span class="galaxy-nearby-treemap-title"></span>
+          <span class="galaxy-nearby-treemap-size"></span>
+          <button class="galaxy-nearby-treemap-close" title="Close">×</button>
+        </div>
+        <canvas class="galaxy-nearby-treemap-canvas" width="320" height="150"></canvas>
+        <div class="galaxy-nearby-treemap-legend"></div>
+      `;
+      this.container.appendChild(this.treemapWrap);
+
+      // Close button
+      this.treemapWrap.querySelector(".galaxy-nearby-treemap-close")
+        .addEventListener("click", () => this._hideNearbyTreemap());
+    }
+
+    /** Show the nearby treemap for a selected object */
+    _showNearbyTreemap(obj) {
+      if (!this.treemapWrap) return;
+      if (!obj) return;
+
+      // Get related topFiles — filter by path prefix
+      var relatedFiles = [];
+      var srcFiles = this.topFiles || (this.scanData && this.scanData.topFiles) || [];
+      var prefix = obj.path || "";
+      if (prefix && srcFiles.length > 0) {
+        var p = prefix.replace(/\\/g, "/").toLowerCase();
+        relatedFiles = srcFiles.filter(function(f) {
+          var fp = (f.path || f || "").replace(/\\/g, "/").toLowerCase();
+          return fp.indexOf(p) === 0 && fp !== p;
+        });
+      }
+
+      // Fallback: use top-level files if nothing matches
+      if (relatedFiles.length < 3 && srcFiles.length > 0) {
+        relatedFiles = srcFiles.slice(0, 30);
+      }
+
+      if (relatedFiles.length < 3 && this.stats) {
+        // Generate synthetic entries from categories
+        relatedFiles = [
+          { path: "📄 Documents", size: Math.floor((this.stats.total_size || 1e9) * 0.3) },
+          { path: "🎵 Media", size: Math.floor((this.stats.total_size || 1e9) * 0.4) },
+          { path: "💻 Code", size: Math.floor((this.stats.total_size || 1e9) * 0.15) },
+          { path: "📦 Archives", size: Math.floor((this.stats.total_size || 1e9) * 0.1) },
+          { path: "🔧 Other", size: Math.floor((this.stats.total_size || 1e9) * 0.05) },
+        ];
+      }
+
+      // Title
+      var titleEl = this.treemapWrap.querySelector(".galaxy-nearby-treemap-title");
+      titleEl.textContent = obj.name || obj.path || "Object";
+
+      // Size
+      var sizeEl = this.treemapWrap.querySelector(".galaxy-nearby-treemap-size");
+      sizeEl.textContent = this._fmtSize(obj.data && obj.data.size ? obj.data.size : this.stats ? this.stats.total_size : 0);
+
+      // Render treemap
+      this._renderNearbyTreemap(relatedFiles);
+
+      // Show
+      this.treemapWrap.classList.add("active");
+    }
+
+    _hideNearbyTreemap() {
+      if (this.treemapWrap) {
+        this.treemapWrap.classList.remove("active");
+      }
+    }
+
+    _renderNearbyTreemap(files) {
+      var canvas = this.treemapWrap.querySelector(".galaxy-nearby-treemap-canvas");
+      if (!canvas || !files || files.length === 0) return;
+
+      var ctx = canvas.getContext("2d");
+      var w = 320, h = 150;
+      var dpr = window.devicePixelRatio || 1;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+      ctx.scale(dpr, dpr);
+
+      // Clear
+      ctx.fillStyle = "rgba(10,10,30,0.5)";
+      ctx.fillRect(0, 0, w, h);
+
+      // Sort by size descending
+      var items = files.slice(0, 40).map(function(f) {
+        return {
+          path: f.path || (typeof f === "string" ? f : "?"),
+          size: f.size || 0,
+        };
+      });
+      items.sort(function(a, b) { return b.size - a.size; });
+
+      var total = items.reduce(function(s, f) { return s + f.size; }, 0);
+      if (total === 0) {
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.font = "13px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("No file data for this folder", w / 2, h / 2);
+        return;
+      }
+
+      // Color by file type
+      var extColors = {
+        code: [90, 160, 255],
+        docs: [255, 200, 80],
+        media: [80, 220, 160],
+        archive: [255, 120, 80],
+        executable: [200, 120, 255],
+        other: [150, 150, 170],
+      };
+
+      function getFileTypeExt(name) {
+        var dot = name.lastIndexOf(".");
+        if (dot < 0) return "other";
+        var ext = name.substring(dot + 1).toLowerCase();
+        var MAP = { js: "code", ts:"code", jsx:"code", tsx:"code", py:"code",
+          java:"code", cpp:"code", c:"code", h:"code", rs:"code", go:"code", rb:"code",
+          md:"docs", txt:"docs", pdf:"docs", json:"docs", xml:"docs", yaml:"docs", yml:"docs",
+          csv:"docs", toml:"docs", ini:"docs", cfg:"docs",
+          jpg:"media", jpeg:"media", png:"media", gif:"media", svg:"media", webp:"media",
+          mp4:"media", mp3:"media", wav:"media", zip:"archive", rar:"archive", "7z":"archive",
+          exe:"executable", dll:"executable", msi:"executable", bin:"executable" };
+        return MAP[ext] || "other";
+      }
+
+      // Simple squarified treemap
+      var padding = 2;
+      var x = padding, y = padding;
+      var availW = w - 2 * padding;
+      var availH = h - 2 * padding;
+
+      // Split into 2 rows
+      var row1Count = Math.ceil(items.length / 2);
+      var row1H = availH / 2;
+      var row2H = availH - row1H;
+
+      var legendMap = {};
+
+      function drawRow(startIdx, count, rowY, rowH) {
+        var rowItems = items.slice(startIdx, startIdx + count);
+        var rowTotal = rowItems.reduce(function(s, f) { return s + f.size; }, 0);
+        if (rowTotal === 0) return;
+
+        var curX = padding;
+        for (var i = 0; i < rowItems.length; i++) {
+          var fi = rowItems[i];
+          var frac = fi.size / rowTotal;
+          var bw = Math.max(frac * (availW - padding) - padding, 1);
+          var bh = rowH - padding;
+
+          var ft = getFileTypeExt(fi.path.split("/").pop() || fi.path);
+          var c = extColors[ft] || extColors.other;
+          legendMap[ft] = true;
+
+          ctx.fillStyle = "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
+          ctx.roundRect(curX, rowY, bw, bh, 2);
+          ctx.fill();
+
+          // Subtle border
+          ctx.strokeStyle = "rgba(255,255,255,0.08)";
+          ctx.lineWidth = 0.5;
+          ctx.roundRect(curX, rowY, bw, bh, 2);
+          ctx.stroke();
+
+          // Label for larger rects
+          if (bw > 35 && bh > 18) {
+            var label = fi.path.split("/").pop() || fi.path;
+            if (label.length > 12) label = label.substring(0, 10) + "…";
+            ctx.fillStyle = "rgba(255,255,255,0.75)";
+            ctx.font = "9px monospace";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillText(label, curX + 3, rowY + bh / 2);
+          } else if (bw > 18 && bh > 14) {
+            var sizeLabel = this._fmtSize(fi.size);
+            ctx.fillStyle = "rgba(255,255,255,0.5)";
+            ctx.font = "8px monospace";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(sizeLabel, curX + bw / 2, rowY + bh / 2);
+          }
+
+          curX += bw + padding;
+        }
+      }
+
+      drawRow.call(this, 0, row1Count, padding, row1H);
+      drawRow.call(this, row1Count, items.length - row1Count, padding + row1H, row2H);
+
+      // Render legend
+      var legendEl = this.treemapWrap.querySelector(".galaxy-nearby-treemap-legend");
+      legendEl.innerHTML = "";
+      var typeNames = { code: "Code", docs: "Docs", media: "Media", archive: "Archives", executable: "EXE", other: "Other" };
+      var legendOrder = ["code", "docs", "media", "archive", "executable", "other"];
+      for (var li = 0; li < legendOrder.length; li++) {
+        var t = legendOrder[li];
+        if (legendMap[t]) {
+          var c = extColors[t];
+          var item = document.createElement("span");
+          item.className = "galaxy-nearby-treemap-legend-item";
+          item.innerHTML = '<span class="galaxy-nearby-treemap-legend-swatch" style="background:rgb(' +
+            c[0] + "," + c[1] + "," + c[2] + ')"></span>' + (typeNames[t] || t);
+          legendEl.appendChild(item);
+        }
+      }
     }
 
     // ── Render Loop ─────────────────────────────────────────────
@@ -871,6 +1092,11 @@
       if (nearest) {
         this.selectedObject = nearest;
         this._onObjectSelected(nearest);
+
+        // Show nearby treemap for folder-like objects
+        if (nearest.type === "planet" || nearest.type === "star" || nearest.type === "blackHole") {
+          this._showNearbyTreemap(nearest);
+        }
 
         // Fly to the object
         const target = nearest.position || this.camera.target;
