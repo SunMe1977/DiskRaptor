@@ -449,7 +449,7 @@ jobs:
       - name: Build
         run: |
           cd qt-app
-          mkdir build 2>nul
+          if (-not (Test-Path build)) { mkdir build }
           cd build
           cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe
           cmake --build . --config Release
