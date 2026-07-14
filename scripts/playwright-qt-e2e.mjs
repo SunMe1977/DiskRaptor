@@ -18,14 +18,19 @@ const BUILD_DIR = path.join(APP_DIR, "qt-app", "build_qt");
 const INSTALL_DIR = "C:\\Program Files\\DiskRaptor";
 
 // Resolve binary path: env var override > local build > installed location
+// For installed builds, always prefer the launcher (sets PATH/runtime env).
 let BINARY = process.env.DISKraptor_BINARY;
 if (!BINARY) {
   const localPath = path.join(BUILD_DIR, "DiskRaptor.exe");
-  const installPath = path.join(INSTALL_DIR, "DiskRaptor.exe");
+  const installLauncher = path.join(INSTALL_DIR, "DiskRaptorLauncher.exe");
+  const installExe = path.join(INSTALL_DIR, "DiskRaptor.exe");
+  // Launcher handles runtime PATH setup - use it for installed builds
   if (fs.existsSync(localPath)) {
     BINARY = localPath;
-  } else if (fs.existsSync(installPath)) {
-    BINARY = installPath;
+  } else if (fs.existsSync(installLauncher)) {
+    BINARY = installLauncher;
+  } else if (fs.existsSync(installExe)) {
+    BINARY = installExe;
   } else {
     BINARY = localPath; // fallback, will produce clear error in startApp()
   }

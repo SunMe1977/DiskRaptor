@@ -369,6 +369,12 @@ jobs:
         shell: powershell
         run: |
           $env:DISKraptor_CDP_PORT = "${{ env.CDP_PORT }}"
+          # Add runtime directory to PATH so DiskRaptor.exe can find WebEngine DLLs
+          $runtimeDir = "C:\Program Files\DiskRaptor\runtime"
+          if (Test-Path $runtimeDir) {
+            $env:PATH = "$runtimeDir;C:\Program Files\DiskRaptor;$env:PATH"
+            Write-Host "Added runtime to PATH: $runtimeDir"
+          }
           $testScript = Join-Path ${{ github.workspace }} "scripts\playwright-qt-e2e.mjs"
 
           if (-not (Test-Path $testScript)) {
