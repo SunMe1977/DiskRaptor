@@ -17,7 +17,7 @@ import path from "node:path";
 import fs from "node:fs";
 
 const APP_DIR = path.resolve(".");
-const BUILD_DIR = path.join(APP_DIR, "qt-app", "build_qt");
+const BUILD_DIR = path.join(APP_DIR, "qt-app", "build");
 const INSTALL_DIR = "C:\\Program Files\\DiskRaptor";
 
 // ── Binary resolution ────────────────────────────────────────────────────
