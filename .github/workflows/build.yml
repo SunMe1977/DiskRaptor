@@ -379,6 +379,24 @@ jobs:
           if (-not $installed) { throw "Installation failed" }
           Write-Host "✅ Installed: $($installer.Name)"
 
+      - name: Download WebEngine runtime artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qtwebengine-runtime
+          path: runtime-artifact
+
+      - name: Extract runtime into install dir (bypass launcher download)
+        run: |
+          $runtimeZip = Join-Path ${{ github.workspace }} "runtime-artifact\qtwebengine_runtime.zip"
+          if (-not (Test-Path $runtimeZip)) {
+            Write-Host "⚠ No runtime artifact found — launcher will download it"
+            exit 0
+          }
+          $targetDir = "C:\Program Files\DiskRaptor\runtime"
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          Expand-Archive -Path $runtimeZip -DestinationPath $targetDir -Force
+          Write-Host "✅ WebEngine runtime extracted to $targetDir"
+
       - name: Run E2E tests
         id: e2e
         shell: powershell
