@@ -59,11 +59,13 @@ fn main() {
 
     // ── View menu ─────────────────────────────────────────
     let view_pie = CustomMenuItem::new("view_pie", "Pie Chart").accelerator("CmdOrCtrl+1");
-    let view_treemap = CustomMenuItem::new("view_treemap", "Treemap").accelerator("CmdOrCtrl+2");
+    let view_galaxy = CustomMenuItem::new("view_galaxy", "Galaxy").accelerator("CmdOrCtrl+3");
+    let view_treemap = CustomMenuItem::new("view_treemap", "Treemap").accelerator("CmdOrCtrl+4");
     let view_menu = Submenu::new(
         "View",
         Menu::new()
             .add_item(view_pie)
+            .add_item(view_galaxy)
             .add_item(view_treemap)
             .add_submenu(lang_submenu),
     );
@@ -98,6 +100,9 @@ fn main() {
             match id {
                 "view_pie" => {
                     let _ = win.emit("menu-view-pie", ());
+                }
+                "view_galaxy" => {
+                    let _ = win.emit("menu-view-galaxy", ());
                 }
                 "view_treemap" => {
                     let _ = win.emit("menu-view-treemap", ());
