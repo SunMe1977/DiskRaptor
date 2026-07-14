@@ -552,8 +552,8 @@
           }
         }
       } catch (e) {
-        // Silently ignore — admin check is optional
-        console.log("Admin check skipped:", e.message);
+        // Admin restart failed — continue scanning without elevation
+        console.warn("Could not restart as admin, continuing without elevation:", e.message);
       }
 
       isScanning = true;

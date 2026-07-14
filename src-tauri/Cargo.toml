@@ -1,6 +1,6 @@
 [package]
 name = "diskraptor"
-version = "0.2.6"
+version = "0.6.0"
 description = "Ultra-fast directory scanner - modern JDiskReport successor"
 authors = ["DiskRaptor Team"]
 edition = "2021"
