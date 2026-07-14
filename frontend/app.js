@@ -668,15 +668,7 @@
           document.getElementById("progress-elapsed").textContent =
             (mins > 0 ? mins + "m " : "") + secs + "s";
 
-          // Feed GalaxyView live scan
-          if (galaxyView && isGalaxyMode) {
-            galaxyView.updateLiveScan({
-              filesFound: files,
-              dirsFound: dirs,
-              isRunning: true,
-              elapsedSecs: elapsed,
-            });
-          }
+          //           }
 
           var running =
             typeof p.is_running !== "undefined"
@@ -701,6 +693,14 @@
           if (result) break;
           await sleep(500);
         }
+// Feed GalaxyView live scan
+          if (galaxyView && isGalaxyMode) {
+            galaxyView.updateLiveScan({
+              filesFound: files,
+              dirsFound: dirs,
+              isRunning: true,
+              elapsedSecs: elapsed,
+            }
 
         if (!result) throw new Error("No scan result");
 
