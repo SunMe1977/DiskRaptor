@@ -446,7 +446,7 @@
           try {
             await sleep(800);
             var result = await window.__TAURI__.invoke("check_for_updates");
-            var currentVer = "v0.2.4";
+            var currentVer = "v0.5.0";
             var remoteVer = result.trim();
             if (remoteVer > currentVer) {
               icon.textContent = "⬇️";
@@ -662,6 +662,16 @@
           }
           drawPerfGraph();
 
+          // Feed GalaxyView during live scan
+          if (galaxyView && isGalaxyMode) {
+            galaxyView.updateLiveScan({
+              filesFound: files,
+              dirsFound: dirs,
+              isRunning: true,
+              elapsedSecs: elapsed
+            });
+          }
+
           // Elapsed time
           var mins = Math.floor(elapsed / 60);
           var secs = elapsed % 60;
@@ -693,14 +703,6 @@
           if (result) break;
           await sleep(500);
         }
-// Feed GalaxyView live scan
-          if (galaxyView && isGalaxyMode) {
-            galaxyView.updateLiveScan({
-              filesFound: files,
-              dirsFound: dirs,
-              isRunning: true,
-              elapsedSecs: elapsed,
-            }
 
         if (!result) throw new Error("No scan result");
 
@@ -749,6 +751,9 @@
             galaxyView.show();
           }
         }
+
+        // Also feed via _feedGalaxyView for consistency
+        _feedGalaxyView();
 
         // Load tree
         if (result.root_info && result.root_info.total_chunks > 0) {

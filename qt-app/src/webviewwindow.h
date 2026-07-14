@@ -34,6 +34,7 @@ private slots:
 
     // Menu action slots
     void onViewPie();
+    void onViewGalaxy();
     void onViewTreemap();
     void onFindDuplicates();
     void onCheckUpdates();
@@ -61,6 +62,7 @@ private:
     // Menu items
     QMenu *m_viewMenu = nullptr;
     QAction *m_viewPieAction = nullptr;
+    QAction *m_viewGalaxyAction = nullptr;
     QAction *m_viewTreemapAction = nullptr;
 
     QString m_frontendPath;

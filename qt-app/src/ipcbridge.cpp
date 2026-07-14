@@ -40,6 +40,23 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "check_for_updates") return checkForUpdates();
     if (command == "find_duplicates") return findDuplicates(args.value("path").toString());
 
+    if (command == "check_admin_needed") return checkAdminNeeded(args.value("path").toString());
+    if (command == "restart_as_admin") return restartAsAdmin();
+
+    // Frontend chunk/scan commands — stubs until full streaming is wired
+    if (command == "get_chunk") {
+        return resultToJson(true, QVariantMap{{"nodes", QJsonArray()}, {"index", 0}});
+    }
+    if (command == "get_children") {
+        return resultToJson(true, QVariantMap{{"children", QJsonArray()}});
+    }
+    if (command == "release_scan") {
+        return resultToJson(true, QVariantMap{{"status", "released"}});
+    }
+    if (command == "get_stats") {
+        return resultToJson(true, QVariantMap{});
+    }
+
     if (command == "start_scan") {
         QString path = args.value("path").toString();
         if (!path.isEmpty()) {
@@ -164,7 +181,7 @@ QString IpcBridge::listDrives()
 QString IpcBridge::checkForUpdates()
 {
     // Simple version check — in production, query GitHub releases API
-    return resultToJson(true, "v0.3.19");
+    return resultToJson(true, "v0.5.0");
 }
 
 QString IpcBridge::findDuplicates(const QString &path)
@@ -172,6 +189,27 @@ QString IpcBridge::findDuplicates(const QString &path)
     Q_UNUSED(path)
     // Placeholder: In production, implement file hash comparison
     return resultToJson(true, "[]");
+}
+
+QString IpcBridge::checkAdminNeeded(const QString &path)
+{
+    Q_UNUSED(path)
+    // Always return false — we scan as normal user on all platforms
+    return resultToJson(true, false);
+}
+
+QString IpcBridge::restartAsAdmin()
+{
+#ifdef Q_OS_WIN
+    // On Windows, relaunch with ShellExecuteW using runas verb, then exit
+    QString exePath = QApplication::applicationFilePath();
+    ShellExecuteW(nullptr, L"runas", exePath.toStdWString().c_str(),
+                  nullptr, nullptr, SW_SHOW);
+    QApplication::quit();
+    return resultToJson(true, QVariantMap{{"restarting", true}});
+#else
+    return resultToJson(false, QVariant(), "Not supported on this platform");
+#endif
 }
 
 QString IpcBridge::resultToJson(bool success, const QVariant &data, const QString &error)

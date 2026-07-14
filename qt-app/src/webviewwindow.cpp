@@ -57,6 +57,10 @@ void MainWindow::setupMenuBar()
     m_viewPieAction->setShortcut(QKeySequence("Ctrl+1"));
     connect(m_viewPieAction, &QAction::triggered, this, &MainWindow::onViewPie);
 
+    m_viewGalaxyAction = m_viewMenu->addAction(tr("Galaxy"));
+    m_viewGalaxyAction->setShortcut(QKeySequence("Ctrl+3"));
+    connect(m_viewGalaxyAction, &QAction::triggered, this, &MainWindow::onViewGalaxy);
+
     m_viewTreemapAction = m_viewMenu->addAction(tr("Treemap"));
     m_viewTreemapAction->setShortcut(QKeySequence("Ctrl+2"));
     connect(m_viewTreemapAction, &QAction::triggered, this, &MainWindow::onViewTreemap);
@@ -165,6 +169,14 @@ void MainWindow::onViewPie()
           "if(window.diagram)window.diagram.setMode('pie');");
 }
 
+void MainWindow::onViewGalaxy()
+{
+    runJS("document.querySelectorAll('.diagram-mode').forEach(function(b){b.classList.remove('active')});"
+          "var btn = document.querySelector('.diagram-mode[data-mode=\"galaxy\"]');"
+          "if(btn)btn.classList.add('active');"
+          "if(window.diagram){isGalaxyMode=true;if(window.galaxyView){galaxyView.show();if(galaxyView.objects.length===0&&currentStats)_feedGalaxyView();}}");
+}
+
 void MainWindow::onViewTreemap()
 {
     runJS("document.querySelectorAll('.diagram-mode').forEach(function(b){b.classList.remove('active')});"
@@ -194,7 +206,7 @@ void MainWindow::onCheckUpdates()
           "actions.style.display = 'none';"
           "dlBtn.style.display = 'none';"
           "window.__TAURI__.invoke('check_for_updates').then(function(result){"
-          "  var currentVer = 'v0.3.19';"
+          "  var currentVer = 'v0.5.0';"
           "  var remoteVer = (result||'').trim();"
           "  if(remoteVer > currentVer){"
           "    icon.textContent = '\u2B07\uFE0F';"

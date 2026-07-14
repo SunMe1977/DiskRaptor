@@ -34,6 +34,8 @@ public:
     Q_INVOKABLE QString listDrives();
     Q_INVOKABLE QString checkForUpdates();
     Q_INVOKABLE QString findDuplicates(const QString &path);
+    Q_INVOKABLE QString checkAdminNeeded(const QString &path);
+    Q_INVOKABLE QString restartAsAdmin();
 
 signals:
     void eventEmitted(const QString &event, const QVariant &payload);
