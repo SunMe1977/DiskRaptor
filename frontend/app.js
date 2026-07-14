@@ -91,13 +91,7 @@
     var aboutOverlay = document.getElementById("about-overlay");
     var aboutClose = document.getElementById("btn-about-close");
 
-    // Auto-detect home directory on startup
-    (async function() {
-      try {
-        var home = await window.__TAURI__.invoke("get_home_dir");
-        if (home) { scanPath.value = home; }
-      } catch(e) { /* ignore — keep default */ }
-    })();
+    // Scan path starts empty — user picks a folder or types one in
 
     // Diagram mode switcher (in detail panel)
     var diagramModes = document.querySelectorAll(".diagram-mode");

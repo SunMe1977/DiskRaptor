@@ -4,7 +4,8 @@ REM Produces: Core binaries for NSIS + WebEngine runtime archive
 
 call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set QT_DIR=
-for %%v in (6.10.3 6.11.1 6.12.0) do (
+REM Order: try common versions, pick the first complete install
+for %%v in (6.12.0 6.11.1 6.10.3) do (
   if exist "C:\Qt\%%v\msvc2022_64\bin\windeployqt.exe" if exist "C:\Qt\%%v\msvc2022_64\bin\Qt6Core.dll" (
     set QT_DIR=C:\Qt\%%v\msvc2022_64
     goto :qt_found
