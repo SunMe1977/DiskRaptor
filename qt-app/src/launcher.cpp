@@ -4,6 +4,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <commctrl.h>
 #include <shellapi.h>
 #include <wininet.h>
 #include <shlobj.h>
@@ -17,6 +18,7 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "version.lib")
 
@@ -26,29 +28,252 @@
 #define RELEASE_URL_LATEST L"https://github.com/SunMe1977/DiskRaptor/releases/latest/download/qtwebengine_runtime.zip"
 #define APP_EXE     L"DiskRaptor.exe"
 
+#define IDC_DL_STATUS   1001
+#define IDC_DL_PROGRESS 1002
+
+struct DownloadUiState {
+    HWND hwnd = NULL;
+    HWND status = NULL;
+    HWND progress = NULL;
+    BOOL connected = FALSE;
+    BOOL marquee = TRUE;
+};
+
+LRESULT CALLBACK DownloadUiWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_NCCREATE) {
+        const CREATESTRUCTW *cs = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+        return TRUE;
+    }
+
+    DownloadUiState *ui = reinterpret_cast<DownloadUiState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    switch (msg) {
+    case WM_CLOSE:
+        // Prevent accidental close while runtime setup is in progress.
+        return 0;
+    case WM_CTLCOLORSTATIC:
+        if (ui && reinterpret_cast<HWND>(lParam) == ui->status) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetBkMode(hdc, TRANSPARENT);
+            if (ui->connected) {
+                SetTextColor(hdc, RGB(0, 128, 0));
+            } else {
+                SetTextColor(hdc, RGB(60, 60, 60));
+            }
+            return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
+        }
+        break;
+    default:
+        break;
+    }
+
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void PumpDownloadUiMessages() {
+    MSG msg;
+    while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+}
+
+BOOL InitDownloadUi(DownloadUiState &ui) {
+    INITCOMMONCONTROLSEX icex = { sizeof(INITCOMMONCONTROLSEX), ICC_PROGRESS_CLASS };
+    InitCommonControlsEx(&icex);
+
+    static const wchar_t *kClassName = L"DiskRaptorDownloadUiWindow";
+    static BOOL classRegistered = FALSE;
+    if (!classRegistered) {
+        WNDCLASSW wc = {};
+        wc.lpfnWndProc = DownloadUiWndProc;
+        wc.hInstance = GetModuleHandleW(NULL);
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wc.hIcon = LoadIcon(NULL, IDI_INFORMATION);
+        wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        wc.lpszClassName = kClassName;
+        if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+            return FALSE;
+        }
+        classRegistered = TRUE;
+    }
+
+    ui.hwnd = CreateWindowExW(
+        WS_EX_DLGMODALFRAME,
+        kClassName,
+        L"DiskRaptor - Runtime Download",
+        WS_CAPTION | WS_SYSMENU,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        520,
+        180,
+        NULL,
+        NULL,
+        GetModuleHandleW(NULL),
+        &ui);
+    if (!ui.hwnd) {
+        return FALSE;
+    }
+
+    CreateWindowExW(
+        0,
+        L"STATIC",
+        L"Preparing runtime setup...",
+        WS_CHILD | WS_VISIBLE,
+        20,
+        20,
+        470,
+        24,
+        ui.hwnd,
+        NULL,
+        GetModuleHandleW(NULL),
+        NULL);
+
+    ui.status = CreateWindowExW(
+        0,
+        L"STATIC",
+        L"Connecting to server...",
+        WS_CHILD | WS_VISIBLE,
+        20,
+        52,
+        470,
+        24,
+        ui.hwnd,
+        reinterpret_cast<HMENU>(IDC_DL_STATUS),
+        GetModuleHandleW(NULL),
+        NULL);
+
+    ui.progress = CreateWindowExW(
+        0,
+        PROGRESS_CLASSW,
+        NULL,
+        WS_CHILD | WS_VISIBLE | PBS_SMOOTH | PBS_MARQUEE,
+        20,
+        92,
+        470,
+        26,
+        ui.hwnd,
+        reinterpret_cast<HMENU>(IDC_DL_PROGRESS),
+        GetModuleHandleW(NULL),
+        NULL);
+
+    SendMessageW(ui.progress, PBM_SETMARQUEE, TRUE, 35);
+    ShowWindow(ui.hwnd, SW_SHOW);
+    UpdateWindow(ui.hwnd);
+    PumpDownloadUiMessages();
+    return TRUE;
+}
+
+void UpdateDownloadUiMessage(DownloadUiState *ui, LPCWSTR text) {
+    if (!ui || !ui->status) return;
+    SetWindowTextW(ui->status, text);
+    InvalidateRect(ui->status, NULL, TRUE);
+    UpdateWindow(ui->status);
+    PumpDownloadUiMessages();
+}
+
+void UpdateDownloadUiConnected(DownloadUiState *ui, BOOL connected) {
+    if (!ui) return;
+    ui->connected = connected;
+    if (ui->status) {
+        InvalidateRect(ui->status, NULL, TRUE);
+        UpdateWindow(ui->status);
+    }
+    PumpDownloadUiMessages();
+}
+
+void UpdateDownloadUiProgress(DownloadUiState *ui, ULONGLONG downloaded, ULONGLONG total) {
+    if (!ui || !ui->progress) return;
+
+    if (total > 0) {
+        if (ui->marquee) {
+            SendMessageW(ui->progress, PBM_SETMARQUEE, FALSE, 0);
+            ui->marquee = FALSE;
+            SendMessageW(ui->progress, PBM_SETRANGE32, 0, 1000);
+            SendMessageW(ui->progress, PBM_SETSTATE, PBST_NORMAL, 0);
+        }
+
+        ULONGLONG scaled = (downloaded * 1000ULL) / total;
+        if (scaled > 1000ULL) scaled = 1000ULL;
+        SendMessageW(ui->progress, PBM_SETPOS, static_cast<WPARAM>(scaled), 0);
+
+        wchar_t status[256];
+        int pct = static_cast<int>((downloaded * 100ULL) / total);
+        StringCchPrintfW(status, 256, L"Connected. Downloading runtime... %d%%", pct);
+        UpdateDownloadUiMessage(ui, status);
+        UpdateDownloadUiConnected(ui, TRUE);
+    } else {
+        if (!ui->marquee) {
+            SendMessageW(ui->progress, PBM_SETMARQUEE, TRUE, 35);
+            ui->marquee = TRUE;
+        }
+        UpdateDownloadUiMessage(ui, L"Connected. Downloading runtime...");
+        UpdateDownloadUiConnected(ui, TRUE);
+    }
+}
+
+void CloseDownloadUi(DownloadUiState *ui) {
+    if (ui && ui->hwnd) {
+        DestroyWindow(ui->hwnd);
+        ui->hwnd = NULL;
+        ui->status = NULL;
+        ui->progress = NULL;
+    }
+}
+
 // ── Download file via HTTPS ──────────────────────────────────
-BOOL DownloadFile(LPCWSTR url, LPCWSTR destPath) {
+BOOL DownloadFile(LPCWSTR url, LPCWSTR destPath, DownloadUiState *ui) {
     HINTERNET hNet = InternetOpenW(L"DiskRaptorLauncher", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
     if (!hNet) return FALSE;
 
+    if (ui) {
+        UpdateDownloadUiMessage(ui, L"Connecting to server...");
+        UpdateDownloadUiConnected(ui, FALSE);
+    }
+
     HINTERNET hUrl = InternetOpenUrlW(hNet, url, NULL, 0, INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
     if (!hUrl) { InternetCloseHandle(hNet); return FALSE; }
+
+    DWORD contentLength = 0;
+    DWORD lenSize = sizeof(contentLength);
+    BOOL hasContentLength = HttpQueryInfoW(
+        hUrl,
+        HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER,
+        &contentLength,
+        &lenSize,
+        NULL);
 
     HANDLE hFile = CreateFileW(destPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) { InternetCloseHandle(hUrl); InternetCloseHandle(hNet); return FALSE; }
 
     BYTE buf[65536];
     DWORD read;
+    ULONGLONG downloaded = 0;
     BOOL ok = TRUE;
     while (InternetReadFile(hUrl, buf, sizeof(buf), &read) && read > 0) {
         DWORD written;
         ok = WriteFile(hFile, buf, read, &written, NULL);
         if (!ok) break;
+
+        downloaded += written;
+        if (ui) {
+            UpdateDownloadUiProgress(
+                ui,
+                downloaded,
+                (hasContentLength && contentLength > 0) ? static_cast<ULONGLONG>(contentLength) : 0ULL);
+        }
+        PumpDownloadUiMessages();
     }
 
     CloseHandle(hFile);
     InternetCloseHandle(hUrl);
     InternetCloseHandle(hNet);
+
+    if (ok && ui) {
+        UpdateDownloadUiProgress(ui, 1, 1);
+        UpdateDownloadUiMessage(ui, L"Download complete. Preparing extraction...");
+    }
+
     return ok;
 }
 
@@ -402,20 +627,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         StringCchCatW(zipPath, MAX_PATH, L"\\");
         StringCchCatW(zipPath, MAX_PATH, RUNTIME_ZIP);
 
-        HWND hwnd = CreateWindowExW(0, L"STATIC",
-            L"Downloading Qt WebEngine runtime...\nThis may take a minute.",
-            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
-            CW_USEDEFAULT, CW_USEDEFAULT, 400, 120,
-            NULL, NULL, GetModuleHandleW(NULL), NULL);
-        if (hwnd) {
-            ShowWindow(hwnd, SW_SHOW);
-            UpdateWindow(hwnd);
-        }
+        DownloadUiState downloadUi = {};
+        InitDownloadUi(downloadUi);
 
         DeleteFileW(zipPath);
-        BOOL downloaded = DownloadFile(RELEASE_URL_LATEST, zipPath);
+        BOOL downloaded = DownloadFile(RELEASE_URL_LATEST, zipPath, &downloadUi);
 
-        if (hwnd) DestroyWindow(hwnd);
+        CloseDownloadUi(&downloadUi);
 
         if (!downloaded) {
             MessageBoxW(NULL,

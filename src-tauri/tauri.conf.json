@@ -6,7 +6,7 @@
   },
   "package": {
     "productName": "DiskRaptor",
-    "version": "0.3.15"
+    "version": "0.3.18"
   },
   "tauri": {
     "allowlist": {

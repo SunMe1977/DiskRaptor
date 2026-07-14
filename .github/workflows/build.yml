@@ -32,7 +32,8 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.12.0'
+          # 6.12.0 is currently missing in aqt for windows desktop in CI mirrors.
+          version: '6.10.3'
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
@@ -417,7 +418,7 @@ jobs:
   # 2. RELEASE — Create GitHub Release with all assets
   # ═══════════════════════════════════════════════════════════════
   release:
-    if: github.ref_type == 'tag' && !cancelled()
+    if: github.ref_type == 'tag' && needs.build-app.result == 'success'
     needs: [build-app]
     runs-on: ubuntu-latest
     permissions:
