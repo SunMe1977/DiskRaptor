@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");
-    app.setApplicationVersion("0.3.18");
+    app.setApplicationVersion("0.3.19");
     app.setOrganizationName("DiskRaptor");
 
     // ── WebEngine configuration ──────────────────────────────

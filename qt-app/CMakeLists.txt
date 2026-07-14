@@ -13,6 +13,10 @@ set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/scanner.cpp
 set(HEADERS src/webviewwindow.h src/ipcbridge.h src/scanner.h src/platform_utils.h src/modules/module_loader.h)
 set(RESOURCES resources/resources.qrc)
 
+if(WIN32)
+  list(APPEND SOURCES resources/windows/app.rc)
+endif()
+
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${RESOURCES})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -42,7 +46,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 
 # ── Launcher (no Qt deps, Win32 only) ──────────────────────────
 if(WIN32)
-  add_executable(DiskRaptorLauncher WIN32 src/launcher.cpp)
+  add_executable(DiskRaptorLauncher WIN32 src/launcher.cpp resources/windows/launcher.rc)
   target_link_libraries(DiskRaptorLauncher PRIVATE
     kernel32 user32 shell32 wininet)
   set_target_properties(DiskRaptorLauncher PROPERTIES

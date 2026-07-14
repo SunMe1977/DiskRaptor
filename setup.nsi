@@ -15,7 +15,7 @@ ShowInstDetails show
 !define PRODUCT_URL "https://github.com/SunMe1977/DiskRaptor"
 !define PRODUCT_HELP_URL "https://github.com/SunMe1977/DiskRaptor/issues"
 
-!define PRODUCT_VERSION "0.3.18"
+!define PRODUCT_VERSION "0.3.19"
 !ifdef VERSION
   !undef PRODUCT_VERSION
   !define PRODUCT_VERSION "${VERSION}"
