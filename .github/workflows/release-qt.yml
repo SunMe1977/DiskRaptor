@@ -1,5 +1,8 @@
 name: Build + Release Qt
 
+# DISABLED (never worked): build.yml is the active workflow
+if: ${{ false }}
+
 on:
   push:
     branches: [main, master]

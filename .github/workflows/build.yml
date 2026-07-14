@@ -1,8 +1,5 @@
 name: Build, Test, and Release
 
-# DISABLED: replaced by release-qt.yml
-if: ${{ false }}
-
 on:
   push:
     branches: [main, master, develop]
