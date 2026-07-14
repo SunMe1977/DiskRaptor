@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  QT_VERSION: "6.5.3"
+  QT_VERSION: "6.10.3"
 
 jobs:
   # ──────────────────────────────────────────────────────────────
@@ -121,6 +121,7 @@ jobs:
   # Linux (Ubuntu + Qt 6)
   # ──────────────────────────────────────────────────────────────
   build-linux:
+    if: ${{ false }}
     name: "Linux x64"
     runs-on: ubuntu-24.04
 
@@ -178,6 +179,7 @@ jobs:
   # macOS (Qt 6)
   # ──────────────────────────────────────────────────────────────
   build-macos:
+    if: ${{ false }}
     name: "macOS arm64"
     runs-on: macos-14
 
@@ -275,7 +277,7 @@ jobs:
   release:
     name: "Create Release"
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build-windows]
     runs-on: ubuntu-latest
 
     steps:
