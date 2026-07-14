@@ -4,6 +4,7 @@
  * Connects to Qt WebEngine via CDP (Chromium DevTools Protocol).
  * Set DISKraptor_CDP_PORT=9222 before launching DiskRaptor to
  * enable the remote debugging port.
+ * Set DISKraptor_BINARY to override the binary path (for CI installs).
  */
 
 import { chromium } from "playwright";
@@ -14,7 +15,22 @@ import os from "node:os";
 
 const APP_DIR = path.resolve(".");
 const BUILD_DIR = path.join(APP_DIR, "qt-app", "build_qt");
-const BINARY = path.join(BUILD_DIR, "DiskRaptor.exe");
+const INSTALL_DIR = "C:\\Program Files\\DiskRaptor";
+
+// Resolve binary path: env var override > local build > installed location
+let BINARY = process.env.DISKraptor_BINARY;
+if (!BINARY) {
+  const localPath = path.join(BUILD_DIR, "DiskRaptor.exe");
+  const installPath = path.join(INSTALL_DIR, "DiskRaptor.exe");
+  if (fs.existsSync(localPath)) {
+    BINARY = localPath;
+  } else if (fs.existsSync(installPath)) {
+    BINARY = installPath;
+  } else {
+    BINARY = localPath; // fallback, will produce clear error in startApp()
+  }
+}
+
 const CDP_PORT = "9222";
 let tp = null;
 let browser = null;
@@ -27,6 +43,8 @@ function startApp() {
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(BINARY)) {
       console.log("\n  [SETUP] Binary not found at:", BINARY);
+      console.log("  [SETUP] Tried local build path and", INSTALL_DIR);
+      console.log("  [SETUP] Set DISKraptor_BINARY env var to override");
       reject(new Error("Binary not found"));
       return;
     }
@@ -35,7 +53,7 @@ function startApp() {
       DISKraptor_CDP_PORT: CDP_PORT,
     };
     tp = spawn(BINARY, [], {
-      cwd: BUILD_DIR,
+      cwd: path.dirname(BINARY),
       env,
       stdio: ["pipe", "pipe", "pipe"],
       detached: true,
