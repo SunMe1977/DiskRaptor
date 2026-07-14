@@ -1,33 +1,20 @@
 
-[1] Homebrew: Homebrew 6.0.9
-
-[2] Checking tools...
-  All tools present
-
 [3] Building...
   Qt6_DIR: /usr/local/opt/qt@6/lib/cmake/Qt6
   Rust scanner...
    Compiling diskraptor v0.6.1 (/Users/hjh/Documents/GitHub/DiskRaptor/src-tauri)
-error[E0382]: borrow of moved value: `full`
-   --> src/scanner/walker.rs:339:51
+error[E0425]: cannot find value `sz` in this scope
+   --> src/scanner/walker.rs:341:28
     |
-296 |             let full = entry.path().to_string_lossy().to_string();
-    |                 ----   ------------------------------------------ this reinitialization might get skipped
-    |                 |
-    |                 move occurs because `full` has type `std::string::String`, which does not implement the `Copy` trait
-...
-318 |                 ptix.insert(full, ci);
-    |                             ---- value moved here
-...
-339 |                 progress(files_found, dirs_found, &full);
-    |                                                   ^^^^^ value borrowed here after move
+341 |             bytes_found += sz;
+    |                            ^^
     |
-    = note: borrow occurs due to deref coercion to `str`
-help: consider cloning the value if the performance cost is acceptable
+help: the binding `sz` is available in a different scope in the same function
+   --> src/scanner/walker.rs:324:21
     |
-318 |                 ptix.insert(full.clone(), ci);
-    |                                 ++++++++
+324 |                 let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
+    |                     ^^
 
-For more information about this error, try `rustc --explain E0382`.
+For more information about this error, try `rustc --explain E0425`.
 error: could not compile `diskraptor` (lib) due to 1 previous error
 hjh@Hansjoergs-Mac DiskRaptor % 
