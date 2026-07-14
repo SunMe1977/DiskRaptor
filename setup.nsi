@@ -162,6 +162,24 @@ Section "-Prerequisites" SEC_PREREQ
   ; Create install directory
   CreateDirectory "$INSTDIR"
 
+  ; Clean up leftover files from previous installations
+  ; These survive if the old uninstaller couldn't delete locked files
+  ; Stray root-level plugin DLLs (belong in subdirectories, not root)
+  Delete "$INSTDIR\qwindows.dll"
+  Delete "$INSTDIR\qgif.dll"
+  Delete "$INSTDIR\qico.dll"
+  Delete "$INSTDIR\qjpeg.dll"
+  Delete "$INSTDIR\qsvg.dll"
+  Delete "$INSTDIR\qsvgicon.dll"
+  Delete "$INSTDIR\qmodernwindowsstyle.dll"
+  Delete "$INSTDIR\qstylekitstyle.dll"
+  Delete "$INSTDIR\qtuiotouchplugin.dll"
+  Delete "$INSTDIR\qnetworklistmanager.dll"
+  Delete "$INSTDIR\qcertonlybackend.dll"
+  Delete "$INSTDIR\qschannelbackend.dll"
+  ; Delete old runtime — forces launcher to download fresh on next launch
+  RMDir /r "$INSTDIR\runtime"
+
   ; Check free space
   ${GetFileAttributes} "$INSTDIR" "DIRECTORY" $R0
   ${DriveSpace} "$INSTDIR" "/D=F /S=G" $R0
