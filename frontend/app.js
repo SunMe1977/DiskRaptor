@@ -422,68 +422,7 @@
           var btnDup = document.getElementById("btn-duplicates");
           if (btnDup) btnDup.click();
         });
-        window.__TAURI__.event.listen("menu-check-updates", async function () {
-          var overlay = document.getElementById("update-overlay");
-          if (!overlay) return;
-          // Show connecting state
-          var icon = document.getElementById("update-icon");
-          var status = document.getElementById("update-status");
-          var version = document.getElementById("update-version");
-          var actions = document.getElementById("update-actions");
-          var progress = document.getElementById("update-progress");
-          var dlBtn = document.getElementById("btn-update-download");
-          var closeBtn = document.getElementById("btn-update-close");
-          icon.textContent = "🔗";
-          status.textContent = "Connecting to GitHub…";
-          version.textContent = "";
-          actions.style.display = "none";
-          progress.style.display = "none";
-          overlay.classList.add("active");
-          closeBtn.onclick = function () { overlay.classList.remove("active"); };
-          overlay.addEventListener("click", function (e) {
-            if (e.target === overlay) overlay.classList.remove("active");
-          });
-          try {
-            await sleep(800);
-            var result = await window.__TAURI__.invoke("check_for_updates");
-            var currentVer = "v0.5.0";
-            var remoteVer = result.trim();
-            if (remoteVer > currentVer) {
-              icon.textContent = "⬇️";
-              status.textContent = "A new version is available!";
-              version.textContent = "Current: " + currentVer + " \u2192 Latest: " + remoteVer;
-              actions.style.display = "flex";
-              dlBtn.style.display = "inline-block";
-              dlBtn.onclick = async function () {
-                actions.style.display = "none";
-                progress.style.display = "block";
-                icon.textContent = "⏳";
-                status.textContent = "Downloading latest version…";
-                try {
-                  await window.__TAURI__.invoke("download_and_install", { version: remoteVer });
-                } catch (e) {
-                  icon.textContent = "❌";
-                  status.textContent = "Download failed: " + e;
-                  actions.style.display = "flex";
-                  dlBtn.style.display = "none";
-                  progress.style.display = "none";
-                }
-              };
-            } else {
-              icon.textContent = "✅";
-              status.textContent = "You\u2019re up to date!";
-              version.textContent = "Current: " + currentVer + " (latest)";
-              actions.style.display = "flex";
-              dlBtn.style.display = "none";
-            }
-          } catch (e) {
-            icon.textContent = "❌";
-            status.textContent = "Could not check for updates.";
-            version.textContent = e.message || "Network error";
-            actions.style.display = "flex";
-            dlBtn.style.display = "none";
-          }
-        });
+
         // Language menu: single event with language code as payload
         window.__TAURI__.event.listen("lang-changed", function (evt) {
           var code = evt && evt.payload;
@@ -1386,48 +1325,7 @@
     });
   }
 
-  // ── Update check ───────────────────────────────────────
-  async function checkForUpdates() {
-    var overlay = document.getElementById("update-overlay");
-    var versionEl = document.getElementById("update-version");
-    var statusEl = document.getElementById("update-status");
-    var actionsEl = document.getElementById("update-actions");
-    var progressEl = document.getElementById("update-progress");
-    var dlBtn = document.getElementById("btn-update-download");
-    var closeBtn = document.getElementById("btn-update-close");
 
-    if (!overlay || !window.__TAURI__ || !window.__TAURI__.invoke) return;
-    actionsEl.style.display = "flex";
-    progressEl.style.display = "none";
-    statusEl.textContent = "Checking for updates…";
-    versionEl.textContent = "";
-    overlay.classList.add("active");
-
-    try {
-      var latestTag = await window.__TAURI__.invoke("check_for_updates");
-      versionEl.textContent = "Latest: " + latestTag;
-      statusEl.textContent = "A new version is available!";
-      dlBtn.onclick = async function () {
-        actionsEl.style.display = "none";
-        progressEl.style.display = "block";
-        statusEl.textContent = "Downloading…";
-        try {
-          await window.__TAURI__.invoke("download_and_install", { version: latestTag });
-        } catch (e) {
-          statusEl.textContent = "Download failed: " + e;
-          actionsEl.style.display = "flex";
-          progressEl.style.display = "none";
-        }
-      };
-    } catch (e) {
-      statusEl.textContent = "No update available or could not check.";
-      versionEl.textContent = "";
-    }
-    closeBtn.onclick = function () { overlay.classList.remove("active"); };
-    overlay.addEventListener("click", function (e) {
-      if (e.target === overlay) overlay.classList.remove("active");
-    });
-  }
 
   // Wrap init in a global error handler
   function safeInit() {
