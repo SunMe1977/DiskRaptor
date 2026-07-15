@@ -168,7 +168,7 @@ jobs:
           if not defined NSIS_EXE if exist "C:\Program Files (x86)\NSIS\makensis.exe" set "NSIS_EXE=C:\Program Files (x86)\NSIS\makensis.exe"
           if not defined NSIS_EXE if exist "C:\nsis\nsis-3.09\makensis.exe" set "NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe"
           if not defined NSIS_EXE exit /b 1
-          "%NSIS_EXE%" /DVERSION=${{ github.ref_name }} /DINSTALL_DIR=%cd%\install "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi 2>&1
+          "%NSIS_EXE%" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi 2>&1
           if errorlevel 1 exit /b %errorlevel%
 
       - name: Upload core installer artifact

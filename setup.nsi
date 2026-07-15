@@ -44,11 +44,12 @@ InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRO
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
 
-; Allow INSTALL_DIR to be overridden via /DINSTALL_DIR=path at compile time
-; Default to "install" (relative to the NSIS script directory)
+; Allow INSTALL_DIR to be overridden, defaults to "install" (relative to script)
 !ifndef INSTALL_DIR
   !define INSTALL_DIR "install"
 !endif
+; Also define FRONTEND_DIR relative to script
+!define FRONTEND_SRC "${INSTALL_DIR}\share\DiskRaptor\frontend"
 
 ; ── Pages ─────────────────────────────────────────────────────
 !insertmacro MUI_PAGE_WELCOME
@@ -279,9 +280,11 @@ Section "${PRODUCT_NAME} Core" SEC_CORE
 
   ; ● Frontend ●
   DetailPrint "Copying frontend files..."
-  ${If} ${FileExists} "${INSTALL_DIR}\share\DiskRaptor\frontend\*.*"
-    File /r "${INSTALL_DIR}\share\DiskRaptor\frontend\*.*"
-  ${EndIf}
+  SetOutPath "$INSTDIR\share\DiskRaptor\frontend"
+  !ifndef FRONTEND_DIR
+    !define FRONTEND_DIR "install\share\DiskRaptor\frontend"
+  !endif
+  File "${FRONTEND_DIR}\index.html"
 
   Push "OK — all core files copied"
   Call LogMessage
