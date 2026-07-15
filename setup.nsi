@@ -273,8 +273,8 @@ Section "${PRODUCT_NAME} Core" SEC_CORE
 
   ; ● Frontend ●
   DetailPrint "Copying frontend files..."
-  ${If} ${FileExists} "install\share\DiskRaptor\frontend\*.*"
-    File /r "install\share\DiskRaptor\frontend\*.*"
+  ${If} ${FileExists} "${INSTALL_DIR}\share\DiskRaptor\frontend\*.*"
+    File /r "${INSTALL_DIR}\share\DiskRaptor\frontend\*.*"
   ${EndIf}
 
   Push "OK — all core files copied"
