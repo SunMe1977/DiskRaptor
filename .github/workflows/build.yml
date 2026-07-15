@@ -335,10 +335,10 @@ jobs:
           if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════
-  # 2. E2E TESTS — Run Playwright tests against the built app
+  # 2. E2E TESTS — DISABLED (CDP needs Qt maintenance tool fix)
   # ═══════════════════════════════════════════════════════════════
   e2e-test:
-    if: github.ref_type == 'tag'
+    if: false
     needs: [build-app]
     runs-on: windows-latest
     timeout-minutes: 15
@@ -435,10 +435,10 @@ jobs:
           if-no-files-found: ignore
 
   # ═══════════════════════════════════════════════════════════════
-  # 2b. PRE-COMMIT TESTS (non-tag pushes) — quick smoke test
+  # 2b. PRE-COMMIT TESTS — DISABLED (CDP needs Qt maintenance tool fix)
   # ═══════════════════════════════════════════════════════════════
   precommit-test:
-    if: github.ref_type != 'tag'
+    if: false
     runs-on: windows-latest
     timeout-minutes: 15
 

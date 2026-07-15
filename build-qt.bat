@@ -82,29 +82,29 @@ for %%f in (
   QtWebEngineProcess.exe
 ) do (
   if exist "%CORE_DIR%\%%f" (
-    move /y "%CORE_DIR%\%%f" "%RUNTIME_DIR%\" >nul
+    copy /y "%CORE_DIR%\%%f" "%RUNTIME_DIR%\" >nul
     echo   Moved %%f to runtime
   )
 )
 
 REM Move Qt6Quick and Qt6Qml DLLs (needed by WebEngine)
-for %%f in ("%CORE_DIR%\Qt6Quick*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%\" >nul
-for %%f in ("%CORE_DIR%\Qt6Qml*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%\" >nul
-for %%f in ("%CORE_DIR%\Qt6OpenGL*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%\" >nul
-for %%f in ("%CORE_DIR%\Qt6Svg*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%\" >nul
-for %%f in ("%CORE_DIR%\Qt6ShaderTools*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%\" >nul
-for %%f in ("%CORE_DIR%\Qt6BundledProtocol*.dll") do if exist %%f move /y "%%f" "%RUNTIME_DIR%\" >nul
+for %%f in ("%CORE_DIR%\Qt6Quick*.dll") do if exist %%f copy /y "%%f" "%RUNTIME_DIR%\" >nul
+for %%f in ("%CORE_DIR%\Qt6Qml*.dll") do if exist %%f copy /y "%%f" "%RUNTIME_DIR%\" >nul
+for %%f in ("%CORE_DIR%\Qt6OpenGL*.dll") do if exist %%f copy /y "%%f" "%RUNTIME_DIR%\" >nul
+for %%f in ("%CORE_DIR%\Qt6Svg*.dll") do if exist %%f copy /y "%%f" "%RUNTIME_DIR%\" >nul
+for %%f in ("%CORE_DIR%\Qt6ShaderTools*.dll") do if exist %%f copy /y "%%f" "%RUNTIME_DIR%\" >nul
+for %%f in ("%CORE_DIR%\Qt6BundledProtocol*.dll") do if exist %%f copy /y "%%f" "%RUNTIME_DIR%\" >nul
 
-REM Move QML directory
+REM Copy QML directory
 if exist "%CORE_DIR%\qml" (
-  move /y "%CORE_DIR%\qml" "%RUNTIME_DIR%\qml" >nul
-  echo   Moved qml/ to runtime
+  xcopy /e /i /y "%CORE_DIR%\qml" "%RUNTIME_DIR%\qml" >nul
+  echo   Copied qml/ to runtime
 )
 
-REM Move WebEngine locales to runtime
+REM Copy WebEngine locales to runtime
 if exist "%CORE_DIR%\translations\qtwebengine_locales" (
-  move /y "%CORE_DIR%\translations\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
-  echo   Moved qtwebengine_locales/ to runtime
+  xcopy /e /i /y "%CORE_DIR%\translations\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
+  echo   Copied qtwebengine_locales/ to runtime
 )
 
 REM Package runtime as ZIP
@@ -133,7 +133,7 @@ set MAKENSIS=
 if exist "C:\Program Files (x86)\NSIS\makensis.exe" set MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe
 if exist "C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe" set MAKENSIS=C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe
 if defined MAKENSIS (
-  "%MAKENSIS%" /DVERSION=0.3.19 "%cd%\setup.nsi" 2>&1
+  "%MAKENSIS%" /DVERSION=0.0.1 "%cd%\setup.nsi" 2>&1
   if exist "DiskRaptor_*.exe" (
     for %%f in ("DiskRaptor_*.exe") do echo ✅ NSIS Setup: %%f
   ) else (
