@@ -435,10 +435,10 @@ jobs:
           if-no-files-found: ignore
 
   # ═══════════════════════════════════════════════════════════════
-  # 2b. PRE-COMMIT TESTS — DISABLED (CDP needs Qt maintenance tool fix)
+  # 2b. PRE-COMMIT TESTS (non-tag pushes) — build only, E2E disabled
   # ═══════════════════════════════════════════════════════════════
   precommit-test:
-    if: false
+    if: github.ref_type != 'tag'
     runs-on: windows-latest
     timeout-minutes: 15
 
@@ -473,38 +473,10 @@ jobs:
           cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe
           cmake --build . --config Release
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'package-lock.json'
-
-      - name: Install Playwright
+      - name: Build verification
         run: |
-          npm ci
-          npx playwright install chromium
-
-      - name: Run E2E tests (from build dir, no installer)
-        shell: powershell
-        run: |
-          $env:DISKraptor_CDP_PORT = "${{ env.CDP_PORT }}"
-          $testScript = Join-Path '${{ github.workspace }}' 'scripts\playwright-qt-e2e.mjs'
-
-          if (-not (Test-Path $testScript)) {
-            Write-Host "Qt test script missing, skipping"
-            exit 0
-          }
-
-          Write-Host "Running pre-commit E2E tests..."
-          node $testScript 2>&1
-
-          $exitCode = $LASTEXITCODE
-          if ($exitCode -ne 0) {
-            throw "Pre-commit E2E tests FAILED (exit code: $exitCode)"
-          }
-
-          Write-Host "✅ Pre-commit tests passed"
+          if (-not (Test-Path "qt-app\build\Release\DiskRaptor.exe")) { throw "Build produced no exe" }
+          Write-Host "✅ Build OK"
 
   # ═══════════════════════════════════════════════════════════════
   # 3. RELEASE — Create GitHub Release with all assets
