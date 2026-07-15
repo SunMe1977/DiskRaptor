@@ -475,7 +475,7 @@ jobs:
 
       - name: Build verification
         run: |
-          if (-not (Test-Path "qt-app\build\Release\DiskRaptor.exe")) { throw "Build produced no exe" }
+          if (-not (Test-Path "qt-app\build\DiskRaptor.exe")) { throw "Build produced no exe" }
           Write-Host "✅ Build OK"
 
   # ═══════════════════════════════════════════════════════════════
