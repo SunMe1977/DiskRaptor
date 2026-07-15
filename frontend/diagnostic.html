@@ -1,43 +1,106 @@
 <!DOCTYPE html>
 <html>
-<head><title>DiskRaptor Diagnostic</title></head>
-<body style="background:#1e1e2e;color:#cdd6f4;font-family:monospace;padding:20px">
-<h1>Diagnostic</h1>
-<pre id="out">Loading...</pre>
-<script>
-(async function() {
-  var out = document.getElementById('out');
-  function log(m) { out.textContent += m + '\n'; }
-  
-  log('window.__TAURI__: ' + (window.__TAURI__ ? 'EXISTS' : 'UNDEFINED'));
-  if (window.__TAURI__) {
-    log('__TAURI__.invoke: ' + (typeof window.__TAURI__.invoke === 'function' ? 'function' : typeof window.__TAURI__.invoke));
-    log('__qtBridgeReady: ' + window.__TAURI__.__qtBridgeReady);
-  }
-  
-  // Test invoke
-  if (window.__TAURI__ && window.__TAURI__.invoke) {
-    try {
-      log('\nTesting list_drives...');
-      var drives = await window.__TAURI__.invoke('list_drives');
-      log('list_drives OK: ' + JSON.stringify(drives));
-    } catch(e) {
-      log('list_drives FAILED: ' + e);
+<head>
+  <meta charset="utf-8">
+  <title>DiskRapt</title>or Diagnostics</title>
+  <style>
+    body { background:#0d1117; color:#e6edf3; font:14px monospace; padding:20px; }
+    .ok { color:#3fb950; }
+    .err { color:#f85149; }
+    pre { background:#161b22; padding:12px; border-radius:6px; overflow:auto; max-height:300px; }
+    button { padding:8px 16px; background:#1f6feb; color:#fff; border:0; border-radius:4px; cursor:pointer; margin:4px; }
+    button:hover { background:#388bfd; }
+    #log { margin-top:12px; }
+    .row { display:flex; gap:12px; align-items:center; margin:8px 0; }
+    input { flex:1; padding:6px 8px; background:#21262d; border:1px solid #30363d; color:#e6edf3; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h1></h1>🦅 DiskRaptor Diagnostics</h1>
+  <div id="status">Loading...</div>
+
+  <div class="row">
+    <input id="scan-path" value="C:\dev\DiskRaptor" style="width:400px;">
+    <button id="btn-scan">▶ Scan</button>
+  </div>
+  <pre id="log"></pre>
+
+  <script src="tauri-api-bridge.js"></script>
+  <script>
+    const log = document.getElementById('log');
+    const status = document.getElementById('status');
+
+    function addLog(msg, type) {
+      const line = document.createElement('div');
+      line.className = type || '';
+      line.textContent = '> ' + msg;
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
     }
-    
-    try {
-      log('\nTesting start_scan with C:\\Users\\hansj...');
-      var scanPromise = window.__TAURI__.invoke('start_scan', { path: 'C:\\Users\\hansj' });
-      var timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT after 10s')), 10000));
-      var result = await Promise.race([scanPromise, timeout]);
-      log('start_scan OK: ' + JSON.stringify(result));
-    } catch(e) {
-      log('start_scan FAILED: ' + e);
-    }
-  } else {
-    log('Cannot test - __TAURI__.invoke not available');
-  }
-})();
-</script>
+
+    window.addEventListener('tauri-bridge-ready', async () => {
+      addLog('Bridge ready');
+      addLog('__TAURI__ keys: ' + Object.keys(window.__TAURI__).join(', '));
+      addLog('typeof invoke: ' + typeof window.__TAURI__.invoke);
+      status.innerHTML = '<span class="ok">Bridge ready</span>';
+    });
+
+    document.getElementById('btn-scan').addEventListener('click', async () => {
+      const path = document.getElementById('scan-path').value.trim();
+      addLog('Starting scan: ' + path);
+      status.innerHTML = 'Scanning...';
+
+      try {
+        // Step 1: start scan
+        addLog('Calling start_scan...');
+        const result = await window.__TAURI__.invoke('start_scan', { path: path });
+        addLog('start_scan OK: scan_id=' + result.scan_id);
+        addLog('  total_nodes=' + result.root_info.total_nodes + ' total_chunks=' + result.root_info.total_chunks);
+        addLog('  stats: files=' + result.stats.total_files + ' dirs=' + result.stats.total_dirs + ' size=' + result.stats.total_size);
+
+        // Step 2: get chunk 0
+        addLog('Calling get_chunk (scan_id=' + result.scan_id + ', chunk_index=0)...');
+        const chunk = await window.__TAURI__.invoke('get_chunk', {
+          scan_id: result.scan_id,
+          chunk_index: 0
+        });
+        addLog('get_chunk OK: ' + chunk.nodes.length + ' nodes in chunk');
+
+        // Step 3: get children of root
+        addLog('Calling get_children (node_index=0)...');
+        const children = await window.__TAURI__.invoke('get_children', {
+          scan_id: result.scan_id,
+          node_index: 0
+        });
+        addLog('get_children OK: ' + children.length + ' children');
+
+        // Show first 5 children
+        for (let i = 0; i < Math.min(5, children.length); i++) {
+          const c = children[i];
+          addLog('  [' + i + '] ' + c.name + ' (' + c.size + ' bytes, ' + c.node_type + ')');
+        }
+
+        // Step 4: get stats
+        addLog('Calling get_stats...');
+        const stats = await window.__TAURI__.invoke('get_stats', { scan_id: result.scan_id });
+        addLog('get_stats OK: files=' + stats.total_files + ' dirs=' + stats.total_dirs);
+
+        status.innerHTML = '<span class="ok">Scan complete</span>';
+        addLog('ALL COMMANDS SUCCEEDED', 'ok');
+      } catch (err) {
+        addLog('ERROR: ' + err, 'err');
+        status.innerHTML = '<span class="err">Error: ' + err + '</span>';
+      }
+    });
+
+    // Also test the invoke function directly
+    setTimeout(() => {
+      addLog('__TAURI__: ' + (typeof window.__TAURI__));
+      if (window.__TAURI__) {
+        addLog('  invoke: ' + (typeof window.__TAURI__.invoke));
+        addLog('  keys: ' + Object.keys(window.__TAURI__).join(', '));
+      }
+    }, 2000);
+  </script>
 </body>
 </html>

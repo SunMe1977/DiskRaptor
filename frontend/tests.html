@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>DiskR</title>aptor — UI Test</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #test-output {
+      position: fixed; top: 0; right: 0; width: 460px; height: 100vh;
+      overflow-y: auto; background: #0d1117; border-left: 2px solid #30363d;
+      padding: 12px; font-family: monospace; font-size: 12px; z-index: 9999;
+    }
+    #test-output h2 { color: #58a6ff; margin: 0 0 8px; font-size: 14px; }
+    #test-output .pass { color: #3fb950; }
+    #test-output .fail { color: #f85149; }
+    #test-output .info { color: #8b949e; }
+    #test-output hr { border: 0; border-top: 1px solid #21262d; margin: 8px 0; }
+    .test-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  </style>
+</head>
+<body>
+  <div id="test-output"><h2></h2>🧪 DiskRaptor Tests</h2></div>
+
+  <!-- Load all source modules -->
+  <script src="virtualscroll.js"></script>
+  <script src="chunkloader.js"></script>
+  <script src="treeview.js"></script>
+  <script src="topfiles.js"></script>
+  <script src="stats.js"></script>
+  <script>
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test framework
+    // ═══════════════════════════════════════════════════════════════════════
+    const pass = [];
+    const fail = [];
+
+    function assert(condition, msg) {
+      if (condition) { pass.push(msg); return true; }
+      fail.push(msg);
+      return false;
+    }
+
+    function assertEq(a, b, msg) {
+      if (a === b) { pass.push(msg); return true; }
+      fail.push(`${msg} — expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`);
+      return false;
+    }
+
+    function assertNe(a, b, msg) {
+      if (a !== b) { pass.push(msg); return true; }
+      fail.push(`${msg} — both were ${JSON.stringify(a)}`);
+      return false;
+    }
+
+    function logResult() {
+      const out = document.getElementById('test-output');
+      out.innerHTML = '<h2>🧪 DiskRaptor Tests</h2>';
+      pass.forEach(m => { out.innerHTML += `<div class="test-row"><span class="pass">✔</span> ${m}</div>`; });
+      fail.forEach(m => { out.innerHTML += `<div class="test-row"><span class="fail">✘</span> ${m}</div>`; });
+      out.innerHTML += `<hr/><div>Passed: ${pass.length} &nbsp;|&nbsp; Failed: ${fail.length}</div>`;
+    }
+
+    // ── Mock Tauri API ─────────────────────────────────────────────────
+    const mockInvokeLog = [];
+    window.__TAURI__ = {
+      invoke: async (cmd, args) => {
+        mockInvokeLog.push({ cmd, args: JSON.parse(JSON.stringify(args)) });
+        switch (cmd) {
+          case 'get_scan_progress':
+            return { scan_id: args.scan_id, files_found: 50000, dirs_found: 2000, is_running: false, phase: 3, current_dir: 'C:\\Test', elapsed_secs: 5, error: null };
+
+          case 'get_scan_result':
+            return {
+              scan_id: args.scan_id || 'test_scan_123',
+              root_info: { root_index: 0, total_nodes: 15000, total_chunks: 2 },
+              stats: {
+                total_files: 1200, total_dirs: 300, total_size: 5368709120, scan_time_ms: 423,
+                top_files: [
+                  { path: 'C:\\big.iso', size: 2147483648, size_human: '2.00 GB' },
+                  { path: 'C:\\data.zip', size: 1073741824, size_human: '1.00 GB' },
+                ],
+                file_type_breakdown: [
+                  { extension: 'iso', count: 1, total_size: 2147483648, size_human: '2.00 GB' },
+                ],
+              },
+            };
+
+          case 'dialog_open':
+            return 'C:\\Test\\MockPath';
+
+          case 'start_scan':
+            return {
+              scan_id: 'test_scan_123',
+              root_info: { root_index: 0, total_nodes: 15000, total_chunks: 2 },
+              stats: {
+                total_files: 1200, total_dirs: 300, total_size: 5368709120,
+                scan_time_ms: 423,
+                top_files: [
+                  { path: 'C:\\big.iso', size: 2147483648, size_human: '2.00 GB' },
+                  { path: 'C:\\data.zip', size: 1073741824, size_human: '1.00 GB' },
+                  { path: 'C\\log.txt', size: 524288000, size_human: '500.00 MB' },
+                ],
+                file_type_breakdown: [
+                  { extension: 'iso', count: 1, total_size: 2147483648, size_human: '2.00 GB' },
+                  { extension: 'zip', count: 2, total_size: 1073741824, size_human: '1.00 GB' },
+                ],
+              },
+            };
+
+          case 'get_chunk': {
+            const ci = args.chunkIndex;
+            const nodes = [];
+            const base = ci * 10000;
+            const count = ci === 0 ? 5 : 3; // small test chunks
+            for (let i = 0; i < count; i++) {
+              const idx = base + i;
+              const isDir = i === 0 || (ci > 0 && i < 2);
+              nodes.push({
+                name: idx === 0 ? '(root)' : `item_${idx}`,
+                size: isDir ? (1000000 - i * 100) : (5000 - i * 10),
+                file_count: isDir ? (10 - i) : 1,
+                node_type: isDir ? 'Directory' : 'File',
+                parent: idx === 0 ? 4294967295 : 0,
+                first_child: 4294967295,
+                next_sibling: i < count - 1 ? idx + 1 : 4294967295,
+                depth: idx === 0 ? 0 : 1,
+                chunk_id: ci,
+              });
+            }
+            return { chunk_id: ci, total_chunks: 2, total_nodes: 15000, nodes };
+          }
+
+          case 'get_children': {
+            const children = [
+              { name: 'child_A', size: 500000, file_count: 5, node_type: 'Directory', parent: args.nodeIndex, chunk_id: 1 },
+              { name: 'child_B', size: 250000, file_count: 3, node_type: 'Directory', parent: args.nodeIndex, chunk_id: 1 },
+              { name: 'file_1.txt', size: 1024, file_count: 1, node_type: 'File', parent: args.nodeIndex, chunk_id: 1 },
+            ];
+            return children;
+          }
+
+          case 'get_stats':
+            return {
+              total_files: 1200, total_dirs: 300, total_size: 5368709120, scan_time_ms: 423,
+              top_files: [], file_type_breakdown: [],
+            };
+
+          case 'release_scan':
+            return null;
+
+          default:
+            throw new Error(`Unknown mock command: ${cmd}`);
+        }
+      },
+      dialog: {
+        open: async (opts) => {
+          mockInvokeLog.push({ cmd: 'dialog.open()', opts: JSON.parse(JSON.stringify(opts)) });
+          return 'C:\\Test\\MockPath';
+        },
+      },
+      event: { listen: () => {} },
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 1: VirtualScroll
+    // ═══════════════════════════════════════════════════════════════════════
+    async function testVirtualScroll() {
+      const container = document.createElement('div');
+      container.style.cssText = 'height:300px; overflow-y:auto; position:relative;';
+      document.body.appendChild(container);
+
+      const renderCalls = [];
+      const vs = new VirtualScroll(container, {
+        estimatedRowHeight: 26, overscan: 5,
+        renderCell: (index, el) => { renderCalls.push(index); el.textContent = `Row ${index}`; },
+      });
+
+      // Should show empty state
+      assert(vs.totalItems === 0, 'VS: initial totalItems is 0');
+
+      // Set 100 items
+      vs.setTotalItems(100, 2600);
+      assertEq(vs.totalItems, 100, 'VS: setTotalItems(100)');
+      assert(renderCalls.length > 0, 'VS: renderCell was called after setTotalItems');
+
+      // Scroll
+      renderCalls.length = 0;
+      container.scrollTop = 500;
+      container.dispatchEvent(new Event('scroll'));
+      await new Promise(r => setTimeout(r, 50));
+      assert(renderCalls.length > 0, 'VS: renderCell called after scroll');
+
+      // Check visible range
+      assert(vs.firstVisible >= 0, 'VS: firstVisible >= 0');
+      assert(vs.lastVisible > vs.firstVisible, 'VS: lastVisible > firstVisible');
+
+      vs.destroy();
+      container.remove();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 2: ChunkLoader — startScan + getChunk
+    // ═══════════════════════════════════════════════════════════════════════
+    async function testChunkLoader() {
+      const loader = new ChunkLoader();
+      assertEq(loader.scanId, null, 'CL: initial scanId is null');
+
+      const result = await loader.startScan('C:\\');
+      assertEq(result.scan_id, 'test_scan_123', 'CL: startScan returns scan_id');
+      assertEq(loader.scanId, 'test_scan_123', 'CL: loader.scanId set');
+      assertEq(loader.totalNodes, 15000, 'CL: totalNodes set');
+      assertEq(loader.totalChunks, 2, 'CL: totalChunks set');
+
+      // Chunk 0 should be loaded automatically
+      assert(loader.loadedChunks.has(0), 'CL: chunk 0 loaded after startScan');
+
+      // Nodes should be accessible
+      const root = loader.getNode(0);
+      assertNe(root, null, 'CL: root node exists');
+      assertEq(root ? root.name : '', '(root)', 'CL: root node name');
+
+      // Load chunk 1
+      await loader.loadChunk(1);
+      assert(loader.loadedChunks.has(1), 'CL: chunk 1 loaded');
+
+      // getChildrenIndices
+      const children = loader.getChildrenIndices(0);
+      assert(Array.isArray(children), 'CL: getChildrenIndices returns array');
+
+      // fetchChildren (from backend mock)
+      const rawChildren = await loader.fetchChildren(0);
+      assert(Array.isArray(rawChildren), 'CL: fetchChildren returns array');
+      assert(rawChildren.length >= 2, 'CL: fetchChildren has mock children');
+
+      // getStats
+      const stats = await loader.getStats();
+      assertEq(stats.total_files, 1200, 'CL: stats.total_files');
+
+      // release
+      await loader.release();
+      assertEq(loader.scanId, null, 'CL: scanId null after release');
+
+      mockInvokeLog.length = 0; // reset for next test
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 3: TreeView — scan + rebuild + expand + select
+    // ═══════════════════════════════════════════════════════════════════════
+    async function testTreeView() {
+      // Create minimal DOM required by TreeView
+      if (!document.getElementById('tree-scroll')) {
+        const treePanel = document.createElement('div');
+        treePanel.id = 'tree-panel';
+        treePanel.style.cssText = 'position:absolute;left:-9999px;';
+
+        const scroll = document.createElement('div');
+        scroll.id = 'tree-scroll';
+        scroll.style.cssText = 'height:400px;overflow-y:auto;position:relative;';
+        treePanel.appendChild(scroll);
+
+        const viewport = document.createElement('div');
+        viewport.id = 'tree-viewport';
+        scroll.appendChild(viewport);
+
+        // Badge
+        const badge = document.createElement('span');
+        badge.id = 'node-count';
+        treePanel.appendChild(badge);
+
+        // Status bar
+        const status = document.createElement('div');
+        status.className = 'status-bar';
+        treePanel.appendChild(status);
+
+        // Selection panel elements
+        const selPanel = document.createElement('div');
+        ['sel-name', 'sel-size', 'sel-files', 'sel-type', 'sel-action'].forEach(id => {
+          const el = document.createElement('span');
+          el.id = id;
+          selPanel.appendChild(el);
+        });
+
+        document.body.appendChild(treePanel);
+        document.body.appendChild(selPanel);
+      }
+
+      const loader = new ChunkLoader();
+      await loader.startScan('C:\\');
+
+      const tv = new TreeView('tree-viewport', loader);
+      assert(Array.isArray(tv.visibleNodes), 'TV: visibleNodes is array');
+      assertEq(tv.visibleNodes.length, 0, 'TV: visibleNodes empty before rebuild');
+
+      await tv.rebuild();
+      assert(tv.visibleNodes.length > 0, 'TV: visibleNodes populated after rebuild');
+      assertEq(tv.visibleNodes[0], 0, 'TV: first visible node is root');
+
+      // Test selection
+      tv.select(0);
+      assertEq(tv.selectedIndex, 0, 'TV: selectedIndex set to 0');
+
+      // Test toggle expand
+      await tv.toggleExpand(0);
+      assert(tv.expanded.has(0), 'TV: root expanded after toggleExpand');
+      // After expand, rebuild should show children
+      assert(tv.visibleNodes.length > 1, 'TV: children visible after expand');
+
+      // Test collapse
+      await tv.toggleExpand(0);
+      assert(!tv.expanded.has(0), 'TV: root collapsed after second toggle');
+
+      await loader.release();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 4: TopFilesPanel render
+    // ═══════════════════════════════════════════════════════════════════════
+    function testTopFiles() {
+      if (!document.getElementById('topfiles-body')) {
+        const table = document.createElement('table');
+        const tbody = document.createElement('tbody');
+        tbody.id = 'topfiles-body';
+        table.appendChild(tbody);
+        document.body.appendChild(table);
+      }
+
+      const tp = new TopFilesPanel();
+      const data = [
+        { path: 'C:\\big.iso', size: 2147483648, size_human: '2.00 GB' },
+        { path: 'C:\\small.txt', size: 1024, size_human: '1.00 KB' },
+      ];
+
+      tp.render(data);
+      const rows = document.getElementById('topfiles-body').querySelectorAll('tr');
+      assertEq(rows.length, 2, 'TopFiles: 2 rows rendered');
+
+      tp.clear();
+      const emptyRows = document.getElementById('topfiles-body').querySelectorAll('tr');
+      assert(emptyRows.length === 0 || emptyRows[0].textContent.includes('No files'),
+        'TopFiles: cleared');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 5: StatsPanel render
+    // ═══════════════════════════════════════════════════════════════════════
+    function testStatsPanel() {
+      ['stat-files', 'stat-dirs', 'stat-size', 'stat-time'].forEach(id => {
+        if (!document.getElementById(id)) {
+          const el = document.createElement('span');
+          el.id = id;
+          document.body.appendChild(el);
+        }
+      });
+
+      const sp = new StatsPanel();
+      sp.render({ total_files: 1200, total_dirs: 300, total_size: 5368709120, scan_time_ms: 423 });
+
+      assertEq(document.getElementById('stat-files').textContent, '1,200', 'Stats: files');
+      assertEq(document.getElementById('stat-dirs').textContent, '300', 'Stats: dirs');
+      assertNe(document.getElementById('stat-size').textContent, '—', 'Stats: size set');
+      assertNe(document.getElementById('stat-time').textContent, '—', 'Stats: time set');
+
+      sp.clear();
+      assertEq(document.getElementById('stat-files').textContent, '—', 'Stats: cleared');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 6: App.js integration — Browse button triggers dialog
+    // ═══════════════════════════════════════════════════════════════════════
+    async function testBrowseButton() {
+      // Create the scan-path input if not present
+      if (!document.getElementById('scan-path')) {
+        const input = document.createElement('input');
+        input.id = 'scan-path';
+        input.value = 'C:\\';
+        document.body.appendChild(input);
+      }
+      const scanPath = document.getElementById('scan-path');
+
+      // Simulate clicking browse button using the dialog API directly
+      const result = await window.__TAURI__.dialog.open({ directory: true, title: 'Test' });
+      assertEq(result, 'C:\\Test\\MockPath', 'Browse: dialog returns mock path');
+
+      scanPath.value = result;
+      assertEq(scanPath.value, 'C:\\Test\\MockPath', 'Browse: path input updated');
+
+      // Verify the dialog was called by checking the invoke log
+      const dialogCalls = mockInvokeLog.filter(c => c.cmd === 'dialog.open()');
+      assert(dialogCalls.length >= 1, 'Browse: dialog.open() was called at least once');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 7: Scan button integration — full scan flow
+    // ═══════════════════════════════════════════════════════════════════════
+    async function testScanFlow() {
+      const loader = new ChunkLoader();
+
+      // startScan with mocked invoke
+      const result = await loader.startScan('C:\\');
+
+      assertNe(result, null, 'Scan: startScan returned a result');
+      assertEq(result.scan_id, 'test_scan_123', 'Scan: has scan_id');
+      assertEq(result.root_info.total_nodes, 15000, 'Scan: total_nodes correct');
+
+      // Verify stats
+      assertEq(result.stats.total_files, 1200, 'Scan: stats.total_files');
+      assertEq(result.stats.total_dirs, 300, 'Scan: stats.total_dirs');
+      assertEq(result.stats.total_size, 5368709120, 'Scan: stats.total_size');
+
+      // Top files
+      assert(Array.isArray(result.stats.top_files), 'Scan: top_files is array');
+      assert(result.stats.top_files.length > 0, 'Scan: has top files');
+
+      // Verify that the invoke was called with the right args
+      const scanCalls = mockInvokeLog.filter(c => c.cmd === 'start_scan');
+      assert(scanCalls.length >= 1, 'Scan: start_scan was invoked');
+
+      // Check that args use snake_case (not camelCase)
+      if (scanCalls.length > 0) {
+        const args = scanCalls[0].args;
+        assert('path' in args, 'Scan: start_scan arg has "path" (not "Path")');
+      }
+
+      // Verify chunk loading works
+      assert(loader.loadedChunks.has(0), 'Scan: chunk 0 auto-loaded');
+      const rootNode = loader.getNode(0);
+      assertNe(rootNode, null, 'Scan: root node accessible');
+      assertEq(rootNode.name, '(root)', 'Scan: root node name is "(root)"');
+
+      await loader.release();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 8: Invoke uses correct camelCase parameter names
+    // (Tauri v1 auto-converts snake_case Rust params to camelCase)
+    // ═══════════════════════════════════════════════════════════════════════
+    async function testCamelCaseArgs() {
+      mockInvokeLog.length = 0;
+      const loader = new ChunkLoader();
+
+      await loader.startScan('C:\\Test');
+      await loader.loadChunk(1);
+      // Children
+      await loader.fetchChildren(0);
+      // Stats
+      await loader.getStats();
+      // Release
+      await loader.release();
+
+      // Check all invoke calls for correct camelCase parameter names
+      const issues = [];
+      for (const call of mockInvokeLog) {
+        if (call.cmd === 'start_scan') {
+          // 'path' matches both forms
+          if (!('path' in (call.args || {}))) issues.push('start_scan missing "path"');
+        }
+        if (call.cmd === 'get_chunk') {
+          if (!('scanId' in (call.args || {}))) issues.push('get_chunk missing "scanId"');
+          if (!('chunkIndex' in (call.args || {}))) issues.push('get_chunk missing "chunkIndex"');
+          if ('scan_id' in (call.args || {})) issues.push('get_chunk uses snake_case "scan_id"');
+        }
+        if (call.cmd === 'get_children') {
+          if (!('scanId' in (call.args || {}))) issues.push('get_children missing "scanId"');
+          if (!('nodeIndex' in (call.args || {}))) issues.push('get_children missing "nodeIndex"');
+        }
+        if (call.cmd === 'get_stats') {
+          if (!('scanId' in (call.args || {}))) issues.push('get_stats missing "scanId"');
+        }
+        if (call.cmd === 'release_scan') {
+          if (!('scanId' in (call.args || {}))) issues.push('release_scan missing "scanId"');
+        }
+      }
+
+      if (issues.length === 0) {
+        pass.push('CamelCase: all invoke args use correct camelCase');
+      } else {
+        fail.push('CamelCase: ' + issues.join('; '));
+      }
+
+      mockInvokeLog.length = 0;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 9: Format helpers
+    // ═══════════════════════════════════════════════════════════════════════
+    function testFormatHelpers() {
+      // TreeView formatSize
+      const tv = new TreeView('nonexistent', {});
+      assertEq(tv._formatSize(0), '0 B', 'Format: 0 bytes');
+      assertEq(tv._formatSize(500), '500 B', 'Format: 500 bytes');
+      // Note: format varies slightly, just check they don't error and contain expected unit
+      const kb = tv._formatSize(2048);
+      assert(kb.includes('KB') || kb.includes('2.'), `Format: 2048 → "${kb}"`);
+
+      // TopFilesPanel formatSize
+      const tp = new TopFilesPanel();
+      const mb = tp._formatSize(1048576);
+      assert(mb.includes('MB') || mb.includes('1.'), `Format: 1MB → "${mb}"`);
+
+      // StatsPanel formatSize
+      const sp = new StatsPanel();
+      const gb = sp._formatSize(1073741824);
+      assert(gb.includes('GB') || gb.includes('1.'), `Format: 1GB → "${gb}"`);
+
+      pass.push('Format: helpers work without errors');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Run all tests
+    // ═══════════════════════════════════════════════════════════════════════
+    (async () => {
+      console.log('DiskRaptor UI tests starting...');
+
+      // Safety timeout: force show results after 20s
+      const safetyTimer = setTimeout(function() {
+        console.log('Safety timeout triggered');
+        logResult();
+      }, 20000);
+
+      try { await testVirtualScroll(); } catch (e) { fail.push('VirtualScroll: ' + e.message); }
+      try { await testChunkLoader(); } catch (e) { fail.push('ChunkLoader: ' + e.message); }
+      try { await testTreeView(); } catch (e) { fail.push('TreeView: ' + e.message); }
+      try { testTopFiles(); } catch (e) { fail.push('TopFiles: ' + e.message); }
+      try { testStatsPanel(); } catch (e) { fail.push('StatsPanel: ' + e.message); }
+      try { await testBrowseButton(); } catch (e) { fail.push('BrowseButton: ' + e.message); }
+      try { await testScanFlow(); } catch (e) { fail.push('ScanFlow: ' + e.message); }
+      try { await testCamelCaseArgs(); } catch (e) { fail.push('CamelCaseArgs: ' + e.message); }
+      try { testFormatHelpers(); } catch (e) { fail.push('FormatHelpers: ' + e.message); }
+
+      clearTimeout(safetyTimer);
+      logResult();
+      console.log('Tests complete. ' + pass.length + ' passed, ' + fail.length + ' failed.');
+    })();
+  </script>
+</body>
+</html>

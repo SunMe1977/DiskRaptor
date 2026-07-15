@@ -11,7 +11,7 @@
     "@tauri-apps/cli": "^1",
     "playwright": "^1.61.1",
     "sharp": "^0.35.3",
-    "ws": "^8.21.0"
+    "ws": "^8.21.1"
   },
   "dependencies": {
     "@tauri-apps/api": "^1.6.0"

@@ -10,6 +10,11 @@
 #include <QMessageBox>
 #include <QDebug>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 #include "webviewwindow.h"
 #include "ipcbridge.h"
 
@@ -18,6 +23,34 @@ int main(int argc, char *argv[])
     // Qt WebEngine is initialized automatically when QApplication is created
     // No manual QtWebEngine::initialize() needed in Qt 6.5+
 
+#ifdef Q_OS_WIN
+    // Check if running as admin — relaunch if not
+    BOOL isAdmin = FALSE;
+    HANDLE hToken = NULL;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        TOKEN_ELEVATION elevation;
+        DWORD size = sizeof(TOKEN_ELEVATION);
+        if (GetTokenInformation(hToken, TokenElevation, &elevation, size, &size)) {
+            isAdmin = elevation.TokenIsElevated;
+        }
+        CloseHandle(hToken);
+    }
+    if (!isAdmin) {
+        WCHAR exePath[MAX_PATH];
+        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+        SHELLEXECUTEINFOW sei = { sizeof(sei) };
+        sei.lpVerb = L"runas";
+        sei.lpFile = exePath;
+        sei.nShow = SW_SHOWNORMAL;
+        if (ShellExecuteExW(&sei)) {
+            return 0;
+        }
+        QMessageBox::information(nullptr, "DiskRaptor",
+            "DiskRaptor needs administrator privileges to scan drives.");
+        return 0;
+    }
+#endif
+
     // Enable remote debugging for Playwright tests via env var
     // Set DISKraptor_CDP_PORT=9222 before launching to enable
     // Qt WebEngine DevTools on that port.
@@ -25,7 +58,7 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");
-    app.setApplicationVersion("0.0.1");
+    app.setApplicationVersion("0.0.2");
     app.setOrganizationName("DiskRaptor");
 
     // â”€â”€ WebEngine configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
