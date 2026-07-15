@@ -654,19 +654,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         DeleteRuntimeDirectory(appDir);
         CreateDirectoryW(runtimeDir, NULL);
 
-        // Always fetch runtime ZIP externally so the package remains out-of-band.
+        // Try local ZIP first, fall back to download from GitHub
         WCHAR zipPath[MAX_PATH];
         StringCchCopyW(zipPath, MAX_PATH, appDir);
         StringCchCatW(zipPath, MAX_PATH, L"\\");
         StringCchCatW(zipPath, MAX_PATH, RUNTIME_ZIP);
 
-        DownloadUiState downloadUi = {};
-        InitDownloadUi(downloadUi);
-
-        DeleteFileW(zipPath);
-        BOOL downloaded = DownloadFile(RELEASE_URL_LATEST, zipPath, &downloadUi);
-
-        CloseDownloadUi(&downloadUi);
+        BOOL downloaded = FALSE;
+        if (GetFileAttributesW(zipPath) != INVALID_FILE_ATTRIBUTES) {
+            // Local ZIP exists — use it directly
+            downloaded = TRUE;
+        } else {
+            // Download from GitHub
+            DownloadUiState downloadUi = {};
+            InitDownloadUi(downloadUi);
+            downloaded = DownloadFile(RELEASE_URL_LATEST, zipPath, &downloadUi);
+            CloseDownloadUi(&downloadUi);
+        }
 
         if (!downloaded) {
             MessageBoxW(NULL,
