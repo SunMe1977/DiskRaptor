@@ -118,7 +118,6 @@ class TopFilesPanel {
       var path = this._ctxMenu._filePath;
       this._ctxMenu.style.display = "none";
       if (!path) return;
-      var sb = document.querySelector(".status-bar");
       if (action === "explorer") this._exec("open_explorer", { path: path });
       else if (action === "terminal") {
         var dir =
@@ -132,28 +131,21 @@ class TopFilesPanel {
         navigator.clipboard
           .writeText(path)
           .then(function () {
+            var sb = document.querySelector(".status-bar");
             if (sb) sb.textContent = "Copied: " + path;
           })
           .catch(function () {});
       } else if (action === "delete") {
-        if (!confirm("Delete file?\n" + path)) return;
-        this._exec("delete_path", { path: path })
-          .then(function () {
-            if (sb) sb.textContent = "Deleted: " + path;
-            // Remove matching row from DOM
-            var rows = (this.tbody || document.getElementById("topfiles-body")).querySelectorAll("tr");
-            for (var ri = 0; ri < rows.length; ri++) {
-              if (rows[ri].textContent.includes(path)) {
-                rows[ri].remove();
-                break;
-              }
-            }
-          }.bind(this))
-          .catch(function (err) {
-            var sb = document.querySelector(".status-bar");
-            if (sb) sb.textContent = "Delete: " + err;
-            console.warn("Delete failed:", err);
-          });
+        if (confirm("Delete file?\n" + path)) {
+          this._exec("delete_path", { path: path })
+            .then(function () {
+              var sb = document.querySelector(".status-bar");
+              if (sb) sb.textContent = "Deleted: " + path;
+            })
+            .catch(function (err) {
+              alert("Delete failed: " + err);
+            });
+        }
       }
     });
   }
@@ -266,25 +258,11 @@ class TopFilesPanel {
         delBtn.style.cssText =
           "padding:1px 6px;font-size:12px;background:transparent;border:1px solid var(--border);border-radius:3px;cursor:pointer";
         delBtn.title = "Delete " + (entry.path || "");
-        (function (btn, row, filePath, tbody) {
-          btn.onclick = function () {
-            if (!confirm("Delete file?\n" + filePath)) return;
-            // Direct invoke — no _exec wrapper
-            var invokeFn = (window.__TAURI__ && window.__TAURI__.invoke) ? window.__TAURI__.invoke : null;
-            if (!invokeFn) { console.warn("No invoke"); return; }
-            invokeFn("delete_path", { path: filePath })
-              .then(function () {
-                var sb = document.querySelector(".status-bar");
-                if (sb) sb.textContent = "Deleted: " + filePath;
-                if (row && row.parentNode) row.remove();
-              })
-              .catch(function (err) {
-                console.warn("Delete failed:", err);
-                var sb = document.querySelector(".status-bar");
-                if (sb) sb.textContent = "Delete: " + (err.message || err);
-              });
-          };
-        })(delBtn, tr, entry.path, this.tbody);
+        delBtn.onclick = function (p) {
+          return function () {
+            this._exec("delete_path", { path: p });
+          }.bind(this);
+        }.bind(this)(entry.path);
         delTd.appendChild(delBtn);
         tr.appendChild(delTd);
       }
