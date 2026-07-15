@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");
-    app.setApplicationVersion("0.0.3");
+    app.setApplicationVersion("0.0.4");
     app.setOrganizationName("DiskRaptor");
 
     // â”€â”€ WebEngine configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

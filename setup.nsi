@@ -44,6 +44,12 @@ InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRO
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
 
+; Allow INSTALL_DIR to be overridden via /DINSTALL_DIR=path at compile time
+; Default to "install" (relative to the NSIS script directory)
+!ifndef INSTALL_DIR
+  !define INSTALL_DIR "install"
+!endif
+
 ; ── Pages ─────────────────────────────────────────────────────
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
