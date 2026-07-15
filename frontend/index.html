@@ -29,16 +29,16 @@
                     placeholder="Select or type a directory path..."
                     value="C:\dev\DiskRaptor"
                 />
-                <button id="btn-browse" data-i18n="btn.browse">ðŸ“ Browse</button>
+                <button id="btn-browse" data-i18n="btn.browse">“ Browse</button>
                 <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
                 <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
                 <div class="export-dropdown-wrap">
-                    <button id="btn-export" disabled data-i18n="btn.export">ðŸ“¥ Export â–¾</button>
+                    <button id="btn-export" disabled data-i18n="btn.export">“¥ Export ¾</button>
                     <div id="export-menu" class="export-dropdown">
                         <button class="export-option" data-format="json">📄 JSON</button>
-                        <button class="export-option" data-format="csv">ðŸ“Š CSV</button>
+                        <button class="export-option" data-format="csv">📊 CSV</button>
                         <button class="export-option" data-format="html">🌍 HTML</button>
                     </div>
                 </div>
@@ -58,7 +58,7 @@
                     data-i18n-title="theme.toggle.dark"
                     title="Switch to dark mode"
                 >
-                    â˜¾
+                    ¾
                 </button>
             </div>
         </header>
@@ -177,12 +177,12 @@
                         </div>
                         <div class="stat-row">
                             <span class="stat-label"
-                                ><span class="stat-icon">ðŸ“‚</span> <span data-i18n="sel.files">Files</span></span
+                                ><span class="stat-icon">“‚</span> <span data-i18n="sel.files">Files</span></span
                             ><span id="sel-files" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
                             <span class="stat-label"
-                                ><span class="stat-icon">ðŸ·ï¸</span> <span data-i18n="sel.type">Type</span></span
+                                ><span class="stat-icon">·</span> <span data-i18n="sel.type">Type</span></span
                             ><span id="sel-type" class="stat-value">-</span>
                         </div>
                         <div
@@ -202,7 +202,7 @@
                                 title="Open in Explorer"
                                 disabled
                             >
-                                ðŸ“‚
+                                “‚
                             </button>
                             <button
                                 class="sel-action"
@@ -229,7 +229,7 @@
                                 title="Copy Path"
                                 disabled
                             >
-                                ðŸ“‹
+                                📋
                             </button>
                             <button
                                 class="sel-action"
@@ -239,7 +239,7 @@
                                 disabled
                                 style="color: var(--accent-red)"
                             >
-                                ðŸ—‘ï¸
+                                —‘
                             </button>
                         </div>
                     </div>
@@ -264,7 +264,7 @@
                 </div>
             </aside>
 
-            <!-- GalaxyView â€” 3D filesystem visualization -->
+            <!-- GalaxyView — 3D filesystem visualization -->
             <div id="galaxy-view"></div>
         </div>
 
@@ -278,19 +278,19 @@
                         <span class="pstat-icon">📄</span>
                         <span class="pstat-value" id="pstat-files">0</span>
                         <span class="pstat-label">Files</span>
-                        <span class="pstat-rate" id="pstat-files-rate">â€”</span>
+                        <span class="pstat-rate" id="pstat-files-rate">—</span>
                     </div>
                     <div class="pstat">
-                        <span class="pstat-icon">ðŸ“</span>
+                        <span class="pstat-icon">“</span>
                         <span class="pstat-value" id="pstat-dirs">0</span>
                         <span class="pstat-label">Folders</span>
-                        <span class="pstat-rate" id="pstat-dirs-rate">â€”</span>
+                        <span class="pstat-rate" id="pstat-dirs-rate">—</span>
                     </div>
                     <div class="pstat">
                         <span class="pstat-icon">💾</span>
                         <span class="pstat-value" id="pstat-size">0 B</span>
                         <span class="pstat-label">Size</span>
-                        <span class="pstat-rate" id="pstat-size-rate">â€”</span>
+                        <span class="pstat-rate" id="pstat-size-rate">—</span>
                     </div>
                 </div>
                 <p id="progress-elapsed"></p>
@@ -305,7 +305,7 @@
                     "
                     data-i18n="progress.engine"
                 >
-                    ⚡ Scanning with the ultra-fast parallel Rust engineâ€¦
+                    ⚡ Scanning with the ultra-fast parallel Rust engine…
                 </p>
             </div>
         </div>
@@ -320,18 +320,18 @@
                 <!-- Scan progress (like main scanner with full stats) -->
                 <div id="dup-progress" style="display:none">
                     <div class="spinner" style="width:32px;height:32px;margin:8px auto"></div>
-                    <p id="dup-progress-label" style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;margin:4px 0">⚡ Scanning with the ultra-fast parallel Rust engineâ€¦</p>
+                    <p id="dup-progress-label" style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;margin:4px 0">⚡ Scanning with the ultra-fast parallel Rust engine…</p>
                     <p id="dup-progress-dir" style="font-size:10px;color:var(--text-muted);text-align:center;word-break:break-all;font-family:var(--font-mono);margin:0 0 8px"></p>
                     <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap">
                         <div class="pstat">
                             <span class="pstat-icon">📄</span>
                             <span class="pstat-value" id="dup-pstat-files" style="color:var(--accent)">0</span>
                             <span class="pstat-label">Files</span>
-                            <span class="pstat-rate" id="dup-pstat-files-rate">â€”</span>
+                            <span class="pstat-rate" id="dup-pstat-files-rate">—</span>
                         </div>
                         <div class="pstat">
                             <span class="pstat-icon">💾</span>
-                            <span class="pstat-value" id="dup-pstat-size" style="font-size:18px;color:var(--accent-orange)">â€”</span>
+                            <span class="pstat-value" id="dup-pstat-size" style="font-size:18px;color:var(--accent-orange)">—</span>
                             <span class="pstat-label">Data Scanned</span>
                         </div>
                         <div class="pstat">
@@ -345,7 +345,7 @@
                 <!-- Summary stats -->
                 <div id="dup-stats" class="dup-stats" style="display:none">
                     <div class="pstat">
-                        <span class="pstat-icon">ðŸ“‚</span>
+                        <span class="pstat-icon">“‚</span>
                         <span class="pstat-value" id="dup-stat-groups" style="color:var(--accent)">0</span>
                         <span class="pstat-label">Groups</span>
                     </div>
@@ -375,7 +375,7 @@
                                     <th style="width:60px">Size</th>
                                     <th style="width:50px">Count</th>
                                     <th>Files</th>
-                                    <th style="width:40px">ðŸ—‘</th>
+                                    <th style="width:40px">—‘</th>
                                 </tr>
                             </thead>
                             <tbody id="duplicates-body"></tbody>
@@ -385,13 +385,13 @@
 
                 <!-- Context menu for duplicate files -->
                 <div id="dup-ctx-menu" class="tctx-menu" style="display:none;position:fixed;z-index:9999">
-                    <div class="tctx-item" data-dup-action="explorer">ðŸ“‚ Open in Explorer</div>
+                    <div class="tctx-item" data-dup-action="explorer">“‚ Open in Explorer</div>
                     <div class="tctx-item" data-dup-action="terminal">💻 Open Terminal Here</div>
-                    <div class="tctx-item" data-dup-action="properties">ðŸ“‹ Properties</div>
+                    <div class="tctx-item" data-dup-action="properties">📋 Properties</div>
                     <div class="tctx-sep"></div>
-                    <div class="tctx-item" data-dup-action="copy">ðŸ“‹ Copy Path</div>
+                    <div class="tctx-item" data-dup-action="copy">📋 Copy Path</div>
                     <div class="tctx-sep"></div>
-                    <div class="tctx-item tctx-del" data-dup-action="delete">ðŸ—‘ Delete</div>
+                    <div class="tctx-item tctx-del" data-dup-action="delete">—‘ Delete</div>
                 </div>
             </div>
         </div>
