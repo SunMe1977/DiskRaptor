@@ -17,6 +17,8 @@ class DiagramRenderer {
     this.tooltipEl = null;
     this.contextMenu = null;
     this._hoveredIndex = -1;
+    // Register on container so splitters can trigger redraw
+    this.container.__diagram = this;
     this._init();
   }
 
@@ -175,19 +177,35 @@ class DiagramRenderer {
       const sliceAngle = (file.size / totalSize) * Math.PI * 2;
       const color = colors[i % colors.length];
       const isHov = i === this._hoveredIndex;
-      const r = isHov ? radius + 5 : radius;
+      const r = isHov ? radius + 6 : radius;
 
+      // 1) Draw shadow layer (soft outer shadow)
+      this._drawShadow(ctx, function() {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, startAngle, startAngle + sliceAngle);
+        ctx.closePath();
+        ctx.fillStyle = "#000";
+        ctx.fill();
+      });
+
+      // 2) Draw slice — invert gradient on hover (outer glow instead of inner)
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, r, startAngle, startAngle + sliceAngle);
       ctx.closePath();
-      ctx.fillStyle = color;
+      ctx.fillStyle = this._radialGradient(ctx, color, cx, cy, 0, r, isHov);
       ctx.fill();
 
+      // 3) Hover: outer glow ring
       if (isHov) {
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        this._drawHoverGlow(ctx, function() {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, r, startAngle, startAngle + sliceAngle);
+          ctx.closePath();
+          ctx.stroke();
+        }, true);
       }
 
       this.hitRegions.push({
@@ -207,7 +225,8 @@ class DiagramRenderer {
         const mid = startAngle + sliceAngle / 2;
         const lx = cx + Math.cos(mid) * (r * 0.65);
         const ly = cy + Math.sin(mid) * (r * 0.65);
-        ctx.fillStyle = "#fff";
+        var isLight = document.body.classList.contains("light-theme");
+        ctx.fillStyle = isLight ? "#000" : "#fff";
         ctx.font = "bold 10px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -217,21 +236,68 @@ class DiagramRenderer {
       startAngle += sliceAngle;
     });
 
-    // Legend
+    // Legend with hover glow + clickable
     const lx = w - legendW - margin;
     let ly = 16;
     ctx.font = "10px sans-serif";
     ctx.textBaseline = "top";
     const maxLeg = Math.min(this.files.length, 18);
+    const legendH = 14;
     for (let i = 0; i < maxLeg; i++) {
       const f = this.files[i];
       const name = this._shortName(f.path);
       const pct = ((f.size / totalSize) * 100).toFixed(1);
-      ctx.fillStyle = colors[i % colors.length];
-      ctx.fillRect(lx, ly, 8, 8);
-      ctx.fillStyle = "#e6edf3";
+      const isLegHov = i === this._hoveredIndex;
+
+      // Highlight background on hover
+      if (isLegHov) {
+        ctx.save();
+        ctx.shadowColor = colors[i % colors.length];
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        const bgW = legendW + margin - 4;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(lx - 2, ly - 1, bgW, legendH + 2, 4);
+        } else {
+          ctx.rect(lx - 2, ly - 1, bgW, legendH + 2);
+        }
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Color box (with glow on hover)
+      if (isLegHov) {
+        ctx.save();
+        ctx.shadowColor = colors[i % colors.length];
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.fillRect(lx, ly, 8, 8);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.fillRect(lx, ly, 8, 8);
+      }
+
+      // Text — detect theme
+      var isLight = document.body.classList.contains("light-theme");
+      ctx.fillStyle = isLegHov ? (isLight ? "#000" : "#fff") : (isLight ? "#333" : "#e6edf3");
       ctx.textAlign = "left";
       ctx.fillText(name + " " + pct + "%", lx + 12, ly);
+
+      // Hit region for legend
+      this.hitRegions.push({
+        index: i,
+        path: f.path,
+        size: f.size,
+        size_human: f.size_human,
+        type: "legend",
+        x: lx - 2,
+        y: ly - 1,
+        w: legendW + margin - 2,
+        h: legendH + 2,
+      });
+
       ly += 15;
     }
     if (this.files.length > 18) {
@@ -383,25 +449,36 @@ class DiagramRenderer {
       }
     }
 
-    // Draw all rectangles (no gaps, no overlaps)
-    const gap = 1; // 1px gap between rectangles
+    // Draw all rectangles with radial gradient + outer shadow + hover glow
+    const gap = 1;
     for (const r of rects) {
       const isHov = r.index === this._hoveredIndex;
       const color = colors[r.index % colors.length];
 
-      // Shrink slightly for the gap
       const rx = r.x + gap;
       const ry = r.y + gap;
       const rw = Math.max(2, r.w - gap * 2);
       const rh = Math.max(2, r.h - gap * 2);
 
-      ctx.fillStyle = color;
+      const gcx = rx + rw / 2;
+      const gcy = ry + rh / 2;
+      const gradRadius = Math.max(rw, rh) / 2;
+
+      // 1) Shadow layer
+      this._drawShadow(ctx, function() {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(rx, ry, rw, rh);
+      });
+
+      // 2) Gradient fill — invert on hover
+      ctx.fillStyle = this._radialGradient(ctx, color, gcx, gcy, 0, gradRadius, isHov);
       ctx.fillRect(rx, ry, rw, rh);
 
+      // 3) Hover glow
       if (isHov) {
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(rx, ry, rw, rh);
+        this._drawHoverGlow(ctx, function() {
+          ctx.strokeRect(rx, ry, rw, rh);
+        }, true);
       }
 
       this.hitRegions.push({
@@ -416,20 +493,30 @@ class DiagramRenderer {
         h: rh,
       });
 
-      // Label if cell is big enough
-      if (rw > 28 && rh > 14) {
-        ctx.fillStyle = "rgba(255,255,255,0.95)";
+      // Label only if rectangle is large enough to fit text without overlap
+      // Minimum: 40px wide for short name, 16px tall for single line
+      var minW = Math.max(40, this._shortName(r.path).length * 6);
+      if (rw >= minW && rh >= 16) {
+        // Truncate name to fit width
+        var name = this._shortName(r.path);
+        var maxChars = Math.max(1, Math.floor((rw - 6) / 6));
+        if (name.length > maxChars) name = name.substring(0, maxChars - 1) + "…";
+
+        var isLight = document.body.classList.contains("light-theme");
+        ctx.fillStyle = isLight ? "rgba(0,0,0,0.9)" : "rgba(255,255,255,0.95)";
         ctx.font = "bold 9px sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        const name = this._shortName(r.path);
         ctx.fillText(name, rx + 3, ry + 3);
 
         // Size on second line if enough height
-        if (rh > 26) {
-          ctx.fillStyle = "rgba(255,255,255,0.6)";
+        if (rh >= 28) {
+          ctx.fillStyle = isLight ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.6)";
           ctx.font = "8px sans-serif";
-          ctx.fillText(r.size_human, rx + 3, ry + 14);
+          var sizeStr = r.size_human;
+          var maxSizeChars = Math.max(1, Math.floor((rw - 6) / 5));
+          if (sizeStr.length > maxSizeChars) sizeStr = sizeStr.substring(0, maxSizeChars - 1) + "…";
+          ctx.fillText(sizeStr, rx + 3, ry + 14);
         }
       }
     }
@@ -553,20 +640,19 @@ class DiagramRenderer {
         if (sb) sb.textContent = "Locating: " + filePath;
         break;
       case "delete":
-        if (confirm("Delete file?\n" + filePath)) {
-          this._invoke("delete_path", { path: filePath })
-            .then(() => {
-              if (sb) sb.textContent = "Deleted: " + this.contextMenu._fileName;
-              this.files = this.files.filter((f) => f.path !== filePath);
-              if (this.data && this.data.top_files) {
-                this.data.top_files = this.data.top_files.filter(
-                  (f) => f.path !== filePath,
-                );
-              }
-              this._draw();
-            })
-            .catch((err) => alert("Delete failed: " + err));
-        }
+        if (!confirm("Delete file?\n" + filePath)) break;
+        this._invoke("delete_path", { path: filePath })
+          .then(() => {
+            if (sb) sb.textContent = "Deleted: " + this.contextMenu._fileName;
+            this.files = this.files.filter((f) => f.path !== filePath);
+            if (this.data && this.data.top_files) {
+              this.data.top_files = this.data.top_files.filter(
+                (f) => f.path !== filePath,
+              );
+            }
+            this._draw();
+          })
+          .catch((err) => console.warn("Delete failed:", err));
         break;
     }
   }
@@ -607,6 +693,81 @@ class DiagramRenderer {
     const res = [];
     for (let i = 0; i < 50; i++) res.push(c[i % c.length]);
     return res;
+  }
+
+  // ── Premium radial multi-gradient ──────────────────────
+  // Normal mode (invert=false): inner glow → light → base → dark → edge shadow
+  // Inverted mode (invert=true):  dark center → base → light → outer glow
+  _radialGradient(ctx, hex, cx, cy, innerR, outerR, invert) {
+    const r = parseInt(hex.slice(1,3), 16);
+    const g = parseInt(hex.slice(3,5), 16);
+    const b = parseInt(hex.slice(5,7), 16);
+
+    // Inner glow (center) – strongly toward white
+    const igR = Math.min(255, r + Math.floor((255 - r) * 0.7));
+    const igG = Math.min(255, g + Math.floor((255 - g) * 0.7));
+    const igB = Math.min(255, b + Math.floor((255 - b) * 0.7));
+    // Light mid
+    const lmR = Math.min(255, r + Math.floor((255 - r) * 0.35));
+    const lmG = Math.min(255, g + Math.floor((255 - g) * 0.35));
+    const lmB = Math.min(255, b + Math.floor((255 - b) * 0.35));
+    // Dark edge
+    const deR = Math.floor(r * 0.6);
+    const deG = Math.floor(g * 0.6);
+    const deB = Math.floor(b * 0.6);
+    // Outer rim – nearly black for deep shadow
+    const orR = Math.floor(r * 0.3);
+    const orG = Math.floor(g * 0.3);
+    const orB = Math.floor(b * 0.3);
+
+    // Outer glow – bright rim for inverted hover
+    const ogR = Math.min(255, r + Math.floor((255 - r) * 0.85));
+    const ogG = Math.min(255, g + Math.floor((255 - g) * 0.85));
+    const ogB = Math.min(255, b + Math.floor((255 - b) * 0.85));
+
+    const grad = ctx.createRadialGradient(cx, cy, innerR, cx, cy, outerR);
+
+    if (invert) {
+      // Hover: dark center → glow outward (inverted)
+      grad.addColorStop(0,    `rgb(${orR},${orG},${orB})`);  // dark center
+      grad.addColorStop(0.4,  `rgb(${deR},${deG},${deB})`);  // dark mid
+      grad.addColorStop(0.7,  `rgb(${r},${g},${b})`);        // base
+      grad.addColorStop(0.9,  `rgb(${lmR},${lmG},${lmB})`);  // light
+      grad.addColorStop(1,    `rgb(${ogR},${ogG},${ogB})`);  // outer glow
+    } else {
+      // Normal: inner glow → dark edge
+      grad.addColorStop(0,    `rgb(${igR},${igG},${igB})`);  // inner glow
+      grad.addColorStop(0.15, `rgb(${lmR},${lmG},${lmB})`);  // light
+      grad.addColorStop(0.5,  `rgb(${r},${g},${b})`);        // base
+      grad.addColorStop(0.85, `rgb(${deR},${deG},${deB})`);  // dark
+      grad.addColorStop(1,    `rgb(${orR},${orG},${orB})`);  // outer rim
+    }
+    return grad;
+  }
+
+  // ── Outer drop shadow ──────────────────────────────────
+  // Draws the shape once with shadow, then caller draws again for clean fill
+  _drawShadow(ctx, fn) {
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 4;
+    ctx.globalAlpha = 0.6; // softer shadow
+    fn();
+    ctx.restore();
+  }
+
+  // ── Hover glow ─────────────────────────────────────────
+  // Draws a glowing outline for hovered elements
+  _drawHoverGlow(ctx, fn, intense) {
+    ctx.save();
+    ctx.shadowColor = intense ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.3)";
+    ctx.shadowBlur = intense ? 20 : 12;
+    ctx.strokeStyle = intense ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.5)";
+    ctx.lineWidth = intense ? 3 : 2;
+    fn();
+    ctx.restore();
   }
 
   _formatSize(bytes) {

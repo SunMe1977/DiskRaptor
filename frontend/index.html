@@ -1,10 +1,10 @@
-﻿<!doctype html>
+﻿﻿<!doctype html>
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>DiskRaptor</title>
-</title>        <link rel="icon" type="image/x-icon" href="../src-tauri/icons/icon.ico" />
+        <link rel="icon" type="image/x-icon" href="../src-tauri/icons/icon.ico" />
         <link rel="stylesheet" href="style.css" />
     </head>
     <body>
@@ -15,6 +15,13 @@
                 </h1>
             </div>
             <div class="toolbar-center">
+                <div class="drive-selector">
+                    <button id="btn-drives" class="icon-btn" title="Select drive">💻</button>
+                    <div id="drives-dropdown" class="drives-dropdown">
+                        <div class="drives-header">Select a drive</div>
+                        <div id="drives-list"></div>
+                    </div>
+                </div>
                 <input
                     type="text"
                     id="scan-path"
@@ -22,14 +29,22 @@
                     placeholder="Select or type a directory path..."
                     value="C:\dev\DiskRaptor"
                 />
-                <button id="btn-browse" data-i18n="btn.browse">📁 Browse</button>
+                <button id="btn-browse" data-i18n="btn.browse">📂 Browse</button>
                 <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
                 <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
-                <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
+                <div class="export-dropdown-wrap">
+                    <button id="btn-export" disabled data-i18n="btn.export">📥 Export ▾</button>
+                    <div id="export-menu" class="export-dropdown">
+                        <button class="export-option" data-format="json">📄 JSON</button>
+                        <button class="export-option" data-format="csv">📊 CSV</button>
+                        <button class="export-option" data-format="html">🌍 HTML</button>
+                    </div>
+                </div>
+                <button id="btn-duplicates" class="icon-btn" title="Find duplicate files">🔍</button>
                 <div class="lang-dropdown-wrap">
-                    <button id="btn-lang" class="icon-btn" title="Language">🌐</button>
+                    <button id="btn-lang" class="icon-btn" title="Language">🌍</button>
                     <div id="lang-menu" class="lang-dropdown">
                         <div class="lang-search">
                             <input type="text" id="lang-filter" placeholder="🔍 Search language..." />
@@ -43,7 +58,7 @@
                     data-i18n-title="theme.toggle.dark"
                     title="Switch to dark mode"
                 >
-                    ☾
+                    â˜¾
                 </button>
             </div>
         </header>
@@ -55,6 +70,42 @@
                     <div class="panel-header">
                         <h2 data-i18n="tree.title">Directory Tree</h2>
                         <span id="node-count" class="badge">0 <span data-i18n="tree.nodes">nodes</span></span>
+                    </div>
+                    <!-- Drive usage bar -->
+                    <div id="drive-usage-bar" style="display:none;padding:6px 12px;border-bottom:1px solid var(--border)">
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <span id="du-icon" style="font-size:18px">💽</span>
+                            <div style="flex:1;min-width:0">
+                                <div style="display:flex;justify-content:space-between;font-size:11px">
+                                    <span id="du-path" style="font-weight:600"></span>
+                                    <span id="du-pct" style="font-weight:700;font-family:var(--font-mono)"></span>
+                                </div>
+                                <div style="height:4px;background:var(--bg-hover);border-radius:2px;margin:2px 0;overflow:hidden">
+                                    <div id="du-bar" style="height:100%;width:0%;border-radius:2px;transition:width .3s"></div>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted)">
+                                    <span id="du-free"></span>
+                                    <span id="du-total"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="filter-bar">
+                        <input type="text" id="tree-filter" placeholder="Filter files by name, size, type..." />
+                        <select id="filter-type">
+                            <option value="all">All</option>
+                            <option value="file">Files</option>
+                            <option value="dir">Directories</option>
+                        </select>
+                    </div>
+                    <!-- Tree column headers (sortable) -->
+                    <div id="tree-col-headers" style="display:flex;padding:4px 12px;font-size:10px;color:var(--text-muted);border-bottom:1px solid var(--border);user-select:none">
+                        <span style="width:24px;flex-shrink:0"></span>
+                        <span class="tree-col-sortable" data-sort="name" style="flex:1;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Name <span class="sort-arrow"></span></span>
+                        <span class="tree-col-sortable" data-sort="dirs" style="width:50px;text-align:right;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Dirs <span class="sort-arrow"></span></span>
+                        <span class="tree-col-sortable" data-sort="files" style="width:55px;text-align:right;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Files <span class="sort-arrow"></span></span>
+                        <span class="tree-col-sortable" data-sort="size" style="width:75px;text-align:right;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Size <span class="sort-arrow"></span></span>
+                        <span class="tree-col-sortable" data-sort="pct" style="width:45px;text-align:right;cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">% <span class="sort-arrow"></span></span>
                     </div>
                     <div id="tree-container">
                         <div id="tree-scroll">
@@ -71,20 +122,18 @@
                 <div id="diagram-panel">
                     <div class="panel-header">
                         <h3 id="diagram-title" data-i18n="diagram.top50">Top 50 Files</h3>
-                        <div class="diagram-controls">
+                                                <div class="diagram-controls">
                             <button class="diagram-mode active" data-mode="pie" data-i18n="diagram.pie">
                                 Pie
-                            </button>
-                            <button class="diagram-mode" data-mode="treemap" data-i18n="diagram.treemap">
-                                Treemap
                             </button>
                             <button class="diagram-mode" data-mode="galaxy" data-i18n="diagram.galaxy">
                                 Galaxy
                             </button>
+                            <button class="diagram-mode" data-mode="treemap" data-i18n="diagram.treemap">
+                                Treemap
+                            </button>
                         </div>
-                    </div>
                     <div id="diagram-container"></div>
-            <div id="galaxy-view"></div>
                 </div>
             </div>
 
@@ -92,7 +141,7 @@
             <div id="v-splitter"></div>
 
             <aside id="detail-panel">
-                <div class="card">
+                <div class="card card-compact">
                     <h3 data-i18n="stats.title">Scan Summary</h3>
                     <div id="stats-content">
                         <div class="stat-row">
@@ -113,7 +162,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="card">
+                <div class="card card-compact">
                     <h3 data-i18n="sel.title">Selection</h3>
                     <div id="selection-content">
                         <div class="stat-row">
@@ -128,12 +177,12 @@
                         </div>
                         <div class="stat-row">
                             <span class="stat-label"
-                                ><span class="stat-icon">📂</span> <span data-i18n="sel.files">Files</span></span
+                                ><span class="stat-icon">📁</span> <span data-i18n="sel.files">Files</span></span
                             ><span id="sel-files" class="stat-value">-</span>
                         </div>
                         <div class="stat-row">
                             <span class="stat-label"
-                                ><span class="stat-icon">🏷️</span> <span data-i18n="sel.type">Type</span></span
+                                ><span class="stat-icon">ðŸ·ï¸</span> <span data-i18n="sel.type">Type</span></span
                             ><span id="sel-type" class="stat-value">-</span>
                         </div>
                         <div
@@ -153,7 +202,7 @@
                                 title="Open in Explorer"
                                 disabled
                             >
-                                📂
+                                📁
                             </button>
                             <button
                                 class="sel-action"
@@ -171,7 +220,7 @@
                                 title="Properties"
                                 disabled
                             >
-                                ⚙️
+                                ⚙ï¸
                             </button>
                             <button
                                 class="sel-action"
@@ -190,7 +239,7 @@
                                 disabled
                                 style="color: var(--accent-red)"
                             >
-                                🗑️
+                                🗑ï¸
                             </button>
                         </div>
                     </div>
@@ -214,6 +263,9 @@
                     </div>
                 </div>
             </aside>
+
+            <!-- GalaxyView â€” 3D filesystem visualization -->
+            <div id="galaxy-view"></div>
         </div>
 
         <div id="progress-overlay">
@@ -221,6 +273,28 @@
                 <div class="spinner"></div>
                 <p id="progress-status" data-i18n="progress.scanning">Scanning directory...</p>
                 <p id="progress-path"></p>
+                <div id="progress-stats">
+                    <div class="pstat">
+                        <span class="pstat-icon">📄</span>
+                        <span class="pstat-value" id="pstat-files">0</span>
+                        <span class="pstat-label">Files</span>
+                        <span class="pstat-rate" id="pstat-files-rate">â€”</span>
+                    </div>
+                    <div class="pstat">
+                        <span class="pstat-icon">📂</span>
+                        <span class="pstat-value" id="pstat-dirs">0</span>
+                        <span class="pstat-label">Folders</span>
+                        <span class="pstat-rate" id="pstat-dirs-rate">â€”</span>
+                    </div>
+                    <div class="pstat">
+                        <span class="pstat-icon">💾</span>
+                        <span class="pstat-value" id="pstat-size">0 B</span>
+                        <span class="pstat-label">Size</span>
+                        <span class="pstat-rate" id="pstat-size-rate">â€”</span>
+                    </div>
+                </div>
+                <p id="progress-elapsed"></p>
+                <canvas id="perf-graph" width="360" height="80"></canvas>
                 <p
                     id="progress-engine"
                     style="
@@ -231,8 +305,98 @@
                     "
                     data-i18n="progress.engine"
                 >
-                    ⚡ Scanning with the ultra-fast parallel Rust engine…
+                    ⚡ Scanning with the ultra-fast parallel Rust engineâ€¦
                 </p>
+            </div>
+        </div>
+
+        <div id="duplicates-overlay">
+            <div class="duplicates-card">
+                <div class="duplicates-header">
+                    <h2>🔍 Duplicate Files</h2>
+                    <button id="btn-duplicates-close" class="icon-btn" title="Close">✖</button>
+                </div>
+
+                <!-- Scan progress (like main scanner with full stats) -->
+                <div id="dup-progress" style="display:none">
+                    <div class="spinner" style="width:32px;height:32px;margin:8px auto"></div>
+                    <p id="dup-progress-label" style="font-size:13px;font-weight:600;color:var(--accent);text-align:center;margin:4px 0">⚡ Scanning with the ultra-fast parallel Rust engineâ€¦</p>
+                    <p id="dup-progress-dir" style="font-size:10px;color:var(--text-muted);text-align:center;word-break:break-all;font-family:var(--font-mono);margin:0 0 8px"></p>
+                    <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap">
+                        <div class="pstat">
+                            <span class="pstat-icon">📄</span>
+                            <span class="pstat-value" id="dup-pstat-files" style="color:var(--accent)">0</span>
+                            <span class="pstat-label">Files</span>
+                            <span class="pstat-rate" id="dup-pstat-files-rate">â€”</span>
+                        </div>
+                        <div class="pstat">
+                            <span class="pstat-icon">💾</span>
+                            <span class="pstat-value" id="dup-pstat-size" style="font-size:18px;color:var(--accent-orange)">â€”</span>
+                            <span class="pstat-label">Data Scanned</span>
+                        </div>
+                        <div class="pstat">
+                            <span class="pstat-icon">â±</span>
+                            <span class="pstat-value" id="dup-progress-elapsed" style="font-size:18px;color:var(--text-secondary)">0s</span>
+                            <span class="pstat-label">Elapsed</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary stats -->
+                <div id="dup-stats" class="dup-stats" style="display:none">
+                    <div class="pstat">
+                        <span class="pstat-icon">📁</span>
+                        <span class="pstat-value" id="dup-stat-groups" style="color:var(--accent)">0</span>
+                        <span class="pstat-label">Groups</span>
+                    </div>
+                    <div class="pstat">
+                        <span class="pstat-icon">📄</span>
+                        <span class="pstat-value" id="dup-stat-files" style="color:var(--accent-orange)">0</span>
+                        <span class="pstat-label">Duplicate Files</span>
+                    </div>
+                    <div class="pstat">
+                        <span class="pstat-icon">💾</span>
+                        <span class="pstat-value" id="dup-stat-wasted" style="color:var(--accent-green)">0 B</span>
+                        <span class="pstat-label">Wasted Space</span>
+                    </div>
+                </div>
+
+                <!-- Small diagram -->
+                <div id="dup-diagram-wrap" style="display:none;height:120px;margin:8px 0">
+                    <canvas id="dup-diagram" width="400" height="120"></canvas>
+                </div>
+
+                <!-- Results table with delete + context menu -->
+                <div id="duplicates-results" class="duplicates-results" style="display:none">
+                    <div id="duplicates-table-wrap" class="duplicates-table-wrap">
+                        <table id="duplicates-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:60px">Size</th>
+                                    <th style="width:50px">Count</th>
+                                    <th>Files</th>
+                                    <th style="width:40px">🗑</th>
+                                </tr>
+                            </thead>
+                            <tbody id="duplicates-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Context menu for duplicate files -->
+                <div id="dup-ctx-menu" class="tctx-menu" style="display:none;position:fixed;z-index:9999">
+                    <div class="tctx-item" data-dup-action="explorer">📁 Open in Explorer</div>
+                    <div class="tctx-item" data-dup-action="terminal">💻 Open Terminal Here</div>
+                    <div class="tctx-item" data-dup-action="properties">📋 Properties</div>
+                    <div class="tctx-sep"></div>
+                    <div class="tctx-item" data-dup-action="copy">📋 Copy Path</div>
+                    <div class="tctx-sep"></div>
+                    <div class="tctx-item tctx-del" data-dup-action="delete">🗑 Delete</div>
+                </div>
+            </div>
+        </div>
+
+        </div>
             </div>
         </div>
 
@@ -240,16 +404,18 @@
             <div class="about-card">
                 <div style="font-size: 48px; margin-bottom: 8px">🦖</div>
                 <h2 data-i18n="about.title">DiskRaptor</h2>
-                <p class="about-version"><span data-i18n="about.version">Version</span> v0.1.0</p>
+                <p class="about-version"><span data-i18n="about.version">Version</span> v0.4.0</p>
                 <p class="about-desc" data-i18n="about.desc">Ultra-fast directory scanner</p>
                 <p class="about-tech" data-i18n="about.tech">⚡ Built with Rust + Tauri</p>
                 <p class="about-copy">© 2026 DiskRaptor Team</p>
-                <button id="btn-about-close" class="primary" data-i18n="about.done">✓ Done</button>
+                <button id="btn-about-close" class="primary" data-i18n="about.done">âœ“ Done</button>
             </div>
         </div>
 
         <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+        <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
         <script src="tauri-api-bridge.js"></script>
+        <script src="qt-bridge.js"></script>
         <script src="qt-bridge.js"></script>
         <script src="i18n.js"></script>
         <script src="iconcache.js"></script>
@@ -259,6 +425,10 @@
         <script src="topfiles.js"></script>
         <script src="stats.js"></script>
         <script src="diagrams.js"></script>
+        <script src="splitter.js"></script>
+        <script src="modules/emptyfolders.js"></script>
+        <script src="modules/recentchanges.js"></script>
+        <!-- GalaxyView 3D visualization modules -->
         <script src="galaxyview/config.js"></script>
         <script src="galaxyview/spatial-index.js"></script>
         <script src="galaxyview/lod.js"></script>
@@ -271,18 +441,27 @@
         <script src="galaxyview/insights.js"></script>
         <script src="galaxyview/plugin-api.js"></script>
         <script src="galaxyview.js"></script>
-        <script src="splitter.js"></script>
         <script src="app.js"></script>
         <script>
-            // Qt bridge handshake
-            if (typeof QWebChannel !== "undefined") {
-                try {
-                    new QWebChannel(qt.webChannelTransport, function(channel) {
-                        window.bridge = channel.objects.bridge;
-                        document.dispatchEvent(new Event("bridge-ready"));
-                    });
-                } catch(e) {}
-            }
+            // If Tauri bridge isn't ready after 12s, show a hint
+            var stuckTimer = setTimeout(function () {
+                if (typeof window.__TAURI__?.invoke !== "function") {
+                    var sb = document.querySelector(".status-bar");
+                    if (sb && sb.textContent === "Ready") {
+                        sb.textContent =
+                            "App is stuck - check console for errors";
+                        sb.style.color = "#f85149";
+                    }
+                }
+            }, 12000);
+            var clearStuck = function () {
+                clearTimeout(stuckTimer);
+            };
+            if (window.__TAURI__?.invoke) clearStuck();
+            else
+                document.addEventListener("tauri-bridge-ready", clearStuck, {
+                    once: true,
+                });
         </script>
     </body>
 </html>

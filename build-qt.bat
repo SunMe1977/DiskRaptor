@@ -133,7 +133,7 @@ set MAKENSIS=
 if exist "C:\Program Files (x86)\NSIS\makensis.exe" set MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe
 if exist "C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe" set MAKENSIS=C:\dev\DiskRaptor\tools\nsis\nsis-3.09\makensis.exe
 if defined MAKENSIS (
-  "%MAKENSIS%" /DVERSION=0.0.5 "/DFRONTEND_DIR=%cd%\install\share\DiskRaptor\frontend" "%cd%\setup.nsi" 2>&1
+  "%MAKENSIS%" /DVERSION=0.0.6 "/DFRONTEND_DIR=%cd%\install\share\DiskRaptor\frontend" "%cd%\setup.nsi" 2>&1
   if exist "DiskRaptor_*.exe" (
     for %%f in ("DiskRaptor_*.exe") do echo ✅ NSIS Setup: %%f
   ) else (

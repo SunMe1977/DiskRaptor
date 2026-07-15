@@ -20,7 +20,6 @@
   // Check that the low-level IPC function is available
   if (typeof window.__TAURI_IPC__ !== "function") {
     console.error("Tauri IPC: __TAURI_IPC__ not available");
-    window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
     return;
   }
 

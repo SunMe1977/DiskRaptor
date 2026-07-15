@@ -10,9 +10,37 @@ class TreeView {
     this.selectedIndex = null;
     this.onSelect = null;
     this.maxSize = 0;
+    this.filterText = '';
+    this.filterType = 'all';
+    this.sortColumn = 'name';
+    this.sortAsc = true;
     this._initScroll();
     this._initContextMenu();
     this._initDiagramJump();
+    this._initFilter();
+    this._initSortHeaders();
+  }
+
+  _initSortHeaders() {
+    var self = this;
+    document.querySelectorAll(".tree-col-sortable").forEach(function(el) {
+      el.addEventListener("click", function() {
+        var col = this.dataset.sort;
+        if (self.sortColumn === col) {
+          self.sortAsc = !self.sortAsc;
+        } else {
+          self.sortColumn = col;
+          self.sortAsc = col === 'name';
+        }
+        document.querySelectorAll(".tree-col-sortable").forEach(function(h) {
+          h.classList.remove("active");
+        });
+        this.classList.add("active");
+        var arrow = this.querySelector(".sort-arrow");
+        if (arrow) arrow.textContent = self.sortAsc ? "\u25B2" : "\u25BC";
+        self.rebuild();
+      });
+    });
   }
 
   /** Listen for diagram "jump in tree" clicks */
@@ -243,6 +271,12 @@ class TreeView {
   }
 
   _buildPath(arenaIdx) {
+    if (arenaIdx === 0 || arenaIdx === 4294967295) {
+      // Root → return the scan path itself
+      const sp = document.getElementById("scan-path");
+      return sp ? sp.value.trim().replace(/\\+$/, "") : null;
+    }
+    // Walk up the tree collecting names
     const parts = [];
     let cur = arenaIdx;
     let safety = 0;
@@ -255,11 +289,13 @@ class TreeView {
     }
     if (parts.length === 0) return null;
     const scanPath = document.getElementById("scan-path");
+    let root = "";
     if (scanPath && scanPath.value) {
-      const root = scanPath.value.replace(/\\+$/, "");
-      return root + "\\" + parts.join("\\");
+      root = scanPath.value.trim().replace(/\\+$/, "");
     }
-    return parts.join("\\");
+    const full = root + "\\" + parts.join("\\");
+    // Normalize: remove any \\?\ prefix if present (Windows unc path prefix)
+    return full.replace(/^\\\\\?\\/, "");
   }
 
   _buildParentPath(arenaIdx) {
@@ -269,13 +305,71 @@ class TreeView {
     return idx >= 0 ? path.substring(0, idx) : path;
   }
 
+  _initFilter() {
+    this._filterInput = document.getElementById('tree-filter');
+    this._filterSelect = document.getElementById('filter-type');
+    var self = this;
+    if (this._filterInput) {
+      this._filterInput.addEventListener('input', function () {
+        self.filterText = self._filterInput.value;
+        self._reapplyFilter();
+      });
+    }
+    if (this._filterSelect) {
+      this._filterSelect.addEventListener('change', function () {
+        self.filterType = self._filterSelect.value;
+        self._reapplyFilter();
+      });
+    }
+  }
+
+  _matchesFilter(arenaIdx) {
+    var node = this.loader.getNode(arenaIdx);
+    if (!node) return false;
+    if (this.filterType === 'file' && (node.node_type === 'Directory' || node.node_type === 0)) return false;
+    if (this.filterType === 'dir' && node.node_type !== 'Directory' && node.node_type !== 0) return false;
+    if (this.filterText) {
+      var lower = this.filterText.toLowerCase();
+      if (!node.name.toLowerCase().includes(lower)) return false;
+    }
+    return true;
+  }
+
+  _reapplyFilter() {
+    this.rebuild();
+  }
+
   async rebuild() {
     this.visibleNodes = [];
     try {
-      await this._buildList(0, 0);
+      await this._buildList(0, 0, new Set());
     } catch (e) {
       console.warn("_buildList error:", e);
     }
+
+    // Apply filter to flat visible list
+    if (this.filterText || this.filterType !== 'all') {
+      this.visibleNodes = this.visibleNodes.filter(function (idx) {
+        return this._matchesFilter(idx);
+      }, this);
+    }
+
+    // Sort visible nodes
+    var self = this;
+    this.visibleNodes.sort(function(a, b) {
+      var na = self.loader.getNode(a);
+      var nb = self.loader.getNode(b);
+      if (!na || !nb) return 0;
+      var cmp = 0;
+      switch (self.sortColumn) {
+        case 'name': cmp = (na.name || '').localeCompare(nb.name || ''); break;
+        case 'size': cmp = (na.size || 0) - (nb.size || 0); break;
+        case 'files':
+        case 'dirs': cmp = (na.file_count || 0) - (nb.file_count || 0); break;
+        default: cmp = (na.name || '').localeCompare(nb.name || '');
+      }
+      return self.sortAsc ? cmp : -cmp;
+    });
 
     this.maxSize = 0;
     for (const idx of this.visibleNodes) {
@@ -300,7 +394,10 @@ class TreeView {
         " visible";
   }
 
-  async _buildList(arenaIdx, depth) {
+  async _buildList(arenaIdx, depth, visited) {
+    if (visited.has(arenaIdx)) return;
+    visited.add(arenaIdx);
+
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
     this.visibleNodes.push(arenaIdx);
@@ -338,8 +435,9 @@ class TreeView {
         return (nb ? nb.size : 0) - (na ? na.size : 0);
       });
       for (const childIdx of sorted) {
+        if (childIdx === arenaIdx) continue;
         const childNode = this.loader.getNode(childIdx);
-        if (childNode) await this._buildList(childIdx, depth + 1);
+        if (childNode) await this._buildList(childIdx, depth + 1, visited);
       }
     }
   }
@@ -412,16 +510,13 @@ class TreeView {
     el.className = "tree-row";
     el.dataset.index = arenaIdx;
     if (arenaIdx === this.selectedIndex) el.classList.add("selected");
+    if (isDir) el.classList.add("directory");
 
     el.onclick = (e) => {
       const toggle = e.target.closest(".toggle");
-      if (toggle) {
-        this.toggleExpand(arenaIdx);
-        return;
-      }
+      if (toggle) { this.toggleExpand(arenaIdx); return; }
       this.select(arenaIdx);
     };
-
     el.oncontextmenu = (e) => {
       e.preventDefault();
       this.select(arenaIdx);
@@ -431,65 +526,72 @@ class TreeView {
       this._ctxMenu.style.top = e.clientY + "px";
     };
 
-    const indent = document.createElement("span");
+    // Column: name with indent + toggle + icon
+    var nameCol = document.createElement("span");
+    nameCol.className = "tree-col-name";
+
+    var indent = document.createElement("span");
     indent.className = "indent";
     indent.style.width = depth * 18 + "px";
-    el.appendChild(indent);
+    nameCol.appendChild(indent);
 
-    const toggle = document.createElement("span");
+    var toggle = document.createElement("span");
     toggle.className = "toggle";
     toggle.textContent = isDir ? (isExpanded ? "\u25BC" : "\u25B6") : "";
-    el.appendChild(toggle);
+    nameCol.appendChild(toggle);
 
-    // Icon: fallback emoji, then replace with real Windows icon from IconCache
     var iconEl = document.createElement("span");
     iconEl.className = "icon";
-    iconEl.style.cssText =
-      "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;";
+    iconEl.style.cssText = "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;";
     iconEl.textContent = isDir ? "📁" : "📄";
-    el.appendChild(iconEl);
+    nameCol.appendChild(iconEl);
     if (window.__ICON_CACHE__) {
-      var iconKey = isDir ? "__folder__" : node.name || "file";
-      window.__ICON_CACHE__
-        .getIcon(iconKey, isDir)
-        .then(function (iconResult) {
-          if (
-            typeof iconResult === "string" &&
-            iconResult.indexOf("data:") === 0
-          ) {
-            // Replace emoji with real icon
-            iconEl.innerHTML = "";
+      (function(ie, key, dir) {
+        window.__ICON_CACHE__.getIcon(key, dir).then(function(r) {
+          if (typeof r === "string" && r.indexOf("data:") === 0) {
+            ie.innerHTML = "";
             var img = document.createElement("img");
-            img.src = iconResult;
-            img.style.cssText = "width:16px;height:16px;display:block;";
-            iconEl.appendChild(img);
-          } else if (typeof iconResult === "string" && iconResult.length < 10) {
-            // Update fallback emoji
-            iconEl.textContent = iconResult;
+            img.src = r; img.style.cssText = "width:16px;height:16px;display:block;";
+            ie.appendChild(img);
+          } else if (typeof r === "string" && r.length < 10) {
+            ie.textContent = r;
           }
-        })
-        .catch(function () {});
+        }).catch(function(){});
+      })(iconEl, isDir ? "__folder__" : (node.name || "file"), isDir);
     }
 
-    const name = document.createElement("span");
-    name.className = "node-name";
-    name.textContent = node.name || "(root)";
-    el.appendChild(name);
+    var nameSpan = document.createElement("span");
+    nameSpan.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0";
+    nameSpan.textContent = node.name || "(root)";
+    nameCol.appendChild(nameSpan);
+    el.appendChild(nameCol);
 
-    const size = document.createElement("span");
-    size.className = "node-size";
-    size.textContent = this._formatSize(node.size);
-    el.appendChild(size);
+    // Column: dirs
+    var dirsEl = document.createElement("span");
+    dirsEl.className = "tree-col-dirs";
+    dirsEl.textContent = (isDir && node.file_count !== undefined && node.file_count > 0) ? node.file_count.toLocaleString("en-US") : "-";
+    el.appendChild(dirsEl);
 
-    const bar = document.createElement("span");
-    bar.className = "node-bar";
-    const fill = document.createElement("span");
-    fill.className = "node-bar-fill";
-    const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
-    fill.style.width = Math.max(2, pct) + "%";
-    fill.style.background = isDir ? "var(--accent)" : "var(--accent-green)";
-    bar.appendChild(fill);
-    el.appendChild(bar);
+    // Column: files
+    var filesEl = document.createElement("span");
+    filesEl.className = "tree-col-files";
+    if (!isDir) { filesEl.textContent = "1"; }
+    else { filesEl.textContent = (node.file_count !== undefined && node.file_count > 0) ? node.file_count.toLocaleString("en-US") : "-"; }
+    el.appendChild(filesEl);
+
+    // Column: size
+    var sizeEl = document.createElement("span");
+    sizeEl.className = "tree-col-size";
+    sizeEl.textContent = (node.size !== undefined && node.size > 0) ? this._formatSize(node.size) : "-";
+    el.appendChild(sizeEl);
+
+    // Column: percentage
+    var pctEl = document.createElement("span");
+    pctEl.className = "tree-col-pct";
+    if (this.maxSize > 0 && node.size > 0 && isDir) {
+      pctEl.textContent = Math.round((node.size / this.maxSize) * 100) + "%";
+    } else { pctEl.textContent = "-"; }
+    el.appendChild(pctEl);
   }
 
   _computeDepth(arenaIdx) {
