@@ -1,4 +1,5 @@
 // DiskRaptor — Main Window with QtWebEngine
+// Scanner operations are handled via Rust DLL through IpcBridge.
 #pragma once
 
 #include <QMainWindow>
@@ -17,7 +18,6 @@
 #include <QDebug>
 
 #include "ipcbridge.h"
-#include "scanner.h"
 
 class MainWindow : public QMainWindow
 {
@@ -28,10 +28,6 @@ public:
     ~MainWindow() override;
 
 private slots:
-    void onScanProgress(const ScanProgress &progress);
-    void onScanComplete(const ScanResult &result);
-    void onScanError(const QString &error);
-
     // Menu action slots
     void onViewPie();
     void onViewGalaxy();
@@ -45,7 +41,6 @@ private:
     void setupUI();
     void setupMenuBar();
     void setupWebEngine(const QString &frontendPath);
-    void setupConnections();
 
     // Helper: run JS in the webview
     void runJS(const QString &js);
@@ -54,7 +49,6 @@ private:
     QWebEngineView *m_webView = nullptr;
     QWebChannel *m_webChannel = nullptr;
     IpcBridge *m_ipcBridge = nullptr;
-    Scanner *m_scanner = nullptr;
 
     QLabel *m_statusLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;

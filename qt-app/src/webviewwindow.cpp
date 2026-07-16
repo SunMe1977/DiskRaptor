@@ -1,4 +1,5 @@
 // DiskRaptor — Main Window implementation
+// Scanner is now a Rust DLL loaded by IpcBridge — no C++ scanner object needed.
 #include "webviewwindow.h"
 #include <QMessageBox>
 #include <QTimer>
@@ -11,7 +12,6 @@ MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     setupUI();
     setupMenuBar();
     setupWebEngine(frontendPath);
-    setupConnections();
 
     m_statusLabel = new QLabel("Ready");
     statusBar()->addWidget(m_statusLabel, 1);
@@ -27,9 +27,7 @@ MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    if (m_scanner) {
-        m_scanner->cancel();
-    }
+    // Rust scanner cancellation is handled through IpcBridge destructor
     qDebug() << "[DiskRaptor] Shutdown";
 }
 
@@ -119,8 +117,8 @@ void MainWindow::setupMenuBar()
 
 void MainWindow::setupWebEngine(const QString &frontendPath)
 {
-    m_scanner = new Scanner(this);
-    m_ipcBridge = new IpcBridge(m_scanner, this);
+    // IpcBridge now loads the Rust scanner DLL internally
+    m_ipcBridge = new IpcBridge(this);
 
     m_webChannel = new QWebChannel(this);
     m_webChannel->registerObject("bridge", m_ipcBridge);
@@ -145,13 +143,6 @@ void MainWindow::setupWebEngine(const QString &frontendPath)
     });
 
     m_webView->page()->setBackgroundColor(QColor("#0d1117"));
-}
-
-void MainWindow::setupConnections()
-{
-    connect(m_scanner, &Scanner::progressUpdated, this, &MainWindow::onScanProgress);
-    connect(m_scanner, &Scanner::scanComplete, this, &MainWindow::onScanComplete);
-    connect(m_scanner, &Scanner::scanError, this, &MainWindow::onScanError);
 }
 
 void MainWindow::runJS(const QString &js)
@@ -240,71 +231,4 @@ void MainWindow::onLanguageChanged(const QString &code)
     QString escaped = code;
     escaped.replace("'", "\\'");
     runJS(QString("if(window.I18N)window.I18N.setLocale('%1');").arg(escaped));
-}
-
-// ── Scan Callbacks ──────────────────────────────────────────────
-
-void MainWindow::onScanProgress(const ScanProgress &progress)
-{
-    QString js = QString(
-        "if (window.__TAURI__ && window.__TAURI__.events) {"
-        "  window.__TAURI__.events.dispatchEvent(new CustomEvent('scan-progress', "
-        "    { detail: { filesFound: %1, dirsFound: %2, currentDir: '%3', "
-        "               elapsedSecs: %4 } }));"
-        "}"
-    ).arg(progress.filesFound)
-     .arg(progress.dirsFound)
-     .arg(progress.currentDir)
-     .arg(progress.elapsedSecs);
-
-    runJS(js);
-    m_statusLabel->setText(
-        QString("Scanning\u2026 %1 files, %2 dirs")
-            .arg(progress.filesFound).arg(progress.dirsFound));
-}
-
-void MainWindow::onScanComplete(const ScanResult &result)
-{
-    m_statusLabel->setText(
-        QString("Complete \u2014 %1 files, %2 dirs, %3")
-            .arg(result.totalFiles)
-            .arg(result.totalDirs)
-            .arg(formatBytes(result.totalSize)));
-
-    QString json = result.toJson();
-    QString js = QString(
-        "if (window.__TAURI__ && window.__TAURI__.events) {"
-        "  window.__TAURI__.events.dispatchEvent(new CustomEvent('scan-complete', "
-        "    { detail: %1 }));"
-        "}"
-    ).arg(json);
-
-    runJS(js);
-
-    // Also update progress bar to "done" state briefly
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(100);
-    QTimer::singleShot(2000, this, [this]() {
-        m_progressBar->hide();
-        m_progressBar->setRange(0, 0);
-    });
-
-    qDebug() << "[DiskRaptor] Scan complete:" << result.totalFiles << "files";
-}
-
-void MainWindow::onScanError(const QString &error)
-{
-    m_statusLabel->setText("Error: " + error);
-    m_progressBar->hide();
-
-    QString escaped = QString(error).replace("'", "\\'");
-    QString js = QString(
-        "if (window.__TAURI__ && window.__TAURI__.events) {"
-        "  window.__TAURI__.events.dispatchEvent(new CustomEvent('scan-error', "
-        "    { detail: { error: '%1' } }));"
-        "}"
-    ).arg(escaped);
-
-    runJS(js);
-    qWarning() << "[DiskRaptor] Scan error:" << error;
 }

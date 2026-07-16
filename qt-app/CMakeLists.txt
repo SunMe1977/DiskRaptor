@@ -9,8 +9,8 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebEngineWidgets WebChannel Network)
 
-set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/scanner.cpp src/platform_utils.cpp src/modules/module_loader.cpp)
-set(HEADERS src/webviewwindow.h src/ipcbridge.h src/scanner.h src/platform_utils.h src/modules/module_loader.h)
+set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/platform_utils.cpp src/modules/module_loader.cpp)
+set(HEADERS src/webviewwindow.h src/ipcbridge.h src/platform_utils.h src/modules/module_loader.h)
 set(RESOURCES resources/resources.qrc)
 
 if(WIN32)
@@ -41,11 +41,13 @@ elseif(APPLE)
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
 endif()
 
-# Copy frontend + modules after build
+# Copy frontend + modules + Rust scanner DLL after build
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/frontend")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../modulesPro" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/modulesPro")
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/diskraptor_scanner.dll")
 
 # â”€â”€ Launcher (no Qt deps, Win32 only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if(WIN32)

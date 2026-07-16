@@ -1,5 +1,5 @@
 // DiskRaptor — IPC Bridge between C++ backend and JavaScript frontend
-// Replaces Tauri's invoke/event system with Qt WebChannel
+// Uses Rust scanner DLL (diskraptor_scanner.dll) instead of C++ scanner.
 #pragma once
 
 #include <QObject>
@@ -7,18 +7,18 @@
 #include <QVariantMap>
 #include <QJsonArray>
 #include <QJsonObject>
-#include <functional>
 
-#include "scanner.h"
-
-class Scanner;
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 class IpcBridge : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit IpcBridge(Scanner *scanner, QObject *parent = nullptr);
+    explicit IpcBridge(QObject *parent = nullptr);
+    ~IpcBridge() override;
 
     // These methods are callable from JavaScript via QWebChannel
     Q_INVOKABLE QString invoke(const QString &command, const QVariantMap &args);
@@ -41,11 +41,32 @@ signals:
     void eventEmitted(const QString &event, const QVariant &payload);
 
 private:
-    Scanner *m_scanner;
-    ScanResult m_lastResult;
     int m_scanId = 0;
     QStringList m_driveLetters();
 
     QString resultToJson(bool success, const QVariant &data = QVariant(),
                          const QString &error = QString());
+
+    // ── Rust scanner DLL handles ───────────────────────────
+#ifdef Q_OS_WIN
+    HMODULE m_rustLib = nullptr;
+
+    // Function pointer types matching the Rust CDYLIB exports
+    using FnStartScan = char* (__stdcall*)(const char* path);
+    using FnGetProgress = char* (__stdcall*)();
+    using FnGetResult = char* (__stdcall*)();
+    using FnCancelScan = bool (__stdcall*)();
+    using FnIsRunning = bool (__stdcall*)();
+    using FnFreeString = void (__stdcall*)(char* s);
+
+    FnStartScan m_drStartScan = nullptr;
+    FnGetProgress m_drGetProgress = nullptr;
+    FnGetResult m_drGetResult = nullptr;
+    FnCancelScan m_drCancelScan = nullptr;
+    FnIsRunning m_drIsRunning = nullptr;
+    FnFreeString m_drFreeString = nullptr;
+
+    bool loadRustLibrary();
+    void unloadRustLibrary();
+#endif
 };

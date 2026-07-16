@@ -1,0 +1,30 @@
+[package]
+name = "diskraptor"
+version = "0.6.1"
+description = "Ultra-fast directory scanner - Rust scanner DLL for DiskRaptor Qt app"
+authors = ["DiskRaptor Team"]
+edition = "2021"
+
+[lib]
+name = "diskraptor_scanner"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+walkdir = "2"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+jwalk = "0.8"
+rayon = "1"
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+anyhow = "1"
+rfd = "0.10"
+num_cpus = "1"
+log = "0.4"
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.39", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_UI_Shell", "Win32_System_Registry", "Win32_Graphics_Gdi"] }

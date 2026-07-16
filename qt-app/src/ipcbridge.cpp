@@ -1,4 +1,6 @@
 // DiskRaptor — IPC Bridge implementation
+// Uses Rust scanner DLL (diskraptor_scanner.dll) for all scan operations.
+
 #include "ipcbridge.h"
 
 #include <QDir>
@@ -13,15 +15,26 @@
 #include <QFileDialog>
 #include <QApplication>
 #include <QTimer>
+#include <QCoreApplication>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <shellapi.h>
 #endif
 
-IpcBridge::IpcBridge(Scanner *scanner, QObject *parent)
-    : QObject(parent), m_scanner(scanner)
+IpcBridge::IpcBridge(QObject *parent)
+    : QObject(parent)
 {
+    // Load the Rust scanner DLL on construction
+    if (!loadRustLibrary()) {
+        qWarning() << "[DiskRaptor] Failed to load diskraptor_scanner.dll —"
+                    << "scan functionality will be unavailable.";
+    }
+}
+
+IpcBridge::~IpcBridge()
+{
+    unloadRustLibrary();
 }
 
 QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
@@ -62,7 +75,20 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
         QString path = args.value("path").toString();
         if (!path.isEmpty()) {
             m_scanId++;
-            m_scanner->startScan(path);
+
+            // Call Rust scanner via FFI
+            if (!m_drStartScan) {
+                return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
+            }
+
+            QByteArray pathUtf8 = path.toUtf8();
+            char* result = m_drStartScan(pathUtf8.constData());
+            QString jsonResult;
+            if (result) {
+                jsonResult = QString::fromUtf8(result);
+                m_drFreeString(result);
+            }
+
             return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", m_scanId}});
         }
         return resultToJson(false, QVariant(), "No path provided");
@@ -140,61 +166,54 @@ QString IpcBridge::getIcon(const QString &path, bool isDir)
 
 QString IpcBridge::getScanProgress()
 {
-    auto progress = m_scanner->currentProgress();
-    QJsonObject obj;
-    // Snake_case keys matching frontend expectations
-    obj["files_found"] = static_cast<qint64>(progress.filesFound);
-    obj["dirs_found"] = static_cast<qint64>(progress.dirsFound);
-    obj["is_running"] = progress.isRunning;
-    obj["current_dir"] = progress.currentDir;
-    obj["elapsed_secs"] = static_cast<qint64>(progress.elapsedSecs);
-    // Phase: 0=scanning, 1=building tree, 2=chunking, 3=done
-    obj["phase"] = progress.isRunning ? 0 : 3;
-    return resultToJson(true, QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    if (!m_drGetProgress) {
+        return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
+    }
+
+    char* cjson = m_drGetProgress();
+    if (!cjson) {
+        return resultToJson(false, QVariant(), "null progress");
+    }
+
+    QString jsonStr = QString::fromUtf8(cjson);
+    m_drFreeString(cjson);
+
+    // The Rust scanner returns snake_case keys which match frontend expectations
+    return resultToJson(true, jsonStr);
 }
 
 QString IpcBridge::getScanResult()
 {
-    auto scanResult = m_scanner->lastResult();
-
-    // Build result in the format the frontend expects:
-    // { "stats": { "total_files": N, "total_dirs": N, "total_size": N, "top_files": [...], ... }, "root_info": {...} }
-    QJsonObject stats;
-    stats["total_files"] = static_cast<qint64>(scanResult.totalFiles);
-    stats["total_dirs"] = static_cast<qint64>(scanResult.totalDirs);
-    stats["total_size"] = static_cast<qint64>(scanResult.totalSize);
-    stats["scan_time_ms"] = scanResult.scanTimeMs;
-    stats["scan_path"] = scanResult.scanPath;
-    stats["size_human"] = formatBytes(scanResult.totalSize);
-    stats["time_human"] = QString::number(scanResult.scanTimeMs / 1000.0, 'f', 2) + "s";
-
-    // Top 50 files
-    QJsonArray topFiles;
-    int count = 0;
-    for (const auto &entry : scanResult.topFiles) {
-        if (count >= 50) break;
-        QStringList parts = entry.split('|');
-        if (parts.size() >= 2) {
-            QJsonObject file;
-            file["path"] = parts[0];
-            qint64 size = parts[1].toLongLong();
-            file["size"] = size;
-            file["size_human"] = formatBytes(size);
-            topFiles.append(file);
-        }
-        count++;
+    if (!m_drGetResult) {
+        return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
     }
-    stats["top_files"] = topFiles;
 
+    char* cjson = m_drGetResult();
+    if (!cjson) {
+        return resultToJson(false, QVariant(), "null result");
+    }
+
+    QString jsonStr = QString::fromUtf8(cjson);
+    m_drFreeString(cjson);
+
+    // Parse the result JSON to build the expected response format
+    QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        return resultToJson(true, jsonStr);
+    }
+
+    QJsonObject obj = doc.object();
+
+    // The Rust scanner returns { "stats": {...}, "root_info": {...}, "scan_id": N }
+    // Pass through with "stats" at top level as the frontend expects
     QJsonObject resultObj;
-    resultObj["stats"] = stats;
+    if (obj.contains("stats")) {
+        resultObj["stats"] = obj["stats"];
+    }
+    if (obj.contains("root_info")) {
+        resultObj["root_info"] = obj["root_info"];
+    }
     resultObj["scan_id"] = m_scanId;
-
-    // Dummy root_info so tree loading works
-    QJsonObject rootInfo;
-    rootInfo["total_nodes"] = 0;
-    rootInfo["total_chunks"] = 0;
-    resultObj["root_info"] = rootInfo;
 
     return resultToJson(true, QJsonDocument(resultObj).toJson(QJsonDocument::Compact));
 }
@@ -205,7 +224,7 @@ QString IpcBridge::listDrives()
     for (const auto &storage : QStorageInfo::mountedVolumes()) {
         if (!storage.isValid() || storage.isReadOnly()) continue;
 #ifdef Q_OS_WIN
-        // Only show fixed drives and network drives on Windows
+        // Only show fixed drives on Windows
         QString path = storage.rootPath();
         if (!path.startsWith("C:") && !path.startsWith("D:") &&
             !path.startsWith("E:") && !path.startsWith("F:")) continue;
@@ -225,52 +244,115 @@ QString IpcBridge::listDrives()
 
 QString IpcBridge::checkForUpdates()
 {
-    // Simple version check — in production, query GitHub releases API
     return resultToJson(true, "v0.5.0");
 }
 
 QString IpcBridge::findDuplicates(const QString &path)
 {
     Q_UNUSED(path)
-    // Placeholder: In production, implement file hash comparison
     return resultToJson(true, "[]");
 }
 
 QString IpcBridge::checkAdminNeeded(const QString &path)
 {
     Q_UNUSED(path)
-    // Admin prompt is handled at startup only — never prompt at scan time.
     return resultToJson(true, false);
 }
 
 QString IpcBridge::restartAsAdmin()
 {
 #ifdef Q_OS_WIN
-    // On Windows, relaunch with ShellExecuteW using runas verb, then exit
     QString exePath = QApplication::applicationFilePath();
     HINSTANCE hResult = ShellExecuteW(nullptr, L"runas", exePath.toStdWString().c_str(),
                                       nullptr, nullptr, SW_SHOW);
 
-    // ShellExecuteW returns a value > 32 on success, or an error code <= 32 on failure.
     INT_PTR ret = reinterpret_cast<INT_PTR>(hResult);
     if (ret <= 32) {
-        // Elevation failed (user cancelled UAC or an error occurred)
         qWarning() << "[DiskRaptor] ShellExecuteW(runas) failed, code:" << ret;
         return resultToJson(false, QVariant(),
             "Failed to elevate privileges. Try running DiskRaptor as Administrator manually.");
     }
 
-    // Use deferred quit so the QWebChannel IPC response is delivered to JavaScript
-    // BEFORE the event loop exits. Direct QApplication::quit() inside the IPC
-    // handler can prevent the response from reaching the frontend, leaving the
-    // scan handler in an inconsistent state.
     QTimer::singleShot(0, qApp, &QApplication::quit);
-
     return resultToJson(true, QVariantMap{{"restarting", true}});
 #else
     return resultToJson(false, QVariant(), "Not supported on this platform");
 #endif
 }
+
+// ── Rust DLL loading ─────────────────────────────────────────────
+
+#ifdef Q_OS_WIN
+bool IpcBridge::loadRustLibrary()
+{
+    // Search paths: first alongside the app executable, then in PATH
+    QStringList searchPaths;
+    searchPaths << QCoreApplication::applicationDirPath()
+                << "."
+                << ".";
+
+    for (const QString &dir : searchPaths) {
+        QString dllPath = dir + "/diskraptor_scanner.dll";
+        m_rustLib = LoadLibraryW(dllPath.toStdWString().c_str());
+        if (m_rustLib) {
+            qDebug() << "[DiskRaptor] Loaded Rust scanner DLL from:" << dllPath;
+            break;
+        }
+    }
+
+    if (!m_rustLib) {
+        // Try without path (relies on PATH / app dir)
+        m_rustLib = LoadLibraryW(L"diskraptor_scanner.dll");
+    }
+
+    if (!m_rustLib) {
+        DWORD err = GetLastError();
+        qWarning() << "[DiskRaptor] Failed to load diskraptor_scanner.dll, error:" << err;
+        return false;
+    }
+
+    // Resolve function pointers
+    m_drStartScan  = reinterpret_cast<FnStartScan>(GetProcAddress(m_rustLib, "dr_start_scan"));
+    m_drGetProgress = reinterpret_cast<FnGetProgress>(GetProcAddress(m_rustLib, "dr_get_progress"));
+    m_drGetResult   = reinterpret_cast<FnGetResult>(GetProcAddress(m_rustLib, "dr_get_result"));
+    m_drCancelScan  = reinterpret_cast<FnCancelScan>(GetProcAddress(m_rustLib, "dr_cancel_scan"));
+    m_drIsRunning   = reinterpret_cast<FnIsRunning>(GetProcAddress(m_rustLib, "dr_is_running"));
+    m_drFreeString  = reinterpret_cast<FnFreeString>(GetProcAddress(m_rustLib, "dr_free_string"));
+
+    // Verify all symbols were found
+    int missing = 0;
+    if (!m_drStartScan)  { qWarning() << "[DiskRaptor] Missing dr_start_scan";  missing++; }
+    if (!m_drGetProgress){ qWarning() << "[DiskRaptor] Missing dr_get_progress";missing++; }
+    if (!m_drGetResult)  { qWarning() << "[DiskRaptor] Missing dr_get_result";  missing++; }
+    if (!m_drCancelScan) { qWarning() << "[DiskRaptor] Missing dr_cancel_scan"; missing++; }
+    if (!m_drIsRunning)  { qWarning() << "[DiskRaptor] Missing dr_is_running";  missing++; }
+    if (!m_drFreeString) { qWarning() << "[DiskRaptor] Missing dr_free_string"; missing++; }
+
+    if (missing > 0) {
+        qWarning() << "[DiskRaptor] Rust scanner DLL loaded but" << missing << "symbols missing";
+        FreeLibrary(m_rustLib);
+        m_rustLib = nullptr;
+        return false;
+    }
+
+    qDebug() << "[DiskRaptor] Rust scanner DLL loaded successfully with all symbols.";
+    return true;
+}
+
+void IpcBridge::unloadRustLibrary()
+{
+    if (m_rustLib) {
+        FreeLibrary(m_rustLib);
+        m_rustLib = nullptr;
+        m_drStartScan = nullptr;
+        m_drGetProgress = nullptr;
+        m_drGetResult = nullptr;
+        m_drCancelScan = nullptr;
+        m_drIsRunning = nullptr;
+        m_drFreeString = nullptr;
+    }
+}
+#endif
 
 QString IpcBridge::resultToJson(bool success, const QVariant &data, const QString &error)
 {
