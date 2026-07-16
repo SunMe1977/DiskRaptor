@@ -280,11 +280,27 @@ Section "${PRODUCT_NAME} Core" SEC_CORE
 
   ; ÔùÅ Frontend ÔùÅ
   DetailPrint "Copying frontend files..."
-  SetOutPath "$INSTDIR\share\DiskRaptor\frontend"
   !ifndef FRONTEND_DIR
     !define FRONTEND_DIR "install\share\DiskRaptor\frontend"
   !endif
+  SetOutPath "$INSTDIR\share\DiskRaptor\frontend"
   File "${FRONTEND_DIR}\index.html"
+  File "${FRONTEND_DIR}\style.css"
+  File "${FRONTEND_DIR}\qt-bridge.js"
+  File "${FRONTEND_DIR}\app.js"
+  File "${FRONTEND_DIR}\chunkloader.js"
+  File "${FRONTEND_DIR}\diagrams.js"
+  File "${FRONTEND_DIR}\galaxyview.js"
+  File "${FRONTEND_DIR}\i18n.js"
+  File "${FRONTEND_DIR}\iconcache.js"
+  File "${FRONTEND_DIR}\splitter.js"
+  File "${FRONTEND_DIR}\stats.js"
+  File "${FRONTEND_DIR}\topfiles.js"
+  File "${FRONTEND_DIR}\treeview.js"
+  File "${FRONTEND_DIR}\virtualscroll.js"
+  File "${FRONTEND_DIR}\diagnostic.html"
+  File /r "${FRONTEND_DIR}\galaxyview\*.js"
+  File /r "${FRONTEND_DIR}\modules\*.js"
 
   Push "OK ÔÇö all core files copied"
   Call LogMessage
