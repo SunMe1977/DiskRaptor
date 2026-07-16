@@ -46,6 +46,17 @@ jobs:
       - name: Set up MSVC development environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Install Rust toolchain
+        run: |
+          rustup show
+          rustup install stable
+          rustup default stable
+
+      - name: Build Rust scanner DLL
+        run: |
+          cd src-tauri
+          cargo build --release
+
       - name: Configure CMake
         run: |
           cd qt-app
@@ -83,6 +94,10 @@ jobs:
           del /q "%cd%\install\bin\qnetworklistmanager.dll" 2>nul
           del /q "%cd%\install\bin\qcertonlybackend.dll" 2>nul
           del /q "%cd%\install\bin\qschannelbackend.dll" 2>nul
+
+      - name: Copy Rust scanner DLL
+        run: |
+          copy /y "src-tauri\target\release\diskraptor_scanner.dll" "qt-app\build\install\bin\"
 
       - name: Separate WebEngine Runtime
         run: |
