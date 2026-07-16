@@ -1,0 +1,82 @@
+================================================================================
+RUST SCANNER RESTORE & INTEGRATION — FINAL STATUS REPORT
+Generated: 2026-07-16 14:25 GMT+2
+================================================================================
+
+EXISTING REPORT FILES
+─────────────────────────
+  rust_status.txt         ✅ EXISTS (previously written, contents below)
+  rust_scanner_report.md  ❌ NOT FOUND (never created)
+
+GIT STATE
+─────────────────────────
+  Last commit:       1ad6f4a — "Fix NSIS installer and diagnostic.html"
+  v0.2.0 tag:        ✅ Exists locally AND on remote origin
+                       (11c55de0034786887a62f009040d39d4de0abff9)
+
+  Uncommitted changes (git status --short):
+
+    Staged (ready for commit):
+      AM  src-tauri/Cargo.toml              (modified)
+      AD  src-tauri/build.rs                (added + modified staging)
+      AD  src-tauri/icons/*                 (all icons — added)
+      AD  src-tauri/src/commands.rs         (added)
+      AM  src-tauri/src/lib.rs              (modified + staged)
+      AD  src-tauri/src/main.rs             (added)
+      AD  src-tauri/tauri.conf.json         (added)
+      AD  src-tauri/tests/scanner_test.rs   (added)
+
+    NEW staged scanner files:
+      A   src-tauri/src/scanner/mod.rs
+      A   src-tauri/src/scanner/tree.rs
+      A   src-tauri/src/scanner/walker.rs
+      A   src-tauri/src/scanner/win32_scanner.rs
+      A   src-tauri/src/streaming/chunker.rs
+      A   src-tauri/src/streaming/mod.rs
+
+    Untracked (NOT staged):
+      ??  src-tauri/src/scanner_api.rs        ⚠️  NOT committed/staged yet
+      ??  src-tauri/Cargo.lock
+      ??  rust_status.txt
+      ??  frontend_diff.txt
+      ??  release_cleanup.txt
+      ??  ui_debug2.md
+      ??  ui_diagnostic.md
+
+FILE EXISTENCE CHECKS
+─────────────────────────
+  src-tauri\Cargo.toml                    ✅ EXISTS (package diskraptor v0.6.1, cdylib)
+  src-tauri\src\scanner\mod.rs            ✅ EXISTS — module tree restored
+  src-tauri\src\scanner_api.rs            ✅ EXISTS — FFI bridge ready, BUT UNTRACKED
+  qt-app\src\scanner.cpp                  ✅ EXISTS — still uses std::filesystem
+  qt-app\src\ipcbridge.h                  ✅ EXISTS — still uses old IPC protocol
+
+COMPILED ARTIFACTS
+─────────────────────────
+  src-tauri\target\release\*.dll          ❌ NO DLL FILES FOUND
+    → Rust scanner has NEVER been compiled to a release binary
+
+================================================================================
+ANSWER TO "DID YOU RESTORE IT?"
+================================================================================
+
+PARTIAL RESTORE — The scanner code itself (mod.rs, tree.rs, walker.rs,
+win32_scanner.rs, chunker.rs, streaming/mod.rs) was restored from git history
+and is now staged and ready for commit. scanner_api.rs exists on disk but is
+untracked (not staged for commit yet).
+
+NOT RESTORED (still pending):
+  a) scanner_api.rs needs to be staged:         git add src-tauri/src/scanner_api.rs
+  b) The scanner code needs to be committed:    git commit -m "Restore Rust scanner"
+  c) The Rust DLL must be compiled:             cargo build --release in src-tauri/
+  d) Qt integration is NOT done — scanner.cpp still uses its own C++ scanner with
+     std::filesystem and has NO LoadLibrary/GetProcAddress code to load the Rust DLL
+  e) No RustScanner wrapper class exists in qt-app/
+  f) No CMakeLists.txt changes to copy the DLL
+
+BOTTOM LINE: The Rust scanner source code is restored, but:
+  - It is NOT committed yet (need to stage scanner_api.rs + commit)
+  - It is NOT compiled to a DLL
+  - It is NOT connected to the Qt app
+  - ipcbridge.h and scanner.cpp are completely unmodified
+================================================================================

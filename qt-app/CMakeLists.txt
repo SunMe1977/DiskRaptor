@@ -42,12 +42,37 @@ elseif(APPLE)
 endif()
 
 # Copy frontend + modules + Rust scanner DLL after build
+# ── Post-build: deploy frontend, modules, Rust DLL, and Qt runtime ─────
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/frontend")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../modulesPro" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/modulesPro")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/diskraptor_scanner.dll")
+
+# Deploy Qt6 runtime DLLs via windeployqt (Windows only)
+if(WIN32)
+  find_program(WINDEPLOYQT_EXECUTABLE
+    NAMES windeployqt.exe
+    HINTS "$ENV{QT_QMAKE_DIR}" "$ENV{QTDIR}/bin" "${Qt6_DIR}/../../../bin"
+    DOC "Path to windeployqt.exe")
+  if(WINDEPLOYQT_EXECUTABLE)
+    message(STATUS "windeployqt: ${WINDEPLOYQT_EXECUTABLE}")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND ${WINDEPLOYQT_EXECUTABLE}
+        --release
+        --no-translations
+        --no-opengl-sw
+        --no-system-d3d-compiler
+        --no-compiler-runtime
+        "$<TARGET_FILE:${PROJECT_NAME}>"
+      COMMENT "windeployqt: deploy Qt runtime DLLs"
+      VERBATIM)
+  else()
+    message(WARNING "windeployqt.exe not found — Qt6 runtime DLLs will NOT be deployed to the build output.\n"
+      "  Install Qt or add Qt6/bin to PATH, then re-run cmake.")
+  endif()
+endif()
 
 # â”€â”€ Launcher (no Qt deps, Win32 only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if(WIN32)

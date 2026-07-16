@@ -1,0 +1,176 @@
+================================================================================
+ DISK RAPTOR STARTUP DEBUG REPORT
+ Generated: 2026-07-16 14:33 GMT+2
+================================================================================
+
+==============================================================================
+ 1. RUST SCANNER DLL ANALYSIS
+==============================================================================
+
+PATH: C:\dev\DiskRaptor\src-tauri\target\release\diskraptor_scanner.dll
+
+Exports (verified via LoadLibrary/GetProcAddress):
+  ✓ dr_start_scan     → Found at 0x7FFA374AC1F0
+  ✓ dr_get_progress   → Found at 0x7FFA374A97A0
+  ✓ dr_get_result     → Found at 0x7FFA374AA420
+  ✓ dr_cancel_scan    → Found at 0x7FFA374A96A0
+  ✓ dr_is_running     → Found at 0x7FFA374AC160
+  ✓ dr_free_string    → Found at 0x7FFA374A9740
+  All 6/6 exports found.
+
+Rust FFI signatures (scanner_api.rs):
+  All functions use #[no_mangle] pub extern "C" — correct calling convention.
+  Return types match C++ expectations.
+
+C++ side (ipcbridge.h / ipcbridge.cpp):
+  GetProcAddress names match exactly: dr_start_scan, dr_get_progress, etc.
+  Function pointer types:
+    FnStartScan   = char* (__stdcall*)(const char*)
+    FnGetProgress = char* (__stdcall*)()
+    FnGetResult   = char* (__stdcall*)()
+    FnCancelScan  = bool   (__stdcall*)()
+    FnIsRunning   = bool   (__stdcall*)()
+    FnFreeString  = void   (__stdcall*)(char*)
+
+  NOTE: Rust extern "C" uses __cdecl on x86, but on x64 (this build) the
+  calling convention is unified — no mismatch. On x86, C++ side should use
+  __cdecl instead of __stdcall. Current machine is x64 → OK.
+
+Verdict: Rust Scanner DLL ✅ NO ISSUES FOUND.
+
+==============================================================================
+ 2. RECENT COMMIT ANALYSIS
+==============================================================================
+
+Commit 18cd063: "replace C++ scanner with original Rust scanner via FFI"
+  - Removed Scanner class dependency from ipcbridge.cpp
+  - IpcBridge now loads diskraptor_scanner.dll via LoadLibrary/GetProcAddress
+  - Removed scanner.h/scanner.cpp from CMakeLists.txt SOURCES (correct)
+  - Added post-build copy of diskraptor_scanner.dll to output dir
+  - The 2877 lines of Rust scanner code (scanner_api.rs, walker.rs, tree.rs,
+    win32_scanner.rs, chunker.rs) are properly implemented.
+
+Verdict: Code change ✅ CORRECT. No FFI mismatches.
+
+==============================================================================
+ 3. DEPLOYED FILES ANALYSIS (C:\Program Files\DiskRaptor6)
+==============================================================================
+
+PRESENT:
+  DiskRaptor.exe                 473,600 bytes  (Qt6 WebEngine app)
+  DiskRaptorLauncher.exe         388,096 bytes  (Win32 runtime installer + launcher)
+  diskraptor_scanner.dll         437,248 bytes  (Rust scanner)
+  frontend/                      HTML/JS/CSS files
+  modulesPro/                    duplicateScan.dll + build artifacts
+
+MISSING (CRITICAL):
+  ❌ Qt6Core.dll                 — REQUIRED. App cannot start without it.
+  ❌ Qt6Gui.dll                  — REQUIRED.
+  ❌ Qt6Widgets.dll              — REQUIRED.
+  ❌ Qt6WebEngineWidgets.dll     — REQUIRED.
+  ❌ Qt6WebChannel.dll           — REQUIRED.
+  ❌ Qt6Network.dll              — REQUIRED.
+  ❌ Qt6Positioning.dll          — REQUIRED by WebEngine.
+  ❌ Qt6OpenGL.dll               — REQUIRED by WebEngine.
+  ❌ Qt6PrintSupport.dll         — REQUIRED by WebEngine.
+  ❌ Qt6WebEngineCore.dll        — REQUIRED (the big ~200MB engine).
+  ❌ Qt6Quick.dll, Qt6Qml.dll    — REQUIRED by WebEngine.
+  ❌ platforms/qwindows.dll      — REQUIRED Qt platform plugin.
+  ❌ imageformats/, styles/, etc.— REQUIRED Qt plugins.
+  ❌ resources/                  — icudtl.dat, .pak files for WebEngine.
+  ❌ QtWebEngineProcess.exe      — REQUIRED WebEngine sandbox process.
+
+  TOTAL: ~30+ DLLs missing. DiskRaptor.exe = Qt6 WebEngine app with ZERO Qt DLLs.
+
+CORRUPT FILES:
+  ❌ qtwebengine_runtime.zip     — 9 bytes (corrupted download)
+       This causes the launcher to think the runtime is already downloaded,
+       but ExtractZip() fails on the corrupt file.
+       User sees: "Failed to extract the runtime package."
+
+DIRECTORY COMPARISON:
+  C:\Program Files\DiskRaptor — Empty (NSIS installer target, but no files)
+  C:\Program Files\DiskRaptor6 — Manual deploy, no Qt runtime
+
+==============================================================================
+ 4. LAUNCHER BEHAVIOR (launcher.cpp)
+==============================================================================
+
+Startup sequence:
+  1. Admin check → relaunch with runas if needed
+  2. Check RuntimeExists() → looks for runtime\Qt6WebEngineCore.dll
+     → NOT FOUND (no runtime dir) → needRuntimeSetup = TRUE
+  3. Show download dialog "Download Qt WebEngine runtime (~80 MB)?"
+     - YES → check local qtwebengine_runtime.zip
+       → FILE EXISTS (9 bytes corrupt) → treats as valid download
+       → ExtractZip(9-byte file) → FAILS
+       → Shows "Failed to extract the runtime package."
+     - NO → Shows "DiskRaptor needs the WebEngine runtime to run."
+  4. Even if runtime were downloaded, DiskRaptor.exe still fails because
+     core Qt6 DLLs (Qt6Core.dll, Qt6Gui.dll, Qt6Widgets, etc.) are missing.
+
+==============================================================================
+ 5. BUILD SYSTEM ANALYSIS (CMakeLists.txt)
+==============================================================================
+
+ROOT CAUSE: windeployqt is NEVER called during the build.
+
+  - The cmake install() target expects DLLs to already be in the build output
+    directory ($<TARGET_FILE_DIR:${PROJECT_NAME}>/), but they never get there.
+  - The NSIS installer (setup.nsi) expects install/bin/Qt6*.dll to exist, but
+    the cmake install runs to qt-app/build_qt/install/bin/ which doesn't have
+    Qt DLLs either.
+  - A typical Qt/CMake project adds a windeployqt post-build custom command,
+    or uses qt_generate_deploy_app_script(). This project has neither.
+
+The CMakeLists.txt has been FIXED (windeployqt added as post-build step).
+
+==============================================================================
+ 6. FIXES APPLIED TO THIS SESSION
+==============================================================================
+
+FIX 1: qt-app/CMakeLists.txt
+  → Added windeployqt post-build step (with warning if windeployqt not found)
+  → On next cmake build, windeployqt will deploy Qt6 DLLs + plugins to the
+    build output directory automatically.
+
+FIX 2: (Recommended) Remove corrupt qtwebengine_runtime.zip
+  → C:\Program Files\DiskRaptor6\qtwebengine_runtime.zip (9 bytes)
+  → Must be deleted with admin privileges so the launcher can attempt a fresh
+    download from GitHub.
+
+FIX 3: (Recommended) Deploy Qt6 runtime DLLs
+  → C:\Qt\6.10.3\msvc2022_64\bin has all required Qt6 DLLs
+  → Run as Administrator:
+      Copy-Item "C:\Qt\6.10.3\msvc2022_64\bin\Qt6*.dll" "C:\Program Files\DiskRaptor6\"
+      Copy-Item "C:\Qt\6.10.3\msvc2022_64\bin\QtWebEngineProcess.exe" "C:\Program Files\DiskRaptor6\"
+      Copy-Item "C:\Qt\6.10.3\msvc2022_64\plugins\platforms\qwindows.dll" "C:\Program Files\DiskRaptor6\platforms\"
+      Copy-Item "C:\Qt\6.10.3\msvc2022_64\plugins\imageformats\*.dll" "C:\Program Files\DiskRaptor6\imageformats\"
+      Copy-Item "C:\Qt\6.10.3\msvc2022_64\plugins\styles\*.dll" "C:\Program Files\DiskRaptor6\styles\"
+      Copy-Item "C:\Qt\6.10.3\msvc2022_64\resources\*.dat" "C:\Program Files\DiskRaptor6\resources\"
+      Copy-Item "C:\Qt\6.10.3\msvc2022_64\resources\*.bin" "C:\Program Files\DiskRaptor6\resources\"
+      Copy-Item "C:\Qt\6.10.3\msvc2022_64\resources\*.pak" "C:\Program Files\DiskRaptor6\resources\"
+  → OR rebuild with the updated CMakeLists.txt and re-run the NSIS installer.
+
+==============================================================================
+ 7. SUMMARY
+==============================================================================
+
+The Rust scanner DLL (diskraptor_scanner.dll) is FINE.
+
+The startup failure is caused by TWO independent problems:
+
+  PROBLEM A: Missing Qt6 runtime DLLs
+  └── The deployed directory C:\Program Files\DiskRaptor6 has DiskRaptor.exe
+      (a Qt6 WebEngine application) but ZERO Qt6 DLLs. It cannot even start.
+
+  PROBLEM B: Corrupt qtwebengine_runtime.zip (9 bytes)
+  └── The launcher checks for this file before attempting a GitHub download.
+      Since it exists (albeit corrupted), the launcher treats it as a valid
+      download, then fails during extraction. User sees:
+      "Failed to extract the runtime package."
+
+These are deployment/build-system issues, not Rust/C++ FFI issues.
+
+FIX: windeployqt added to CMakeLists.txt. Rebuild and redeploy.
+AND: Remove the 9-byte qtwebengine_runtime.zip manually (admin required).

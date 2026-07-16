@@ -1,0 +1,9 @@
+Rust scanner status as of 2026-07-16:
+- Cargo.toml: EXISTS (diskraptor v0.6.1, cdylib)
+- src/scanner/mod.rs: EXISTS (walker + tree + win32_scanner)
+- src/scanner_api.rs: EXISTS (FFI bridge: dr_start_scan, dr_get_progress, etc.)
+- Rust DLL: NOT COMPILED
+- scanner.cpp: STILL PRESENT (C++ still active)
+- Qt RustScanner wrapper: DOES NOT EXIST
+- ipcbridge LoadLibrary: NOT IMPLEMENTED
+- v0.2.0 tag: PUSHED
