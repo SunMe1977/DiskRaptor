@@ -12,6 +12,7 @@
 #include <QDebug>
 #include <QFileDialog>
 #include <QApplication>
+#include <QTimer>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -60,8 +61,9 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "start_scan") {
         QString path = args.value("path").toString();
         if (!path.isEmpty()) {
+            m_scanId++;
             m_scanner->startScan(path);
-            return resultToJson(true, QVariantMap{{"status", "started"}});
+            return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", m_scanId}});
         }
         return resultToJson(false, QVariant(), "No path provided");
     }
@@ -140,18 +142,61 @@ QString IpcBridge::getScanProgress()
 {
     auto progress = m_scanner->currentProgress();
     QJsonObject obj;
-    obj["filesFound"] = static_cast<qint64>(progress.filesFound);
-    obj["dirsFound"] = static_cast<qint64>(progress.dirsFound);
-    obj["isRunning"] = progress.isRunning;
-    obj["currentDir"] = progress.currentDir;
-    obj["elapsedSecs"] = static_cast<qint64>(progress.elapsedSecs);
+    // Snake_case keys matching frontend expectations
+    obj["files_found"] = static_cast<qint64>(progress.filesFound);
+    obj["dirs_found"] = static_cast<qint64>(progress.dirsFound);
+    obj["is_running"] = progress.isRunning;
+    obj["current_dir"] = progress.currentDir;
+    obj["elapsed_secs"] = static_cast<qint64>(progress.elapsedSecs);
+    // Phase: 0=scanning, 1=building tree, 2=chunking, 3=done
+    obj["phase"] = progress.isRunning ? 0 : 3;
     return resultToJson(true, QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
 QString IpcBridge::getScanResult()
 {
-    auto result = m_scanner->lastResult();
-    return resultToJson(true, result.toJson());
+    auto scanResult = m_scanner->lastResult();
+
+    // Build result in the format the frontend expects:
+    // { "stats": { "total_files": N, "total_dirs": N, "total_size": N, "top_files": [...], ... }, "root_info": {...} }
+    QJsonObject stats;
+    stats["total_files"] = static_cast<qint64>(scanResult.totalFiles);
+    stats["total_dirs"] = static_cast<qint64>(scanResult.totalDirs);
+    stats["total_size"] = static_cast<qint64>(scanResult.totalSize);
+    stats["scan_time_ms"] = scanResult.scanTimeMs;
+    stats["scan_path"] = scanResult.scanPath;
+    stats["size_human"] = formatBytes(scanResult.totalSize);
+    stats["time_human"] = QString::number(scanResult.scanTimeMs / 1000.0, 'f', 2) + "s";
+
+    // Top 50 files
+    QJsonArray topFiles;
+    int count = 0;
+    for (const auto &entry : scanResult.topFiles) {
+        if (count >= 50) break;
+        QStringList parts = entry.split('|');
+        if (parts.size() >= 2) {
+            QJsonObject file;
+            file["path"] = parts[0];
+            qint64 size = parts[1].toLongLong();
+            file["size"] = size;
+            file["size_human"] = formatBytes(size);
+            topFiles.append(file);
+        }
+        count++;
+    }
+    stats["top_files"] = topFiles;
+
+    QJsonObject resultObj;
+    resultObj["stats"] = stats;
+    resultObj["scan_id"] = m_scanId;
+
+    // Dummy root_info so tree loading works
+    QJsonObject rootInfo;
+    rootInfo["total_nodes"] = 0;
+    rootInfo["total_chunks"] = 0;
+    resultObj["root_info"] = rootInfo;
+
+    return resultToJson(true, QJsonDocument(resultObj).toJson(QJsonDocument::Compact));
 }
 
 QString IpcBridge::listDrives()
@@ -194,7 +239,7 @@ QString IpcBridge::findDuplicates(const QString &path)
 QString IpcBridge::checkAdminNeeded(const QString &path)
 {
     Q_UNUSED(path)
-    // Always return false — we scan as normal user on all platforms
+    // Admin prompt is handled at startup only — never prompt at scan time.
     return resultToJson(true, false);
 }
 
@@ -203,9 +248,24 @@ QString IpcBridge::restartAsAdmin()
 #ifdef Q_OS_WIN
     // On Windows, relaunch with ShellExecuteW using runas verb, then exit
     QString exePath = QApplication::applicationFilePath();
-    ShellExecuteW(nullptr, L"runas", exePath.toStdWString().c_str(),
-                  nullptr, nullptr, SW_SHOW);
-    QApplication::quit();
+    HINSTANCE hResult = ShellExecuteW(nullptr, L"runas", exePath.toStdWString().c_str(),
+                                      nullptr, nullptr, SW_SHOW);
+
+    // ShellExecuteW returns a value > 32 on success, or an error code <= 32 on failure.
+    INT_PTR ret = reinterpret_cast<INT_PTR>(hResult);
+    if (ret <= 32) {
+        // Elevation failed (user cancelled UAC or an error occurred)
+        qWarning() << "[DiskRaptor] ShellExecuteW(runas) failed, code:" << ret;
+        return resultToJson(false, QVariant(),
+            "Failed to elevate privileges. Try running DiskRaptor as Administrator manually.");
+    }
+
+    // Use deferred quit so the QWebChannel IPC response is delivered to JavaScript
+    // BEFORE the event loop exits. Direct QApplication::quit() inside the IPC
+    // handler can prevent the response from reaching the frontend, leaving the
+    // scan handler in an inconsistent state.
+    QTimer::singleShot(0, qApp, &QApplication::quit);
+
     return resultToJson(true, QVariantMap{{"restarting", true}});
 #else
     return resultToJson(false, QVariant(), "Not supported on this platform");

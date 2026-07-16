@@ -103,6 +103,17 @@
     var aboutOverlay = document.getElementById("about-overlay");
     var aboutClose = document.getElementById("btn-about-close");
 
+    // Galaxy view state
+    var galaxyView = null;
+    var galaxyContainer = document.getElementById("galaxy-container");
+    var diagramContainer = document.getElementById("diagram-container");
+    var isGalaxyMode = false;
+
+    function _feedGalaxyView() {
+      if (!galaxyView || !currentStats) return;
+      galaxyView.loadData(currentStats, currentStats, currentStats.top_files, []);
+    }
+
     // Diagram mode switcher (in detail panel)
     var diagramModes = document.querySelectorAll(".diagram-mode");
     diagramModes.forEach(function (btn) {
@@ -111,7 +122,33 @@
           b.classList.remove("active");
         });
         btn.classList.add("active");
-        diagram.setMode(btn.dataset.mode);
+
+        var mode = btn.dataset.mode;
+        if (mode === "galaxy") {
+          // Switch to galaxy view
+          isGalaxyMode = true;
+          if (diagramContainer) diagramContainer.style.display = "none";
+          if (galaxyContainer) {
+            galaxyContainer.style.display = "block";
+            if (!galaxyView) {
+              try {
+                galaxyView = new GalaxyView.GalaxyView(galaxyContainer);
+                galaxyView.init();
+              } catch (e) {
+                console.error("GalaxyView init failed:", e);
+              }
+            }
+            galaxyView.show();
+            _feedGalaxyView();
+          }
+        } else {
+          // Switch to pie/treemap
+          isGalaxyMode = false;
+          if (galaxyContainer) galaxyContainer.style.display = "none";
+          if (galaxyView) galaxyView.hide();
+          if (diagramContainer) diagramContainer.style.display = "block";
+          diagram.setMode(mode);
+        }
       });
     });
 
@@ -290,29 +327,6 @@
         return;
       }
 
-      // Check if admin rights are needed (Windows only, best-effort)
-      try {
-        if (window.__TAURI__ && window.__TAURI__.invoke) {
-          var needsAdmin = await window.__TAURI__.invoke("check_admin_needed", {
-            path: path,
-          });
-          if (needsAdmin) {
-            if (
-              confirm(
-                "Some folders require administrator rights for full visibility.\n" +
-                  "Restart DiskRaptor as Administrator?",
-              )
-            ) {
-              await window.__TAURI__.invoke("restart_as_admin");
-              return; // process.exit(0) will be called on the Rust side
-            }
-          }
-        }
-      } catch (e) {
-        // Silently ignore — admin check is optional
-        console.log("Admin check skipped:", e.message);
-      }
-
       isScanning = true;
       btnScan.disabled = true;
       btnBrowse.disabled = true;
@@ -324,42 +338,34 @@
         document.querySelector(".status-bar").textContent = "Timeout triggered";
       }, 600000);
 
-      // Progress elements
-      var progressCard = progressOverlay.querySelector(".progress-card");
-      ["progress-files", "progress-label", "progress-elapsed"].forEach(
-        function (id) {
-          var el = document.getElementById(id);
-          if (el) el.remove();
-        },
-      );
-
-      var progressFilesEl = document.createElement("div");
-      progressFilesEl.id = "progress-files";
-      progressFilesEl.style.cssText =
-        "font-size:24px;font-weight:700;color:var(--accent);margin:8px 0";
-      progressFilesEl.textContent = "0";
-      var progressLabelEl = document.createElement("div");
-      progressLabelEl.id = "progress-label";
-      progressLabelEl.style.cssText = "font-size:12px;color:var(--text-muted)";
-      progressLabelEl.textContent = "files found, scanning...";
-      var elapsedEl = document.createElement("div");
-      elapsedEl.id = "progress-elapsed";
-      elapsedEl.style.cssText =
-        "font-size:11px;color:var(--text-muted);margin-top:4px";
-      progressCard.appendChild(progressFilesEl);
-      progressCard.appendChild(progressLabelEl);
-      progressCard.appendChild(elapsedEl);
+      // Progress elements (now static in HTML)
+      var progressFilesEl = document.getElementById("progress-files");
+      var progressLabelEl = document.getElementById("progress-label");
+      var progressDirEl = document.getElementById("progress-dir");
+      var progressSpeedEl = document.getElementById("progress-speed");
+      var progressElapsedEl = document.getElementById("progress-elapsed");
 
       progressOverlay.classList.add("active");
       progressPath.textContent = "Scanning: " + path;
+
+      // Reset progress display
+      progressFilesEl.textContent = "0";
+      progressLabelEl.textContent = "files found, scanning...";
+      progressDirEl.textContent = "";
+      progressSpeedEl.textContent = "";
+      progressElapsedEl.textContent = "";
 
       try {
         var initScan = await window.__TAURI__.invoke("start_scan", {
           path: path,
         });
-        var scanId = initScan.scan_id;
+        // Handle optional scan_id — bridge may or may not return one
+        var scanId = (initScan && initScan.scan_id) || 1;
 
-        // Poll
+        // Poll tracking
+        var prevFilesFound = 0;
+        var pollStartTime = Date.now();
+
         var done = false;
         for (var i = 0; i < 600; i++) {
           await sleep(500);
@@ -370,14 +376,16 @@
             });
           if (!p) continue;
 
-          progressFilesEl.textContent = Number(
-            p.files_found || 0,
-          ).toLocaleString("en-US");
+          var filesFound = Number(p.files_found || 0);
+          progressFilesEl.textContent = filesFound.toLocaleString("en-US");
+
           var dirInfo = "";
           if (p.current_dir) {
             var parts = p.current_dir.split("\\");
             dirInfo = parts[parts.length - 1];
+            progressDirEl.textContent = "📂 " + dirInfo;
           }
+
           var phaseLabels = [
             "scanning...",
             "building tree...",
@@ -386,13 +394,25 @@
           ];
           var label = phaseLabels[p.phase] || "";
           if (dirInfo) label += " -> " + dirInfo;
-          if (p.elapsed_secs) {
-            var mins = Math.floor(p.elapsed_secs / 60);
-            var secs = p.elapsed_secs % 60;
-            elapsedEl.textContent =
-              "Elapsed: " + (mins > 0 ? mins + "m " : "") + secs + "s";
-          }
           progressLabelEl.textContent = label;
+
+          // Speed / bandwidth
+          var elapsedSecs = p.elapsed_secs || 0;
+          if (elapsedSecs > 0) {
+            var filesPerSec = (filesFound / elapsedSecs).toFixed(1);
+            progressSpeedEl.textContent = "⚡ " + filesPerSec + " files/sec";
+          }
+
+          // Elapsed time
+          if (elapsedSecs) {
+            var mins = Math.floor(elapsedSecs / 60);
+            var secs = elapsedSecs % 60;
+            var elapsedStr =
+              (mins > 0 ? mins + "m " : "") + secs + "s";
+            progressElapsedEl.textContent = "⏱ " + elapsedStr;
+          }
+
+          prevFilesFound = filesFound;
 
           if (!p.is_running || p.phase === 3) {
             await sleep(500);
@@ -402,6 +422,10 @@
         }
 
         if (!done) throw new Error("Scan timeout");
+
+        // Update progress to done state
+        progressLabelEl.textContent = "✓ Scan complete";
+        progressSpeedEl.textContent = "";
 
         var result = null;
         for (var ri = 0; ri < 60; ri++) {

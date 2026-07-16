@@ -623,11 +623,8 @@ BOOL ConfigureRuntimeEnvironment(LPCWSTR appDir) {
 }
 
 // ── Entry point ──────────────────────────────────────────────
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    WCHAR appDir[MAX_PATH];
-    GetAppDir(appDir, MAX_PATH);
-
-    // Check if running as admin — if not, relaunch with admin rights
+// ── Check if running as admin ──────────────────────────────
+BOOL IsRunningAsAdmin() {
     BOOL isAdmin = FALSE;
     HANDLE hToken = NULL;
     if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
@@ -638,19 +635,34 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         }
         CloseHandle(hToken);
     }
+    return isAdmin;
+}
 
-    if (!isAdmin) {
+// ── Entry point ──────────────────────────────────────────────
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+    WCHAR appDir[MAX_PATH];
+    GetAppDir(appDir, MAX_PATH);
+
+    // Admin check at startup: if not running as admin, relaunch with runas verb.
+    if (!IsRunningAsAdmin()) {
         WCHAR exePath[MAX_PATH];
-        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+        StringCchCopyW(exePath, MAX_PATH, appDir);
+        StringCchCatW(exePath, MAX_PATH, L"\\");
+        StringCchCatW(exePath, MAX_PATH, L"DiskRaptorLauncher.exe");
+
         SHELLEXECUTEINFOW sei = { sizeof(sei) };
         sei.lpVerb = L"runas";
         sei.lpFile = exePath;
+        sei.lpDirectory = appDir;
         sei.nShow = SW_SHOWNORMAL;
+        sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS;
+
         if (ShellExecuteExW(&sei)) {
-            return 0;  // Admin instance started — exit this one
+            if (sei.hProcess) {
+                WaitForSingleObject(sei.hProcess, INFINITE);
+                CloseHandle(sei.hProcess);
+            }
         }
-        // User cancelled UAC — close app
-        MessageBoxW(NULL, L"DiskRaptor needs administrator privileges to scan drives.", L"DiskRaptor", MB_ICONINFORMATION);
         return 0;
     }
 

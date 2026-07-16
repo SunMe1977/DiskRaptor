@@ -17,14 +17,14 @@
 
 #include "webviewwindow.h"
 #include "ipcbridge.h"
+#include "platform_utils.h"
 
-int main(int argc, char *argv[])
+// ── Admin check at startup ──────────────────────────────────
+// Pure Win32 check: if not running as admin, relaunch with runas verb, then exit.
+// This handles direct DiskRaptor.exe launches (without the launcher).
+static bool EnsureAdmin()
 {
-    // Qt WebEngine is initialized automatically when QApplication is created
-    // No manual QtWebEngine::initialize() needed in Qt 6.5+
-
 #ifdef Q_OS_WIN
-    // Check if running as admin — relaunch if not
     BOOL isAdmin = FALSE;
     HANDLE hToken = NULL;
     if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
@@ -35,26 +35,51 @@ int main(int argc, char *argv[])
         }
         CloseHandle(hToken);
     }
-    if (!isAdmin) {
-        WCHAR exePath[MAX_PATH];
-        GetModuleFileNameW(NULL, exePath, MAX_PATH);
-        SHELLEXECUTEINFOW sei = { sizeof(sei) };
-        sei.lpVerb = L"runas";
-        sei.lpFile = exePath;
-        sei.nShow = SW_SHOWNORMAL;
-        if (ShellExecuteExW(&sei)) {
-            return 0;
+
+    if (isAdmin)
+        return true;
+
+    // Relaunch with runas verb
+    WCHAR exePath[MAX_PATH];
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";
+    sei.lpFile = exePath;
+    sei.nShow = SW_SHOWNORMAL;
+    sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS;
+
+    if (ShellExecuteExW(&sei)) {
+        if (sei.hProcess) {
+            WaitForSingleObject(sei.hProcess, INFINITE);
+            CloseHandle(sei.hProcess);
         }
-        QMessageBox::information(nullptr, "DiskRaptor",
-            "DiskRaptor needs administrator privileges to scan drives.");
-        return 0;
     }
+    return false;
+#else
+    return true;
 #endif
+}
+
+int main(int argc, char *argv[])
+{
+    // Qt WebEngine is initialized automatically when QApplication is created
+    // No manual QtWebEngine::initialize() needed in Qt 6.5+
 
     // Enable remote debugging for Playwright tests via env var
     // Set DISKraptor_CDP_PORT=9222 before launching to enable
     // Qt WebEngine DevTools on that port.
     qputenv("QTWEBENGINE_REMOTE_DEBUGGING", qgetenv("DISKraptor_CDP_PORT"));
+
+    // Set up runtime environment (PATH, WebEngine vars) — required before QApplication
+    // so Qt DLLs and WebEngine process resolve correctly without the launcher.
+    PlatformUtils::setupRuntimeEnvironment();
+
+    // Admin check: if not running as admin, relaunch with runas verb, then exit.
+    // This handles direct DiskRaptor.exe launches (without the launcher).
+    if (!EnsureAdmin()) {
+        return 0;
+    }
 
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");

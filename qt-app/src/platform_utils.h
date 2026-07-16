@@ -30,4 +30,8 @@ int cpuThreadCount();
 
 // Platform name for display
 QString platformName();
+
+// Set up PATH and Qt WebEngine environment variables so DiskRaptor.exe
+// works without the launcher. Returns true if runtime directory found.
+bool setupRuntimeEnvironment();
 }

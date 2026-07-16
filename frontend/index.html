@@ -78,9 +78,13 @@
                             <button class="diagram-mode" data-mode="treemap" data-i18n="diagram.treemap">
                                 Treemap
                             </button>
+                            <button class="diagram-mode" data-mode="galaxy" data-i18n="diagram.galaxy">
+                                🌌 Galaxy
+                            </button>
                         </div>
                     </div>
                     <div id="diagram-container"></div>
+                    <div id="galaxy-container" style="display:none;position:relative;width:100%;height:100%;overflow:hidden"></div>
                 </div>
             </div>
 
@@ -217,6 +221,13 @@
                 <div class="spinner"></div>
                 <p id="progress-status" data-i18n="progress.scanning">Scanning directory...</p>
                 <p id="progress-path"></p>
+                <div id="progress-files" class="progress-files">0</div>
+                <div id="progress-label" class="progress-label" data-i18n="progress.files_found">files found, scanning...</div>
+                <div id="progress-dir" class="progress-dir"></div>
+                <div class="progress-stats-row">
+                    <span id="progress-speed" class="progress-speed"></span>
+                    <span id="progress-elapsed" class="progress-elapsed"></span>
+                </div>
                 <p
                     id="progress-engine"
                     style="
@@ -256,6 +267,19 @@
         <script src="stats.js"></script>
         <script src="diagrams.js"></script>
         <script src="splitter.js"></script>
+        <!-- Galaxy View scripts -->
+        <script src="galaxyview/config.js"></script>
+        <script src="galaxyview/spatial-index.js"></script>
+        <script src="galaxyview/data-mapper.js"></script>
+        <script src="galaxyview/animation.js"></script>
+        <script src="galaxyview/effects.js"></script>
+        <script src="galaxyview/interaction.js"></script>
+        <script src="galaxyview/lod.js"></script>
+        <script src="galaxyview/timeline.js"></script>
+        <script src="galaxyview/live-scan.js"></script>
+        <script src="galaxyview/insights.js"></script>
+        <script src="galaxyview/plugin-api.js"></script>
+        <script src="galaxyview.js"></script>
         <script src="app.js"></script>
         <script>
             // If Tauri bridge isn't ready after 12s, show a hint

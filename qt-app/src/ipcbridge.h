@@ -43,6 +43,7 @@ signals:
 private:
     Scanner *m_scanner;
     ScanResult m_lastResult;
+    int m_scanId = 0;
     QStringList m_driveLetters();
 
     QString resultToJson(bool success, const QVariant &data = QVariant(),
