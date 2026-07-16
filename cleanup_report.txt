@@ -1,0 +1,39 @@
+========================================
+DiskRaptor Tauri/Rust Cleanup Report
+Date: 2026-07-16 11:53 GMT+2
+========================================
+
+STATUS: Tauri and Rust files were already absent from both disk and git tracking.
+No source files needed removal — all had been cleaned up previously.
+
+What was verified (all clean):
+========================================
+✅ src-tauri/                    — NOT present (no tracked files, no directory on disk)
+✅ Cargo.toml                    — NOT present
+✅ Cargo.lock                    — NOT present
+✅ .cargo/config.toml            — NOT present
+✅ Dockerfile.linux              — NOT present
+✅ build-appimage.sh             — NOT present
+✅ setup.nsi                     — NOT present (only NSIS examples under tools/ remain)
+✅ target/ (Rust build cache)    — Deleted (was gitignored; old Tauri artifacts removed)
+✅ .gitignore                    — No Tauri/Rust references (target/ listed as expected)
+✅ .github/workflows/build.yml   — Already Qt-only (Qt 6.10.3, CMake, NSIS pipeline)
+✅ .github/workflows/release-qt.yml — Already Qt-only (disabled, Qt pipeline)
+✅ CMakeConfigureLog.yaml        — Only local .cargo/bin PATH mentions (local machine, not project)
+✅ Untracked temp files removed  — list_tauri.txt, ci_info.txt, ci_push_result.txt deleted
+
+Git operations:
+========================================
+No tracked files required removal — Tauri had been fully removed from git in prior commits.
+
+Latest HEAD commit: 53a0338 ("scan flow fixes - scan_id, progress UI, admin startup")
+
+Tag created:  v0.0.9
+Push status:  ✅ v0.0.9 pushed to origin (new tag)
+              origin/main was already up to date (no branch changes)
+
+Summary:
+========================================
+The repo is fully Qt-only. All Tauri and Rust build infrastructure has been removed.
+No additional commits were needed — the cleanup was already complete in prior commits.
+v0.0.9 tag created and pushed successfully.
