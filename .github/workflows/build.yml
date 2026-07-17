@@ -20,14 +20,11 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Qt
-      uses: jurplel/install-qt-action@v4
-      with:
-        version: '6.10.3'
-        host: windows
-        target: desktop
-        arch: win64_msvc2022_64
-        modules: qtwebengine qtwebchannel
-        cache: true
+      shell: pwsh
+      run: |
+        pip install aqtinstall
+        aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 --modules qtwebengine qtwebchannel qtpositioning
+        echo "Qt6_DIR=C:\Qt\6.10.3\msvc2022_64\lib\cmake\Qt6" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -57,20 +54,25 @@ jobs:
       working-directory: src-tauri
 
     - name: Build Qt app
+      shell: cmd
       run: |
-        echo Qt6_DIR=%Qt6_DIR%
-        echo QTDIR=%QTDIR%
-        cd qt-app
+        echo === Qt6_DIR=%Qt6_DIR% ===
+        echo === CC=%CC% ===
+        echo === CXX=%CXX% ===
+        pushd qt-app
         if exist build rmdir /s /q build
         mkdir build
-        cd build
-        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
-        cmake --build . --config Release -- /verbosity:minimal
-      shell: cmd
+        pushd build
+        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%" 2>&1
+        if errorlevel 1 exit /b 1
+        cmake --build . --config Release 2>&1
+        if errorlevel 1 exit /b 1
+        popd
+        popd
 
     - name: Stage dist
       run: |
-        set SRC=qt-app\build\Release
+        set SRC=qt-app\build
         mkdir dist
         if exist %SRC%\DiskRaptor.exe copy %SRC%\DiskRaptor.exe dist\ >nul
         if exist %SRC%\diskraptor_scanner.dll copy %SRC%\diskraptor_scanner.dll dist\ >nul
