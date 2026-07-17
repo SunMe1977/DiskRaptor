@@ -103,6 +103,36 @@
     window.__loader = loader;
     const treeView = new TreeView("tree-viewport", loader);
     window.__treeView = treeView;
+
+    // ── Column resize ────────────────────────────────────
+    (function() {
+      var dragCol = null, startX = 0, startW = 0;
+      document.addEventListener("mousedown", function(e) {
+        var handle = e.target.closest(".col-resize");
+        if (!handle) return;
+        dragCol = handle.parentElement;
+        startX = e.clientX;
+        startW = parseInt(dragCol.style.width) || dragCol.offsetWidth;
+        e.preventDefault();
+      });
+      document.addEventListener("mousemove", function(e) {
+        if (!dragCol) return;
+        var w = Math.max(40, startW + (e.clientX - startX));
+        dragCol.style.width = w + "px";
+        dragCol.style.flex = "none";
+        // Update matching data cells
+        var colIdx = Array.from(dragCol.parentElement.children).indexOf(dragCol);
+        if (colIdx >= 0) {
+          document.querySelectorAll(".tree-row").forEach(function(row) {
+            var cell = row.children[colIdx];
+            if (cell) cell.style.width = (w - 8) + "px";
+          });
+        }
+      });
+      document.addEventListener("mouseup", function() {
+        dragCol = null;
+      });
+    })();
     const topFiles = new TopFilesPanel();
     const statsPanel = new StatsPanel();
     const diagram = new DiagramRenderer("diagram-container");

@@ -395,6 +395,38 @@ button.icon-btn {
 }
 
 /* File count column */
+/* Percentage column */
+.tree-row .node-pct {
+    flex-shrink: 0;
+    width: 60px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding-right: 4px;
+}
+
+/* Column resize handle */
+.col-resize {
+    display: inline-block;
+    width: 4px;
+    height: 20px;
+    cursor: col-resize;
+    margin-left: 4px;
+    border-right: 1px solid var(--border-light);
+    opacity: 0.3;
+    position: absolute;
+    right: -2px;
+    top: 4px;
+}
+.col-resize:hover {
+    opacity: 1;
+    border-right-color: var(--accent);
+}
+.tree-col-sort {
+    position: relative;
+}
+
 .tree-row .node-files {
     flex-shrink: 0;
     width: 70px;
@@ -466,6 +498,7 @@ button.icon-btn {
    DIAGRAM
    ═══════════════════════════════════════════════════════════════ */
 #diagram-panel {
+    position: relative;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -487,11 +520,13 @@ button.icon-btn {
     height: 100%;
 }
 .diagram-controls {
+    flex-shrink: 0;
     display: flex;
     gap: 4px;
 }
 .diagram-mode {
-    padding: 4px 14px;
+    padding: 4px 12px;
+    white-space: nowrap;
     font-size: 11px;
     font-weight: 600;
     background: var(--bg-tertiary);

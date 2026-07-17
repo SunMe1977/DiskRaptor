@@ -372,6 +372,8 @@ class TreeView {
         var cmp = 0;
         if (this.sortBy === "name") {
           cmp = (na.name || "").localeCompare(nb.name || "");
+        } else if (this.sortBy === "pct") {
+          cmp = (na.size || 0) - (nb.size || 0);
         } else if (this.sortBy === "files") {
           cmp = (na.file_count || 0) - (nb.file_count || 0);
         } else if (this.sortBy === "dirs") {
@@ -513,13 +515,17 @@ class TreeView {
         .catch(function () {});
     }
 
-    // Green percentage bar in front (size-based)
+    // Green percentage bar + percentage text
+    const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
     const pctBar = document.createElement("span");
     pctBar.className = "tree-pct-bar";
     const pctFill = document.createElement("span");
     pctFill.className = "tree-pct-fill";
-    const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
     pctFill.style.width = Math.max(1, pct) + "%";
+    if (pct > 50) pctFill.style.background = "#2ea043";
+    else if (pct > 20) pctFill.style.background = "#238636";
+    else if (pct > 5) pctFill.style.background = "#1a7f37";
+    else pctFill.style.background = "var(--accent-green)";
     pctBar.appendChild(pctFill);
     el.appendChild(pctBar);
 
@@ -527,6 +533,12 @@ class TreeView {
     name.className = "node-name";
     name.textContent = node.name || "(root)";
     el.appendChild(name);
+
+    // Percentage column
+    const pctText = document.createElement("span");
+    pctText.className = "node-pct";
+    pctText.textContent = pct.toFixed(1) + "%";
+    el.appendChild(pctText);
 
     const size = document.createElement("span");
     size.className = "node-size";
