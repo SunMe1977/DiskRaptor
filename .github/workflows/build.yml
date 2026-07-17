@@ -37,9 +37,6 @@ jobs:
     - name: Setup MSVC dev prompt
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Setup Ninja
-      uses: seanmiddleditch/gha-setup-ninja@v5
-
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
@@ -61,39 +58,41 @@ jobs:
 
     - name: Build Qt app
       run: |
+        echo "Qt6_DIR=$Env:Qt6_DIR"
         cd qt-app
-        if exist build rmdir /s /q build
-        mkdir build
+        if (Test-Path build) { Remove-Item -Recurse -Force build }
+        New-Item -ItemType Directory -Force -Path build | Out-Null
         cd build
-        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
-        cmake --build . --config Release --parallel
-      shell: cmd
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$Env:Qt6_DIR" -DCMAKE_PREFIX_PATH="$Env:Qt6_DIR"
+        cmake --build . --config Release -- /verbosity:minimal
+      shell: pwsh
 
     - name: Stage dist
       run: |
-        set SRC=qt-app\build
-        mkdir dist
-        copy %SRC%\DiskRaptor.exe dist\
-        copy %SRC%\diskraptor_scanner.dll dist\
-        copy %SRC%\QtWebEngineProcess.exe dist\
-        copy %SRC%\*.dll dist\
-        if exist %SRC%\platforms xcopy /e /i /y %SRC%\platforms dist\platforms >nul 2>&1
-        if exist %SRC%\styles xcopy /e /i /y %SRC%\styles dist\styles >nul 2>&1
-        if exist %SRC%\imageformats xcopy /e /i /y %SRC%\imageformats dist\imageformats >nul 2>&1
-        if exist %SRC%\tls xcopy /e /i /y %SRC%\tls dist\tls >nul 2>&1
-        if exist %SRC%\iconengines xcopy /e /i /y %SRC%\iconengines dist\iconengines >nul 2>&1
-        if exist %SRC%\networkinformation xcopy /e /i /y %SRC%\networkinformation dist\networkinformation >nul 2>&1
-        if exist %SRC%\position xcopy /e /i /y %SRC%\position dist\position >nul 2>&1
-        if exist %SRC%\generic xcopy /e /i /y %SRC%\generic dist\generic >nul 2>&1
-        if exist %SRC%\resources xcopy /e /i /y %SRC%\resources dist\resources >nul 2>&1
-        if exist %SRC%\translations xcopy /e /i /y %SRC%\translations dist\translations >nul 2>&1
-        xcopy /e /i /y frontend dist\frontend\
-        if exist images xcopy /e /i /y images dist\images >nul 2>&1
+        $SRC="qt-app\build\Release"
+        New-Item -ItemType Directory -Force -Path dist | Out-Null
+        Copy-Item "$SRC\DiskRaptor.exe" dist\
+        Copy-Item "$SRC\diskraptor_scanner.dll" dist\
+        Copy-Item "$SRC\QtWebEngineProcess.exe" dist\
+        Copy-Item "$SRC\*.dll" dist\
+        if (Test-Path "$SRC\platforms") { Copy-Item -Recurse "$SRC\platforms" dist\ }
+        if (Test-Path "$SRC\styles") { Copy-Item -Recurse "$SRC\styles" dist\ }
+        if (Test-Path "$SRC\imageformats") { Copy-Item -Recurse "$SRC\imageformats" dist\ }
+        if (Test-Path "$SRC\tls") { Copy-Item -Recurse "$SRC\tls" dist\ }
+        if (Test-Path "$SRC\iconengines") { Copy-Item -Recurse "$SRC\iconengines" dist\ }
+        if (Test-Path "$SRC\networkinformation") { Copy-Item -Recurse "$SRC\networkinformation" dist\ }
+        if (Test-Path "$SRC\position") { Copy-Item -Recurse "$SRC\position" dist\ }
+        if (Test-Path "$SRC\generic") { Copy-Item -Recurse "$SRC\generic" dist\ }
+        if (Test-Path "$SRC\resources") { Copy-Item -Recurse "$SRC\resources" dist\ }
+        if (Test-Path "$SRC\translations") { Copy-Item -Recurse "$SRC\translations" dist\ }
+        Copy-Item -Recurse frontend dist\frontend\
+        if (Test-Path images) { Copy-Item -Recurse images dist\images\ }
+      shell: pwsh
 
     # ── Test ───────────────────────────────────────────────
     - name: Run UI test
-      run: node test_scan.mjs "%USERPROFILE%"
-      shell: cmd
+      run: node test_scan.mjs "$Env:USERPROFILE"
+      shell: pwsh
       timeout-minutes: 5
       env:
         DISKraptor_CDP_PORT: 9222
@@ -101,9 +100,9 @@ jobs:
     # ── Package ────────────────────────────────────────────
     - name: Package release zip
       run: |
-        mkdir artifacts
-        "%ProgramFiles%\7-Zip\7z.exe" a -tzip artifacts\DiskRaptor_v0.0.1.zip dist\* -x!*.zip -x!artifacts
-      shell: cmd
+        New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+        & "C:\Program Files\7-Zip\7z.exe" a -tzip artifacts\DiskRaptor_v0.0.1.zip .\dist\*
+      shell: pwsh
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
