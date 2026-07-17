@@ -2,7 +2,7 @@ use crate::scanner::tree::*;
 use anyhow::Result;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::panic;
+
 use std::path::Path;
 #[cfg(windows)]
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
