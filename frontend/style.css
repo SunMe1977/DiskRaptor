@@ -800,11 +800,10 @@ button.icon-btn {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(0, 0, 0, 0.65);
     z-index: 1000;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
-    padding-top: 40px;
     animation: fadeIn 0.2s var(--ease);
 }
 

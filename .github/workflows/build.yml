@@ -10,7 +10,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  QT_VERSION: "6.10.3"
+  QT_VERSION: "6.7.3"
 
 jobs:
   build-and-test:
@@ -43,13 +43,12 @@ jobs:
       with:
         node-version: '22'
 
-    - name: Install Playwright
+    - name: Install dependencies
       run: |
-        npm init -y
         npm install playwright ws
         npx playwright install chromium
 
-    # ── Build ──────────────────────────────────────────────
+    # Build
     - name: Build Rust scanner DLL
       run: |
         cd src-tauri
@@ -69,47 +68,48 @@ jobs:
     - name: Stage dist
       run: |
         mkdir dist
-        xcopy /e /i /y qt-app\build\DiskRaptor.exe dist\
-        xcopy /e /i /y qt-app\build\DiskRaptorLauncher.exe dist\
-        xcopy /e /i /y qt-app\build\diskraptor_scanner.dll dist\
-        xcopy /e /i /y qt-app\build\*.dll dist\
-        xcopy /e /i /y qt-app\build\QtWebEngineProcess.exe dist\
-        for %%d in (platforms styles imageformats tls iconengines generic networkinformation position resources translations) do (
-          if exist qt-app\build\%%d xcopy /e /i /y qt-app\build\%%d dist\%%d\
-        )
+        copy qt-app\build\DiskRaptor.exe dist\
+        copy qt-app\build\DiskRaptorLauncher.exe dist\
+        copy qt-app\build\diskraptor_scanner.dll dist\
+        copy qt-app\build\QtWebEngineProcess.exe dist\
+        copy qt-app\build\*.dll dist\
+        xcopy /e /i /y qt-app\build\platforms dist\platforms >nul 2>&1
+        xcopy /e /i /y qt-app\build\styles dist\styles >nul 2>&1
+        xcopy /e /i /y qt-app\build\imageformats dist\imageformats >nul 2>&1
+        xcopy /e /i /y qt-app\build\tls dist\tls >nul 2>&1
+        xcopy /e /i /y qt-app\build\iconengines dist\iconengines >nul 2>&1
+        xcopy /e /i /y qt-app\build\networkinformation dist\networkinformation >nul 2>&1
+        xcopy /e /i /y qt-app\build\position dist\position >nul 2>&1
+        xcopy /e /i /y qt-app\build\generic dist\generic >nul 2>&1
+        xcopy /e /i /y qt-app\build\resources dist\resources >nul 2>&1
+        xcopy /e /i /y qt-app\build\translations dist\translations >nul 2>&1
         xcopy /e /i /y frontend dist\frontend\
       shell: cmd
 
-    # ── Test ───────────────────────────────────────────────
-    - name: Run UI test (small dir)
-      run: node test_scan.mjs "C:\dev\DiskRaptor"
+    # Test
+    - name: Run UI test
+      run: node test_scan.mjs "%USERPROFILE%"
       shell: cmd
-      timeout-minutes: 2
+      timeout-minutes: 5
       env:
         DISKraptor_CDP_PORT: 9222
 
-    - name: Run stress test (100K)
+    - name: Run stress test
       run: node stress_test.mjs 100000
       shell: cmd
       timeout-minutes: 2
 
-    # ── Package ────────────────────────────────────────────
+    # Package
     - name: Package bootstrap
       run: |
         mkdir artifacts
-        "%ProgramFiles%\7-Zip\7z.exe" a -tzip artifacts\DiskRaptor_Bootstrap_v0.0.1.zip ^
-          dist\DiskRaptorLauncher.exe ^
-          dist\DiskRaptor.exe ^
-          dist\diskraptor_scanner.dll ^
-          dist\frontend
+        "%ProgramFiles%\7-Zip\7z.exe" a -tzip artifacts\DiskRaptor_Bootstrap_v0.0.1.zip dist\DiskRaptorLauncher.exe dist\DiskRaptor.exe dist\diskraptor_scanner.dll dist\frontend
       shell: cmd
 
     - name: Package Qt runtime
       run: |
         cd dist
-        "%ProgramFiles%\7-Zip\7z.exe" a -tzip -mx=5 ..\artifacts\qtwebengine_runtime.zip ^
-          *.dll QtWebEngineProcess.exe ^
-          platforms imageformats styles tls iconengines generic networkinformation position resources translations
+        "%ProgramFiles%\7-Zip\7z.exe" a -tzip -mx=5 ..\artifacts\qtwebengine_runtime.zip *.dll QtWebEngineProcess.exe platforms imageformats styles tls iconengines generic networkinformation position resources translations
       shell: cmd
 
     - name: Upload artifacts

@@ -183,6 +183,8 @@ mod platform {
     const OFS_END_OF_FILE: usize = 40; // u64
     const OFS_FILE_NAME: usize = 64; // u16[] (variable length)
 
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+
     /// Initial buffer size for NtQueryDirectoryFile (per directory scan).
     const NT_BUF_SIZE: usize = 64 * 1024;
 
@@ -327,9 +329,18 @@ mod platform {
                 }
 
                 let is_dir = (file_attrs & FILE_ATTRIBUTE_DIRECTORY.0 as u32) != 0;
+                let is_reparse = (file_attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
                 let full = format!("{}\\{}", user_dir, name);
 
                 if is_dir {
+                    // Skip reparse points (junctions, symlinks) to avoid double-counting
+                    if is_reparse {
+                        if next_off == 0 {
+                            break;
+                        }
+                        offset += next_off as usize;
+                        continue;
+                    }
                     // Check skip list
                     if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
                         if next_off == 0 {

@@ -46,7 +46,7 @@ signals:
 private:
     int m_scanId = 0;
     QString m_chunksJson;
-    QStringList m_driveLetters();
+    QString m_lastScanPath;
 
     QString resultToJson(bool success, const QVariant &data = QVariant(),
                          const QString &error = QString());

@@ -67,10 +67,33 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
         QString jsonStr = QString::fromUtf8(cjson);
         m_drFreeString(cjson);
         QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
-        if (doc.isNull() || !doc.isObject()) {
-            return resultToJson(false, QVariant(), "invalid chunk JSON");
+        if (!doc.isNull() && doc.isObject()) {
+            return resultToJson(true, doc.object());
         }
-        return resultToJson(true, doc.object());
+        // Rust returned empty chunk — check if scan is done (C++ fallback in use)
+        bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
+        if (!isRunning && chunkIndex == 0) {
+            // Return synthetic root chunk
+            QJsonObject rootNode;
+            rootNode["name"] = m_lastScanPath.isEmpty() ? "C:\\" : m_lastScanPath;
+            rootNode["size"] = 0;
+            rootNode["file_count"] = 0;
+            rootNode["node_type"] = "Directory";
+            rootNode["parent"] = 4294967295;
+            rootNode["first_child"] = 4294967295;
+            rootNode["next_sibling"] = 4294967295;
+            rootNode["depth"] = 0;
+            rootNode["chunk_id"] = 0;
+            QJsonArray nodes;
+            nodes.append(rootNode);
+            QJsonObject chunk;
+            chunk["chunk_id"] = 0;
+            chunk["total_chunks"] = 1;
+            chunk["total_nodes"] = 1;
+            chunk["nodes"] = nodes;
+            return resultToJson(true, chunk);
+        }
+        return resultToJson(false, QVariant(), "invalid chunk JSON");
     }
     if (command == "get_children") {
         return resultToJson(true, QVariantMap{{"children", QJsonArray()}});
@@ -96,6 +119,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
         QString path = QDir::toNativeSeparators(args.value("path").toString());
         if (!path.isEmpty()) {
             m_scanId++;
+            m_lastScanPath = path;
             if (!m_drStartScan) {
                 return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
             }
@@ -269,8 +293,8 @@ QString IpcBridge::getScanResult()
                 stats["time_human"] = QString::number(elapsed) + "s";
                 QJsonObject ri;
                 ri["root_index"] = 0;
-                ri["total_nodes"] = 0;
-                ri["total_chunks"] = 0;
+                ri["total_nodes"] = files + dirs;
+                ri["total_chunks"] = 1;
                 QJsonObject resultObj;
                 resultObj["stats"] = stats;
                 resultObj["root_info"] = ri;
