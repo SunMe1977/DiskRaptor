@@ -20,11 +20,14 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Qt
-      run: |
-        pip install aqtinstall
-        aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 --modules qtwebengine qtwebchannel qtpositioning
-        "Qt6_DIR=C:\Qt\6.10.3\msvc2022_64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      shell: pwsh
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.10.3'
+        host: windows
+        target: desktop
+        arch: win64_msvc2022_64
+        modules: qtwebengine qtwebchannel
+        cache: true
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -63,7 +66,7 @@ jobs:
         if exist build rmdir /s /q build
         mkdir build
         cd build
-        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
+        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
         cmake --build . --config Release -- /verbosity:minimal
       shell: cmd
 
