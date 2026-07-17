@@ -37,6 +37,9 @@ jobs:
     - name: Setup MSVC dev prompt
       uses: ilammy/msvc-dev-cmd@v1
 
+    - name: Setup Ninja
+      uses: seanmiddleditch/gha-setup-ninja@v5
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
@@ -62,8 +65,8 @@ jobs:
         if exist build rmdir /s /q build
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
-        cmake --build . --config Release -- /verbosity:minimal
+        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
+        cmake --build . --config Release --parallel
       shell: cmd
 
     - name: Stage dist
@@ -85,6 +88,7 @@ jobs:
         if exist %SRC%\resources xcopy /e /i /y %SRC%\resources dist\resources >nul 2>&1
         if exist %SRC%\translations xcopy /e /i /y %SRC%\translations dist\translations >nul 2>&1
         xcopy /e /i /y frontend dist\frontend\
+        if exist images xcopy /e /i /y images dist\images >nul 2>&1
 
     # ── Test ───────────────────────────────────────────────
     - name: Run UI test
