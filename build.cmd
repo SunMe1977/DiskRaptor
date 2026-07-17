@@ -107,6 +107,9 @@ xcopy /e /i /y qt-app\build\translations dist\translations >nul 2>&1
 REM Frontend
 xcopy /e /i /y qt-app\build\frontend dist\frontend >nul 2>&1
 
+REM Images
+if exist images xcopy /e /i /y images dist\images >nul 2>&1
+
 echo OK - dist\DiskRaptor.exe
 
 echo.
