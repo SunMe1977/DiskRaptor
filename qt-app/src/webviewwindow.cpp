@@ -48,6 +48,12 @@ void MainWindow::setupUI()
 
 void MainWindow::setupMenuBar()
 {
+    // ── File Menu ──────────────────────────────────────
+    auto *fileMenu = menuBar()->addMenu(tr("&File"));
+    auto *exitAction = fileMenu->addAction(tr("E&xit"));
+    exitAction->setShortcut(QKeySequence("Ctrl+Q"));
+    connect(exitAction, &QAction::triggered, this, &QMainWindow::close);
+
     // ── View Menu ──────────────────────────────────────
     m_viewMenu = menuBar()->addMenu(tr("&View"));
 
