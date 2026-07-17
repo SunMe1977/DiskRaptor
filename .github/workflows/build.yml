@@ -58,11 +58,15 @@ jobs:
 
     - name: Build Qt app
       run: |
+        echo Looking for Qt6_DIR...
+        dir /s /b C:\Qt\*Qt6Config.cmake 2>nul
+        if "%Qt6_DIR%"=="" (echo Qt6_DIR is EMPTY) else (echo Qt6_DIR=%Qt6_DIR%)
+        if "%QTDIR%"=="" (echo QTDIR is EMPTY) else (echo QTDIR=%QTDIR%)
         cd qt-app
         if exist build rmdir /s /q build
         mkdir build
         cd build
-        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
         cmake --build . --config Release -- /verbosity:minimal
       shell: cmd
 
