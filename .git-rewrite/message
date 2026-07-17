@@ -1,6 +1,0 @@
-Fix .deb dependencies: explicit runtime deps instead of auto-detect
-
-- Auto-detect was picking -dev packages (libwebkit2gtk-4.0-dev)
-- Now explicitly specify runtime packages:
-  libgtk-3-0, libwebkit2gtk-4.0-37, libjavascriptcoregtk-4.0-18,
-  librsvg2-2, libappindicator3-1 | libayatana-appindicator3-1

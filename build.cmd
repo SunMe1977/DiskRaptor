@@ -1,0 +1,124 @@
+@echo off
+chcp 65001 >nul
+title DiskRaptor Build
+
+echo ==========================================
+echo   DiskRaptor - Build EXE + NSIS Installer
+echo ==========================================
+echo.
+
+setlocal
+
+REM -- Find tool paths ----------------------------
+set MSVC_ROOT=C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231
+set WIN10_KIT=C:\Program Files (x86)\Windows Kits\10
+set QT_DIR=C:\Qt\6.10.3\msvc2022_64
+set CMAKE_DIR=C:\Qt\Tools\CMake_64
+set NINJA_DIR=C:\Qt\Tools\Ninja
+set NSIS_DIR=C:\Program Files (x86)\NSIS
+
+set PATH=%MSVC_ROOT%\bin\Hostx64\x64;%PATH%
+set PATH=%WIN10_KIT%\bin\10.0.26100.0\x64;%PATH%
+set PATH=%CMAKE_DIR%\bin;%PATH%
+set PATH=%NINJA_DIR%;%PATH%
+set PATH=%NSIS_DIR%;%PATH%
+
+set INCLUDE=%MSVC_ROOT%\include
+set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\ucrt
+set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\shared
+set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\um
+set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\winrt
+
+set LIB=%MSVC_ROOT%\lib\x64
+set LIB=%LIB%;%WIN10_KIT%\Lib\10.0.26100.0\ucrt\x64
+set LIB=%LIB%;%WIN10_KIT%\Lib\10.0.26100.0\um\x64
+
+set Qt6_DIR=%QT_DIR%\lib\cmake\Qt6
+set CMAKE_PREFIX_PATH=%QT_DIR%
+
+REM -- Step 1: Build Rust DLL --------------------
+echo [1/5] Building Rust scanner DLL...
+cd /d "%~dp0src-tauri"
+call cargo build --release
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Rust build failed
+    pause
+    exit /b 1
+)
+echo OK
+
+REM -- Step 2: Configure CMake -------------------
+echo.
+echo [2/5] Configuring CMake...
+cd /d "%~dp0qt-app"
+if exist build rmdir /s /q build
+mkdir build
+cd build
+cmake .. -G Ninja ^
+    -DCMAKE_BUILD_TYPE=Release ^
+    -DCMAKE_C_COMPILER="%MSVC_ROOT%\bin\Hostx64\x64\cl.exe" ^
+    -DCMAKE_CXX_COMPILER="%MSVC_ROOT%\bin\Hostx64\x64\cl.exe" ^
+    -DQt6_DIR="%Qt6_DIR%" ^
+    -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%"
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: CMake configuration failed
+    pause
+    exit /b 1
+)
+echo OK
+
+REM -- Step 3: Build ----------------------------
+echo.
+echo [3/5] Building Qt app...
+cmake --build . --config Release
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Build failed
+    pause
+    exit /b 1
+)
+echo OK
+
+REM -- Keep all Qt runtime DLLs (transitive deps of WebEngine)
+echo Keeping all Qt runtime DLLs...
+
+REM -- Step 4: Create dist package --------------
+echo.
+echo [4/5] Packaging dist...
+cd /d "%~dp0"
+if exist dist rmdir /s /q dist
+mkdir dist
+
+REM Core EXEs + DLLs
+copy qt-app\build\DiskRaptor.exe dist\
+copy qt-app\build\DiskRaptorLauncher.exe dist\
+copy qt-app\build\diskraptor_scanner.dll dist\
+copy qt-app\build\QtWebEngineProcess.exe dist\
+copy qt-app\build\*.dll dist\
+
+REM Qt plugins
+xcopy /e /i /y qt-app\build\platforms dist\platforms >nul 2>&1
+xcopy /e /i /y qt-app\build\styles dist\styles >nul 2>&1
+xcopy /e /i /y qt-app\build\imageformats dist\imageformats >nul 2>&1
+xcopy /e /i /y qt-app\build\tls dist\tls >nul 2>&1
+xcopy /e /i /y qt-app\build\iconengines dist\iconengines >nul 2>&1
+xcopy /e /i /y qt-app\build\networkinformation dist\networkinformation >nul 2>&1
+xcopy /e /i /y qt-app\build\position dist\position >nul 2>&1
+xcopy /e /i /y qt-app\build\generic dist\generic >nul 2>&1
+
+REM WebEngine resources
+xcopy /e /i /y qt-app\build\resources dist\resources >nul 2>&1
+xcopy /e /i /y qt-app\build\translations dist\translations >nul 2>&1
+
+REM Frontend
+xcopy /e /i /y qt-app\build\frontend dist\frontend >nul 2>&1
+
+echo OK - dist\DiskRaptor.exe
+
+echo.
+echo ==========================================
+echo   BUILD COMPLETE
+echo ==========================================
+echo.
+echo  EXE: dist\DiskRaptor.exe
+echo.
+pause

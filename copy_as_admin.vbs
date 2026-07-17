@@ -1,1 +1,0 @@
-CreateObject("Shell.Application").ShellExecute "powershell.exe", "-NoProfile -Command ""Copy-Item 'C:\Program Files\DiskRaptor6\Qt6WebEngineCore.dll' 'C:\Program Files\DiskRaptor6\runtime\Qt6WebEngineCore.dll' -Force""", "", "runas", 0

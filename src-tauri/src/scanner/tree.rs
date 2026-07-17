@@ -1,12 +1,32 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Compact node type — stored as a single byte
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Compact node type — stored as a single byte.
+/// Serialized as integer (0=directory, 1=file) for the JS frontend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum NodeType {
     Directory = 0,
     File = 1,
+}
+
+impl serde::Serialize for NodeType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(*self as u8)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for NodeType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match u8::deserialize(deserializer)? {
+            0 => Ok(NodeType::Directory),
+            1 => Ok(NodeType::File),
+            v => Err(serde::de::Error::custom(format!(
+                "invalid node type: {}",
+                v
+            ))),
+        }
+    }
 }
 
 impl fmt::Display for NodeType {

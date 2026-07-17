@@ -93,3 +93,30 @@ pub fn get_root_info(arena: &TreeNodeArena) -> ScanRootInfo {
         total_chunks: total.div_ceil(CHUNK_SIZE),
     }
 }
+
+/// Safe chunk generator for large trees — only creates root + first-level children.
+/// Returns a single TreeChunk that fits on the stack.
+pub fn make_root_chunk(arena: &TreeNodeArena) -> Vec<TreeChunk> {
+    let total = arena.nodes.len() as u32;
+    let mut nodes = Vec::new();
+    // Root (index 0)
+    if !arena.nodes.is_empty() {
+        let mut root = arena.nodes[0].clone();
+        root.chunk_id = 0;
+        nodes.push(root);
+        // First-level children
+        let mut child = arena.nodes[0].first_child;
+        while child != u32::MAX {
+            let mut node = arena.nodes[child as usize].clone();
+            node.chunk_id = 0;
+            nodes.push(node);
+            child = arena.nodes[child as usize].next_sibling;
+        }
+    }
+    vec![TreeChunk {
+        chunk_id: 0,
+        total_chunks: 1,
+        total_nodes: total,
+        nodes,
+    }]
+}

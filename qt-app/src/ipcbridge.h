@@ -7,6 +7,7 @@
 #include <QVariantMap>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSettings>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -36,12 +37,15 @@ public:
     Q_INVOKABLE QString findDuplicates(const QString &path);
     Q_INVOKABLE QString checkAdminNeeded(const QString &path);
     Q_INVOKABLE QString restartAsAdmin();
+    Q_INVOKABLE QString saveSettings(const QVariantMap &settings);
+    Q_INVOKABLE QString loadSettings();
 
 signals:
     void eventEmitted(const QString &event, const QVariant &payload);
 
 private:
     int m_scanId = 0;
+    QString m_chunksJson;
     QStringList m_driveLetters();
 
     QString resultToJson(bool success, const QVariant &data = QVariant(),
@@ -55,6 +59,7 @@ private:
     using FnStartScan = char* (__stdcall*)(const char* path);
     using FnGetProgress = char* (__stdcall*)();
     using FnGetResult = char* (__stdcall*)();
+    using FnGetChunk = char* (__stdcall*)(uint32_t chunk_id);
     using FnCancelScan = bool (__stdcall*)();
     using FnIsRunning = bool (__stdcall*)();
     using FnFreeString = void (__stdcall*)(char* s);
@@ -62,6 +67,7 @@ private:
     FnStartScan m_drStartScan = nullptr;
     FnGetProgress m_drGetProgress = nullptr;
     FnGetResult m_drGetResult = nullptr;
+    FnGetChunk m_drGetChunk = nullptr;
     FnCancelScan m_drCancelScan = nullptr;
     FnIsRunning m_drIsRunning = nullptr;
     FnFreeString m_drFreeString = nullptr;

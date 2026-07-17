@@ -94,6 +94,7 @@ static QString findRuntimeDir()
 {
     QString appDir = QCoreApplication::applicationDirPath();
     QStringList candidates = {
+        appDir,                          // DLLs alongside the EXE
         appDir + "/runtime",
         QDir::currentPath() + "/runtime",
     };

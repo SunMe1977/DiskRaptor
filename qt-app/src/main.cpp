@@ -75,11 +75,8 @@ int main(int argc, char *argv[])
     // so Qt DLLs and WebEngine process resolve correctly without the launcher.
     PlatformUtils::setupRuntimeEnvironment();
 
-    // Admin check: if not running as admin, relaunch with runas verb, then exit.
-    // This handles direct DiskRaptor.exe launches (without the launcher).
-    if (!EnsureAdmin()) {
-        return 0;
-    }
+    // Admin escalation disabled — app now runs directly without UAC prompt.
+    // To scan protected system directories, run as Administrator manually.
 
     QApplication app(argc, argv);
     app.setApplicationName("DiskRaptor");

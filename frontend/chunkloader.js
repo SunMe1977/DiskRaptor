@@ -188,6 +188,12 @@ class ChunkLoader {
 
   async fetchChildren(arenaIndex) {
     if (arenaIndex === 4294967295) return [];
+    // Use the locally-built parentMap first (populated by loadChunk)
+    var cached = this.getChildrenIndices(arenaIndex);
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+    // Fallback to backend (useful when chunks not yet loaded)
     var result = await this._invoke("get_children", {
       scanId: this.scanId,
       nodeIndex: arenaIndex,

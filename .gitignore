@@ -1,31 +1,44 @@
-# Build artifacts
+# ── Build artifacts ──────────────────────────────
 target/
-qt-app/build*
+qt-app/build*/
 qt-app/build_qt/
+qt-app/build_msi/
 *.msi
 *.AppImage
 *.deb
 *.dmg
 *.obj
+*.o
+*.so
+*.lib
+*.exp
+dist/
+release/
 
-# Node
+# ── Node ─────────────────────────────────────────
 node_modules/
 frontend/lib/
+package-lock.json
 
-# IDE
+# ── IDE ──────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+*.suo
+*.user
 
-# OS
+# ── OS ───────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Generated icon copies
+# ── Generated icon copies ───────────────────────
 images/
 
-# Temp
+ANALYSIS_COMPLETE.md
+app_stderr.txt
+C?*
+# ── Temp / Debug ────────────────────────────────
 nul
 *.log
 build_report.txt
@@ -35,12 +48,31 @@ _install.bat
 _build.bat
 run_build_test.ps1
 test_write.txt
+debug_path.txt
+launch_cdp.bat
+ANALYSIS_COMPLETE.md
+app_stderr.txt
+dir
+C?*
+*.ps1
+*.py
+*.mjs
+!test_scan.mjs
+!stress_test.mjs
 
-# WiX tools (downloaded per build)
+# ── Git rewrite artifacts ───────────────────────
+.git-rewrite/
+
+# ── Test results ────────────────────────────────
+test-results/
+test-results/
+
+# ── WiX / NSIS tools ────────────────────────────
 tools/wix/
 tools/wix_full/
+tools/
 
-# Pro Modules (closed source binary)
+# ── Pro Modules (closed source) ─────────────────
 modulesPro/*.dll
 modulesPro/*.so
 modulesPro/*.dylib
@@ -50,15 +82,17 @@ modulesPro/*.obj
 modulesPro/*/build/
 modulesPro/build/
 
-# Never commit this file
+# ── Sensitive / generated ───────────────────────
 raw/info.txt
 analysis.txt
 ci_status.json
+install/
+DiskRaptor_0.0.7_x64_Setup.exe
+setup.nsi
 
-tools/
-qt-app/build*/
-*.exe
-*.zip
-*.7z
+# ── Qt runtime (downloaded by launcher) ─────────
 qtwebengine_runtime/
 qtwebengine_*.zip
+
+# ── Old scripts (cleaned up) ────────────────────
+scripts/

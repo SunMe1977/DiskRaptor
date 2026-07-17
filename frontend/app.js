@@ -29,6 +29,7 @@
 
   async function init() {
     console.log("DiskRaptor booting...");
+    var statusBar = document.querySelector(".status-bar");
 
     const bridgeReady = new Promise((resolve) => {
       if (window.__TAURI__ && typeof window.__TAURI__.invoke === "function") {
@@ -41,16 +42,17 @@
     });
 
     const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Tauri bridge timeout")), 15000),
+      setTimeout(() => reject(new Error("Tauri bridge timeout")), 30000),
     );
 
+    if (statusBar) statusBar.textContent = "Connecting to backend...";
     try {
       await Promise.race([bridgeReady, timeout]);
+      if (statusBar) statusBar.textContent = "Backend connected";
     } catch (err) {
       console.error("Tauri backend not connected:", err);
-      const sb = document.querySelector(".status-bar");
-      if (sb)
-        sb.textContent = "Backend not connected. Run via npm run tauri dev.";
+      if (statusBar)
+        statusBar.textContent = "Backend not connected. " + err.message;
       return;
     }
 
@@ -61,26 +63,50 @@
 
     console.log("DiskRaptor initializing...");
 
+    // ── Settings helpers ───────────────────────────────────
+    async function getSetting(key, fallback) {
+      try {
+        var r = await window.__TAURI__.invoke("load_settings");
+        if (r && r[key] !== undefined) return r[key];
+      } catch {}
+      return fallback;
+    }
+    async function setSetting(key, val) {
+      try {
+        var o = {}; o[key] = val;
+        await window.__TAURI__.invoke("save_settings", o);
+      } catch {}
+    }
+
     // ── Theme toggle ───────────────────────────────────────
     var btnTheme = document.getElementById("btn-theme");
-    var savedTheme = localStorage.getItem("diskraptor-theme");
-    if (savedTheme === "light") {
-      document.body.classList.add("light-theme");
-      btnTheme.textContent = "☀";
-      btnTheme.title = "Switch to dark mode";
-    }
+    getSetting("theme", "dark").then(function(savedTheme) {
+      if (savedTheme === "light") {
+        document.body.classList.add("light-theme");
+        btnTheme.textContent = "\u2600";
+        btnTheme.title = "Switch to dark mode";
+      }
+    });
+    getSetting("language", "auto").then(function(savedLang) {
+      if (savedLang && savedLang !== "auto" && window.I18N) {
+        window.I18N.setLocale(savedLang);
+      }
+    });
     btnTheme.addEventListener("click", function () {
       var isLight = document.body.classList.toggle("light-theme");
-      localStorage.setItem("diskraptor-theme", isLight ? "light" : "dark");
-      btnTheme.textContent = isLight ? "☀" : "☾";
+      setSetting("theme", isLight ? "light" : "dark");
+      btnTheme.textContent = isLight ? "\u2600" : "\u263E";
       btnTheme.title = isLight ? "Switch to dark mode" : "Switch to light mode";
     });
 
     const loader = new ChunkLoader();
+    window.__loader = loader;
     const treeView = new TreeView("tree-viewport", loader);
+    window.__treeView = treeView;
     const topFiles = new TopFilesPanel();
     const statsPanel = new StatsPanel();
     const diagram = new DiagramRenderer("diagram-container");
+    window.__diagram = diagram;
 
     let isScanning = false;
     let currentStats = null;
@@ -132,11 +158,16 @@
             galaxyContainer.style.display = "block";
             if (!galaxyView) {
               try {
+                // Ensure container has size before init
+                galaxyContainer.style.minHeight = "400px";
                 galaxyView = new GalaxyView.GalaxyView(galaxyContainer);
                 galaxyView.init();
+                galaxyView._resize();
               } catch (e) {
                 console.error("GalaxyView init failed:", e);
               }
+            } else {
+              galaxyView._resize();
             }
             galaxyView.show();
             _feedGalaxyView();
@@ -204,13 +235,8 @@
           btn.addEventListener("click", function () {
             var code = this.getAttribute("data-lang");
             window.I18N.setLocale(code);
+            setSetting("language", code);
             langMenu.classList.remove("active");
-            // Emit event to Rust backend for menu label update
-            if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.emit) {
-              try {
-                window.__TAURI__.event.emit("lang-changed", { locale: code });
-              } catch (e) { /* ignore */ }
-            }
           });
         });
       }
@@ -286,19 +312,99 @@
       }
     }
 
-    // Update progress label on locale change
+    // Progress i18n is handled by the static labels in the HTML
     window.addEventListener("locale-changed", function () {
-      var label = document.getElementById("progress-label");
-      if (label && !label.textContent.includes("build") && !label.textContent.includes("chunk")) {
-        label.textContent = window.__("progress.files_found");
-      }
-      var elapsed = document.getElementById("progress-elapsed");
-      if (elapsed && elapsed.textContent) {
-        // Don't override running elapsed counter, just prefix
-        var txt = elapsed.textContent.replace(/^.+?: /, "");
-        elapsed.textContent = window.__("progress.elapsed") + txt;
+      // Metrics use icons + short labels — no i18n needed
+    });
+
+    // ── Drive Selector Dropdown ────────────────────────────
+    var btnDrive = document.getElementById("btn-drive");
+    var driveMenu = document.getElementById("drive-menu");
+    var driveSelected = document.getElementById("drive-selected");
+
+    // Toggle dropdown
+    btnDrive.addEventListener("click", function(e) {
+      e.stopPropagation();
+      driveMenu.classList.toggle("active");
+      if (driveMenu.classList.contains("active")) {
+        loadDrives();
       }
     });
+    // Close on outside click
+    document.addEventListener("click", function(e) {
+      if (!e.target.closest(".drive-dropdown-wrap")) {
+        driveMenu.classList.remove("active");
+      }
+    });
+
+    async function loadDrives() {
+      try {
+        var drivesRaw = await window.__TAURI__.invoke("list_drives");
+        var drives = typeof drivesRaw === "string" ? JSON.parse(drivesRaw) : drivesRaw;
+        if (!drives || drives.length === 0) return;
+
+        function driveIcon(type) {
+          switch(type) {
+            case "system": return "🖥️";
+            case "usb": return "💾";
+            case "dvd": return "💿";
+            case "ram": return "⚡";
+            default: return "💽";
+          }
+        }
+        function formatSize(bytes) {
+          if (!bytes || bytes === 0) return "0 B";
+          var units = ["B","KB","MB","GB","TB"];
+          var i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 4);
+          var v = bytes / Math.pow(1024, i);
+          return v.toFixed(1) + " " + units[i];
+        }
+
+        var html = "";
+        for (var i = 0; i < drives.length; i++) {
+          var d = drives[i];
+          var path = d.path || "";
+          var letter = path.replace(":\\", "").replace(":/", "");
+          var type = d.type || "local";
+          var name = d.name || letter + ":";
+          var total = d.totalBytes || 0;
+          var used = d.usedBytes || 0;
+          var pct = d.percentFull !== undefined ? Math.round(d.percentFull) :
+                    (total > 0 ? Math.round((used/total)*100) : 0);
+          var free = d.freeBytes || 0;
+          var icon = driveIcon(type);
+          var isActive = scanPath.value.toUpperCase().startsWith(letter.toUpperCase() + ":");
+          html += '<div class="drive-item' + (isActive ? ' active' : '') + '" data-path="' + path + '">' +
+            '<span class="drive-icon">' + icon + '</span>' +
+            '<div class="drive-info">' +
+              '<div class="drive-info-top">' +
+                '<span class="drive-label">' + letter + ':\\</span>' +
+                '<span class="drive-name">' + name + '</span>' +
+              '</div>' +
+              '<div class="drive-bar-row">' +
+                '<div class="drive-bar-wrap"><div class="drive-bar-fill" style="width:' + pct + '%"></div></div>' +
+                '<span class="drive-pct">' + pct + '%</span>' +
+              '</div>' +
+              '<span class="drive-size">' + formatSize(free) + ' free / ' + formatSize(total) + '</span>' +
+            '</div>' +
+          '</div>';
+        }
+        driveMenu.innerHTML = html;
+        driveMenu.querySelectorAll(".drive-item").forEach(function(el) {
+          el.addEventListener("click", function() {
+            driveMenu.querySelectorAll(".drive-item").forEach(function(e) { e.classList.remove("active"); });
+            el.classList.add("active");
+            var p = el.dataset.path;
+            scanPath.value = p;
+            driveSelected.textContent = p;
+            driveMenu.classList.remove("active");
+          });
+        });
+      } catch (e) { console.warn("Drive load:", e); }
+    }
+
+    // Load drives on startup (without opening menu)
+    loadDrives();
 
     // Browse
     btnBrowse.addEventListener("click", async function () {
@@ -336,24 +442,85 @@
       var safetyTimer = setTimeout(function () {
         progressOverlay.classList.remove("active");
         document.querySelector(".status-bar").textContent = "Timeout triggered";
-      }, 600000);
+      }, 1200000);
 
-      // Progress elements (now static in HTML)
+      // Progress elements (new rich layout)
       var progressFilesEl = document.getElementById("progress-files");
-      var progressLabelEl = document.getElementById("progress-label");
+      var progressDirsEl = document.getElementById("progress-dirs");
+      var progressSpeedValEl = document.getElementById("progress-speed-val");
+      var progressElapsedValEl = document.getElementById("progress-elapsed-val");
       var progressDirEl = document.getElementById("progress-dir");
-      var progressSpeedEl = document.getElementById("progress-speed");
-      var progressElapsedEl = document.getElementById("progress-elapsed");
+      var speedChartCanvas = document.getElementById("speed-chart");
+      var speedChartCtx = speedChartCanvas ? speedChartCanvas.getContext("2d") : null;
+      var speedSamples = [];
+      var maxSamples = 40;
+
+      function drawSpeedChart() {
+        if (!speedChartCtx) return;
+        var w = speedChartCanvas.width;
+        var h = speedChartCanvas.height;
+        var ctx = speedChartCtx;
+        ctx.clearRect(0, 0, w, h);
+        if (speedSamples.length < 2) return;
+        var maxVal = Math.max.apply(null, speedSamples) || 1;
+        var pad = 4;
+        var cw = w - pad * 2;
+        var ch = h - pad * 2;
+        // Grid lines
+        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+        ctx.lineWidth = 1;
+        for (var gi = 0; gi < 3; gi++) {
+          var gy = pad + (ch / 3) * gi;
+          ctx.beginPath();
+          ctx.moveTo(pad, gy);
+          ctx.lineTo(w - pad, gy);
+          ctx.stroke();
+        }
+        // Speed line (gradient fill below)
+        var grad = ctx.createLinearGradient(0, pad, 0, h - pad);
+        grad.addColorStop(0, "rgba(63,185,80,0.35)");
+        grad.addColorStop(1, "rgba(63,185,80,0.02)");
+        // Draw filled area
+        ctx.beginPath();
+        var step = cw / Math.max(speedSamples.length - 1, 1);
+        for (var si = 0; si < speedSamples.length; si++) {
+          var sx = pad + si * step;
+          var sy = pad + ch - (speedSamples[si] / maxVal) * ch;
+          if (si === 0) ctx.moveTo(sx, h - pad);
+          ctx.lineTo(sx, sy);
+        }
+        ctx.lineTo(pad + (speedSamples.length - 1) * step, h - pad);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+        // Draw speed line
+        ctx.beginPath();
+        for (var si2 = 0; si2 < speedSamples.length; si2++) {
+          var sx2 = pad + si2 * step;
+          var sy2 = pad + ch - (speedSamples[si2] / maxVal) * ch;
+          if (si2 === 0) ctx.moveTo(sx2, sy2);
+          else ctx.lineTo(sx2, sy2);
+        }
+        ctx.strokeStyle = "#3fb950";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Label: peak speed
+        ctx.fillStyle = "rgba(255,255,255,0.3)";
+        ctx.font = "9px monospace";
+        ctx.textAlign = "right";
+        ctx.fillText(Math.round(maxVal).toLocaleString() + " f/s", w - pad, pad + 10);
+      }
 
       progressOverlay.classList.add("active");
       progressPath.textContent = "Scanning: " + path;
 
       // Reset progress display
       progressFilesEl.textContent = "0";
-      progressLabelEl.textContent = "files found, scanning...";
+      progressDirsEl.textContent = "0";
+      progressSpeedValEl.textContent = "";
+      progressElapsedValEl.textContent = "0s";
       progressDirEl.textContent = "";
-      progressSpeedEl.textContent = "";
-      progressElapsedEl.textContent = "";
+      speedSamples = [];
 
       try {
         var initScan = await window.__TAURI__.invoke("start_scan", {
@@ -364,10 +531,12 @@
 
         // Poll tracking
         var prevFilesFound = 0;
+        var lastFilesFound = 0;
+        var lastDirsFound = 0;
         var pollStartTime = Date.now();
 
         var done = false;
-        for (var i = 0; i < 600; i++) {
+        for (var i = 0; i < 1200; i++) {
           await sleep(500);
           var p = await window.__TAURI__
             .invoke("get_scan_progress", { scanId: scanId })
@@ -376,56 +545,70 @@
             });
           if (!p) continue;
 
-          var filesFound = Number(p.files_found || 0);
-          progressFilesEl.textContent = filesFound.toLocaleString("en-US");
+          // Show raw data for debugging if fields are missing
+          var rawDisplay = document.getElementById("progress-raw");
+          if (rawDisplay) {
+            try { rawDisplay.textContent = "raw: " + JSON.stringify(p).substring(0, 150); } catch(e) {}
+          }
 
+          var filesFound = Number(p.files_found || p.filesFound || 0);
+          var dirsFound = Number(p.dirs_found || p.dirsFound || 0);
+          var elapsedSecs = p.elapsed_secs || p.elapsedSecs || 0;
+
+          // ── Update 3-icon metrics ──
+          progressFilesEl.textContent = filesFound.toLocaleString("en-US");
+          progressDirsEl.textContent = dirsFound.toLocaleString("en-US");
+
+          var elapsedStr = "0s";
+          if (elapsedSecs > 0) {
+            var mins = Math.floor(elapsedSecs / 60);
+            var secs = elapsedSecs % 60;
+            elapsedStr = (mins > 0 ? mins + "m " : "") + secs + "s";
+          }
+          progressElapsedValEl.textContent = elapsedStr;
+
+          // ── Speed ──
+          if (elapsedSecs > 0 && filesFound > 0) {
+            var filesPerSec = (filesFound / elapsedSecs);
+            progressSpeedValEl.textContent = Math.round(filesPerSec).toLocaleString();
+            // Track sample for chart
+            speedSamples.push(filesPerSec);
+            if (speedSamples.length > maxSamples) speedSamples.shift();
+            drawSpeedChart();
+          } else {
+            progressSpeedValEl.textContent = "—";
+          }
+
+          // ── Live stats panel update ──
+          statsPanel.updateLive(filesFound, dirsFound, elapsedSecs);
+
+          // ── Current dir ──
           var dirInfo = "";
-          if (p.current_dir) {
-            var parts = p.current_dir.split("\\");
+          if (p.current_dir || p.currentDir) {
+            var dir = p.current_dir || p.currentDir;
+            var parts = dir.split("\\");
             dirInfo = parts[parts.length - 1];
             progressDirEl.textContent = "📂 " + dirInfo;
           }
 
-          var phaseLabels = [
-            "scanning...",
-            "building tree...",
-            "chunking...",
-            "done",
-          ];
-          var label = phaseLabels[p.phase] || "";
-          if (dirInfo) label += " -> " + dirInfo;
-          progressLabelEl.textContent = label;
-
-          // Speed / bandwidth
-          var elapsedSecs = p.elapsed_secs || 0;
-          if (elapsedSecs > 0) {
-            var filesPerSec = (filesFound / elapsedSecs).toFixed(1);
-            progressSpeedEl.textContent = "⚡ " + filesPerSec + " files/sec";
-          }
-
-          // Elapsed time
-          if (elapsedSecs) {
-            var mins = Math.floor(elapsedSecs / 60);
-            var secs = elapsedSecs % 60;
-            var elapsedStr =
-              (mins > 0 ? mins + "m " : "") + secs + "s";
-            progressElapsedEl.textContent = "⏱ " + elapsedStr;
-          }
-
           prevFilesFound = filesFound;
+          lastFilesFound = filesFound;
+          lastDirsFound = dirsFound;
 
-          if (!p.is_running || p.phase === 3) {
+          // Check completion
+          var isRunning = p.is_running !== undefined ? p.is_running : true;
+          var isDone = p.phase === 3 || !isRunning;
+          if (isDone) {
             await sleep(500);
             done = true;
             break;
           }
-        }
+        }  // <-- end for-loop
 
         if (!done) throw new Error("Scan timeout");
 
         // Update progress to done state
-        progressLabelEl.textContent = "✓ Scan complete";
-        progressSpeedEl.textContent = "";
+        progressSpeedValEl.textContent = "✓";
 
         var result = null;
         for (var ri = 0; ri < 60; ri++) {
@@ -437,29 +620,25 @@
           if (result) break;
           await sleep(500);
         }
-
-        if (!result) throw new Error("No scan result");
-
-        clearTimeout(safetyTimer);
+clearTimeout(safetyTimer);
         progressOverlay.classList.remove("active");
 
-        currentStats = result.stats;
-
-        // Update stats
-        if (result.stats) {
+        if (result && result.stats && result.stats.total_files > 0) {
+          currentStats = result.stats;
           statsPanel.render(result.stats);
           diagram.setData(result.stats);
-          var files = Number(result.stats.total_files || 0).toLocaleString(
-            "en-US",
-          );
-          var dirs = Number(result.stats.total_dirs || 0).toLocaleString(
-            "en-US",
-          );
+          var files = Number(result.stats.total_files || 0).toLocaleString("en-US");
+          var dirs = Number(result.stats.total_dirs || 0).toLocaleString("en-US");
           document.querySelector(".status-bar").textContent =
             "Complete - " + files + " files, " + dirs + " dirs";
+          topFiles.render(result.stats ? result.stats.top_files : [], true);
+        } else {
+          // Fallback: use last known progress data
+          progressElapsedValEl.textContent = statsPanel._formatDuration(Date.now() - pollStartTime);
+          document.querySelector(".status-bar").textContent =
+            "Complete - " + lastFilesFound.toLocaleString() + " files, " + lastDirsFound.toLocaleString() + " dirs";
+          topFiles.render([], true);
         }
-
-        topFiles.render(result.stats ? result.stats.top_files : [], true);
 
         // Load tree
         if (result.root_info && result.root_info.total_chunks > 0) {

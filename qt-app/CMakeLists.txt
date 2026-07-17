@@ -9,6 +9,8 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebEngineWidgets WebChannel Network)
 
+# Minimal Qt modules needed — exclude Qml, Quick, OpenGL, etc.
+
 set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/platform_utils.cpp src/modules/module_loader.cpp)
 set(HEADERS src/webviewwindow.h src/ipcbridge.h src/platform_utils.h src/modules/module_loader.h)
 set(RESOURCES resources/resources.qrc)

@@ -109,6 +109,47 @@
     });
   }
 
+  // ── Robust data extraction ────────────────────────────────
+  // Handles all possible return formats from the C++ bridge
+  function extractData(raw) {
+    // Already an object with progress fields
+    if (raw && typeof raw === 'object' && (raw.files_found !== undefined || raw.filesFound !== undefined)) {
+      return raw;
+    }
+    // String — try to parse as JSON
+    if (typeof raw === 'string') {
+      try {
+        var p = JSON.parse(raw);
+        if (p && p.success) {
+          // p.data might be object or string
+          if (p.data && typeof p.data === 'object') {
+            // Already has progress fields
+            if (p.data.files_found !== undefined || p.data.filesFound !== undefined) {
+              return p.data;
+            }
+            // p.data might contain another level (double-wrapping)
+            if (p.data.data && typeof p.data.data === 'object') {
+              return p.data.data;
+            }
+            // Return p.data as-is
+            return p.data;
+          }
+          // p.data is a string — parse again
+          if (typeof p.data === 'string') {
+            try { return JSON.parse(p.data); } catch { return p.data; }
+          }
+        }
+        // No success wrapper — return parsed object directly
+        return p;
+      } catch {}
+    }
+    // Object with success wrapper but no data field
+    if (raw && typeof raw === 'object' && raw.success) {
+      return raw.data || raw;
+    }
+    return raw;
+  }
+
   // ── Tauri-compatible invoke() ──────────────────────────────
   // In Qt mode: routes through QWebChannel bridge to C++
   // In Tauri mode: falls through to the original Tauri IPC invoke
@@ -129,25 +170,15 @@
             return;
           }
           try {
-            var result = bridge.invoke(cmd, args || {});
-            try {
-              var parsed = JSON.parse(result);
-              if (parsed.success) {
-                if (typeof parsed.data === "string") {
-                  try {
-                    var nested = JSON.parse(parsed.data);
-                    resolve(nested);
-                  } catch {
-                    resolve(parsed.data);
-                  }
-                } else {
-                  resolve(parsed.data);
-                }
-              } else {
-                reject(new Error(parsed.error || "Command failed: " + cmd));
-              }
-            } catch (e) {
-              resolve(result);
+            var prom = bridge.invoke(cmd, args || {});
+            if (prom && typeof prom.then === 'function') {
+              prom.then(function(result) {
+                try { resolve(JSON.parse(result).data || result); }
+                catch(e) { resolve(result); }
+              }).catch(function(e) { reject(e); });
+            } else {
+              try { resolve(JSON.parse(prom).data || prom); }
+              catch(e) { resolve(prom); }
             }
           } catch (e) {
             reject(new Error("invoke error: " + e.message));

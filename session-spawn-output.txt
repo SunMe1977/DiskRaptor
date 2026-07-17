@@ -1,1 +1,0 @@
-[read content from C:\\dev\\DiskRaptor\\.github\\workflows\\build.yml] [read content from C:\\dev\\DiskRaptor\\qt-app\\src\\launcher.cpp] [list .icns files in C:\\dev\\DiskRaptor\\images]

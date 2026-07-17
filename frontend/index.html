@@ -15,6 +15,10 @@
                 </h1>
             </div>
             <div class="toolbar-center">
+                <div id="drive-selector" class="drive-dropdown-wrap">
+                    <button id="btn-drive" class="drive-trigger">💽 <span id="drive-selected">C:\</span> ▾</button>
+                    <div id="drive-menu" class="drive-menu"></div>
+                </div>
                 <input
                     type="text"
                     id="scan-path"
@@ -218,27 +222,40 @@
 
         <div id="progress-overlay">
             <div class="progress-card">
-                <div class="spinner"></div>
-                <p id="progress-status" data-i18n="progress.scanning">Scanning directory...</p>
-                <p id="progress-path"></p>
-                <div id="progress-files" class="progress-files">0</div>
-                <div id="progress-label" class="progress-label" data-i18n="progress.files_found">files found, scanning...</div>
-                <div id="progress-dir" class="progress-dir"></div>
-                <div class="progress-stats-row">
-                    <span id="progress-speed" class="progress-speed"></span>
-                    <span id="progress-elapsed" class="progress-elapsed"></span>
+                <div class="progress-header">
+                    <div class="spinner"></div>
+                    <p id="progress-status" data-i18n="progress.scanning">Scanning directory...</p>
+                    <p id="progress-path"></p>
                 </div>
-                <p
-                    id="progress-engine"
-                    style="
-                        margin-top: 12px;
-                        font-size: 11px;
-                        color: var(--text-muted);
-                        font-style: italic;
-                    "
-                    data-i18n="progress.engine"
-                >
-                    ⚡ Scanning with the ultra-fast parallel Rust engine…
+                <div class="progress-metrics">
+                    <div class="progress-stat">
+                        <span class="stat-icon">📄</span>
+                        <span class="stat-val" id="progress-files">0</span>
+                        <span class="stat-lbl">Files</span>
+                    </div>
+                    <div class="progress-stat">
+                        <span class="stat-icon">📁</span>
+                        <span class="stat-val" id="progress-dirs">0</span>
+                        <span class="stat-lbl">Directories</span>
+                    </div>
+                    <div class="progress-stat">
+                        <span class="stat-icon">⚡</span>
+                        <span class="stat-val" id="progress-speed-val">—</span>
+                        <span class="stat-lbl">files/sec</span>
+                    </div>
+                    <div class="progress-stat">
+                        <span class="stat-icon">⏱</span>
+                        <span class="stat-val" id="progress-elapsed-val">0s</span>
+                        <span class="stat-lbl">elapsed</span>
+                    </div>
+                </div>
+                <div id="progress-dir" class="progress-dir"></div>
+                <div class="speed-chart-wrap">
+                    <canvas id="speed-chart" width="480" height="60"></canvas>
+                </div>
+                <div id="progress-raw" style="display:none"></div>
+                <p id="progress-engine" data-i18n="progress.engine" class="progress-engine">
+                    ⚡ Scanning with the ultra-fast parallel Rust engine (8 threads)
                 </p>
             </div>
         </div>

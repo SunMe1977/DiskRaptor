@@ -1,5 +1,0 @@
-RELEASE_STATUS_CHECK ✅ v0.2.2 COMPLETE WITH ALL INSTALLERS
-- Windows: DiskRaptor-Windows-x64.exe, DiskRaptor_0.1.0_x64-setup.exe, DiskRaptor_0.1.0_x64_en-US.msi
-- macOS: DiskRaptor-macOS-x64, DiskRaptor_0.1.0_aarch64.dmg
-- Linux: disk-raptor_0.1.0_amd64.AppImage, disk-raptor_0.1.0_amd64.deb, disk-raptor-0.1.0-1.x86_64.rpm
-- CI: all builds + release passed

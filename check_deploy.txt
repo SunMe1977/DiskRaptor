@@ -1,4 +1,0 @@
-Deploy result check:
-- C:\Program Files\DiskRaptor5\DiskRaptor.exe exists
-- C:\Program Files\DiskRaptor5\frontend\index.html exists  
-- C:\Program Files\DiskRaptor5\runtime\runtime_ready.marker exists

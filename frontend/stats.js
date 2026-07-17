@@ -9,21 +9,37 @@ class StatsPanel {
     this.timeEl = document.getElementById("stat-time");
   }
 
-  /** Update with scan stats from the backend. */
+  /** Live update during scan (partial data, no total_size yet). */
+  updateLive(files, dirs, elapsedSecs) {
+    if (this.filesEl)
+      this.filesEl.textContent = (files || 0).toLocaleString("en-US");
+    if (this.dirsEl)
+      this.dirsEl.textContent = (dirs || 0).toLocaleString("en-US");
+    if (elapsedSecs !== undefined && this.timeEl)
+      this.timeEl.textContent = this._formatDuration(
+        (elapsedSecs || 0) * 1000,
+      );
+  }
+
+  /** Final update with complete scan stats from the backend. */
   render(stats) {
     if (!stats) {
       this.clear();
       return;
     }
 
-    this.filesEl.textContent = Number(stats.total_files || 0).toLocaleString(
-      "en-US",
-    );
-    this.dirsEl.textContent = Number(stats.total_dirs || 0).toLocaleString(
-      "en-US",
-    );
-    this.sizeEl.textContent = this._formatSize(stats.total_size || 0);
-    this.timeEl.textContent = this._formatDuration(stats.scan_time_ms || 0);
+    if (this.filesEl)
+      this.filesEl.textContent = Number(stats.total_files || 0).toLocaleString(
+        "en-US",
+      );
+    if (this.dirsEl)
+      this.dirsEl.textContent = Number(stats.total_dirs || 0).toLocaleString(
+        "en-US",
+      );
+    if (this.sizeEl)
+      this.sizeEl.textContent = this._formatSize(stats.total_size || 0);
+    if (this.timeEl)
+      this.timeEl.textContent = this._formatDuration(stats.scan_time_ms || 0);
   }
 
   clear() {

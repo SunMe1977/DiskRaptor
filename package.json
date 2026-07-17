@@ -5,8 +5,9 @@
   "main": "debug_scan.js",
   "scripts": {
     "test": "node scripts/run-tests.mjs",
-    "test:e2e": "node scripts/run-installed-test.mjs",
-    "test:all": "npm test && npm run test:e2e"
+    "test:e2e": "node scripts/e2e-scan-verify.mjs",
+    "test:all": "npm test && npm run test:e2e",
+    "test:scan": "node scripts/e2e-scan-verify.mjs"
   },
   "repository": {
     "type": "git",

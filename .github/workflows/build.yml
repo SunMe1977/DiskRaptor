@@ -1,584 +1,127 @@
-name: Build, Test, and Release
+name: Build & Test DiskRaptor v0.0.1
 
 on:
   push:
-    branches: [main, master, develop]
-    tags: ["v*"]
+    branches: [ main ]
   pull_request:
-    branches: [main, master]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+    branches: [ main ]
+  release:
+    types: [ published ]
 
 env:
-  CDP_PORT: '9222'
+  CARGO_TERM_COLOR: always
+  QT_VERSION: "6.10.3"
 
 jobs:
-  # ═══════════════════════════════════════════════════════════════
-  # 1. BUILD — Full Qt app + separate WebEngine runtime
-  # ═══════════════════════════════════════════════════════════════
-  build-app:
-    if: github.ref_type == 'tag'
+  build-and-test:
     runs-on: windows-latest
-    timeout-minutes: 45
-
-    defaults:
-      run:
-        shell: cmd
-
+    
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.10.3'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtwebchannel qtpositioning'
-          cache: true
-          install-deps: true
-
-      - name: Set up MSVC development environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Install Rust toolchain
-        run: |
-          rustup show
-          rustup install stable
-          rustup default stable
-
-      - name: Build Rust scanner DLL
-        run: |
-          cd src-tauri
-          cargo build --release
-
-      - name: Configure CMake
-        run: |
-          cd qt-app
-          if exist build rmdir /s /q build
-          mkdir build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="%cd%\install" -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe
-
-      - name: Build
-        run: |
-          cd qt-app\build
-          cmake --build . --config Release
-          if not exist DiskRaptor.exe exit /b 1
-
-      - name: Deploy Qt DLLs (windeployqt)
-        run: |
-          cd qt-app\build
-          if not exist install\bin mkdir install\bin
-          copy /y DiskRaptor.exe install\bin\
-          copy /y DiskRaptorLauncher.exe install\bin\
-          windeployqt --release --no-translations --dir "%cd%\install\bin" "%cd%\install\bin\DiskRaptor.exe"
-          if exist "%QT_ROOT_DIR%\bin\Qt6OpenGL.dll" copy /y "%QT_ROOT_DIR%\bin\Qt6OpenGL.dll" "%cd%\install\bin\" >nul
-          if exist "%QT_ROOT_DIR%\bin\Qt6OpenGLWidgets.dll" copy /y "%QT_ROOT_DIR%\bin\Qt6OpenGLWidgets.dll" "%cd%\install\bin\" >nul
-          cmake --install . --config Release --prefix "%cd%\install" 2>nul
-
-          :: Clean up stray plugin DLLs that windeployqt sometimes drops at root level
-          del /q "%cd%\install\bin\qwindows.dll" 2>nul
-          del /q "%cd%\install\bin\qgif.dll" 2>nul
-          del /q "%cd%\install\bin\qico.dll" 2>nul
-          del /q "%cd%\install\bin\qjpeg.dll" 2>nul
-          del /q "%cd%\install\bin\qsvg.dll" 2>nul
-          del /q "%cd%\install\bin\qsvgicon.dll" 2>nul
-          del /q "%cd%\install\bin\qmodernwindowsstyle.dll" 2>nul
-          del /q "%cd%\install\bin\qstylekitstyle.dll" 2>nul
-          del /q "%cd%\install\bin\qtuiotouchplugin.dll" 2>nul
-          del /q "%cd%\install\bin\qnetworklistmanager.dll" 2>nul
-          del /q "%cd%\install\bin\qcertonlybackend.dll" 2>nul
-          del /q "%cd%\install\bin\qschannelbackend.dll" 2>nul
-
-      - name: Copy Rust scanner DLL
-        run: |
-          copy /y "src-tauri\target\release\diskraptor_scanner.dll" "qt-app\build\install\bin\"
-
-      - name: Separate WebEngine Runtime
-        run: |
-          cd qt-app\build
-          set CORE_DIR=%cd%\install\bin
-          set RUNTIME_DIR=%cd%\qtwebengine_runtime
-          mkdir %RUNTIME_DIR%
-
-          for %%f in (Qt6WebEngineCore Qt6WebEngineWidgets Qt6WebEngineQuick Qt6WebEngineQuickDelegatesQml) do (
-            if exist "%CORE_DIR%\%%f.dll" move /y "%CORE_DIR%\%%f.dll" "%RUNTIME_DIR%" >nul
-            if exist "%CORE_DIR%\%%f.pdb" del "%CORE_DIR%\%%f.pdb" 2>nul
-          )
-          if exist "%CORE_DIR%\QtWebEngineProcess.exe" move /y "%CORE_DIR%\QtWebEngineProcess.exe" "%RUNTIME_DIR%" >nul
-          if exist "%CORE_DIR%\QtWebEngineProcess.pdb" del "%CORE_DIR%\QtWebEngineProcess.pdb" 2>nul
-
-          for %%f in (%CORE_DIR%\Qt6Quick*.dll) do if exist "%%f" move /y "%%f" "%RUNTIME_DIR%" >nul
-          for %%f in (%CORE_DIR%\Qt6Qml*.dll) do if exist "%%f" move /y "%%f" "%RUNTIME_DIR%" >nul
-          for %%f in (%CORE_DIR%\Qt6OpenGL*.dll) do if exist "%%f" move /y "%%f" "%RUNTIME_DIR%" >nul
-          for %%f in (%CORE_DIR%\Qt6Svg*.dll) do if exist "%%f" move /y "%%f" "%RUNTIME_DIR%" >nul
-          for %%f in (%CORE_DIR%\Qt6ShaderTools*.dll) do if exist "%%f" move /y "%%f" "%RUNTIME_DIR%" >nul
-          for %%f in (%CORE_DIR%\Qt6BundledProtocol*.dll) do if exist "%%f" move /y "%%f" "%RUNTIME_DIR%" >nul
-
-          if exist "%CORE_DIR%\qml" move /y "%CORE_DIR%\qml" "%RUNTIME_DIR%\qml" >nul
-
-          move /y "%CORE_DIR%\icudtl.dat"           "%RUNTIME_DIR%" 2>nul
-          move /y "%CORE_DIR%\v8_context_snapshot.bin" "%RUNTIME_DIR%" 2>nul
-          move /y "%CORE_DIR%\qtwebengine_*.pak"     "%RUNTIME_DIR%" 2>nul
-
-          if exist "%CORE_DIR%\translations\qtwebengine_locales" (
-            move /y "%CORE_DIR%\translations\qtwebengine_locales" "%RUNTIME_DIR%\qtwebengine_locales" >nul
-          )
-
-          if exist "%CORE_DIR%\resources" (
-            move /y "%CORE_DIR%\resources" "%RUNTIME_DIR%\resources" >nul
-          )
-
-          del "%CORE_DIR%\*WebEngine*.pdb" 2>nul
-          del "%CORE_DIR%\*WebEngine*.lib" 2>nul
-          del "%CORE_DIR%\*.pdb" 2>nul
-          del "%CORE_DIR%\*.lib" 2>nul
-
-      - name: Package WebEngine Runtime (ZIP)
-        run: |
-          cd qt-app\build
-          if exist "%cd%\qtwebengine_runtime\Qt6WebEngineCore.dll" (
-            powershell -Command "Compress-Archive -Path '%cd%\qtwebengine_runtime\*' -DestinationPath '%cd%\qtwebengine_runtime.zip' -Force"
-          )
-
-      - name: Compress with UPX (smaller installer)
-        shell: cmd
-        run: |
-          cd /d "%cd%\qt-app\build"
-          SET CORE_DIR=%cd%\install\bin
-          powershell -Command "Invoke-WebRequest -Uri 'https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-win64.zip' -OutFile '%TEMP%\upx.zip' -UseBasicParsing"
-          powershell -Command "Expand-Archive -Path '%TEMP%\upx.zip' -DestinationPath '%TEMP%\upx\' -Force"
-          FOR /R "%TEMP%\upx\" %%F IN (upx.exe) DO SET UPXEXE=%%F
-          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\DiskRaptor.exe"
-          "%UPXEXE%" --best --no-color --no-progress "%CORE_DIR%\DiskRaptorLauncher.exe"
-          "%UPXEXE%" --best --force --no-color --no-progress "%CORE_DIR%\Qt6Core.dll"
-          "%UPXEXE%" --best --force --no-color --no-progress "%CORE_DIR%\Qt6Gui.dll"
-          "%UPXEXE%" --best --force --no-color --no-progress "%CORE_DIR%\Qt6Widgets.dll"
-          "%UPXEXE%" --best --force --no-color --no-progress "%CORE_DIR%\Qt6Network.dll"
-          "%UPXEXE%" --best --force --no-color --no-progress "%CORE_DIR%\Qt6WebChannel.dll"
-
-      - name: Install NSIS (portable)
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") { exit 0 }
-          choco install nsis.install -y --no-progress 2>$null
-          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") { exit 0 }
-          $outFile = "nsis.zip"
-          $nsisUrl = "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09.zip/download"
-          Invoke-WebRequest -Uri $nsisUrl -OutFile $outFile -UseBasicParsing
-          Expand-Archive -Path $outFile -DestinationPath C:\nsis -Force
-
-      - name: Build NSIS Installer
-        run: |
-          cd qt-app\build
-          copy /y "..\..\setup.nsi" .
-          set "NSIS_EXE="
-          if exist "C:\nsis\nsis-3.10\makensis.exe" set "NSIS_EXE=C:\nsis\nsis-3.10\makensis.exe"
-          if not defined NSIS_EXE if exist "C:\Program Files (x86)\NSIS\makensis.exe" set "NSIS_EXE=C:\Program Files (x86)\NSIS\makensis.exe"
-          if not defined NSIS_EXE if exist "C:\nsis\nsis-3.09\makensis.exe" set "NSIS_EXE=C:\nsis\nsis-3.09\makensis.exe"
-          if not defined NSIS_EXE exit /b 1
-          "%NSIS_EXE%" /DVERSION=${{ github.ref_name }} "/DMUI_ICON=${{ github.workspace }}\images\icon.ico" setup.nsi 2>&1
-          if errorlevel 1 exit /b %errorlevel%
-
-      - name: Upload core installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-windows-core
-          path: qt-app\build\DiskRaptor_*.exe
-          if-no-files-found: error
-
-      - name: Upload runtime artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: qtwebengine-runtime
-          path: qt-app\build\qtwebengine_runtime.zip
-          if-no-files-found: ignore
-
-  # ═══════════════════════════════════════════════════════════════
-  # macOS BUILD
-  # ═══════════════════════════════════════════════════════════════
-  build-macos:
-    if: ${{ false }}
-    runs-on: macos-13
-    timeout-minutes: 45
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.12.0'
-          host: 'mac'
-          target: 'desktop'
-          arch: 'clang_64'
-          modules: 'qtwebengine qtwebchannel qtpositioning'
-          cache: true
-          install-deps: true
-          setup-python: false
-
-      - name: Configure CMake
-        run: |
-          cd qt-app
-          rm -rf build
-          mkdir build
-          cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$PWD/install"
-
-      - name: Build
-        run: |
-          cd qt-app/build
-          cmake --build . --config Release -- -v 2>&1
-          test -f DiskRaptor.app/Contents/MacOS/DiskRaptor || exit 1
-
-      - name: Deploy Qt frameworks
-        run: |
-          cd qt-app/build
-          macdeployqt DiskRaptor.app -verbose=1
-
-      - name: Package DMG
-        run: |
-          cd qt-app/build
-          hdiutil create -volname "DiskRaptor" -srcfolder DiskRaptor.app \
-            -ov -format UDZO "DiskRaptor_macOS_x64.dmg"
-
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-macos
-          path: qt-app/build/DiskRaptor_macOS_x64.dmg
-          if-no-files-found: error
-
-  # ═══════════════════════════════════════════════════════════════
-  # LINUX BUILD - DEB + AppImage
-  # ═══════════════════════════════════════════════════════════════
-  build-linux:
-    if: ${{ false }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev \
-            desktop-file-utils libfuse2 libdl-dev 2>/dev/null || true
-
-      - name: Install Qt (from apt)
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          for i in 1 2 3; do
-            sudo apt-get install -y --no-install-recommends \
-              qt6-base-dev qt6-webengine-dev \
-              qt6-webchannel-dev qt6-positioning-dev && break
-            echo "Attempt $i failed, retrying in 10s..."
-            sleep 10
-          done
-          sudo apt-get install -y \
-            libglx-dev libgl1-mesa-dev \
-            libegl1-mesa-dev libxkbcommon-x11-dev libfontconfig1-dev \
-            libdbus-1-dev libxcb-cursor-dev
-
-      - name: Configure CMake
-        run: |
-          cd qt-app
-          rm -rf build
-          mkdir build
-          cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$PWD/install"
-
-      - name: Build
-        run: |
-          cd qt-app/build
-          cmake --build . --config Release
-          test -f DiskRaptor || exit 1
-
-      - name: Install to staging dir
-        run: |
-          cd qt-app/build
-          cmake --install . --config Release --prefix "$PWD/install"
-
-      - name: Deploy Qt libs (linuxdeployqt)
-        run: |
-          cd qt-app/build
-          curl -sLO "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
-          curl -sLO "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
-          chmod +x linuxdeploy*.AppImage
-          mkdir -p AppDir/usr/bin
-          cp -r install/* AppDir/usr/
-          mkdir -p AppDir/usr/share/applications
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          if [ -f "${{ github.workspace }}/images/256x256.png" ]; then
-            cp "${{ github.workspace }}/images/256x256.png" AppDir/usr/share/icons/hicolor/256x256/apps/diskraptor.png
-          fi
-          cat > AppDir/usr/share/applications/DiskRaptor.desktop << 'DESK'
-          [Desktop Entry]
-          Name=DiskRaptor
-          Exec=DiskRaptor
-          Icon=diskraptor
-          Type=Application
-          Categories=Utility;
-          DESK
-          ln -sf usr/bin/DiskRaptor AppDir/AppRun
-
-      - name: Package DEB
-        run: |
-          cd qt-app/build
-          cpack -G DEB -C Release -D CPACK_PACKAGE_VERSION="${{ github.ref_name }}"
-
-      - name: Package AppImage
-        run: |
-          cd qt-app/build
-          export LDAI_OUTPUT="DiskRaptor_${{ github.ref_name }}_x86_64.AppImage"
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-linux
-          path: |
-            qt-app/build/DiskRaptor_*.deb
-            qt-app/build/DiskRaptor_*.AppImage
-          if-no-files-found: error
-
-  # ═══════════════════════════════════════════════════════════════
-  # 2. E2E TESTS — DISABLED (CDP needs Qt maintenance tool fix)
-  # ═══════════════════════════════════════════════════════════════
-  e2e-test:
-    if: false
-    needs: [build-app]
-    runs-on: windows-latest
-    timeout-minutes: 15
-
-    defaults:
-      run:
-        shell: powershell
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Download built artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: release-windows-core
-          path: installer
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'package-lock.json'
-
-      - name: Install dependencies (Playwright)
-        run: |
-          npm ci
-          npx playwright install chromium
-
-      - name: Install DiskRaptor silently
-        run: |
-          $installer = Get-ChildItem -Path installer -Filter "*.exe" | Select-Object -First 1
-          if (-not $installer) { throw "No installer found" }
-          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait -NoNewWindow
-          $installed = Test-Path "C:\Program Files\DiskRaptor\DiskRaptor.exe"
-          if (-not $installed) { throw "Installation failed" }
-          Write-Host "✅ Installed: $($installer.Name)"
-
-      - name: Download WebEngine runtime artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: qtwebengine-runtime
-          path: runtime-artifact
-
-      - name: Extract runtime into install dir (bypass launcher download)
-        run: |
-          $runtimeZip = Join-Path '${{ github.workspace }}' 'runtime-artifact\qtwebengine_runtime.zip'
-          if (-not (Test-Path $runtimeZip)) {
-            Write-Host "No runtime artifact found — launcher will download it"
-            exit 0
-          }
-          $targetDir = "C:\Program Files\DiskRaptor\runtime"
-          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-          Expand-Archive -Path $runtimeZip -DestinationPath $targetDir -Force
-          Write-Host "WebEngine runtime extracted to $targetDir"
-
-      - name: Run E2E tests
-        id: e2e
-        shell: powershell
-        run: |
-          $env:DISKraptor_CDP_PORT = "${{ env.CDP_PORT }}"
-          # Add runtime directory to PATH so DiskRaptor.exe can find WebEngine DLLs
-          $runtimeDir = "C:\Program Files\DiskRaptor\runtime"
-          if (Test-Path $runtimeDir) {
-            $env:PATH = "$runtimeDir;C:\Program Files\DiskRaptor;$env:PATH"
-            Write-Host "Added runtime to PATH: $runtimeDir"
-          }
-          $testScript = Join-Path '${{ github.workspace }}' 'scripts\playwright-qt-e2e.mjs'
-
-          if (-not (Test-Path $testScript)) {
-            Write-Host "Qt-specific test script not found, falling back to generic test"
-            $testScript = Join-Path '${{ github.workspace }}' 'scripts\playwright-e2e.mjs'
-          }
-
-          Write-Host "Running E2E tests from: $testScript"
-          node $testScript 2>&1
-
-          $exitCode = $LASTEXITCODE
-          Write-Host "E2E tests completed with exit code: $exitCode"
-          if ($exitCode -ne 0) {
-            throw "E2E tests FAILED (exit code: $exitCode)"
-          }
-
-      - name: Upload test logs (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-test-logs
-          path: |
-            test-results/
-            C:\Users\runneradmin\AppData\Local\DiskRaptor\logs\
-          if-no-files-found: ignore
-
-  # ═══════════════════════════════════════════════════════════════
-  # 2b. PRE-COMMIT TESTS (non-tag pushes) — build only, E2E disabled
-  # ═══════════════════════════════════════════════════════════════
-  precommit-test:
-    if: github.ref_type != 'tag'
-    runs-on: windows-latest
-    timeout-minutes: 15
-
-    defaults:
-      run:
-        shell: powershell
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.10.3'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtwebchannel qtpositioning'
-          cache: true
-          install-deps: true
-
-      - name: Set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Build
-        run: |
-          cd qt-app
-          if (-not (Test-Path build)) { mkdir build }
-          cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe
-          cmake --build . --config Release
-
-      - name: Build verification
-        run: |
-          if (-not (Test-Path "qt-app\build\DiskRaptor.exe")) { throw "Build produced no exe" }
-          Write-Host "✅ Build OK"
-
-  # ═══════════════════════════════════════════════════════════════
-  # 3. RELEASE — Create GitHub Release with all assets
-  # ═══════════════════════════════════════════════════════════════
-  release:
-    if: github.ref_type == 'tag' && needs.build-app.result == 'success'
-    needs: [build-app]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Prepare assets
-        run: |
-          mkdir -p release_assets
-          find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -exec cp {} release_assets/ \;
-          ls -lh release_assets/
-
-      - name: Delete existing release (if re-run)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release delete "${{ github.ref_name }}" -R "${{ github.repository }}" --yes 2>/dev/null || true
-
-      - name: Publish Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          IS_PRERELEASE="${{ contains(github.ref_name, '-') }}"
-          PRERELEASE_FLAG=""
-          [ "$IS_PRERELEASE" = "true" ] && PRERELEASE_FLAG="--prerelease"
-
-          cat > /tmp/release_body.md << 'BODY'
-          ## DiskRaptor ${{ github.ref_name }}
-
-          **Qt 6 Edition** — WebEngine runtime downloaded on first launch.
-
-          ### ✓ Tested
-          E2E tests passed before release:
-          - IPC bridge initialization
-          - Drive listing
-          - Directory scanning (start, progress, result)
-          - File operations (open, delete)
-          - Duplicate file scanner
-          - Event system
-
-          ### Download
-          | File | Description |
-          |------|-------------|
-          | `DiskRaptor_*_Setup.exe` | Windows setup installer (EXE + Qt DLLs + ModulePro, UPZ + LZMA compressed) |
-          | `qtwebengine_runtime.zip` | WebEngine runtime — auto-downloaded on first launch |
-          | `DiskRaptor_*.dmg` | macOS disk image |
-          | `DiskRaptor_*.deb` | Linux Debian package |
-          | `DiskRaptor_*.AppImage` | Linux portable AppImage |
-
-          ### How it works
-          1. Install the small Windows core installer
-          2. Launch DiskRaptor — launcher downloads WebEngine runtime on first launch
-          3. App starts with full WebEngine capabilities
-
-          > Why separate downloads? Qt WebEngine bundles Chromium (~80 MB). By separating it, the core installer stays small and updates are faster.
-          BODY
-
-          ASSET_FILES=()
-          for f in release_assets/*; do
-            [ -f "$f" ] && ASSET_FILES+=("$f")
-          done
-
-          if [ ${#ASSET_FILES[@]} -eq 0 ]; then
-            echo "No release assets found; failing release step"
-            exit 1
-          fi
-
-          gh release create "${{ github.ref_name }}" \
-            --title "DiskRaptor ${{ github.ref_name }}" \
-            --notes-file /tmp/release_body.md \
-            "${ASSET_FILES[@]}" \
-            $PRERELEASE_FLAG \
-            --verify-tag
-
-          echo "✅ Release published successfully"
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: windows
+        target: desktop
+        arch: win64_msvc2022_64
+        modules: qtwebengine qtwebchannel
+        cache: true
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-pc-windows-msvc
+
+    - name: Install 7-Zip
+      run: choco install 7zip -y
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Install Playwright
+      run: |
+        npm init -y
+        npm install playwright ws
+        npx playwright install chromium
+
+    # ── Build ──────────────────────────────────────────────
+    - name: Build Rust scanner DLL
+      run: |
+        cd src-tauri
+        cargo build --release
+      shell: cmd
+
+    - name: Build Qt app
+      run: |
+        cd qt-app
+        if exist build rmdir /s /q build
+        mkdir build
+        cd build
+        cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
+        cmake --build . --config Release
+      shell: cmd
+
+    - name: Stage dist
+      run: |
+        mkdir dist
+        xcopy /e /i /y qt-app\build\DiskRaptor.exe dist\
+        xcopy /e /i /y qt-app\build\DiskRaptorLauncher.exe dist\
+        xcopy /e /i /y qt-app\build\diskraptor_scanner.dll dist\
+        xcopy /e /i /y qt-app\build\*.dll dist\
+        xcopy /e /i /y qt-app\build\QtWebEngineProcess.exe dist\
+        for %%d in (platforms styles imageformats tls iconengines generic networkinformation position resources translations) do (
+          if exist qt-app\build\%%d xcopy /e /i /y qt-app\build\%%d dist\%%d\
+        )
+        xcopy /e /i /y frontend dist\frontend\
+      shell: cmd
+
+    # ── Test ───────────────────────────────────────────────
+    - name: Run UI test (small dir)
+      run: node test_scan.mjs "C:\dev\DiskRaptor"
+      shell: cmd
+      timeout-minutes: 2
+      env:
+        DISKraptor_CDP_PORT: 9222
+
+    - name: Run stress test (100K)
+      run: node stress_test.mjs 100000
+      shell: cmd
+      timeout-minutes: 2
+
+    # ── Package ────────────────────────────────────────────
+    - name: Package bootstrap
+      run: |
+        mkdir artifacts
+        "%ProgramFiles%\7-Zip\7z.exe" a -tzip artifacts\DiskRaptor_Bootstrap_v0.0.1.zip ^
+          dist\DiskRaptorLauncher.exe ^
+          dist\DiskRaptor.exe ^
+          dist\diskraptor_scanner.dll ^
+          dist\frontend
+      shell: cmd
+
+    - name: Package Qt runtime
+      run: |
+        cd dist
+        "%ProgramFiles%\7-Zip\7z.exe" a -tzip -mx=5 ..\artifacts\qtwebengine_runtime.zip ^
+          *.dll QtWebEngineProcess.exe ^
+          platforms imageformats styles tls iconengines generic networkinformation position resources translations
+      shell: cmd
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: diskraptor-build
+        path: artifacts/
+
+    - name: Upload to release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          artifacts/DiskRaptor_Bootstrap_v0.0.1.zip
+          artifacts/qtwebengine_runtime.zip
