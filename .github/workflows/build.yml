@@ -63,18 +63,18 @@ jobs:
         if exist build rmdir /s /q build
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
+        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
         cmake --build . --config Release -- /verbosity:minimal
       shell: cmd
 
     - name: Stage dist
       run: |
-        set SRC=qt-app\build\Release
+        set SRC=qt-app\build
         mkdir dist
-        copy %SRC%\DiskRaptor.exe dist\
-        copy %SRC%\diskraptor_scanner.dll dist\
-        copy %SRC%\QtWebEngineProcess.exe dist\
-        copy %SRC%\*.dll dist\
+        if exist %SRC%\DiskRaptor.exe copy %SRC%\DiskRaptor.exe dist\ >nul
+        if exist %SRC%\diskraptor_scanner.dll copy %SRC%\diskraptor_scanner.dll dist\ >nul
+        if exist %SRC%\QtWebEngineProcess.exe copy %SRC%\QtWebEngineProcess.exe dist\ >nul
+        if exist %SRC%\*.dll copy %SRC%\*.dll dist\ >nul
         if exist %SRC%\platforms xcopy /e /i /y %SRC%\platforms dist\platforms >nul 2>&1
         if exist %SRC%\styles xcopy /e /i /y %SRC%\styles dist\styles >nul 2>&1
         if exist %SRC%\imageformats xcopy /e /i /y %SRC%\imageformats dist\imageformats >nul 2>&1
