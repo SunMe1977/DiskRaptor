@@ -369,18 +369,88 @@ button.icon-btn {
     min-width: 80px;
 }
 .tree-row .node-bar {
-    flex-shrink: 0;
-    width: 64px;
-    height: 8px;
-    margin-left: var(--space-sm);
-    background: var(--bg-tertiary);
-    border-radius: 4px;
-    overflow: hidden;
+    display: none;
 }
 .tree-row .node-bar-fill {
     height: 100%;
     border-radius: 4px;
     transition: width var(--transition);
+}
+
+/* Green percentage bar in front of name */
+.tree-pct-bar {
+    flex-shrink: 0;
+    width: 48px;
+    height: 8px;
+    margin-right: 6px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.tree-pct-fill {
+    height: 100%;
+    background: #2ea043;
+    border-radius: 4px;
+    transition: width var(--transition);
+}
+
+/* File count column */
+.tree-row .node-files {
+    flex-shrink: 0;
+    width: 70px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding-right: 8px;
+    margin-left: 4px;
+}
+
+/* Directory count column */
+.tree-row .node-dirs {
+    flex-shrink: 0;
+    width: 70px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding-right: 8px;
+}
+
+/* Tree header row */
+.tree-header {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border-light);
+    background: var(--bg-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    user-select: none;
+}
+.tree-header .tree-col-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.tree-header .tree-col-sort:hover {
+    opacity: 1 !important;
+    color: var(--accent);
+}
+.tree-header .sort-arrow::after {
+    content: "↕";
+    font-size: 10px;
+    opacity: 0.4;
+}
+.tree-header .tree-col-sort.sort-asc .sort-arrow::after {
+    content: "↑";
+    opacity: 1;
+}
+.tree-header .tree-col-sort.sort-desc .sort-arrow::after {
+    content: "↓";
+    opacity: 1;
 }
 
 .status-bar {

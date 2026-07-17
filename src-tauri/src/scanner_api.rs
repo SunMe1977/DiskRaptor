@@ -1,7 +1,7 @@
 // DiskRaptor Rust Scanner - C FFI for Qt integration
-use crate::scanner::tree::{NodeType, ScanStats, TreeNode, TreeNodeArena};
+use crate::scanner::tree::{ScanStats, TreeNodeArena};
 use crate::scanner::walker;
-use crate::streaming::chunker;
+
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

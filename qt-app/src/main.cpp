@@ -20,9 +20,9 @@
 #include "platform_utils.h"
 
 // ── Admin check at startup ──────────────────────────────────
-// Pure Win32 check: if not running as admin, relaunch with runas verb, then exit.
-// This handles direct DiskRaptor.exe launches (without the launcher).
-static bool EnsureAdmin()
+// If not running as admin, ask the user whether to elevate.
+// Passes DISKraptor_CDP_PORT as command-line argument to preserve it.
+static bool EnsureAdmin(int argc, char *argv[])
 {
 #ifdef Q_OS_WIN
     BOOL isAdmin = FALSE;
@@ -39,13 +39,34 @@ static bool EnsureAdmin()
     if (isAdmin)
         return true;
 
-    // Relaunch with runas verb
+    // Ask user if they want to run as Administrator
+    int ret = MessageBoxW(NULL,
+        L"DiskRaptor can scan more files when run as Administrator.\n\n"
+        L"Some protected system directories require admin privileges.\n"
+        L"Without elevation, certain files may not be accessible.\n\n"
+        L"Do you want to restart as Administrator?",
+        L"DiskRaptor",
+        MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+    if (ret != IDYES)
+        return true; // Continue without admin
+
+    // Relaunch with runas verb, preserving CDP port
     WCHAR exePath[MAX_PATH];
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
+
+    // Build command line with CDP port if set (env vars are stripped by runas)
+    WCHAR params[256] = {0};
+    GetEnvironmentVariableW(L"DISKraptor_CDP_PORT", params + 11, 16);
+    if (params[11]) {
+        wmemcpy(params, L"--cdp-port=", 11);
+    } else {
+        wmemcpy(params, L"--elevated", 10);
+    }
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
     sei.lpVerb = L"runas";
     sei.lpFile = exePath;
+    sei.lpParameters = params;
     sei.nShow = SW_SHOWNORMAL;
     sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS;
 
@@ -55,7 +76,7 @@ static bool EnsureAdmin()
             CloseHandle(sei.hProcess);
         }
     }
-    return false;
+    return false; // exit current process
 #else
     return true;
 #endif
@@ -66,19 +87,30 @@ int main(int argc, char *argv[])
     // Qt WebEngine is initialized automatically when QApplication is created
     // No manual QtWebEngine::initialize() needed in Qt 6.5+
 
-    // Enable remote debugging for Playwright tests via env var
-    // Set DISKraptor_CDP_PORT=9222 before launching to enable
-    // Qt WebEngine DevTools on that port.
-    qputenv("QTWEBENGINE_REMOTE_DEBUGGING", qgetenv("DISKraptor_CDP_PORT"));
+    // Enable remote debugging for Playwright tests via env var or --cdp-port arg
+    QByteArray cdpPort = qgetenv("DISKraptor_CDP_PORT");
+    for (int i = 1; i < argc; i++) {
+        QString arg = QString::fromLocal8Bit(argv[i]);
+        if (arg.startsWith("--cdp-port=")) {
+            cdpPort = arg.mid(QString("--cdp-port=").length()).toUtf8();
+            break;
+        }
+    }
+    bool isTestMode = !cdpPort.isEmpty();
 
-    // Set up runtime environment (PATH, WebEngine vars) — required before QApplication
-    // so Qt DLLs and WebEngine process resolve correctly without the launcher.
-    PlatformUtils::setupRuntimeEnvironment();
+    // Ask user if they want to run as Administrator (skip in CDP/test mode)
+    if (!isTestMode && !EnsureAdmin(argc, argv)) {
+        return 0; // User chose to restart as admin; exit this instance
+    }
 
-    // Admin escalation disabled — app now runs directly without UAC prompt.
-    // To scan protected system directories, run as Administrator manually.
+    if (!cdpPort.isEmpty()) {
+        qputenv("QTWEBENGINE_REMOTE_DEBUGGING", cdpPort);
+    }
 
     QApplication app(argc, argv);
+
+    // Set up runtime environment — needs QApplication initialized
+    PlatformUtils::setupRuntimeEnvironment();
     app.setApplicationName("DiskRaptor");
     app.setApplicationVersion("0.0.7");
     app.setOrganizationName("DiskRaptor");

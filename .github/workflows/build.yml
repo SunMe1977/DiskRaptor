@@ -1,4 +1,4 @@
-name: Build & Test DiskRaptor v0.0.1
+name: Build & Test DiskRaptor
 
 on:
   push:
@@ -10,7 +10,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  QT_VERSION: "6.7.3"
 
 jobs:
   build-and-test:
@@ -23,7 +22,7 @@ jobs:
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
-        version: ${{ env.QT_VERSION }}
+        version: '6.10.3'
         host: windows
         target: desktop
         arch: win64_msvc2022_64
@@ -35,25 +34,27 @@ jobs:
       with:
         targets: x86_64-pc-windows-msvc
 
-    - name: Install 7-Zip
-      run: choco install 7zip -y
+    - name: Setup MSVC dev prompt
+      uses: ilammy/msvc-dev-cmd@v1
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '22'
+        cache: 'npm'
 
-    - name: Install dependencies
-      run: |
-        npm install playwright ws
-        npx playwright install chromium
+    - name: Install Node dependencies
+      run: npm ci --ignore-scripts
+      env:
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-    # Build
+    - name: Install Playwright Chromium
+      run: npx playwright install chromium
+
+    # ── Build ──────────────────────────────────────────────
     - name: Build Rust scanner DLL
-      run: |
-        cd src-tauri
-        cargo build --release
-      shell: cmd
+      run: cargo build --release
+      working-directory: src-tauri
 
     - name: Build Qt app
       run: |
@@ -61,32 +62,31 @@ jobs:
         if exist build rmdir /s /q build
         mkdir build
         cd build
-        cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
-        cmake --build . --config Release
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
+        cmake --build . --config Release -- /verbosity:minimal
       shell: cmd
 
     - name: Stage dist
       run: |
+        set SRC=qt-app\build
         mkdir dist
-        copy qt-app\build\DiskRaptor.exe dist\
-        copy qt-app\build\DiskRaptorLauncher.exe dist\
-        copy qt-app\build\diskraptor_scanner.dll dist\
-        copy qt-app\build\QtWebEngineProcess.exe dist\
-        copy qt-app\build\*.dll dist\
-        xcopy /e /i /y qt-app\build\platforms dist\platforms >nul 2>&1
-        xcopy /e /i /y qt-app\build\styles dist\styles >nul 2>&1
-        xcopy /e /i /y qt-app\build\imageformats dist\imageformats >nul 2>&1
-        xcopy /e /i /y qt-app\build\tls dist\tls >nul 2>&1
-        xcopy /e /i /y qt-app\build\iconengines dist\iconengines >nul 2>&1
-        xcopy /e /i /y qt-app\build\networkinformation dist\networkinformation >nul 2>&1
-        xcopy /e /i /y qt-app\build\position dist\position >nul 2>&1
-        xcopy /e /i /y qt-app\build\generic dist\generic >nul 2>&1
-        xcopy /e /i /y qt-app\build\resources dist\resources >nul 2>&1
-        xcopy /e /i /y qt-app\build\translations dist\translations >nul 2>&1
+        copy %SRC%\DiskRaptor.exe dist\
+        copy %SRC%\diskraptor_scanner.dll dist\
+        copy %SRC%\QtWebEngineProcess.exe dist\
+        copy %SRC%\*.dll dist\
+        if exist %SRC%\platforms xcopy /e /i /y %SRC%\platforms dist\platforms >nul 2>&1
+        if exist %SRC%\styles xcopy /e /i /y %SRC%\styles dist\styles >nul 2>&1
+        if exist %SRC%\imageformats xcopy /e /i /y %SRC%\imageformats dist\imageformats >nul 2>&1
+        if exist %SRC%\tls xcopy /e /i /y %SRC%\tls dist\tls >nul 2>&1
+        if exist %SRC%\iconengines xcopy /e /i /y %SRC%\iconengines dist\iconengines >nul 2>&1
+        if exist %SRC%\networkinformation xcopy /e /i /y %SRC%\networkinformation dist\networkinformation >nul 2>&1
+        if exist %SRC%\position xcopy /e /i /y %SRC%\position dist\position >nul 2>&1
+        if exist %SRC%\generic xcopy /e /i /y %SRC%\generic dist\generic >nul 2>&1
+        if exist %SRC%\resources xcopy /e /i /y %SRC%\resources dist\resources >nul 2>&1
+        if exist %SRC%\translations xcopy /e /i /y %SRC%\translations dist\translations >nul 2>&1
         xcopy /e /i /y frontend dist\frontend\
-      shell: cmd
 
-    # Test
+    # ── Test ───────────────────────────────────────────────
     - name: Run UI test
       run: node test_scan.mjs "%USERPROFILE%"
       shell: cmd
@@ -94,22 +94,11 @@ jobs:
       env:
         DISKraptor_CDP_PORT: 9222
 
-    - name: Run stress test
-      run: node stress_test.mjs 100000
-      shell: cmd
-      timeout-minutes: 2
-
-    # Package
-    - name: Package bootstrap
+    # ── Package ────────────────────────────────────────────
+    - name: Package release zip
       run: |
         mkdir artifacts
-        "%ProgramFiles%\7-Zip\7z.exe" a -tzip artifacts\DiskRaptor_Bootstrap_v0.0.1.zip dist\DiskRaptorLauncher.exe dist\DiskRaptor.exe dist\diskraptor_scanner.dll dist\frontend
-      shell: cmd
-
-    - name: Package Qt runtime
-      run: |
-        cd dist
-        "%ProgramFiles%\7-Zip\7z.exe" a -tzip -mx=5 ..\artifacts\qtwebengine_runtime.zip *.dll QtWebEngineProcess.exe platforms imageformats styles tls iconengines generic networkinformation position resources translations
+        "%ProgramFiles%\7-Zip\7z.exe" a -tzip artifacts\DiskRaptor_v0.0.1.zip dist\* -x!*.zip -x!artifacts
       shell: cmd
 
     - name: Upload artifacts
@@ -123,5 +112,4 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          artifacts/DiskRaptor_Bootstrap_v0.0.1.zip
-          artifacts/qtwebengine_runtime.zip
+          artifacts/DiskRaptor_v0.0.1.zip

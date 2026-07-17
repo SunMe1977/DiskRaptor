@@ -58,6 +58,7 @@ C?*
 *.py
 *.mjs
 !test_scan.mjs
+!test_scan_c.mjs
 !stress_test.mjs
 
 # ── Git rewrite artifacts ───────────────────────

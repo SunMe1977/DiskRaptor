@@ -50,6 +50,8 @@ pub struct TreeNode {
     pub size: u64,
     /// Number of files in this subtree (1 for files)
     pub file_count: u64,
+    /// Number of directories in this subtree (1 for directories)
+    pub dir_count: u64,
     /// Node type discriminator
     pub node_type: NodeType,
     /// Parent index in the arena. `u32::MAX` = root.

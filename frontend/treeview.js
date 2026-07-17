@@ -10,12 +10,41 @@ class TreeView {
     this.selectedIndex = null;
     this.onSelect = null;
     this.maxSize = 0;
+    this.maxFileCount = 0;
+    this.maxDirCount = 0;
+    this.sortBy = "size";
+    this.sortDesc = true;
     this._initScroll();
     this._initContextMenu();
     this._initDiagramJump();
+    this._initSortControls();
   }
 
   /** Listen for diagram "jump in tree" clicks */
+  _initSortControls() {
+    var self = this;
+    // Default sort: size desc
+    document.querySelectorAll(".tree-col-sort").forEach(function(btn) {
+      if (btn.dataset.col === "size") {
+        btn.classList.add("sort-desc");
+      }
+      btn.addEventListener("click", function() {
+        var col = this.dataset.col;
+        if (self.sortBy === col) {
+          self.sortDesc = !self.sortDesc;
+        } else {
+          self.sortBy = col;
+          self.sortDesc = true;
+        }
+        document.querySelectorAll(".tree-col-sort").forEach(function(b) {
+          b.classList.remove("sort-asc", "sort-desc");
+        });
+        this.classList.add(self.sortDesc ? "sort-desc" : "sort-asc");
+        self.rebuild();
+      });
+    });
+  }
+
   _initDiagramJump() {
     var self = this;
     window.addEventListener("diagram-jump-to-path", async function (e) {
@@ -278,9 +307,13 @@ class TreeView {
     }
 
     this.maxSize = 0;
+    this.maxFileCount = 0;
+    this.maxDirCount = 0;
     for (const idx of this.visibleNodes) {
       const node = this.loader.getNode(idx);
       if (node && node.size > this.maxSize) this.maxSize = node.size;
+      if (node && (node.file_count || 0) > this.maxFileCount) this.maxFileCount = node.file_count || 0;
+      if (node && (node.dir_count || 0) > this.maxDirCount) this.maxDirCount = node.dir_count || 0;
     }
 
     const totalItems = this.visibleNodes.length;
@@ -335,7 +368,18 @@ class TreeView {
       const sorted = [...children].sort((a, b) => {
         const na = this.loader.getNode(a);
         const nb = this.loader.getNode(b);
-        return (nb ? nb.size : 0) - (na ? na.size : 0);
+        if (!na || !nb) return 0;
+        var cmp = 0;
+        if (this.sortBy === "name") {
+          cmp = (na.name || "").localeCompare(nb.name || "");
+        } else if (this.sortBy === "files") {
+          cmp = (na.file_count || 0) - (nb.file_count || 0);
+        } else if (this.sortBy === "dirs") {
+          cmp = (na.dir_count || 0) - (nb.dir_count || 0);
+        } else {
+          cmp = (na.size || 0) - (nb.size || 0);
+        }
+        return this.sortDesc ? -cmp : cmp;
       });
       for (const childIdx of sorted) {
         const childNode = this.loader.getNode(childIdx);
@@ -457,19 +501,27 @@ class TreeView {
             typeof iconResult === "string" &&
             iconResult.indexOf("data:") === 0
           ) {
-            // Replace emoji with real icon
             iconEl.innerHTML = "";
             var img = document.createElement("img");
             img.src = iconResult;
             img.style.cssText = "width:16px;height:16px;display:block;";
             iconEl.appendChild(img);
           } else if (typeof iconResult === "string" && iconResult.length < 10) {
-            // Update fallback emoji
             iconEl.textContent = iconResult;
           }
         })
         .catch(function () {});
     }
+
+    // Green percentage bar in front (size-based)
+    const pctBar = document.createElement("span");
+    pctBar.className = "tree-pct-bar";
+    const pctFill = document.createElement("span");
+    pctFill.className = "tree-pct-fill";
+    const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
+    pctFill.style.width = Math.max(1, pct) + "%";
+    pctBar.appendChild(pctFill);
+    el.appendChild(pctBar);
 
     const name = document.createElement("span");
     name.className = "node-name";
@@ -481,15 +533,19 @@ class TreeView {
     size.textContent = this._formatSize(node.size);
     el.appendChild(size);
 
-    const bar = document.createElement("span");
-    bar.className = "node-bar";
-    const fill = document.createElement("span");
-    fill.className = "node-bar-fill";
-    const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
-    fill.style.width = Math.max(2, pct) + "%";
-    fill.style.background = isDir ? "var(--accent)" : "var(--accent-green)";
-    bar.appendChild(fill);
-    el.appendChild(bar);
+    // File count column
+    const fc = document.createElement("span");
+    fc.className = "node-files";
+    fc.textContent = isDir ? (node.file_count || 0).toLocaleString() : "—";
+    el.appendChild(fc);
+
+    // Directory count column
+    const dc = document.createElement("span");
+    dc.className = "node-dirs";
+    dc.textContent = isDir ? (node.dir_count || 0).toLocaleString() : "—";
+    el.appendChild(dc);
+
+    // Old bar removed — now only the green pct bar in front
   }
 
   _computeDepth(arenaIdx) {

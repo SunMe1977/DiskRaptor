@@ -576,6 +576,7 @@ mod platform {
                 name: root_name,
                 size: 0,
                 file_count: 0,
+                dir_count: 1,
                 node_type: NodeType::Directory,
                 parent: u32::MAX,
                 first_child: u32::MAX,
@@ -808,6 +809,7 @@ mod platform {
                             name: entry.name.clone(),
                             size: 0,
                             file_count: 0,
+                            dir_count: 1,
                             node_type: NodeType::Directory,
                             parent: pi,
                             first_child: u32::MAX,
@@ -831,6 +833,7 @@ mod platform {
                             name: entry.name.clone(),
                             size: entry.size,
                             file_count: 1,
+                            dir_count: 0,
                             node_type: NodeType::File,
                             parent: pi,
                             first_child: u32::MAX,
@@ -903,6 +906,7 @@ mod platform {
                         name: entry.name.clone(),
                         size: 0,
                         file_count: 0,
+                        dir_count: 1,
                         node_type: NodeType::Directory,
                         parent: pi,
                         first_child: u32::MAX,
@@ -926,6 +930,7 @@ mod platform {
                         name: entry.name.clone(),
                         size: entry.size,
                         file_count: 1,
+                        dir_count: 0,
                         node_type: NodeType::File,
                         parent: pi,
                         first_child: u32::MAX,
@@ -978,6 +983,7 @@ mod platform {
             name: root_name,
             size: 0,
             file_count: 0,
+            dir_count: 1,
             node_type: NodeType::Directory,
             parent: u32::MAX,
             first_child: u32::MAX,
@@ -1017,6 +1023,7 @@ mod platform {
                     name: file_name,
                     size: 0,
                     file_count: 0,
+                    dir_count: 1,
                     node_type: NodeType::Directory,
                     parent: pi,
                     first_child: u32::MAX,
@@ -1044,6 +1051,7 @@ mod platform {
                     name: file_name,
                     size: sz,
                     file_count: 1,
+                    dir_count: 0,
                     node_type: NodeType::File,
                     parent: pi,
                     first_child: u32::MAX,
@@ -1087,10 +1095,12 @@ fn finish_scan(
         let p = node.parent;
         let s = node.size;
         let fc = node.file_count;
+        let dc = node.dir_count;
         if p != u32::MAX {
             let parent = &mut arena.nodes[p as usize];
             parent.size += s;
             parent.file_count += fc;
+            parent.dir_count += dc;
         }
     }
     let elapsed = start.elapsed().as_millis() as u64;
@@ -1135,6 +1145,7 @@ pub fn scan_simple(
         name: root_name,
         size: 0,
         file_count: 0,
+        dir_count: 1,
         node_type: NodeType::Directory,
         parent: u32::MAX,
         first_child: u32::MAX,
@@ -1174,6 +1185,7 @@ pub fn scan_simple(
                 name: file_name,
                 size: 0,
                 file_count: 0,
+                dir_count: 1,
                 node_type: NodeType::Directory,
                 parent: pi,
                 first_child: u32::MAX,
@@ -1197,6 +1209,7 @@ pub fn scan_simple(
                 name: file_name,
                 size: sz,
                 file_count: 1,
+                dir_count: 0,
                 node_type: NodeType::File,
                 parent: pi,
                 first_child: u32::MAX,
