@@ -3,7 +3,7 @@ chcp 65001 >nul
 title DiskRaptor Build
 
 echo ==========================================
-echo   DiskRaptor - Build EXE + NSIS Installer
+echo   DiskRaptor - Build EXE Only
 echo ==========================================
 echo.
 
@@ -15,13 +15,11 @@ set WIN10_KIT=C:\Program Files (x86)\Windows Kits\10
 set QT_DIR=C:\Qt\6.10.3\msvc2022_64
 set CMAKE_DIR=C:\Qt\Tools\CMake_64
 set NINJA_DIR=C:\Qt\Tools\Ninja
-set NSIS_DIR=C:\Program Files (x86)\NSIS
 
 set PATH=%MSVC_ROOT%\bin\Hostx64\x64;%PATH%
 set PATH=%WIN10_KIT%\bin\10.0.26100.0\x64;%PATH%
 set PATH=%CMAKE_DIR%\bin;%PATH%
 set PATH=%NINJA_DIR%;%PATH%
-set PATH=%NSIS_DIR%;%PATH%
 
 set INCLUDE=%MSVC_ROOT%\include
 set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\ucrt
@@ -37,7 +35,7 @@ set Qt6_DIR=%QT_DIR%\lib\cmake\Qt6
 set CMAKE_PREFIX_PATH=%QT_DIR%
 
 REM -- Step 1: Build Rust DLL --------------------
-echo [1/5] Building Rust scanner DLL...
+echo [1/4] Building Rust scanner DLL...
 cd /d "%~dp0src-tauri"
 call cargo build --release
 if %ERRORLEVEL% neq 0 (
@@ -49,7 +47,7 @@ echo OK
 
 REM -- Step 2: Configure CMake -------------------
 echo.
-echo [2/5] Configuring CMake...
+echo [2/4] Configuring CMake...
 cd /d "%~dp0qt-app"
 if exist build rmdir /s /q build
 mkdir build
@@ -69,7 +67,7 @@ echo OK
 
 REM -- Step 3: Build ----------------------------
 echo.
-echo [3/5] Building Qt app...
+echo [3/4] Building Qt app...
 cmake --build . --config Release
 if %ERRORLEVEL% neq 0 (
     echo ERROR: Build failed
@@ -78,12 +76,9 @@ if %ERRORLEVEL% neq 0 (
 )
 echo OK
 
-REM -- Keep all Qt runtime DLLs (transitive deps of WebEngine)
-echo Keeping all Qt runtime DLLs...
-
 REM -- Step 4: Create dist package --------------
 echo.
-echo [4/5] Packaging dist...
+echo [4/4] Packaging dist...
 cd /d "%~dp0"
 if exist dist rmdir /s /q dist
 mkdir dist

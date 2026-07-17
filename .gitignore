@@ -1,9 +1,10 @@
-# ── Build artifacts ──────────────────────────────
+# ── Build artifacts ─────────────────
 target/
 qt-app/build*/
-qt-app/build_qt/
-qt-app/build_msi/
+dist/
+release/
 *.msi
+*.exe
 *.AppImage
 *.deb
 *.dmg
@@ -12,15 +13,12 @@ qt-app/build_msi/
 *.so
 *.lib
 *.exp
-dist/
-release/
 
-# ── Node ─────────────────────────────────────────
+# ── Node ────────────────────────────
 node_modules/
 frontend/lib/
-package-lock.json
 
-# ── IDE ──────────────────────────────────────────
+# ── IDE ─────────────────────────────
 .vscode/
 .idea/
 *.swp
@@ -28,72 +26,35 @@ package-lock.json
 *.suo
 *.user
 
-# ── OS ───────────────────────────────────────────
+# ── OS ──────────────────────────────
 .DS_Store
 Thumbs.db
 
-# ── Generated icon copies ───────────────────────
-images/
-
-ANALYSIS_COMPLETE.md
-app_stderr.txt
-C?*
-# ── Temp / Debug ────────────────────────────────
-nul
+# ── Temp / Debug ────────────────────
 *.log
-build_report.txt
-build_test_log.txt
-vs_env.txt
-_install.bat
-_build.bat
-run_build_test.ps1
-test_write.txt
+*.py
+*.ps1
+*.bat
+!build.cmd
+test-results/
 debug_path.txt
 launch_cdp.bat
-ANALYSIS_COMPLETE.md
-app_stderr.txt
-dir
-C?*
-*.ps1
-*.py
-*.mjs
-!test_scan.mjs
-!test_scan_c.mjs
-!stress_test.mjs
 
-# ── Git rewrite artifacts ───────────────────────
-.git-rewrite/
-
-# ── Test results ────────────────────────────────
-test-results/
-test-results/
-
-# ── WiX / NSIS tools ────────────────────────────
-tools/wix/
-tools/wix_full/
-tools/
-
-# ── Pro Modules (closed source) ─────────────────
-modulesPro/*.dll
-modulesPro/*.so
-modulesPro/*.dylib
-modulesPro/*.exp
-modulesPro/*.lib
-modulesPro/*.obj
-modulesPro/*/build/
-modulesPro/build/
-
-# ── Sensitive / generated ───────────────────────
-raw/info.txt
-analysis.txt
-ci_status.json
-install/
-DiskRaptor_0.0.7_x64_Setup.exe
-setup.nsi
-
-# ── Qt runtime (downloaded by launcher) ─────────
+# ── Qt runtime (launcher downloads) ─
 qtwebengine_runtime/
 qtwebengine_*.zip
 
-# ── Old scripts (cleaned up) ────────────────────
-scripts/
+# ── Pro Modules (closed source) ─────
+modulesPro/*.dll
+modulesPro/*.so
+modulesPro/*.dylib
+modulesPro/*.lib
+modulesPro/*.exp
+modulesPro/*/build/
+modulesPro/build/
+
+# ── Generated / sensitive ───────────
+raw/
+release-assets/
+install/
+setup.nsi

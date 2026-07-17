@@ -1,25 +1,12 @@
 {
   "name": "diskraptor",
-  "version": "1.0.0",
-  "description": "![alt text](path/to/image.png)",
-  "main": "debug_scan.js",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Ultra-fast disk space analyzer",
   "scripts": {
-    "test": "node scripts/run-tests.mjs",
-    "test:e2e": "node scripts/e2e-scan-verify.mjs",
-    "test:all": "npm test && npm run test:e2e",
-    "test:scan": "node scripts/e2e-scan-verify.mjs"
+    "test:home": "node test_scan.mjs",
+    "test:c": "node test_scan_c.mjs"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/SunMe1977/DiskRaptor.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/SunMe1977/DiskRaptor/issues"
-  },
-  "homepage": "https://github.com/SunMe1977/DiskRaptor#readme",
   "dependencies": {
     "playwright": "^1.61.1",
     "ws": "^8.21.1"
