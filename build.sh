@@ -82,59 +82,35 @@ case "$PLATFORM" in
     echo "  Linux: checking system packages..."
     if command -v apt-get &>/dev/null; then
       APT_PKGS=""
-      # Qt6 WebEngine + base
       dpkg -l qt6-base-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS qt6-base-dev"
       dpkg -l qt6-webengine-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS qt6-webengine-dev"
-      # Build tools
       dpkg -l cmake 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS cmake"
       dpkg -l ninja-build 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS ninja-build"
       dpkg -l build-essential 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS build-essential"
       dpkg -l pkg-config 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS pkg-config"
       dpkg -l nodejs 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS nodejs"
-      # X11 / XCB (needed by Qt6 GUI + WebEngine)
-      dpkg -l libxcb-cursor-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-cursor-dev"
-      dpkg -l libx11-xcb-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libx11-xcb-dev"
-      dpkg -l libxkbcommon-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxkbcommon-dev"
-      dpkg -l libxcb-xkb-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-xkb-dev"
-      dpkg -l libxcb-icccm4-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-icccm4-dev"
-      dpkg -l libxcb-image0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-image0-dev"
-      dpkg -l libxcb-keysyms1-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-keysyms1-dev"
-      dpkg -l libxcb-randr0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-randr0-dev"
-      dpkg -l libxcb-render-util0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-render-util0-dev"
-      dpkg -l libxcb-shape0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-shape0-dev"
-      dpkg -l libxcb-xfixes0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-xfixes0-dev"
-      dpkg -l libxcb-xinerama0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-xinerama0-dev"
-      dpkg -l libxcb-xinput-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-xinput-dev"
-      # EGL / GL / GPU
-      dpkg -l libegl1-mesa-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libegl1-mesa-dev"
-      dpkg -l libgl1-mesa-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgl1-mesa-dev"
-      dpkg -l libgles2-mesa-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgles2-mesa-dev"
-      dpkg -l libdrm-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libdrm-dev"
-      # Font / rendering (cairo, freetype, fontconfig)
+      dpkg -l libglib2.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libglib2.0-dev"
       dpkg -l libcairo2-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libcairo2-dev"
       dpkg -l libpango1.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libpango1.0-dev"
       dpkg -l libatk1.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libatk1.0-dev"
       dpkg -l libgdk-pixbuf-2.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgdk-pixbuf-2.0-dev"
       dpkg -l libgtk-3-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgtk-3-dev"
-      dpkg -l libfreetype6-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libfreetype6-dev"
-      dpkg -l libfontconfig1-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libfontconfig1-dev"
-      # GStreamer (WebEngine video)
+      dpkg -l libxcb-cursor-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxcb-cursor-dev"
+      dpkg -l libxkbcommon-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libxkbcommon-dev"
+      dpkg -l libegl1-mesa-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libegl1-mesa-dev"
+      dpkg -l libgl1-mesa-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgl1-mesa-dev"
       dpkg -l libgstreamer1.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgstreamer1.0-dev"
       dpkg -l libgstreamer-plugins-base1.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgstreamer-plugins-base1.0-dev"
-      # GLib / Cairo / ICU
-      dpkg -l libglib2.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libglib2.0-dev"
       dpkg -l libicu-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libicu-dev"
       dpkg -l libssl-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libssl-dev"
-      # Wayland (for Wayland sessions)
-      dpkg -l libwayland-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libwayland-dev"
-      # SQLite
       dpkg -l libsqlite3-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libsqlite3-dev"
+      dpkg -l libwayland-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libwayland-dev"
       [ -n "$APT_PKGS" ] && sudo apt-get install -y $APT_PKGS
-      # Qt6 cmake path on Debian/Ubuntu
-      QT_PREFIX="/usr/lib/x86_64-linux-gnu/cmake/Qt6"
-      # Also try finding it
+      # Find Qt6 cmake path
+      QT_CMAKE_DIR="/usr/lib/x86_64-linux-gnu/cmake/Qt6"
+      QT_PREFIX="/usr/lib/x86_64-linux-gnu"
       for p in /usr/lib/x86_64-linux-gnu/cmake/Qt6 /usr/lib/cmake/Qt6; do
-        [ -d "$p" ] && QT_PREFIX="$p" && break
+        [ -d "$p" ] && QT_CMAKE_DIR="$p" && break
       done
     elif command -v dnf &>/dev/null; then
       rpm -q pkg-config 2>/dev/null || sudo dnf install -y pkg-config
@@ -209,8 +185,9 @@ else
   cd build
   cmake .. -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
-    -DQt6_DIR="$QT_PREFIX" \
-    -DCMAKE_PREFIX_PATH="$QT_PREFIX"
+    -DQt6_DIR="$QT_CMAKE_DIR" \
+    -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
+    -DCMAKE_INSTALL_RPATH="\$ORIGIN"
   cmake --build . --config Release
   cd ..
 fi
