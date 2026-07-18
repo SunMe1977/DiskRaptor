@@ -61,13 +61,17 @@ jobs:
     needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - run: gh release create "$GITHUB_REF_NAME" --title "DiskRaptor $GITHUB_REF_NAME" --notes "Release" 2>/dev/null || true
+          merge-multiple: true
+      - name: Upload assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: find artifacts -name "*.zip" -type f -exec gh release upload "$GITHUB_REF_NAME" {} --clobber \;
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "DiskRaptor $GITHUB_REF_NAME" --notes "Release" 2>/dev/null || true
+          ls -la artifacts/
+          for f in artifacts/*.zip; do
+            echo "Uploading: $f"
+            gh release upload "$GITHUB_REF_NAME" "$f" --clobber
+          done
