@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QMessageBox>
+#include <QIcon>
 #include <QDebug>
 
 #ifdef Q_OS_WIN
@@ -165,6 +166,8 @@ int main(int argc, char *argv[])
     // â”€â”€ Create main window â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     MainWindow window(frontendPath);
     window.setWindowTitle("DiskRaptor " + app.applicationVersion());
+    window.setWindowIcon(QIcon(":/app.ico"));
+    app.setWindowIcon(QIcon(":/app.ico"));
     window.resize(1280, 860);
     window.showMaximized();
 
