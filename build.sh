@@ -277,8 +277,9 @@ EOF
   linux)
     echo "  Creating dist directory..."
     cp qt-app/build/DiskRaptor dist/
-    cp frontend dist/frontend -r
-    cp images dist/images -r 2>/dev/null || true
+    cp -r frontend dist/
+    mkdir -p dist/images
+    cp -r images/* dist/images/ 2>/dev/null || true
     if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then
       cp src-tauri/target/release/libdiskraptor_scanner.so dist/
     fi
