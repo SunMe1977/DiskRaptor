@@ -1273,8 +1273,8 @@ body.light-theme .about-bg {
     display: block;
     margin: 0 auto;
     border-radius: 6px;
-    background: #0d1117;
-    border: 1px solid #30363d;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
 }
 .progress-engine {
     margin-top: 8px;
@@ -1536,4 +1536,25 @@ body.light-theme #about-overlay {
   #h-splitter {
     display: none;
   }
+}
+
+/* Progress card cancel button */
+.progress-actions {
+  text-align: center;
+  padding: 8px 0 16px;
+}
+.progress-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 6px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.progress-btn:hover {
+  background: var(--accent-red);
+  border-color: var(--accent-red);
+  color: #fff;
 }
