@@ -16,8 +16,16 @@ echo "=========================================="
 echo ""
 
 # Source cargo env
+# Source cargo env so rustc/cargo are on PATH
 if [ -f "$HOME/.cargo/env" ]; then
   . "$HOME/.cargo/env"
+elif [ -d "$HOME/.cargo/bin" ]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
+# Also check for cargo in default rustup location
+if ! command -v cargo &>/dev/null && [ -d "$HOME/.cargo/bin" ]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
 # ── Install missing tools ─────────────────────
@@ -36,6 +44,10 @@ if [ -n "$NEEDS" ]; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     if [ -f "$HOME/.cargo/env" ]; then
       . "$HOME/.cargo/env"
+    fi
+    # Ensure cargo is in PATH for this session
+    if [ -d "$HOME/.cargo/bin" ]; then
+      export PATH="$HOME/.cargo/bin:$PATH"
     fi
     ;; esac
 fi
