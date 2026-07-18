@@ -646,6 +646,7 @@
         var pollStartTime = Date.now();
 
         var done = false;
+        var zeroCount = 0;
         for (var i = 0; i < 1200; i++) {
           await sleep(500);
           var p = await window.__TAURI__
@@ -665,6 +666,17 @@
           var dirsFound = Number(p.dirs_found || p.dirsFound || 0);
           var bytesFound = Number(p.bytes_found || p.bytesFound || 0);
           var elapsedSecs = p.elapsed_secs || p.elapsedSecs || 0;
+
+          // Track consecutive zero counts
+          if (filesFound === 0 && dirsFound === 0) {
+            zeroCount++;
+            if (zeroCount === 10) { // 5 seconds of no progress
+              console.warn("Scan showing 0 files after 5s, raw:", JSON.stringify(p).substring(0, 200));
+              if (rawDisplay) rawDisplay.style.display = "block";
+            }
+          } else {
+            zeroCount = 0;
+          }
 
           // ── Update 3-icon metrics ──
           progressFilesEl.textContent = filesFound.toLocaleString("en-US");
