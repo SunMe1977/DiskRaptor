@@ -1,5 +1,5 @@
 // DiskRaptor — IPC Bridge between C++ backend and JavaScript frontend
-// Uses Rust scanner DLL (diskraptor_scanner.dll) instead of C++ scanner.
+// Uses Rust scanner DLL (.dll / .dylib) cross‑platform via QLibrary.
 #pragma once
 
 #include <QObject>
@@ -8,10 +8,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSettings>
-
-#ifdef Q_OS_WIN
-#include <windows.h>
-#endif
+#include <QLibrary>
 
 class IpcBridge : public QObject
 {
@@ -51,28 +48,26 @@ private:
     QString resultToJson(bool success, const QVariant &data = QVariant(),
                          const QString &error = QString());
 
-    // ── Rust scanner DLL handles ───────────────────────────
-#ifdef Q_OS_WIN
-    HMODULE m_rustLib = nullptr;
+    // ── Rust scanner cross‑platform via QLibrary ─────────────────
+    QLibrary *m_rustLib = nullptr;
 
     // Function pointer types matching the Rust CDYLIB exports
-    using FnStartScan = char* (__stdcall*)(const char* path);
-    using FnGetProgress = char* (__stdcall*)();
-    using FnGetResult = char* (__stdcall*)();
-    using FnGetChunk = char* (__stdcall*)(uint32_t chunk_id);
-    using FnCancelScan = bool (__stdcall*)();
-    using FnIsRunning = bool (__stdcall*)();
-    using FnFreeString = void (__stdcall*)(char* s);
+    using FnStartScan   = char* (*)(const char* path);
+    using FnGetProgress = char* (*)();
+    using FnGetResult   = char* (*)();
+    using FnGetChunk    = char* (*)(uint32_t chunk_id);
+    using FnCancelScan  = bool   (*)();
+    using FnIsRunning   = bool   (*)();
+    using FnFreeString  = void   (*)(char* s);
 
-    FnStartScan m_drStartScan = nullptr;
+    FnStartScan   m_drStartScan   = nullptr;
     FnGetProgress m_drGetProgress = nullptr;
-    FnGetResult m_drGetResult = nullptr;
-    FnGetChunk m_drGetChunk = nullptr;
-    FnCancelScan m_drCancelScan = nullptr;
-    FnIsRunning m_drIsRunning = nullptr;
-    FnFreeString m_drFreeString = nullptr;
+    FnGetResult   m_drGetResult   = nullptr;
+    FnGetChunk    m_drGetChunk    = nullptr;
+    FnCancelScan  m_drCancelScan  = nullptr;
+    FnIsRunning   m_drIsRunning   = nullptr;
+    FnFreeString  m_drFreeString  = nullptr;
 
     bool loadRustLibrary();
     void unloadRustLibrary();
-#endif
 };

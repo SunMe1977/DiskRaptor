@@ -35,6 +35,7 @@ private slots:
     void onFindDuplicates();
     void onCheckUpdates();
     void onAbout();
+    void onThemeChanged(const QString &theme);
     void onLanguageChanged(const QString &code);
 
 private:

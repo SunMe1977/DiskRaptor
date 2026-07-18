@@ -80,8 +80,14 @@
 
     // ── Theme toggle ───────────────────────────────────────
     var btnTheme = document.getElementById("btn-theme");
-    getSetting("theme", "dark").then(function(savedTheme) {
+    getSetting("theme", "auto").then(function(savedTheme) {
+      var isLight = false;
       if (savedTheme === "light") {
+        isLight = true;
+      } else if (savedTheme === "auto" || savedTheme === "dark") {
+        isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      }
+      if (isLight) {
         document.body.classList.add("light-theme");
         btnTheme.textContent = "\u2600";
         btnTheme.title = "Switch to dark mode";

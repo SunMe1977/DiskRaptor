@@ -25,21 +25,15 @@
 IpcBridge::IpcBridge(QObject *parent)
     : QObject(parent)
 {
-#ifdef Q_OS_WIN
     if (!loadRustLibrary()) {
-        qWarning() << "[DiskRaptor] Failed to load diskraptor_scanner.dll --"
+        qWarning() << "[DiskRaptor] Failed to load Rust scanner library --"
                     << "scan functionality will be unavailable.";
     }
-#else
-    qWarning() << "[DiskRaptor] Rust scanner DLL not available on this platform.";
-#endif
 }
 
 IpcBridge::~IpcBridge()
 {
-#ifdef Q_OS_WIN
     unloadRustLibrary();
-#endif
 }
 
 QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
@@ -62,9 +56,8 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "load_settings") return loadSettings();
 
     if (command == "get_chunk") {
-#ifdef Q_OS_WIN
         if (!m_drGetChunk) {
-            return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
+            return resultToJson(false, QVariant(), "Rust scanner not loaded");
         }
         uint32_t chunkIndex = static_cast<uint32_t>(args.value("chunkIndex", 0).toUInt());
         char* cjson = m_drGetChunk(chunkIndex);
@@ -77,12 +70,12 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
         if (!doc.isNull() && doc.isObject()) {
             return resultToJson(true, doc.object());
         }
-        // Rust returned empty chunk — check if scan is done (C++ fallback in use)
+        // Rust returned empty chunk — check if scan is done
         bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
         if (!isRunning && chunkIndex == 0) {
             // Return synthetic root chunk
             QJsonObject rootNode;
-            rootNode["name"] = m_lastScanPath.isEmpty() ? "C:\\" : m_lastScanPath;
+            rootNode["name"] = m_lastScanPath.isEmpty() ? QStringLiteral("/") : m_lastScanPath;
             rootNode["size"] = 0;
             rootNode["file_count"] = 0;
             rootNode["node_type"] = "Directory";
@@ -102,9 +95,6 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
             return resultToJson(true, chunk);
         }
         return resultToJson(false, QVariant(), "invalid chunk JSON");
-#else
-        return resultToJson(false, QVariant(), "not supported on this platform");
-#endif
     }
     if (command == "get_children") {
         return resultToJson(true, QVariantMap{{"children", QJsonArray()}});
@@ -127,13 +117,12 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     }
 
     if (command == "start_scan") {
-#ifdef Q_OS_WIN
         QString path = QDir::toNativeSeparators(args.value("path").toString());
         if (!path.isEmpty()) {
             m_scanId++;
             m_lastScanPath = path;
             if (!m_drStartScan) {
-                return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
+                return resultToJson(false, QVariant(), "Rust scanner not loaded");
             }
             QByteArray pathUtf8 = path.toUtf8();
             char* result = m_drStartScan(pathUtf8.constData());
@@ -157,9 +146,6 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
             return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", rustScanId}});
         }
         return resultToJson(false, QVariant(), "No path provided");
-#else
-        return resultToJson(false, QVariant(), "scan not supported on this platform");
-#endif
     }
 
     return resultToJson(false, QVariant(), "Unknown command: " + command);
@@ -233,9 +219,8 @@ QString IpcBridge::getIcon(const QString &path, bool isDir)
 
 QString IpcBridge::getScanProgress()
 {
-#ifdef Q_OS_WIN
     if (!m_drGetProgress) {
-        return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
+        return resultToJson(false, QVariant(), "Rust scanner not loaded");
     }
 
     char* cjson = m_drGetProgress();
@@ -246,19 +231,13 @@ QString IpcBridge::getScanProgress()
     QString jsonStr = QString::fromUtf8(cjson);
     m_drFreeString(cjson);
 
-    // Simple string concatenation to avoid QJsonDocument double-escaping.
-    // jsonStr is already valid JSON, so wrapping it directly produces valid JSON.
     return "{\"success\":true,\"data\":" + jsonStr + "}";
-#else
-    return resultToJson(true, QVariantMap{{"files_found", 0}, {"dirs_found", 0}, {"is_running", false}, {"phase", 3}});
-#endif
 }
 
 QString IpcBridge::getScanResult()
 {
-#ifdef Q_OS_WIN
     if (!m_drGetResult) {
-        return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
+        return resultToJson(false, QVariant(), "Rust scanner not loaded");
     }
 
     char* cjson = m_drGetResult();
@@ -328,9 +307,6 @@ QString IpcBridge::getScanResult()
     }
 
     return resultToJson(false, QVariant(), "result not ready yet");
-#else
-    return resultToJson(false, QVariant(), "not supported on this platform");
-#endif
 }
 
 QString IpcBridge::listDrives()
@@ -403,67 +379,86 @@ QString IpcBridge::restartAsAdmin()
 #endif
 }
 
-// -- Rust DLL loading ---------------------------------------------
+// -- Rust scanner loading (cross-platform via QLibrary) -------
 
-#ifdef Q_OS_WIN
 bool IpcBridge::loadRustLibrary()
 {
     QStringList searchPaths;
     searchPaths << QCoreApplication::applicationDirPath()
-                << "."
                 << ".";
 
+    // Different names on different platforms
+    QStringList libNames;
+#ifdef Q_OS_WIN
+    libNames << "diskraptor_scanner.dll" << "diskraptor_scanner";
+#elif defined(Q_OS_MACOS)
+    libNames << "libdiskraptor_scanner.dylib" << "diskraptor_scanner";
+#else
+    libNames << "libdiskraptor_scanner.so" << "diskraptor_scanner";
+#endif
+
     for (const QString &dir : searchPaths) {
-        QString dllPath = dir + "/diskraptor_scanner.dll";
-        m_rustLib = LoadLibraryW(dllPath.toStdWString().c_str());
-        if (m_rustLib) {
-            qDebug() << "[DiskRaptor] Loaded Rust scanner DLL from:" << dllPath;
-            break;
+        for (const QString &name : libNames) {
+            QString fullPath = dir + "/" + name;
+            if (QFile::exists(fullPath)) {
+                m_rustLib = new QLibrary(fullPath);
+                if (m_rustLib->load()) {
+                    qDebug() << "[DiskRaptor] Loaded Rust scanner from:" << fullPath;
+                    break;
+                } else {
+                    delete m_rustLib;
+                    m_rustLib = nullptr;
+                }
+            }
+        }
+        if (m_rustLib && m_rustLib->isLoaded()) break;
+    }
+
+    if (!m_rustLib || !m_rustLib->isLoaded()) {
+        // Try loading by name only (system library path)
+        m_rustLib = new QLibrary("diskraptor_scanner");
+        if (!m_rustLib->load()) {
+            qWarning() << "[DiskRaptor] Failed to load Rust scanner library:" << m_rustLib->errorString();
+            delete m_rustLib;
+            m_rustLib = nullptr;
+            return false;
         }
     }
 
-    if (!m_rustLib) {
-        m_rustLib = LoadLibraryW(L"diskraptor_scanner.dll");
-    }
-
-    if (!m_rustLib) {
-        DWORD err = GetLastError();
-        qWarning() << "[DiskRaptor] Failed to load diskraptor_scanner.dll, error:" << err;
-        return false;
-    }
-
-    m_drStartScan  = reinterpret_cast<FnStartScan>(GetProcAddress(m_rustLib, "dr_start_scan"));
-    m_drGetProgress = reinterpret_cast<FnGetProgress>(GetProcAddress(m_rustLib, "dr_get_progress"));
-    m_drGetResult   = reinterpret_cast<FnGetResult>(GetProcAddress(m_rustLib, "dr_get_result"));
-    m_drGetChunk    = reinterpret_cast<FnGetChunk>(GetProcAddress(m_rustLib, "dr_get_chunk"));
-    m_drCancelScan  = reinterpret_cast<FnCancelScan>(GetProcAddress(m_rustLib, "dr_cancel_scan"));
-    m_drIsRunning   = reinterpret_cast<FnIsRunning>(GetProcAddress(m_rustLib, "dr_is_running"));
-    m_drFreeString  = reinterpret_cast<FnFreeString>(GetProcAddress(m_rustLib, "dr_free_string"));
+    m_drStartScan   = reinterpret_cast<FnStartScan>(m_rustLib->resolve("dr_start_scan"));
+    m_drGetProgress = reinterpret_cast<FnGetProgress>(m_rustLib->resolve("dr_get_progress"));
+    m_drGetResult   = reinterpret_cast<FnGetResult>(m_rustLib->resolve("dr_get_result"));
+    m_drGetChunk    = reinterpret_cast<FnGetChunk>(m_rustLib->resolve("dr_get_chunk"));
+    m_drCancelScan  = reinterpret_cast<FnCancelScan>(m_rustLib->resolve("dr_cancel_scan"));
+    m_drIsRunning   = reinterpret_cast<FnIsRunning>(m_rustLib->resolve("dr_is_running"));
+    m_drFreeString  = reinterpret_cast<FnFreeString>(m_rustLib->resolve("dr_free_string"));
 
     int missing = 0;
-    if (!m_drStartScan)  { qWarning() << "[DiskRaptor] Missing dr_start_scan";  missing++; }
-    if (!m_drGetProgress){ qWarning() << "[DiskRaptor] Missing dr_get_progress";missing++; }
-    if (!m_drGetResult)  { qWarning() << "[DiskRaptor] Missing dr_get_result";  missing++; }
-    if (!m_drGetChunk)   { qWarning() << "[DiskRaptor] Missing dr_get_chunk";   missing++; }
-    if (!m_drCancelScan) { qWarning() << "[DiskRaptor] Missing dr_cancel_scan"; missing++; }
-    if (!m_drIsRunning)  { qWarning() << "[DiskRaptor] Missing dr_is_running";  missing++; }
-    if (!m_drFreeString) { qWarning() << "[DiskRaptor] Missing dr_free_string"; missing++; }
+    if (!m_drStartScan)   { qWarning() << "[DiskRaptor] Missing dr_start_scan";   missing++; }
+    if (!m_drGetProgress) { qWarning() << "[DiskRaptor] Missing dr_get_progress"; missing++; }
+    if (!m_drGetResult)   { qWarning() << "[DiskRaptor] Missing dr_get_result";   missing++; }
+    if (!m_drGetChunk)    { qWarning() << "[DiskRaptor] Missing dr_get_chunk";    missing++; }
+    if (!m_drCancelScan)  { qWarning() << "[DiskRaptor] Missing dr_cancel_scan";  missing++; }
+    if (!m_drIsRunning)   { qWarning() << "[DiskRaptor] Missing dr_is_running";   missing++; }
+    if (!m_drFreeString)  { qWarning() << "[DiskRaptor] Missing dr_free_string";  missing++; }
 
     if (missing > 0) {
-        qWarning() << "[DiskRaptor] Rust scanner DLL loaded but" << missing << "symbols missing";
-        FreeLibrary(m_rustLib);
+        qWarning() << "[DiskRaptor] Rust scanner loaded but" << missing << "symbols missing";
+        m_rustLib->unload();
+        delete m_rustLib;
         m_rustLib = nullptr;
         return false;
     }
 
-    qDebug() << "[DiskRaptor] Rust scanner DLL loaded successfully with all symbols.";
+    qDebug() << "[DiskRaptor] Rust scanner loaded successfully with all symbols.";
     return true;
 }
 
 void IpcBridge::unloadRustLibrary()
 {
     if (m_rustLib) {
-        FreeLibrary(m_rustLib);
+        m_rustLib->unload();
+        delete m_rustLib;
         m_rustLib = nullptr;
         m_drStartScan = nullptr;
         m_drGetProgress = nullptr;
@@ -474,7 +469,6 @@ void IpcBridge::unloadRustLibrary()
         m_drFreeString = nullptr;
     }
 }
-#endif
 
 QString IpcBridge::saveSettings(const QVariantMap &settings)
 {
