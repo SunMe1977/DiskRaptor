@@ -155,6 +155,7 @@
 
     let isScanning = false;
     let currentStats = null;
+    let currentScanResult = null;
 
     loader.onProgress = (loaded, total) => {
       const el = document.querySelector("#tree-panel .status-bar");
@@ -182,7 +183,13 @@
 
     function _feedGalaxyView() {
       if (!galaxyView || !currentStats) return;
-      galaxyView.loadData(currentStats, currentStats, currentStats.top_files, []);
+      var scanResult = currentScanResult || currentStats;
+      var topFiles = (currentStats && currentStats.top_files) || [];
+      try {
+        galaxyView.loadData(scanResult, currentStats, topFiles, []);
+      } catch (e) {
+        console.error("GalaxyView load failed:", e);
+      }
     }
 
     // Diagram mode switcher (in detail panel)
@@ -203,6 +210,9 @@
             galaxyContainer.style.display = "block";
             if (!galaxyView) {
               try {
+                if (!window.GalaxyView || !window.GalaxyView.GalaxyView) {
+                  throw new Error("Galaxy scripts not loaded");
+                }
                 // Ensure container has size before init
                 galaxyContainer.style.minHeight = "400px";
                 galaxyView = new GalaxyView.GalaxyView(galaxyContainer);
@@ -210,12 +220,15 @@
                 galaxyView._resize();
               } catch (e) {
                 console.error("GalaxyView init failed:", e);
+                galaxyView = null;
               }
-            } else {
+            } else if (galaxyView) {
               galaxyView._resize();
             }
-            galaxyView.show();
-            _feedGalaxyView();
+            if (galaxyView) {
+              galaxyView.show();
+              _feedGalaxyView();
+            }
           }
         } else {
           // Switch to pie/treemap
@@ -752,6 +765,7 @@ clearTimeout(safetyTimer);
         progressOverlay.classList.remove("active");
 
         if (result && result.stats && result.stats.total_files > 0) {
+          currentScanResult = result;
           currentStats = result.stats;
           statsPanel.render(result.stats);
           diagram.setData(result.stats);
