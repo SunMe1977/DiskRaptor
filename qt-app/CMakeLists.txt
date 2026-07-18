@@ -49,8 +49,14 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/frontend")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../modulesPro" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/modulesPro")
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/diskraptor_scanner.dll")
+if(EXISTS "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll")
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/diskraptor_scanner.dll"
+    COMMENT "Copying diskraptor_scanner.dll...")
+  message(STATUS "Rust scanner DLL will be deployed: ${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll")
+else()
+  message(WARNING "Rust scanner DLL not found at ${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll — scan will be unavailable")
+endif()
 
 # Deploy Qt6 runtime DLLs via windeployqt (Windows only)
 if(WIN32)

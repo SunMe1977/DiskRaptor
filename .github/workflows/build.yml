@@ -64,19 +64,47 @@ jobs:
       env:
         CARGO_BUILD_JOBS: 2
 
+    - name: Debug env before Qt build
+      shell: pwsh
+      run: |
+        Write-Host "=== Environment check ==="
+        Write-Host "Qt6_DIR: $env:Qt6_DIR"
+        Write-Host "CMAKE_PREFIX_PATH: $env:CMAKE_PREFIX_PATH"
+        $null = Get-Command cl.exe -ErrorAction SilentlyContinue; Write-Host "cl.exe found: $(Test-Path (Get-Command cl.exe -ErrorAction SilentlyContinue).Source)"
+        $null = Get-Command ninja -ErrorAction SilentlyContinue; Write-Host "ninja found: $(Test-Path (Get-Command ninja -ErrorAction SilentlyContinue).Source)"
+        $null = Get-Command rc.exe -ErrorAction SilentlyContinue; Write-Host "rc.exe found: $(Test-Path (Get-Command rc.exe -ErrorAction SilentlyContinue).Source)"
+        Write-Host "=== Rust DLL check ==="
+        $rustDll = "src-tauri/target/release/diskraptor_scanner.dll"
+        Write-Host "$rustDll exists: $(Test-Path $rustDll)"
+        Write-Host "=== Qt install check ==="
+        $qtDir = "C:\Qt\6.10.3\msvc2022_64"
+        Write-Host "Qt root exists: $(Test-Path $qtDir)"
+        Write-Host "Qt cmake dir: $(Test-Path "$qtDir/lib/cmake/Qt6/Qt6Config.cmake")"
+        Write-Host "windeployqt: $(Test-Path "$qtDir/bin/windeployqt.exe")"
+
     - name: Build Qt app
       shell: cmd
       run: |
         echo === Qt6_DIR=%Qt6_DIR% ===
         echo === CMAKE_PREFIX_PATH=%CMAKE_PREFIX_PATH% ===
+        echo === PATH snippet: %PATH:~0,200% ===
         pushd qt-app
         if exist build rmdir /s /q build
         mkdir build
         pushd build
+        echo --- cmake configure ---
         cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%" 2>&1
-        if errorlevel 1 exit /b 1
+        if errorlevel 1 (
+          echo === CONFIGURE FAILED ===
+          type CMakeFiles\CMakeError.log 2>nul
+          exit /b 1
+        )
+        echo --- cmake build ---
         cmake --build . --config Release 2>&1
-        if errorlevel 1 exit /b 1
+        if errorlevel 1 (
+          echo === BUILD FAILED ===
+          exit /b 1
+        )
         popd
         popd
 
