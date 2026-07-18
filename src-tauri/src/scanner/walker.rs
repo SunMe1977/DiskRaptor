@@ -315,7 +315,7 @@ mod platform {
                     None => arena.nodes[pi as usize].first_child = ci,
                 }
                 lc.insert(pi, ci);
-                ptix.insert(full, ci);
+                ptix.insert(full.clone(), ci);
             } else {
                 files_found += 1;
                 let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
