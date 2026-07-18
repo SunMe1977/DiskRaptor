@@ -636,6 +636,10 @@
         var initScan = await window.__TAURI__.invoke("start_scan", {
           path: path,
         });
+        // Check for error response (e.g. "Rust scanner not loaded")
+        if (initScan && initScan.error) {
+          throw new Error(initScan.error);
+        }
         // Handle optional scan_id — bridge may or may not return one
         var scanId = (initScan && initScan.scan_id) || 1;
 
