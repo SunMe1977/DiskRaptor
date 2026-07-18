@@ -31,7 +31,13 @@ command -v git    &>/dev/null || NEEDS="$NEEDS git"
 
 if [ -n "$NEEDS" ]; then
   echo "  Installing:$NEEDS"
-  case "$NEEDS" in *rust*) curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y ;; esac
+  case "$NEEDS" in *rust*)
+    echo "  Installing Rust..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    if [ -f "$HOME/.cargo/env" ]; then
+      . "$HOME/.cargo/env"
+    fi
+    ;; esac
 fi
 
 # ── Platform-specific dependencies ────────────
