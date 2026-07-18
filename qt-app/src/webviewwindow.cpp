@@ -103,6 +103,19 @@ void MainWindow::setupMenuBar()
         });
     }
 
+    // Theme submenu
+    auto *themeMenu = m_viewMenu->addMenu(tr("&Theme"));
+    auto *themeDark = themeMenu->addAction(tr("Dark"));
+    themeDark->setCheckable(true);
+    themeDark->setChecked(true);
+    connect(themeDark, &QAction::triggered, this, [this]() { onThemeChanged("dark"); });
+    auto *themeLight = themeMenu->addAction(tr("Light"));
+    themeLight->setCheckable(true);
+    connect(themeLight, &QAction::triggered, this, [this]() { onThemeChanged("light"); });
+    auto *themeSystem = themeMenu->addAction(tr("System"));
+    themeSystem->setCheckable(true);
+    connect(themeSystem, &QAction::triggered, this, [this]() { onThemeChanged("auto"); });
+
     // ── Tools Menu ─────────────────────────────────────
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     auto *findDupes = toolsMenu->addAction(tr("Find Duplicate Files…"));
@@ -237,4 +250,25 @@ void MainWindow::onLanguageChanged(const QString &code)
     QString escaped = code;
     escaped.replace("'", "\\'");
     runJS(QString("if(window.I18N)window.I18N.setLocale('%1');").arg(escaped));
+}
+
+void MainWindow::onThemeChanged(const QString &theme)
+{
+    QString escaped = theme;
+    escaped.replace("'", "\\'");
+    runJS(QString(
+        "var btn = document.getElementById('btn-theme');"
+        "if(!btn)return;"
+        "var isLight = '%1' === 'light';"
+        "if('%1' === 'auto') {"
+        "  isLight = window.matchMedia('(prefers-color-scheme: light)').matches;"
+        "}"
+        "document.body.classList.toggle('light-theme', isLight);"
+        "btn.textContent = isLight ? '\\u2600' : '\\u263E';"
+        "btn.title = isLight ? 'Switch to dark mode' : 'Switch to light mode';"
+        "try {"
+        "  var o = {}; o['theme'] = '%1';"
+        "  window.__TAURI__.invoke('save_settings', o);"
+        "} catch(e){}"
+    ).arg(escaped));
 }

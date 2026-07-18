@@ -1435,3 +1435,108 @@ body.light-theme #about-overlay {
     color: var(--text-muted);
     margin-left: auto;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   RESPONSIVE — Small Screens (macBooks, < 900px)
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  #toolbar {
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 6px;
+    height: auto;
+    min-height: 44px;
+  }
+  .toolbar-left .logo {
+    font-size: 14px;
+  }
+  .toolbar-left .logo .logo-icon {
+    font-size: 18px;
+  }
+  .toolbar-center {
+    flex: 1 1 100%;
+    gap: 4px;
+  }
+  .toolbar-center #scan-path {
+    min-width: 60px;
+    font-size: 12px;
+    padding: 4px 8px;
+  }
+  .toolbar-center button {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+  .toolbar-right {
+    gap: 2px;
+  }
+  .toolbar-right button.icon-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+  }
+  #main-layout {
+    flex-direction: column;
+  }
+  #left-column, #right-column {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+  #right-column {
+    max-height: 40vh;
+  }
+  .tree-header {
+    font-size: 10px;
+  }
+  .tree-row {
+    font-size: 11px;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 8px;
+  }
+  .stat-item .stat-value {
+    font-size: 16px;
+  }
+  .stat-item .stat-label {
+    font-size: 9px;
+  }
+  .drive-trigger {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+  .progress-card {
+    min-width: 280px;
+    max-width: 95vw;
+    margin: 0 8px;
+  }
+  .progress-metrics {
+    gap: 8px;
+    margin: 12px 0 8px;
+  }
+  .progress-stat .stat-val {
+    font-size: 16px;
+  }
+  .drive-menu {
+    min-width: 240px;
+    max-height: 300px;
+  }
+  .about-card {
+    min-width: 260px;
+    max-width: 90vw;
+  }
+  .about-logo {
+    width: 120px;
+    height: 120px;
+  }
+  .about-card h2 {
+    font-size: 20px;
+  }
+  .top-files-panel table {
+    font-size: 11px;
+  }
+  #h-splitter {
+    display: none;
+  }
+}
