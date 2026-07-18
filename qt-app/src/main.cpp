@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
     app.setApplicationVersion("0.0.7");
     app.setOrganizationName("DiskRaptor");
 #ifdef Q_OS_LINUX
-    app.setDesktopFileName("DiskRaptor");
+    app.setDesktopFileName("diskraptor");
 #endif
 
     // â”€â”€ WebEngine configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -172,8 +172,11 @@ int main(int argc, char *argv[])
     QIcon appIcon;
     // Try loading from filesystem first (works on all platforms)
     QStringList iconPaths = {
+        QApplication::applicationDirPath() + "/images/128x128@2x.png",
+        QApplication::applicationDirPath() + "/images/icon.ico",
         QApplication::applicationDirPath() + "/../images/128x128@2x.png",
         QApplication::applicationDirPath() + "/../images/icon.ico",
+        QApplication::applicationDirPath() + "/../share/icons/hicolor/128x128/apps/diskraptor.png",
         QDir::currentPath() + "/images/128x128@2x.png",
         frontendPath + "/../images/128x128@2x.png",
         ":/app.png",

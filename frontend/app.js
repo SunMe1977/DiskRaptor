@@ -4,11 +4,21 @@
     if (!window.__TAURI__ && window.bridge) {
         window.__TAURI__ = {
             invoke: function(cmd, args) {
-                if (window.bridge && typeof window.bridge[cmd] === 'function') {
-                    var result = window.bridge[cmd](args ? JSON.stringify(args) : '{}');
-                    try { return JSON.parse(result).data; } catch(e) { return result; }
+        if (window.bridge && typeof window.bridge[cmd] === 'function') {
+          try {
+            var result = window.bridge[cmd](args ? JSON.stringify(args) : '{}');
+            try {
+              var parsed = JSON.parse(result);
+              if (parsed && parsed.error) return Promise.reject(new Error(parsed.error));
+              return Promise.resolve(parsed && parsed.data !== undefined ? parsed.data : parsed);
+            } catch(e) {
+              return Promise.resolve(result);
+            }
+          } catch (err) {
+            return Promise.reject(err);
+          }
                 }
-                return Promise.resolve(null);
+        return Promise.reject(new Error('Bridge command not found: ' + cmd));
             },
             event: {
                 listen: function(event, cb) {
