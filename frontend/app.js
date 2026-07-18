@@ -388,12 +388,14 @@
         var drives = typeof drivesRaw === "string" ? JSON.parse(drivesRaw) : drivesRaw;
         if (!drives || drives.length === 0) return;
 
-        function driveIcon(type) {
+        function driveIcon(type, path) {
+          if (path === "/") return "🖥️";
           switch(type) {
             case "system": return "🖥️";
             case "usb": return "💾";
             case "dvd": return "💿";
             case "ram": return "⚡";
+            case "local": return path && path.startsWith("/") ? "💽" : "🖥️";
             default: return "💽";
           }
         }
@@ -409,21 +411,35 @@
         for (var i = 0; i < drives.length; i++) {
           var d = drives[i];
           var path = d.path || "";
-          var letter = path.replace(":\\", "").replace(":/", "");
+          var isRoot = path === "/" || path === "/System/Volumes/Data";
           var type = d.type || "local";
-          var name = d.name || letter + ":";
+          // On macOS, use volume name or last path component
+          var isWin = path.indexOf(":") >= 0;
+          var label;
+          if (isWin) {
+            label = path.replace(":\\", "").replace(":/", "") + ":";
+          } else {
+            // macOS: use name if available, else last path component
+            label = d.name || path;
+            if (path === "/") label = "Macintosh HD";
+          }
+          var name = d.name || label;
           var total = d.totalBytes || 0;
           var used = d.usedBytes || 0;
           var pct = d.percentFull !== undefined ? Math.round(d.percentFull) :
                     (total > 0 ? Math.round((used/total)*100) : 0);
           var free = d.freeBytes || 0;
-          var icon = driveIcon(type);
-          var isActive = scanPath.value.toUpperCase().startsWith(letter.toUpperCase() + ":");
+          var icon = driveIcon(type, path);
+          // Highlight active drive
+          var curPath = scanPath.value;
+          var isActive = isWin
+            ? curPath.toUpperCase().startsWith(label.toUpperCase())
+            : curPath === path || curPath.startsWith(path + "/");
           html += '<div class="drive-item' + (isActive ? ' active' : '') + '" data-path="' + path + '">' +
             '<span class="drive-icon">' + icon + '</span>' +
             '<div class="drive-info">' +
               '<div class="drive-info-top">' +
-                '<span class="drive-label">' + letter + ':\\</span>' +
+                '<span class="drive-label">' + label + '</span>' +
                 '<span class="drive-name">' + name + '</span>' +
               '</div>' +
               '<div class="drive-bar-row">' +
@@ -445,6 +461,20 @@
             driveMenu.classList.remove("active");
           });
         });
+        // Auto-select first real drive if none is active
+        var hasActive = driveMenu.querySelector(".drive-item.active");
+        if (!hasActive) {
+          var firstItem = driveMenu.querySelector(".drive-item");
+          if (firstItem) {
+            var p = firstItem.dataset.path;
+            if (scanPath.value) {
+              driveSelected.textContent = scanPath.value;
+            } else {
+              scanPath.value = p;
+              driveSelected.textContent = p;
+            }
+          }
+        }
       } catch (e) { console.warn("Drive load:", e); }
     }
 
