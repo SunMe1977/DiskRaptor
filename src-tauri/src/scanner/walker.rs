@@ -22,6 +22,10 @@ impl Default for ScanConfig {
             skip_dirs: vec![
                 #[cfg(windows)]
                 "C:\\Windows".into(),
+                #[cfg(target_os = "macos")]
+                "/System".into(),
+                #[cfg(target_os = "macos")]
+                "/Library".into(),
                 "target".into(),
                 ".git".into(),
             ],

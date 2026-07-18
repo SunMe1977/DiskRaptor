@@ -189,6 +189,21 @@ cat > dist/DiskRaptor.app/Contents/Info.plist << 'EOF'
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>DiskRaptor needs access to your Desktop to scan files.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>DiskRaptor needs access to your Documents to scan files.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>DiskRaptor needs access to your Downloads to scan files.</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>DiskRaptor can scan network volumes.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>DiskRaptor can scan removable volumes.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
 </dict>
 </plist>
 EOF
