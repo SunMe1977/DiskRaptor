@@ -66,13 +66,13 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - name: Upload assets
+      - name: Upload assets to release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "DiskRaptor $GITHUB_REF_NAME" --notes "Release" 2>/dev/null || true
+          echo "Tag: $GITHUB_REF_NAME, Repo: $GITHUB_REPOSITORY"
           ls -la artifacts/
           for f in artifacts/*.zip; do
-            echo "Uploading: $f"
-            gh release upload "$GITHUB_REF_NAME" "$f" --clobber
+            echo "Uploading to $GITHUB_REF_NAME: $f ($(stat -c%s "$f") bytes)"
+            gh release upload "$GITHUB_REF_NAME" "$f" --clobber -R "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           done
