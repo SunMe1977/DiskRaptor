@@ -166,8 +166,10 @@ int main(int argc, char *argv[])
     // â”€â”€ Create main window â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     MainWindow window(frontendPath);
     window.setWindowTitle("DiskRaptor " + app.applicationVersion());
-    window.setWindowIcon(QIcon(":/app.ico"));
-    app.setWindowIcon(QIcon(":/app.ico"));
+    QIcon appIcon(":/app.ico");
+    if (appIcon.isNull()) appIcon = QIcon(":/app.png");
+    window.setWindowIcon(appIcon);
+    app.setWindowIcon(appIcon);
     window.resize(1280, 860);
     window.showMaximized();
 

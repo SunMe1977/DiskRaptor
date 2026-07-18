@@ -449,8 +449,10 @@ mod platform {
         let croot = CString::new(root_path.as_bytes()).unwrap_or_default();
         let root_fd = unsafe { open(croot.as_ptr(), O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0) };
         if root_fd < 0 {
+            eprintln!("[Linux scan] Cannot open root: {} (fd={})", root_path, root_fd);
             return Err(anyhow::anyhow!("Cannot open root: {}", root_path));
         }
+        eprintln!("[Linux scan] Root opened fd={}", root_fd);
 
         let mut queue: Vec<(RawFd, u32, u16, String)> = Vec::new();
         queue.push((root_fd, root_idx, 0, root_path.to_owned()));
@@ -463,7 +465,14 @@ mod platform {
             unsafe {
                 loop {
                     let nread = getdents64(dir_fd, buf.as_mut_ptr(), BUF_SIZE);
-                    if nread <= 0 { break; }
+                    if nread < 0 {
+                        eprintln!("[Linux scan] getdents64 error fd={}: {}", dir_fd, nread);
+                        break;
+                    }
+                    if nread == 0 { break; }
+                    if nread > 0 && files_found == 0 && dirs_found == 0 {
+                        eprintln!("[Linux scan] First batch from fd={}: {} bytes", dir_fd, nread);
+                    }
 
                     let mut pos = 0usize;
                     while pos < nread as usize {
@@ -593,6 +602,9 @@ mod platform {
             unsafe { close(dir_fd); }
         }
 
+        if files_found == 0 && dirs_found == 0 {
+            eprintln!("[Linux scan] WARNING: 0 files, 0 dirs found at {}", root_path);
+        }
         progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
         finish_scan(start, arena, top_files, file_types, progress)
     }
