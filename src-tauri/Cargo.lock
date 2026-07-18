@@ -134,7 +134,6 @@ dependencies = [
  "base64",
  "crossbeam-channel",
  "jwalk",
- "libc",
  "log",
  "num_cpus",
  "parking_lot",
