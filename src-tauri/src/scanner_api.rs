@@ -68,6 +68,7 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
     std::thread::Builder::new()
         .name("scan".into())
         .spawn(move || {
+            eprintln!("[scan] starting scan of: {}", path_clone);
             struct Guard;
             impl Drop for Guard {
                 fn drop(&mut self) {
@@ -96,6 +97,7 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
 
             match walker::scan_directory_with_progress(config, progress) {
                 Ok(sr) => {
+                    eprintln!("[scan] completed: {} files, {} dirs", sr.stats.total_files, sr.stats.total_dirs);
                     let elapsed = sr.stats.scan_time_ms;
                     // Generate root-only chunk (safe for any tree size)
                     let root_chunk = crate::streaming::chunker::make_root_chunk(&sr.arena);

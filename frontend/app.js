@@ -419,9 +419,10 @@
           if (isWin) {
             label = path.replace(":\\", "").replace(":/", "") + ":";
           } else {
-            // macOS: use name if available, else last path component
+            // macOS/Linux: use name if available, else last path component
             label = d.name || path;
-            if (path === "/") label = "Macintosh HD";
+            if (path === "/" && navigator.platform === "MacIntel") label = "Macintosh HD";
+            if (path === "/" && navigator.platform !== "MacIntel") label = "/ (Root)";
           }
           var name = d.name || label;
           var total = d.totalBytes || 0;
