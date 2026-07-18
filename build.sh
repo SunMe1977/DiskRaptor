@@ -116,30 +116,35 @@ if [ -f package.json ] && [ ! -d node_modules ] && command -v npm &>/dev/null; t
 fi
 
 # Rust scanner — find cargo in all possible locations
-CARGO_BIN=""
-for dir in "$HOME/.cargo/bin" \
-           "$HOME/.rustup/toolchains/stable-*/bin" \
-           "/usr/local/cargo/bin" \
-           "/usr/lib/cargo/bin" \
-           "$CARGO_HOME/bin"; do
-  # Expand glob
-  for f in $dir; do
-    if [ -x "$f/cargo" ] || [ -x "$f/cargo.exe" ]; then
-      CARGO_BIN="$f"
-      break 2
-    fi
+# Find cargo before building
+CARGO_PATH="$(command -v cargo 2>/dev/null || true)"
+if [ -z "$CARGO_PATH" ]; then
+  # Search common locations
+  for dir in "$HOME/.cargo/bin" \
+             "$HOME/.rustup/toolchains/stable-*/bin" \
+             "/usr/local/cargo/bin" \
+             "/usr/lib/cargo/bin" \
+             "/usr/bin" \
+             "/usr/local/bin" \
+             "$CARGO_HOME/bin"; do
+    for f in $dir; do
+      if [ -x "$f/cargo" ] || [ -x "$f/cargo.exe" ]; then
+        CARGO_PATH="$f/cargo"
+        export PATH="$f:$PATH"
+        break 2
+      fi
+    done
   done
-done
+fi
 
-if [ -n "$CARGO_BIN" ]; then
-  export PATH="$CARGO_BIN:$PATH"
-  echo "  cargo: $CARGO_BIN/cargo"
-elif command -v cargo &>/dev/null; then
-  echo "  cargo: $(command -v cargo)"
+if [ -n "$CARGO_PATH" ]; then
+  echo "  cargo: $CARGO_PATH"
 else
-  echo "  ERROR: cargo not found!"
-  echo "  Install Rust manually: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-  echo "  Then run: source \"\$HOME/.cargo/env\""
+  echo "  ERROR: cargo not found anywhere!"
+  echo "  Tried: command -v, ~/.cargo/bin, /usr/bin, /usr/local/bin"
+  echo "  Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+  echo "  Or: sudo apt install cargo  (Ubuntu/Debian)"
+  echo "  Or: sudo dnf install cargo  (Fedora)"
   exit 1
 fi
 
