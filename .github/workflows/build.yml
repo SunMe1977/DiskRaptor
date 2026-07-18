@@ -31,8 +31,7 @@ jobs:
         "Qt6_DIR=C:\Qt\$env:QT_VERSION\$env:QT_ARCH\lib\cmake\Qt6" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "CMAKE_PREFIX_PATH=C:\Qt\$env:QT_VERSION\$env:QT_ARCH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-    - name: Install Ninja
-      run: choco install ninja -y --no-progress
+
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -87,21 +86,25 @@ jobs:
       shell: cmd
       run: |
         set QT=C:\Qt\6.10.3\msvc2022_64
-        echo === Qt6_DIR=%QT% ===
-        if exist "%QT%\lib\cmake\Qt6\Qt6Config.cmake" (echo Qt6Config found) else (echo Qt6Config NOT FOUND & dir /s "%QT%\Qt6*.cmake" 2>nul)
+        echo === Qt install dir ===
+        dir "%QT%" 2>nul
+        echo === Qt6 cmake ===
+        dir "%QT%\lib\cmake\Qt6" 2>nul
+        echo === cl.exe ===
+        where cl.exe 2>nul || echo cl.exe NOT FOUND
         pushd qt-app
         if exist build rmdir /s /q build
         mkdir build
         pushd build
         echo --- cmake configure ---
-        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%QT%\lib\cmake\Qt6" -DCMAKE_PREFIX_PATH="%QT%" 2>&1
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%QT%\lib\cmake\Qt6" -DCMAKE_PREFIX_PATH="%QT%" 2>&1
         if errorlevel 1 (
           echo === CONFIGURE FAILED ===
           type CMakeFiles\CMakeError.log 2>nul
           exit /b 1
         )
         echo --- cmake build ---
-        cmake --build . --config Release 2>&1
+        cmake --build . --config Release -- /verbosity:minimal 2>&1
         if errorlevel 1 (
           echo === BUILD FAILED ===
           exit /b 1
