@@ -1177,7 +1177,7 @@ mod platform {
                         None => arena.nodes[pi as usize].first_child = ci,
                     }
                     lc.insert(pi, ci);
-                    ptix.insert(full, ci);
+                    ptix.insert(full.clone(), ci);
                 } else {
                     // File — get size from fts_statp (already populated by fts)
                     let sz = if !(*ent).fts_statp.is_null() {
@@ -1225,7 +1225,7 @@ mod platform {
             }
         }
 
-        fts_close(ftsp);
+        unsafe { fts_close(ftsp); }
 
         progress(files_found, dirs_found, "Finalizing tree...");
         finish_scan(start, arena, top_files, file_types, progress)
