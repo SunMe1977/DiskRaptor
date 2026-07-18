@@ -125,7 +125,13 @@ jobs:
     - name: Stage dist
       shell: cmd
       run: |
-        set SRC=qt-app\build
+        :: VS generator puts output in Release\, Ninja puts it at build root
+        if exist qt-app\build\Release\DiskRaptor.exe (
+          set SRC=qt-app\build\Release
+        ) else (
+          set SRC=qt-app\build
+        )
+        echo === Staging from %SRC% ===
         if not exist dist mkdir dist
         if exist %SRC%\DiskRaptor.exe copy %SRC%\DiskRaptor.exe dist\ >nul
         if exist %SRC%\DiskRaptorLauncher.exe copy %SRC%\DiskRaptorLauncher.exe dist\ >nul
