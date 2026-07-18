@@ -26,6 +26,44 @@
   const CFG = window.GalaxyViewConfig;
   const GV = window.GalaxyView || {};
 
+  function noop() {}
+
+  class FallbackDataMapper {
+    mapData(scanResult, stats, topFiles) {
+      const totalSize = (stats && stats.total_size) || 0;
+      return [
+        {
+          type: "star",
+          id: "fallback-star",
+          name: "Root",
+          position: [0, 0, 0],
+          scale: Math.max(6, Math.min(20, Math.log10(Math.max(1, totalSize)) + 2)),
+          color: [1, 0.85, 0.3],
+          glow: 0.6,
+          alpha: 1,
+          active: true,
+          data: { totalFiles: (stats && stats.total_files) || 0, totalSize: totalSize },
+        },
+      ];
+    }
+  }
+
+  class FallbackNoop {
+    constructor() {}
+    initUI() {}
+    update() {}
+    dispose() {}
+    buildClusters() {}
+    simulateHistory() {}
+    analyze() {}
+    clear() {}
+    insert() {}
+    onClick() {}
+    onHover() {}
+    renderOverlay() {}
+    updateAndRenderParticles() {}
+  }
+
   class GalaxyView {
     /**
      * @param {string|HTMLElement} container - Container element or selector
@@ -57,16 +95,30 @@
       };
 
       // ── Engine modules ──────────────────────────────────────
-      this.dataMapper = new GV.DataMapper();
+      const DataMapperCtor = GV.DataMapper || FallbackDataMapper;
+      const EffectCtor = GV.EffectManager || FallbackNoop;
+      const AnimationCtor = GV.AnimationEngine || FallbackNoop;
+      const InteractionCtor = GV.InteractionController || FallbackNoop;
+      const LODCtor = GV.LODManager || FallbackNoop;
+      const TimelineCtor = GV.TimelineEngine || FallbackNoop;
+      const LiveScanCtor = GV.LiveScanEngine || FallbackNoop;
+      const InsightCtor = GV.AIInsightsEngine || FallbackNoop;
+      const PluginCtor = GV.PluginAPI || FallbackNoop;
+      const SpatialCtor = GV.SpatialIndex || FallbackNoop;
+
+      this.dataMapper = new DataMapperCtor();
       this.effects = null;
-      this.animation = new GV.AnimationEngine();
+      this.animation = new AnimationCtor();
       this.interaction = null;
-      this.lod = new GV.LODManager();
-      this.timeline = new GV.TimelineEngine(this);
-      this.liveScan = new GV.LiveScanEngine(this, this.dataMapper);
-      this.insights = new GV.AIInsightsEngine(this);
-      this.pluginAPI = new GV.PluginAPI(this);
-      this.spatialIndex = new GV.SpatialIndex(10000);
+      this.lod = new LODCtor();
+      this.timeline = new TimelineCtor(this);
+      this.liveScan = new LiveScanCtor(this, this.dataMapper);
+      this.insights = new InsightCtor(this);
+      this.pluginAPI = new PluginCtor(this);
+      this.spatialIndex = new SpatialCtor(10000);
+
+      this._EffectCtor = EffectCtor;
+      this._InteractionCtor = InteractionCtor;
 
       // Background star field
       this.backgroundStars = [];
@@ -91,17 +143,23 @@
       this._createTimeline();
 
       // Connect renderer to canvas
-      this.effects = new GV.EffectManager(this.canvas, null);
+      this.effects = new this._EffectCtor(this.canvas, null);
 
       // Connect interaction to canvas
-      this.interaction = new GV.InteractionController(this.canvas, this.camera);
+      this.interaction = new this._InteractionCtor(this.canvas, this.camera);
 
       // Init Insights
-      this.insights.initUI(this.container);
+      if (this.insights && typeof this.insights.initUI === "function") {
+        this.insights.initUI(this.container);
+      }
 
       // Set up interaction handlers
-      this.interaction.onClick((x, y, camera) => this._handleClick(x, y));
-      this.interaction.onHover((x, y, camera) => this._handleHover(x, y));
+      if (this.interaction && typeof this.interaction.onClick === "function") {
+        this.interaction.onClick((x, y, camera) => this._handleClick(x, y));
+      }
+      if (this.interaction && typeof this.interaction.onHover === "function") {
+        this.interaction.onHover((x, y, camera) => this._handleHover(x, y));
+      }
 
       // Register built-in plugins
       if (typeof GV.registerBuiltinPlugins === "function") {
@@ -109,7 +167,9 @@
       }
 
       // Init timeline
-      this.timeline.initUI(this.container.querySelector(".galaxy-timeline-wrap"));
+      if (this.timeline && typeof this.timeline.initUI === "function") {
+        this.timeline.initUI(this.container.querySelector(".galaxy-timeline-wrap"));
+      }
 
       console.log("[GalaxyView] Initialized");
       return this;
