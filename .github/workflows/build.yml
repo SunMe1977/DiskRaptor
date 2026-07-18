@@ -71,28 +71,27 @@ jobs:
               [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true
             done
           done
-          cat > dist/DiskRaptor.sh << 'EOF'
-      #!/bin/bash
-      cd "$(dirname "$0")"
-      export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
-      exec ./DiskRaptor "$@"
-      EOF
+          cat > dist/DiskRaptor.sh << 'SCRIPT'
+          #!/bin/bash
+          cd "$(dirname "$0")"
+          export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
+          exec ./DiskRaptor "$@"
+          SCRIPT
           chmod +x dist/DiskRaptor.sh
           cd dist && zip -r ../DiskRaptor-linux.zip .
       - name: Build DEB package
         run: |
-          cd ..
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p deb/DEBIAN
           cat > deb/DEBIAN/control << 'CONTROL'
-      Package: diskraptor
-      Version: 0.0.1
-      Section: utils
-      Priority: optional
-      Architecture: amd64
-      Maintainer: DiskRaptor Team
-      Description: Ultra-fast disk space analyzer
-      CONTROL
+          Package: diskraptor
+          Version: 0.0.1
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: DiskRaptor Team
+          Description: Ultra-fast disk space analyzer
+          CONTROL
           mkdir -p deb/usr/bin
           cp dist/DiskRaptor deb/usr/bin/
           cp dist/DiskRaptor.sh deb/usr/bin/
