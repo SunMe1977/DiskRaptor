@@ -135,7 +135,10 @@ class ChunkLoader {
 
   /** Load all chunks from a scan result directly (fast path — no per-chunk FFI calls) */
   loadFromResult(result) {
-    if (!result || !result.chunks) return;
+    if (!result || !result.chunks) {
+      console.warn("loadFromResult: no chunks in result");
+      return;
+    }
 
     var chunksArray;
     if (typeof result.chunks === "string") {
@@ -146,14 +149,21 @@ class ChunkLoader {
     } else if (Array.isArray(result.chunks)) {
       chunksArray = result.chunks;
     } else {
+      console.warn("loadFromResult: unknown chunks type:", typeof result.chunks);
       return;
     }
 
+    if (!Array.isArray(chunksArray) || chunksArray.length === 0) {
+      console.warn("loadFromResult: empty or invalid chunks array");
+      return;
+    }
+
+    this.scanId = result.scan_id || this.scanId;
     this.totalChunks = chunksArray.length;
     this.loadedChunks = new Set();
     this.parentMap = new Map();
 
-    // First pass: count total nodes and allocate
+    // First pass: count total nodes
     var totalNodes = 0;
     if (result.root_info && result.root_info.total_nodes) {
       totalNodes = result.root_info.total_nodes;
@@ -169,26 +179,25 @@ class ChunkLoader {
     var nodeIdx = 0;
     for (var ci = 0; ci < chunksArray.length; ci++) {
       var chunk = chunksArray[ci];
-      var nodes = chunk.nodes || [];
-      for (var ni = 0; ni < nodes.length; ni++) {
-        var node = nodes[ni];
+      if (!chunk || !chunk.nodes) continue;
+      for (var ni = 0; ni < chunk.nodes.length; ni++) {
+        var node = chunk.nodes[ni];
+        if (!node) continue;
         node._arenaIndex = nodeIdx;
         node._children = [];
         node._loadedChildren = false;
         this.allNodes[nodeIdx] = node;
 
-        if (node.parent !== 4294967295) {
+        if (node.parent !== 4294967295 && node.parent !== undefined) {
           if (!this.parentMap.has(node.parent)) {
             this.parentMap.set(node.parent, []);
           }
           this.parentMap.get(node.parent).push(nodeIdx);
         }
-
         nodeIdx++;
       }
       this.loadedChunks.add(ci);
     }
-
     this.loadedCount = nodeIdx;
 
     // Sort children by size (largest first)
