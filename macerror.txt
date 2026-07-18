@@ -1,0 +1,109 @@
+aptor/qt-app/../src-tauri/target/release/diskraptor_scanner.dll
+  — scan will be unavailable
+
+
+-- DiskRaptor 0.0.7 â€” Qt 6.11.1
+-- Configuring done (15.2s)
+-- Generating done (0.7s)
+-- Build files have been written to: /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build
+[7/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o
+FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o 
+/usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src -isystem /usr/local/opt/qt/lib/QtCore.framework/Headers -iframework /usr/local/opt/qt/lib -isystem /usr/local/opt/qt/share/qt/mkspecs/macx-clang -isystem /usr/local/opt/qt/include -isystem /usr/local/opt/qt/lib/QtGui.framework/Headers -isystem /usr/local/opt/qt/lib/QtWidgets.framework/Headers -isystem /usr/local/opt/qt/lib/QtWebEngineWidgets.framework/Headers -isystem /usr/local/opt/qt/lib/QtWebEngineCore.framework/Headers -isystem /usr/local/opt/qt/lib/QtNetwork.framework/Headers -isystem /usr/local/opt/qt/lib/QtQuick.framework/Headers -isystem /usr/local/opt/qt/lib/QtQml.framework/Headers -isystem /usr/local/opt/qt/include/QtQmlIntegration -isystem /usr/local/opt/qt/lib/QtOpenGL.framework/Headers -isystem /usr/local/opt/qt/lib/QtWebChannel.framework/Headers -isystem /usr/local/opt/qt/lib/QtPositioning.framework/Headers -isystem /usr/local/opt/qt/lib/QtPrintSupport.framework/Headers -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o -MF CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o.d -o CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o -c /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:28:10: error: use of undeclared identifier 'loadRustLibrary'
+    if (!loadRustLibrary()) {
+         ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:36:5: error: use of undeclared identifier 'unloadRustLibrary'
+    unloadRustLibrary();
+    ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:59:14: error: use of undeclared identifier 'm_drGetChunk'
+        if (!m_drGetChunk) {
+             ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:63:23: error: use of undeclared identifier 'm_drGetChunk'
+        char* cjson = m_drGetChunk(chunkIndex);
+                      ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:68:9: error: use of undeclared identifier 'm_drFreeString'
+        m_drFreeString(cjson);
+        ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:74:42: error: use of undeclared identifier 'm_drIsRunning'
+        bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
+                                         ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:74:26: error: use of undeclared identifier 'm_drIsRunning'
+        bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
+                         ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:82:34: error: conversion from 'long' to 'const QJsonValue' is ambiguous
+            rootNode["parent"] = 4294967295;
+                                 ^~~~~~~~~~
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:52:5: note: candidate constructor
+    QJsonValue(bool b);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:53:5: note: candidate constructor
+    QJsonValue(double n);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:54:5: note: candidate constructor
+    QJsonValue(int n);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:55:5: note: candidate constructor
+    QJsonValue(qint64 v);
+    ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:83:39: error: conversion from 'long' to 'const QJsonValue' is ambiguous
+            rootNode["first_child"] = 4294967295;
+                                      ^~~~~~~~~~
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:52:5: note: candidate constructor
+    QJsonValue(bool b);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:53:5: note: candidate constructor
+    QJsonValue(double n);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:54:5: note: candidate constructor
+    QJsonValue(int n);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:55:5: note: candidate constructor
+    QJsonValue(qint64 v);
+    ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:84:40: error: conversion from 'long' to 'const QJsonValue' is ambiguous
+            rootNode["next_sibling"] = 4294967295;
+                                       ^~~~~~~~~~
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:52:5: note: candidate constructor
+    QJsonValue(bool b);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:53:5: note: candidate constructor
+    QJsonValue(double n);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:54:5: note: candidate constructor
+    QJsonValue(int n);
+    ^
+/usr/local/opt/qt/lib/QtCore.framework/Headers/qjsonvalue.h:55:5: note: candidate constructor
+    QJsonValue(qint64 v);
+    ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:123:18: error: use of undeclared identifier 'm_drStartScan'
+            if (!m_drStartScan) {
+                 ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:127:28: error: use of undeclared identifier 'm_drStartScan'
+            char* result = m_drStartScan(pathUtf8.constData());
+                           ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:131:17: error: use of undeclared identifier 'm_drFreeString'
+                m_drFreeString(result);
+                ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:221:10: error: use of undeclared identifier 'm_drGetProgress'
+    if (!m_drGetProgress) {
+         ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:225:19: error: use of undeclared identifier 'm_drGetProgress'
+    char* cjson = m_drGetProgress();
+                  ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:231:5: error: use of undeclared identifier 'm_drFreeString'
+    m_drFreeString(cjson);
+    ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:240:10: error: use of undeclared identifier 'm_drGetResult'
+    if (!m_drGetResult) {
+         ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:244:19: error: use of undeclared identifier 'm_drGetResult'
+    char* cjson = m_drGetResult();
+                  ^
+/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:250:5: error: use of undeclared identifier 'm_drFreeString'
+    m_drFreeString(cjson);
+    ^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+[9/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/webviewwindow.cpp.o
+ninja: build stopped: subcommand failed.
+hjh@Hansjoergs-Mac DiskRaptor % 
