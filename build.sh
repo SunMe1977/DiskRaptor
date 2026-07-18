@@ -35,11 +35,12 @@ command -v cmake  &>/dev/null || NEEDS="$NEEDS cmake"
 command -v ninja  &>/dev/null || NEEDS="$NEEDS ninja"
 command -v node   &>/dev/null || NEEDS="$NEEDS node"
 command -v rustc  &>/dev/null || NEEDS="$NEEDS rust"
+command -v cargo  &>/dev/null || NEEDS="$NEEDS cargo"
 command -v git    &>/dev/null || NEEDS="$NEEDS git"
 
 if [ -n "$NEEDS" ]; then
   echo "  Installing:$NEEDS"
-  case "$NEEDS" in *rust*)
+  case "$NEEDS" in *rust*|*cargo*)
     echo "  Installing Rust..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     if [ -f "$HOME/.cargo/env" ]; then
