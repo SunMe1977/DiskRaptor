@@ -12,6 +12,9 @@
 #include <QLibrary>
 #include <QMutex>
 #include <QAtomicInt>
+#include <QHash>
+#include <QVector>
+#include <QPair>
 
 class IpcBridge : public QObject
 {
@@ -83,6 +86,9 @@ private:
     qint64 m_cppStartTimeMs = 0;
     QString m_cppScanPath;
     int m_cppScanId = 0;
+    QHash<QString, quint64> m_cppTypeMap;
+    QHash<QString, quint64> m_cppTypeBytes;
+    QVector<QPair<quint64, QString>> m_cppTopFiles;
 
     void cppStartScan(const QString &path);
     void cppCancelScan();

@@ -534,10 +534,16 @@ void IpcBridge::cppStartScan(const QString &path)
     m_cppScanRunning = true;
 
     m_cppScanThread = QThread::create([this, path]() {
+        // Use QDirIterator with name filters to traverse all files
         QDirIterator it(path, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
                         QDirIterator::Subdirectories);
         quint64 files = 0, dirs = 0, bytes = 0;
         qint64 lastProgress = 0;
+        QHash<QString, quint64> typeMap; // ext -> count
+        QHash<QString, quint64> typeBytes; // ext -> bytes
+        // Min-heap for top files (keep top 100 largest)
+        QVector<QPair<quint64, QString>> topFiles;
+
         while (it.hasNext()) {
             if (!m_cppScanRunning) break;
             QString fullPath = it.next();
@@ -546,8 +552,21 @@ void IpcBridge::cppStartScan(const QString &path)
                 dirs++;
             } else if (fi.isFile()) {
                 files++;
-                bytes += fi.size();
+                qint64 sz = fi.size();
+                bytes += sz;
+                // Track file type
+                QString ext = fi.suffix().isEmpty() ? "(none)" : fi.suffix().toLower();
+                typeMap[ext]++;
+                typeBytes[ext] += sz;
+                // Track top files (keep sorted, limited to 100)
+                if (sz > 0) {
+                    topFiles.append({static_cast<quint64>(sz), fullPath});
+                    std::sort(topFiles.begin(), topFiles.end(),
+                        [](const auto &a, const auto &b) { return a.first > b.first; });
+                    if (topFiles.size() > 100) topFiles.resize(100);
+                }
             }
+            // Update progress every 50ms
             qint64 now = QDateTime::currentMSecsSinceEpoch();
             if (now - lastProgress > 50) {
                 QMutexLocker lock(&m_cppMutex);
@@ -555,6 +574,9 @@ void IpcBridge::cppStartScan(const QString &path)
                 m_cppDirsFound = dirs;
                 m_cppBytesFound = bytes;
                 m_cppCurrentDir = fullPath;
+                m_cppTypeMap = typeMap;
+                m_cppTypeBytes = typeBytes;
+                m_cppTopFiles = topFiles;
                 lastProgress = now;
             }
         }
@@ -562,6 +584,9 @@ void IpcBridge::cppStartScan(const QString &path)
         m_cppFilesFound = files;
         m_cppDirsFound = dirs;
         m_cppBytesFound = bytes;
+        m_cppTypeMap = typeMap;
+        m_cppTypeBytes = typeBytes;
+        m_cppTopFiles = topFiles;
         m_cppScanRunning = false;
         qDebug() << "[DiskRaptor] C++ scan complete:" << files << "files," << dirs << "dirs";
     });
@@ -601,23 +626,54 @@ QString IpcBridge::cppGetResultJson()
         return resultToJson(false, QVariant(), "scan still running");
     }
     qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_cppStartTimeMs;
+
+    // Build top_files array
+    QJsonArray topFilesArr;
+    int topCount = 0;
+    for (const auto &pair : m_cppTopFiles) {
+        if (topCount++ >= 50) break;
+        QJsonObject tf;
+        tf["path"] = pair.second;
+        tf["size"] = static_cast<qint64>(pair.first);
+        tf["size_human"] = "-";
+        topFilesArr.append(tf);
+    }
+
+    // Build file_type_breakdown array
+    QJsonArray typeBreakdown;
+    QStringList exts = m_cppTypeMap.keys();
+    std::sort(exts.begin(), exts.end(), [this](const QString &a, const QString &b) {
+        return m_cppTypeBytes.value(a, 0) > m_cppTypeBytes.value(b, 0);
+    });
+    for (const QString &ext : exts) {
+        QJsonObject ft;
+        ft["extension"] = ext;
+        ft["count"] = static_cast<qint64>(m_cppTypeMap.value(ext));
+        ft["total_size"] = static_cast<qint64>(m_cppTypeBytes.value(ext));
+        ft["size_human"] = "-";
+        typeBreakdown.append(ft);
+    }
+
     QJsonObject stats;
     stats["total_files"] = static_cast<qint64>(m_cppFilesFound);
     stats["total_dirs"] = static_cast<qint64>(m_cppDirsFound);
     stats["total_size"] = static_cast<qint64>(m_cppBytesFound);
     stats["scan_time_ms"] = elapsed;
-    stats["top_files"] = QJsonArray();
-    stats["file_type_breakdown"] = QJsonArray();
+    stats["top_files"] = topFilesArr;
+    stats["file_type_breakdown"] = typeBreakdown;
     stats["size_human"] = "-";
     stats["time_human"] = QString::number(elapsed / 1000) + "s";
+
     QJsonObject ri;
     ri["root_index"] = 0;
     ri["total_nodes"] = static_cast<qint64>(m_cppFilesFound + m_cppDirsFound + 1);
     ri["total_chunks"] = 1;
+
     QJsonObject resultObj;
     resultObj["stats"] = stats;
     resultObj["root_info"] = ri;
     resultObj["scan_id"] = m_cppScanId;
+
     QJsonObject wrapper;
     wrapper["success"] = true;
     wrapper["data"] = resultObj;
