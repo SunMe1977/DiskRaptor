@@ -790,14 +790,15 @@
         progressSpeedValEl.textContent = "✓";
 
         var result = null;
-        for (var ri = 0; ri < 60; ri++) {
+        // Try up to 5 times with 100ms delay (max 500ms) instead of 60x500ms
+        for (var ri = 0; ri < 5; ri++) {
           result = await window.__TAURI__
             .invoke("get_scan_result", { scanId: scanId })
             .catch(function () {
               return null;
             });
-          if (result) break;
-          await sleep(500);
+          if (result && result.stats) break;
+          await sleep(100);
         }
 clearTimeout(safetyTimer);
         progressOverlay.classList.remove("active");
