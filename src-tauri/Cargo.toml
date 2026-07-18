@@ -9,6 +9,14 @@ edition = "2021"
 name = "diskraptor_scanner"
 crate-type = ["cdylib", "lib"]
 
+[[bin]]
+name = "gen-testdata"
+path = "src/bin/gen_testdata.rs"
+
+[[bin]]
+name = "clean-testdata"
+path = "src/bin/clean_testdata.rs"
+
 [dev-dependencies]
 walkdir = "2"
 
