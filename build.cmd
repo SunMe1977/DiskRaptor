@@ -119,4 +119,23 @@ echo ==========================================
 echo.
 echo  EXE: dist\DiskRaptor.exe
 echo.
+
+REM -- Create NSIS installer if makensis is available
+where makensis >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    echo [EXTRA] Creating NSIS installer...
+    cd /d "%~dp0installer\nsis"
+    makensis DiskRaptor.nsi
+    if %ERRORLEVEL% equ 0 (
+        copy DiskRaptor_*.exe "%~dp0dist\" >nul
+        echo  OK - NSIS installer created
+    ) else (
+        echo  WARNING: NSIS installer creation failed
+    )
+    cd /d "%~dp0"
+) else (
+    echo  NSIS not found - skipping installer creation
+    echo  Install NSIS from https://nsis.sourceforge.io to create setup.exe
+)
+echo.
 pause

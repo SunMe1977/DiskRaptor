@@ -62,7 +62,6 @@ jobs:
           $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $vsPath) { throw "VS not found" }
           echo "VS_PATH=$vsPath" >> $env:GITHUB_OUTPUT
-          echo "VS version: $vsPath"
 
       - name: Build Qt app
         shell: cmd
@@ -107,6 +106,13 @@ jobs:
           if exist qt-app\build\QtWebEngineProcess.exe copy qt-app\build\QtWebEngineProcess.exe dist\
           powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows.zip -Force"
 
+      - name: Create NSIS installer
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer\nsis\DiskRaptor.nsi
+          Copy-Item installer\nsis\DiskRaptor_*.exe dist\
+
       - name: Run scan test
         shell: cmd
         run: node test_scan.mjs "%USERPROFILE%"
@@ -119,7 +125,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-windows
-          path: DiskRaptor-windows.zip
+          path: |
+            DiskRaptor-windows.zip
+            dist/DiskRaptor_*.exe
 
   macos:
     name: macOS Build
@@ -163,22 +171,52 @@ jobs:
           if [ -d qt-app/build/DiskRaptor.app ]; then
             cp -R qt-app/build/DiskRaptor.app dist/
           else
-            cp qt-app/build/DiskRaptor dist/
+            mkdir -p dist/DiskRaptor.app/Contents/MacOS
+            mkdir -p dist/DiskRaptor.app/Contents/Resources
+            cp qt-app/build/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
+            cp -R frontend dist/DiskRaptor.app/Contents/Resources/
+            [ -d images ] && cp -R images dist/DiskRaptor.app/Contents/Resources/
+            [ -f images/icon.icns ] && cp images/icon.icns dist/DiskRaptor.app/Contents/Resources/
+            cat > dist/DiskRaptor.app/Contents/Info.plist << 'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>DiskRaptor</string>
+    <key>CFBundleIdentifier</key><string>com.diskraptor.app</string>
+    <key>CFBundleName</key><string>DiskRaptor</string>
+    <key>CFBundleVersion</key><string>0.0.1</string>
+    <key>CFBundleShortVersionString</key><string>0.0.1</string>
+    <key>CFBundleIconFile</key><string>icon</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
           fi
-          cp -R frontend dist/frontend
-          if [ -d images ]; then cp -R images dist/images; fi
-          # Copy Rust scanner dylib if it exists
+          # Bundle Qt frameworks
+          QT_BIN="$(brew --prefix qt@6)/bin"
+          if [ -f "$QT_BIN/macdeployqt" ]; then
+            "$QT_BIN/macdeployqt" dist/DiskRaptor.app -verbose=1
+          fi
+          # Copy Rust scanner dylib
           if [ -f src-tauri/target/release/libdiskraptor_scanner.dylib ]; then
-            cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/
+            cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/
           fi
+          # Create DMG installer
+          hdiutil create -volname DiskRaptor -srcfolder dist/DiskRaptor.app -ov -format UDZO DiskRaptor-macos.dmg
+          # Create zip
           cd dist
-          zip -r ../DiskRaptor-macos.zip .
+          zip -r ../DiskRaptor-macos.zip DiskRaptor.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-macos
-          path: DiskRaptor-macos.zip
+          path: |
+            DiskRaptor-macos.zip
+            DiskRaptor-macos.dmg
 
   linux:
     name: Linux Build
@@ -229,6 +267,22 @@ jobs:
           if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then
             cp src-tauri/target/release/libdiskraptor_scanner.so dist/
           fi
+          # Copy Qt libraries
+          mkdir -p dist/lib
+          for lib in libQt6Core libQt6Gui libQt6Widgets libQt6WebEngineCore libQt6WebEngineWidgets libQt6WebChannel libQt6Network libQt6OpenGL libQt6Positioning libQt6PrintSupport libQt6Qml libQt6Quick libQt6Svg; do
+            for f in /usr/lib/x86_64-linux-gnu/${lib}.so.*; do
+              [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true
+            done
+          done
+          # Create launcher script
+          cat > dist/DiskRaptor.sh << 'SCRIPT'
+#!/bin/bash
+cd "$(dirname "$0")"
+export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
+export QT_QPA_PLATFORM_PLUGIN_PATH="$PWD/lib"
+exec ./DiskRaptor "$@"
+SCRIPT
+          chmod +x dist/DiskRaptor.sh
           cd dist
           zip -r ../DiskRaptor-linux.zip .
 
@@ -255,6 +309,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${GITHUB_REF_NAME}" --title "DiskRaptor ${GITHUB_REF_NAME}" --notes "Automated release" 2>/dev/null || true
-          gh release upload "${GITHUB_REF_NAME}" artifacts/DiskRaptor-windows/DiskRaptor-windows.zip --clobber
-          gh release upload "${GITHUB_REF_NAME}" artifacts/DiskRaptor-macos/DiskRaptor-macos.zip --clobber
-          gh release upload "${GITHUB_REF_NAME}" artifacts/DiskRaptor-linux/DiskRaptor-linux.zip --clobber
+          # Upload all artifacts recursively
+          find artifacts -type f \( -name "*.zip" -o -name "*.dmg" -o -name "*.exe" \) -exec gh release upload "${GITHUB_REF_NAME}" {} --clobber \;
