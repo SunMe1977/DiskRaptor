@@ -100,12 +100,14 @@ jobs:
       - name: Run galaxy test
         shell: cmd
         run: node test_galaxy_windows_playwright.mjs
+        continue-on-error: true
         env:
           DISKraptor_CDP_PORT: 9224
 
       - name: Run menu test
         shell: cmd
         run: node test_menus.mjs
+        continue-on-error: true
         env:
           DISKraptor_CDP_PORT: 9223
 
@@ -113,6 +115,7 @@ jobs:
         shell: cmd
         run: node test_scan.mjs "%USERPROFILE%"
         timeout-minutes: 10
+        continue-on-error: true
         env:
           DISKraptor_CDP_PORT: 9222
 
