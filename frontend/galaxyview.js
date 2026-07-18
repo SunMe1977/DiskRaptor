@@ -24,6 +24,7 @@
   }
 
   const CFG = window.GalaxyViewConfig;
+  const GV = window.GalaxyView || {};
 
   class GalaxyView {
     /**
@@ -56,16 +57,16 @@
       };
 
       // ── Engine modules ──────────────────────────────────────
-      this.dataMapper = new GalaxyView.DataMapper();
-      this.effects = new GalaxyView.EffectManager(null, null);
-      this.animation = new GalaxyView.AnimationEngine();
-      this.interaction = new GalaxyView.InteractionController(null, this.camera);
-      this.lod = new GalaxyView.LODManager();
-      this.timeline = new GalaxyView.TimelineEngine(this);
-      this.liveScan = new GalaxyView.LiveScanEngine(this, this.dataMapper);
-      this.insights = new GalaxyView.AIInsightsEngine(this);
-      this.pluginAPI = new GalaxyView.PluginAPI(this);
-      this.spatialIndex = new GalaxyView.SpatialIndex(10000);
+      this.dataMapper = new GV.DataMapper();
+      this.effects = null;
+      this.animation = new GV.AnimationEngine();
+      this.interaction = null;
+      this.lod = new GV.LODManager();
+      this.timeline = new GV.TimelineEngine(this);
+      this.liveScan = new GV.LiveScanEngine(this, this.dataMapper);
+      this.insights = new GV.AIInsightsEngine(this);
+      this.pluginAPI = new GV.PluginAPI(this);
+      this.spatialIndex = new GV.SpatialIndex(10000);
 
       // Background star field
       this.backgroundStars = [];
@@ -90,10 +91,10 @@
       this._createTimeline();
 
       // Connect renderer to canvas
-      this.effects = new GalaxyView.EffectManager(this.canvas, null);
+      this.effects = new GV.EffectManager(this.canvas, null);
 
       // Connect interaction to canvas
-      this.interaction = new GalaxyView.InteractionController(this.canvas, this.camera);
+      this.interaction = new GV.InteractionController(this.canvas, this.camera);
 
       // Init Insights
       this.insights.initUI(this.container);
@@ -103,7 +104,9 @@
       this.interaction.onHover((x, y, camera) => this._handleHover(x, y));
 
       // Register built-in plugins
-      GalaxyView.registerBuiltinPlugins(this.pluginAPI);
+      if (typeof GV.registerBuiltinPlugins === "function") {
+        GV.registerBuiltinPlugins(this.pluginAPI);
+      }
 
       // Init timeline
       this.timeline.initUI(this.container.querySelector(".galaxy-timeline-wrap"));

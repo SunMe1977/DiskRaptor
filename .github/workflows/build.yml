@@ -1,4 +1,4 @@
-name: Build DiskRaptor (all platforms)
+name: Build DiskRaptor CI
 
 on:
   push:
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ─── Windows ───────────────────────────────────────────
+  # Windows
   windows:
     runs-on: windows-latest
     steps:
@@ -116,7 +116,7 @@ jobs:
         files: DiskRaptor-windows.zip
         fail_on_unmatched_files: true
 
-  # ─── macOS ───────────────────────────────────────────
+  # macOS
   macos:
     runs-on: macos-latest
     steps:
@@ -207,7 +207,7 @@ PLIST
         files: DiskRaptor-macos.zip
         fail_on_unmatched_files: true
 
-  # ─── Linux ───────────────────────────────────────────
+  # Linux
   linux:
     runs-on: ubuntu-latest
     steps:

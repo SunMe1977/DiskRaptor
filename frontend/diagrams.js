@@ -175,7 +175,8 @@ class DiagramRenderer {
     const colors = this._colors();
 
     let startAngle = -Math.PI / 2;
-    const maxLabels = Math.min(this.files.length, 12);
+    const maxLabels = Math.min(this.files.length, 8);
+    const usedLabelBoxes = [];
 
     this.files.forEach((file, i) => {
       const sliceAngle = (file.size / totalSize) * Math.PI * 2;
@@ -209,16 +210,26 @@ class DiagramRenderer {
         radius: r,
       });
 
-      if (sliceAngle > 0.06 && i < maxLabels) {
+      if (sliceAngle > 0.2 && i < maxLabels) {
         const mid = startAngle + sliceAngle / 2;
         const lx = cx + Math.cos(mid) * (r * 0.65);
         const ly = cy + Math.sin(mid) * (r * 0.65);
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 10px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
         const name = this._shortName(file.path);
-        ctx.fillText(name, lx, ly);
+        const drawName = this._ellipsize(name, 16);
+        const tw = ctx.measureText(drawName).width;
+        const th = 11;
+        const box = { x: lx - tw / 2 - 2, y: ly - th / 2, w: tw + 4, h: th };
+        const overlaps = usedLabelBoxes.some((b) =>
+          box.x < b.x + b.w && box.x + box.w > b.x && box.y < b.y + b.h && box.y + box.h > b.y,
+        );
+        if (!overlaps) {
+          usedLabelBoxes.push(box);
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(drawName, lx, ly);
+        }
       }
       startAngle += sliceAngle;
     });
@@ -231,7 +242,7 @@ class DiagramRenderer {
     const maxLeg = Math.min(this.files.length, 18);
     for (let i = 0; i < maxLeg; i++) {
       const f = this.files[i];
-      const name = this._shortName(f.path);
+      const name = this._ellipsize(this._shortName(f.path), 18);
       const pct = ((f.size / totalSize) * 100).toFixed(1);
       ctx.fillStyle = colors[i % colors.length];
       ctx.fillRect(lx, ly, 8, 8);
@@ -423,20 +434,27 @@ class DiagramRenderer {
       });
 
       // Label if cell is big enough
-      if (rw > 28 && rh > 14) {
+      if (rw > 44 && rh > 16) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rx + 1, ry + 1, rw - 2, rh - 2);
+        ctx.clip();
+
         ctx.fillStyle = "rgba(255,255,255,0.95)";
         ctx.font = "bold 9px sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        const name = this._shortName(r.path);
+        const maxNameChars = Math.max(6, Math.floor((rw - 8) / 5.5));
+        const name = this._ellipsize(this._shortName(r.path), maxNameChars);
         ctx.fillText(name, rx + 3, ry + 3);
 
-        // Size on second line if enough height
-        if (rh > 26) {
-          ctx.fillStyle = "rgba(255,255,255,0.6)";
+        // Size on second line if enough room
+        if (rh > 28 && rw > 70) {
+          ctx.fillStyle = "rgba(255,255,255,0.7)";
           ctx.font = "8px sans-serif";
           ctx.fillText(r.size_human, rx + 3, ry + 14);
         }
+        ctx.restore();
       }
     }
 
@@ -591,6 +609,13 @@ class DiagramRenderer {
 
   _shortName(p) {
     return p.split("\\").pop() || p.split("/").pop() || p;
+  }
+
+  _ellipsize(text, maxChars) {
+    if (!text) return "";
+    if (text.length <= maxChars) return text;
+    if (maxChars <= 1) return text.substring(0, 1);
+    return text.substring(0, Math.max(1, maxChars - 1)) + "…";
   }
 
   _colors() {
