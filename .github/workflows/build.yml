@@ -57,7 +57,22 @@ jobs:
       - run: rustup set profile minimal && rustup toolchain install stable && rustup target add x86_64-apple-darwin
       - run: cd src-tauri && cargo build --release --target x86_64-apple-darwin
       - run: export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6" && cd qt-app && rm -rf build && mkdir build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$Qt6_DIR" && cmake --build . --config Release
-      - run: mkdir -p dist && cp -R qt-app/build/DiskRaptor.app dist/ && QT_BIN="$(brew --prefix qt@6)/bin" && if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" dist/DiskRaptor.app -verbose=1; fi && cp src-tauri/target/x86_64-apple-darwin/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/ && cd dist && zip -r ../DiskRaptor-macos-x64.zip DiskRaptor.app && cd .. && hdiutil create -volname DiskRaptor -srcfolder dist/DiskRaptor.app -ov -format UDZO DiskRaptor-macos-x64.dmg
+      - name: Package
+        run: |
+          APP="dist/DiskRaptor.app"
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor "$APP/Contents/MacOS/"
+          cp -R frontend "$APP/Contents/Resources/"
+          [ -d images ] && cp -R images "$APP/Contents/Resources/"
+          [ -f images/icon.icns ] && cp images/icon.icns "$APP/Contents/Resources/"
+          sed "s/VERSION_PLACEHOLDER/$VER/g" installer/Info.plist.in > "$APP/Contents/Info.plist"
+          QT_BIN="$(brew --prefix qt@6)/bin"
+          if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" "$APP" -verbose=1; fi
+          cp src-tauri/target/x86_64-apple-darwin/release/libdiskraptor_scanner.dylib "$APP/Contents/MacOS/"
+          codesign --force --deep --sign - "$APP"
+          cd dist && zip -r ../DiskRaptor-macos-x64.zip DiskRaptor.app && cd ..
+          hdiutil create -volname DiskRaptor -srcfolder "$APP" -ov -format UDZO DiskRaptor-macos-x64.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-macos-x64
@@ -74,7 +89,22 @@ jobs:
       - run: rustup set profile minimal && rustup toolchain install stable && rustup target add aarch64-apple-darwin
       - run: cd src-tauri && cargo build --release --target aarch64-apple-darwin
       - run: export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6" && cd qt-app && rm -rf build && mkdir build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$Qt6_DIR" && cmake --build . --config Release
-      - run: mkdir -p dist && cp -R qt-app/build/DiskRaptor.app dist/ && QT_BIN="$(brew --prefix qt@6)/bin" && if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" dist/DiskRaptor.app -verbose=1; fi && cp src-tauri/target/aarch64-apple-darwin/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/ && cd dist && zip -r ../DiskRaptor-macos-arm64.zip DiskRaptor.app && cd .. && hdiutil create -volname DiskRaptor -srcfolder dist/DiskRaptor.app -ov -format UDZO DiskRaptor-macos-arm64.dmg
+      - name: Package
+        run: |
+          APP="dist/DiskRaptor.app"
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor "$APP/Contents/MacOS/"
+          cp -R frontend "$APP/Contents/Resources/"
+          [ -d images ] && cp -R images "$APP/Contents/Resources/"
+          [ -f images/icon.icns ] && cp images/icon.icns "$APP/Contents/Resources/"
+          sed "s/VERSION_PLACEHOLDER/$VER/g" installer/Info.plist.in > "$APP/Contents/Info.plist"
+          QT_BIN="$(brew --prefix qt@6)/bin"
+          if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" "$APP" -verbose=1; fi
+          cp src-tauri/target/aarch64-apple-darwin/release/libdiskraptor_scanner.dylib "$APP/Contents/MacOS/"
+          codesign --force --deep --sign - "$APP"
+          cd dist && zip -r ../DiskRaptor-macos-arm64.zip DiskRaptor.app && cd ..
+          hdiutil create -volname DiskRaptor -srcfolder "$APP" -ov -format UDZO DiskRaptor-macos-arm64.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-macos-arm64
