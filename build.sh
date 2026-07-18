@@ -105,12 +105,13 @@ echo "  Creating DiskRaptor.app bundle..."
 mkdir -p dist/DiskRaptor.app/Contents/MacOS
 mkdir -p dist/DiskRaptor.app/Contents/Resources
 
-# Generate .icns icon from source PNG (macOS only, uses built-in sips + iconutil)
+# Generate .icns icon from source PNG
 ICON_SRC="images/logo6_original.png"
 ICONSET="dist/DiskRaptor.app/Contents/Resources/DiskRaptor.iconset"
 ICON_DEST="dist/DiskRaptor.app/Contents/Resources/icon.icns"
 if [ -f "$ICON_SRC" ] && command -v iconutil &>/dev/null; then
   echo "  Generating icon.icns..."
+  rm -rf "$ICONSET"
   mkdir -p "$ICONSET"
   for size in 16 32 64 128 256 512 1024; do
     sips -z $size $size "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}.png" &>/dev/null
@@ -118,10 +119,14 @@ if [ -f "$ICON_SRC" ] && command -v iconutil &>/dev/null; then
       sips -z $((size*2)) $((size*2)) "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}@2x.png" &>/dev/null
     fi
   done
-  iconutil -c icns "$ICONSET" -o "$ICON_DEST" 2>/dev/null && rm -rf "$ICONSET"
-  echo "  icon.icns created"
-elif [ -f "images/icon.ico" ] && command -v iconutil &>/dev/null; then
-  echo "  (PNG source not found, skipping icns generation)"
+  echo "  Running iconutil..."
+  iconutil -c icns "$ICONSET" -o "$ICON_DEST"
+  if [ $? -eq 0 ] && [ -f "$ICON_DEST" ]; then
+    rm -rf "$ICONSET"
+    echo "  icon.icns created ($(stat -f%z "$ICON_DEST" 2>/dev/null || stat -c%s "$ICON_DEST" 2>/dev/null || echo 'ok') bytes)"
+  else
+    echo "  Warning: icon.icns creation failed, using placeholder"
+  fi
 fi
 
 # cmake with MACOSX_BUNDLE TRUE outputs inside .app bundle
@@ -136,6 +141,18 @@ else
 fi
 cp -r frontend dist/DiskRaptor.app/Contents/Resources/
 cp -r images dist/DiskRaptor.app/Contents/Resources/ 2>/dev/null || true
+
+# Copy Rust scanner dynamic library
+RUST_SCANNER_SRC="src-tauri/target/release"
+if [ -f "$RUST_SCANNER_SRC/libdiskraptor_scanner.dylib" ]; then
+  cp "$RUST_SCANNER_SRC/libdiskraptor_scanner.dylib" dist/DiskRaptor.app/Contents/MacOS/
+  echo "  Rust scanner: libdiskraptor_scanner.dylib"
+elif [ -f "$RUST_SCANNER_SRC/diskraptor_scanner.dll" ]; then
+  cp "$RUST_SCANNER_SRC/diskraptor_scanner.dll" dist/DiskRaptor.app/Contents/MacOS/
+  echo "  Rust scanner: diskraptor_scanner.dll"
+else
+  echo "  Warning: Rust scanner library not found"
+fi
 
 # Copy Qt runtime libs (skip if unchanged)
 qt_path="$QT_PREFIX"
