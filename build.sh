@@ -115,18 +115,34 @@ if [ -f package.json ] && [ ! -d node_modules ] && command -v npm &>/dev/null; t
   npm install --ignore-scripts 2>/dev/null || true
 fi
 
-# Rust scanner
-if ! command -v cargo &>/dev/null; then
-  if [ -d "$HOME/.cargo/bin" ]; then
-    export PATH="$HOME/.cargo/bin:$PATH"
-  elif [ -d "$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin" ]; then
-    export PATH="$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH"
-  else
-    echo "  ERROR: cargo still not found after install"
-    echo "  Try: source \"\$HOME/.cargo/env\""
-    exit 1
-  fi
+# Rust scanner — find cargo in all possible locations
+CARGO_BIN=""
+for dir in "$HOME/.cargo/bin" \
+           "$HOME/.rustup/toolchains/stable-*/bin" \
+           "/usr/local/cargo/bin" \
+           "/usr/lib/cargo/bin" \
+           "$CARGO_HOME/bin"; do
+  # Expand glob
+  for f in $dir; do
+    if [ -x "$f/cargo" ] || [ -x "$f/cargo.exe" ]; then
+      CARGO_BIN="$f"
+      break 2
+    fi
+  done
+done
+
+if [ -n "$CARGO_BIN" ]; then
+  export PATH="$CARGO_BIN:$PATH"
+  echo "  cargo: $CARGO_BIN/cargo"
+elif command -v cargo &>/dev/null; then
+  echo "  cargo: $(command -v cargo)"
+else
+  echo "  ERROR: cargo not found!"
+  echo "  Install Rust manually: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+  echo "  Then run: source \"\$HOME/.cargo/env\""
+  exit 1
 fi
+
 echo "  Rust scanner..."
 cd src-tauri
 cargo build --release
