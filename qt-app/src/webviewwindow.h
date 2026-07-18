@@ -13,6 +13,8 @@
 #include <QVBoxLayout>
 #include <QStatusBar>
 #include <QProgressBar>
+#include <QSystemTrayIcon>
+#include <QCloseEvent>
 #include <QUrl>
 #include <QDir>
 #include <QDebug>
@@ -37,6 +39,10 @@ private slots:
     void onAbout();
     void onThemeChanged(const QString &theme);
     void onLanguageChanged(const QString &code);
+    void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
 
 private:
     void setupUI();
@@ -45,6 +51,7 @@ private:
 
     // Helper: run JS in the webview
     void runJS(const QString &js);
+    void setupTrayIcon();
 
     // UI elements
     QWebEngineView *m_webView = nullptr;
@@ -53,6 +60,10 @@ private:
 
     QLabel *m_statusLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;
+
+    // System tray
+    QSystemTrayIcon *m_trayIcon = nullptr;
+    QMenu *m_trayMenu = nullptr;
 
     // Menu items
     QMenu *m_viewMenu = nullptr;
