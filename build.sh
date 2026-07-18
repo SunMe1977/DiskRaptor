@@ -260,6 +260,16 @@ EOF
     if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then
       cp src-tauri/target/release/libdiskraptor_scanner.so dist/
       echo "  Rust scanner: libdiskraptor_scanner.so"
+      # Copy Rust std libs needed by the scanner
+      RUST_LIB="$(rustc --print sysroot)/lib"
+      if [ -d "$RUST_LIB" ]; then
+        for lib in librustc_driver.so libstd-*.so; do
+          for f in "$RUST_LIB/$lib"; do
+            [ -f "$f" ] && cp -n "$f" dist/ 2>/dev/null || true
+          done
+        done
+        echo "  Rust runtime libs copied"
+      fi
     fi
     echo "  App: dist/DiskRaptor"
     echo "  Run: LD_LIBRARY_PATH=dist ./dist/DiskRaptor"
