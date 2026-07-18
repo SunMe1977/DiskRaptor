@@ -116,6 +116,17 @@ if [ -f package.json ] && [ ! -d node_modules ] && command -v npm &>/dev/null; t
 fi
 
 # Rust scanner
+if ! command -v cargo &>/dev/null; then
+  if [ -d "$HOME/.cargo/bin" ]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+  elif [ -d "$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin" ]; then
+    export PATH="$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH"
+  else
+    echo "  ERROR: cargo still not found after install"
+    echo "  Try: source \"\$HOME/.cargo/env\""
+    exit 1
+  fi
+fi
 echo "  Rust scanner..."
 cd src-tauri
 cargo build --release
