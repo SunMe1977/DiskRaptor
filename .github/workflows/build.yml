@@ -71,27 +71,37 @@ jobs:
         Write-Host "Qt6_DIR: $env:Qt6_DIR"
         Write-Host "CMAKE_PREFIX_PATH: $env:CMAKE_PREFIX_PATH"
         $null = Get-Command cl.exe -ErrorAction SilentlyContinue; Write-Host "cl.exe found: $(Test-Path (Get-Command cl.exe -ErrorAction SilentlyContinue).Source)"
-        $null = Get-Command ninja -ErrorAction SilentlyContinue; Write-Host "ninja found: $(Test-Path (Get-Command ninja -ErrorAction SilentlyContinue).Source)"
         $null = Get-Command rc.exe -ErrorAction SilentlyContinue; Write-Host "rc.exe found: $(Test-Path (Get-Command rc.exe -ErrorAction SilentlyContinue).Source)"
         Write-Host "=== Rust DLL check ==="
         $rustDll = "src-tauri/target/release/diskraptor_scanner.dll"
         Write-Host "$rustDll exists: $(Test-Path $rustDll)"
-        Write-Host "=== Qt install check ==="
-        $qtDir = "C:\Qt\6.10.3\msvc2022_64"
-        Write-Host "Qt root exists: $(Test-Path $qtDir)"
-        Write-Host "Qt cmake dir: $(Test-Path "$qtDir/lib/cmake/Qt6/Qt6Config.cmake")"
-        Write-Host "windeployqt: $(Test-Path "$qtDir/bin/windeployqt.exe")"
+        Write-Host "=== Qt install check (try both paths) ==="
+        @(
+          "C:\Qt\6.10.3\win64_msvc2022_64",
+          "C:\Qt\6.10.3\msvc2022_64"
+        ) | ForEach-Object {
+          Write-Host "$_ root: $(Test-Path $_)"
+          Write-Host "$_ cmake: $(Test-Path "$_/lib/cmake/Qt6/Qt6Config.cmake")"
+          Write-Host "$_ windeployqt: $(Test-Path "$_/bin/windeployqt.exe")"
+        }
+        Write-Host "=== Full Qt dir listing ==="
+        Get-ChildItem "C:\Qt\6.10.3" -ErrorAction SilentlyContinue | Select-Object Name | Format-Table -AutoSize
 
     - name: Build Qt app
       shell: cmd
       run: |
-        set QT=C:\Qt\6.10.3\msvc2022_64
+        :: aqtinstall with arch win64_msvc2022_64 puts Qt at this path
+        set QT=C:\Qt\6.10.3\win64_msvc2022_64
         echo === Qt install dir ===
-        dir "%QT%" 2>nul
+        dir "%QT%" 2>nul || ( echo ERROR: Qt dir not found & exit /b 1 )
         echo === Qt6 cmake ===
-        dir "%QT%\lib\cmake\Qt6" 2>nul
+        dir "%QT%\lib\cmake\Qt6" 2>nul || ( echo ERROR: Qt6 cmake config not found & exit /b 1 )
         echo === cl.exe ===
         where cl.exe 2>nul || echo cl.exe NOT FOUND
+        echo === rc.exe ===
+        where rc.exe 2>nul || echo rc.exe NOT FOUND
+        echo === lib.exe ===
+        where lib.exe 2>nul || echo lib.exe NOT FOUND
         pushd qt-app
         if exist build rmdir /s /q build
         mkdir build
@@ -100,11 +110,11 @@ jobs:
         cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%QT%\lib\cmake\Qt6" -DCMAKE_PREFIX_PATH="%QT%" 2>&1
         if errorlevel 1 (
           echo === CONFIGURE FAILED ===
-          type CMakeFiles\CMakeError.log 2>nul
+          if exist CMakeFiles\CMakeError.log type CMakeFiles\CMakeError.log
           exit /b 1
         )
         echo --- cmake build ---
-        cmake --build . --config Release -- /verbosity:minimal 2>&1
+        cmake --build . --config Release 2>&1
         if errorlevel 1 (
           echo === BUILD FAILED ===
           exit /b 1
