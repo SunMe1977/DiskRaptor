@@ -24,7 +24,22 @@ jobs:
       run: |
         pip install aqtinstall
         aqt install-qt --outputdir C:\Qt windows desktop 6.10.3 win64_msvc2022_64 --modules qtwebengine qtwebchannel
-        "Qt6_DIR=C:\Qt\6.10.3\win64_msvc2022_64\lib\cmake\Qt6" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        # Find the actual Qt installation path (aqtinstall dir name varies)
+        $qtDirs = Get-ChildItem "C:\Qt\6.10.3" -Directory -ErrorAction SilentlyContinue
+        if (-not $qtDirs) {
+          Get-ChildItem "C:\Qt" -ErrorAction SilentlyContinue | Select-Object FullName | Write-Host
+          throw "No Qt installation found under C:\Qt\6.10.3"
+        }
+        $qtRoot = $qtDirs[0].FullName
+        $qt6Dir = Join-Path $qtRoot "lib\cmake\Qt6"
+        if (-not (Test-Path $qt6Dir)) {
+          Write-Host "Contents of $qtRoot :"
+          Get-ChildItem $qtRoot -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName | Write-Host
+          throw "Qt6 cmake config not found at $qt6Dir"
+        }
+        Write-Host "Found Qt at: $qtRoot"
+        "Qt6_DIR=$qt6Dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "CMAKE_PREFIX_PATH=$qtRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -53,12 +68,27 @@ jobs:
     - name: Debug pre-build
       shell: pwsh
       run: |
-        Write-Host "=== Qt dirs ==="
-        Get-ChildItem "C:\Qt\6.10.3" -ErrorAction SilentlyContinue | Select-Object FullName | Format-Table -AutoSize
-        Write-Host "=== PATH cmake ==="
-        Get-Command cmake.exe -ErrorAction SilentlyContinue | Select-Object Source
-        Write-Host "=== Env ==="
-        Write-Host "Qt6_DIR: $env:Qt6_DIR"
+        Write-Host "=== Qt6_DIR env ==="
+        Write-Host "Qt6_DIR=$env:Qt6_DIR"
+        Write-Host ""
+        Write-Host "=== Checking Qt6_DIR path ==="
+        if (Test-Path $env:Qt6_DIR) {
+          Write-Host "$env:Qt6_DIR EXISTS"
+        } else {
+          Write-Host "$env:Qt6_DIR NOT FOUND"
+          Write-Host ""
+          Write-Host "=== C:\Qt directory tree ==="
+          Get-ChildItem "C:\Qt" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
+          Write-Host ""
+          Write-Host "=== Trying to find Qt6Config.cmake ==="
+          $files = Get-ChildItem "C:\Qt" -Filter "Qt6Config.cmake" -Recurse -ErrorAction SilentlyContinue
+          if ($files) {
+            $files | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+          } else {
+            Write-Host "No Qt6Config.cmake found anywhere under C:\Qt"
+          }
+          throw "Qt6_DIR path not found: $env:Qt6_DIR"
+        }
 
     # ── Build ──────────────────────────────────────────────
     - name: Build Rust scanner DLL

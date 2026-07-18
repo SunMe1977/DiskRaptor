@@ -18,15 +18,12 @@ fi
 # ── Install missing tools ─────────────────────
 echo ""
 echo "[2] Checking tools..."
-NEEDS=""
-brew ls --formula qt@6       &>/dev/null || NEEDS="$NEEDS qt@6"
-brew ls --formula cmake      &>/dev/null || NEEDS="$NEEDS cmake"
-brew ls --formula ninja      &>/dev/null || NEEDS="$NEEDS ninja"
-if [ -n "$NEEDS" ]; then
-  echo "  Installing:$NEEDS"
-  brew install $NEEDS
-else
+# Single brew call for all formulae (much faster than 3 separate calls)
+if brew ls --formula qt@6 cmake ninja &>/dev/null; then
   echo "  All tools present"
+else
+  echo "  Installing missing tools..."
+  brew install qt@6 cmake ninja
 fi
 
 # ── Rust ──────────────────────────────────────
