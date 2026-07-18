@@ -86,15 +86,15 @@ jobs:
     - name: Build Qt app
       shell: cmd
       run: |
-        echo === Qt6_DIR=%Qt6_DIR% ===
-        echo === CMAKE_PREFIX_PATH=%CMAKE_PREFIX_PATH% ===
-        echo === PATH snippet: %PATH:~0,200% ===
+        set QT=C:\Qt\6.10.3\msvc2022_64
+        echo === Qt6_DIR=%QT% ===
+        if exist "%QT%\lib\cmake\Qt6\Qt6Config.cmake" (echo Qt6Config found) else (echo Qt6Config NOT FOUND & dir /s "%QT%\Qt6*.cmake" 2>nul)
         pushd qt-app
         if exist build rmdir /s /q build
         mkdir build
         pushd build
         echo --- cmake configure ---
-        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%" 2>&1
+        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%QT%\lib\cmake\Qt6" -DCMAKE_PREFIX_PATH="%QT%" 2>&1
         if errorlevel 1 (
           echo === CONFIGURE FAILED ===
           type CMakeFiles\CMakeError.log 2>nul
