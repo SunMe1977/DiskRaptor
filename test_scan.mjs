@@ -57,7 +57,7 @@ async function connectCDP(wsUrl) {
         const id = ++msgId;
         pending.set(id, { resolve, reject });
         ws.send(JSON.stringify({ id, method, params }));
-        setTimeout(() => reject(new Error(`CDP timeout: ${method}`)), 15000);
+        setTimeout(() => reject(new Error(`CDP timeout: ${method}`)), 60000);
       });
     },
     close() { ws.close(); },

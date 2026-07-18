@@ -146,7 +146,13 @@
     // Set default scan path to user home after init and DOM binding.
     try {
       var home = await window.__TAURI__.invoke("get_home_dir");
-      var homePath = typeof home === "string" ? home : null;
+      var homePath = null;
+      if (typeof home === "string") {
+        homePath = home;
+      } else if (home && typeof home === "object") {
+        // Handle wrapped response format
+        homePath = home.data ? String(home.data) : null;
+      }
       if (homePath && scanPath && !scanPath.value) {
         scanPath.value = homePath;
       }
@@ -516,14 +522,21 @@
     btnBrowse.addEventListener("click", async function () {
       try {
         var selected = await window.__TAURI__.invoke("pick_directory");
-        if (selected && typeof selected === "string") {
-          scanPath.value = selected;
+        var dir = null;
+        if (typeof selected === "string" && selected.length > 0) {
+          dir = selected;
+        } else if (selected && typeof selected === "object" && selected.data) {
+          dir = String(selected.data);
+        }
+        if (dir) {
+          scanPath.value = dir;
           document.querySelector(".status-bar").textContent =
-            "Selected: " + selected;
+            "Selected: " + dir;
         }
       } catch (err) {
+        // If dialog fails (e.g. headless), focus the input for manual entry
         document.querySelector(".status-bar").textContent =
-          "Browse click - manual entry";
+          "Click to type path manually";
         document.getElementById("scan-path").focus();
         document.getElementById("scan-path").select();
       }

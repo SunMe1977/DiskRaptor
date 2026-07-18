@@ -429,6 +429,10 @@ pub fn scan_simple(
     let mut ptix: HashMap<String, u32> = HashMap::new();
     ptix.insert(root_path.into(), root_idx);
     let mut lc: HashMap<u32, u32> = HashMap::new();
+    let mut files_found: u64 = 0;
+    let mut dirs_found: u64 = 0;
+    let mut bytes_found: u64 = 0;
+    let mut last_progress = Instant::now();
 
     for entry_result in WalkDir::new(root_path).follow_links(false) {
         if arena.nodes.len() > 20_000_000 { break; }
@@ -442,6 +446,7 @@ pub fn scan_simple(
             .unwrap_or_else(|| root_path.into());
         let pi = *ptix.get(&parent).unwrap_or(&root_idx);
         if is_dir {
+            dirs_found += 1;
             if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) { continue; }
             let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
             let ci = arena.alloc(TreeNode {
@@ -454,9 +459,11 @@ pub fn scan_simple(
                 None => arena.nodes[pi as usize].first_child = ci,
             }
             lc.insert(pi, ci);
-            ptix.insert(full, ci);
+            ptix.insert(full.clone(), ci);
         } else {
+            files_found += 1;
             let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            bytes_found += sz;
             let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
             let ci = arena.alloc(TreeNode {
                 name: file_name, size: sz, file_count: 1, dir_count: 0,
@@ -473,7 +480,12 @@ pub fn scan_simple(
                 file_types.add(&full, sz);
             }
         }
+        if last_progress.elapsed().as_millis() >= 100 {
+            progress(files_found, dirs_found, bytes_found, &full);
+            last_progress = Instant::now();
+        }
     }
+    progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
     finish_scan(start, arena, top_files, file_types, progress)
 }
 
