@@ -530,6 +530,21 @@
       var speedSamples = [];
       var maxSamples = 40;
 
+      function formatBytesPerSec(bps) {
+        if (bps <= 0) return "0 B/s";
+        var units = ["B/s","KB/s","MB/s","GB/s"];
+        var i = Math.min(Math.floor(Math.log(bps) / Math.log(1024)), 3);
+        var v = bps / Math.pow(1024, i);
+        return v.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+      }
+
+      function speedColor(ratio) {
+        // ratio 0..1: green -> yellow -> red
+        if (ratio > 0.7) return "#3fb950";  // green (normal)
+        if (ratio > 0.4) return "#d29922";  // yellow (medium)
+        return "#f85149";  // red (slow)
+      }
+
       function drawSpeedChart() {
         if (!speedChartCtx) return;
         var w = speedChartCanvas.width;
@@ -537,53 +552,60 @@
         var ctx = speedChartCtx;
         ctx.clearRect(0, 0, w, h);
         if (speedSamples.length < 2) return;
-        var maxVal = Math.max.apply(null, speedSamples) || 1;
+        var maxVal = Math.max.apply(null, speedSamples.map(function(s){return s.fps})) || 1;
+        var maxBps = Math.max.apply(null, speedSamples.map(function(s){return s.bps})) || 1;
         var pad = 4;
         var cw = w - pad * 2;
         var ch = h - pad * 2;
-        // Grid lines
-        ctx.strokeStyle = "rgba(255,255,255,0.06)";
-        ctx.lineWidth = 1;
-        for (var gi = 0; gi < 3; gi++) {
-          var gy = pad + (ch / 3) * gi;
-          ctx.beginPath();
-          ctx.moveTo(pad, gy);
-          ctx.lineTo(w - pad, gy);
-          ctx.stroke();
-        }
-        // Speed line (gradient fill below)
-        var grad = ctx.createLinearGradient(0, pad, 0, h - pad);
-        grad.addColorStop(0, "rgba(63,185,80,0.35)");
-        grad.addColorStop(1, "rgba(63,185,80,0.02)");
-        // Draw filled area
-        ctx.beginPath();
         var step = cw / Math.max(speedSamples.length - 1, 1);
+
+        // Draw filled area with gradient from green to red
         for (var si = 0; si < speedSamples.length; si++) {
           var sx = pad + si * step;
-          var sy = pad + ch - (speedSamples[si] / maxVal) * ch;
-          if (si === 0) ctx.moveTo(sx, h - pad);
-          ctx.lineTo(sx, sy);
+          var sy = pad + ch - (speedSamples[si].fps / maxVal) * ch;
+          var ratio = speedSamples[si].fps / maxVal;
+          ctx.fillStyle = speedColor(ratio);
+          ctx.globalAlpha = 0.15;
+          ctx.fillRect(sx - step/2, sy, step, h - pad - sy);
         }
-        ctx.lineTo(pad + (speedSamples.length - 1) * step, h - pad);
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-        // Draw speed line
-        ctx.beginPath();
-        for (var si2 = 0; si2 < speedSamples.length; si2++) {
-          var sx2 = pad + si2 * step;
-          var sy2 = pad + ch - (speedSamples[si2] / maxVal) * ch;
-          if (si2 === 0) ctx.moveTo(sx2, sy2);
-          else ctx.lineTo(sx2, sy2);
+        ctx.globalAlpha = 1;
+
+        // Draw speed line with segment colors
+        for (var si = 0; si < speedSamples.length - 1; si++) {
+          var sx1 = pad + si * step;
+          var sy1 = pad + ch - (speedSamples[si].fps / maxVal) * ch;
+          var sx2 = pad + (si + 1) * step;
+          var sy2 = pad + ch - (speedSamples[si+1].fps / maxVal) * ch;
+          var ratio = (speedSamples[si].fps + speedSamples[si+1].fps) / 2 / maxVal;
+          ctx.beginPath();
+          ctx.moveTo(sx1, sy1);
+          ctx.lineTo(sx2, sy2);
+          ctx.strokeStyle = speedColor(ratio);
+          ctx.lineWidth = 2;
+          ctx.stroke();
         }
-        ctx.strokeStyle = "#3fb950";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        // Label: peak speed
-        ctx.fillStyle = "rgba(255,255,255,0.3)";
+
+        // Center: big speed number
+        var current = speedSamples[speedSamples.length - 1];
+        if (current) {
+          var cx = w / 2;
+          var cy = h / 2;
+          ctx.fillStyle = "rgba(255,255,255,0.9)";
+          ctx.font = "bold 22px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(Math.round(current.fps).toLocaleString() + " f/s", cx, cy - 8);
+          ctx.fillStyle = "rgba(255,255,255,0.5)";
+          ctx.font = "11px monospace";
+          ctx.fillText(formatBytesPerSec(current.bps), cx, cy + 14);
+        }
+
+        // Peak label top-right
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
         ctx.font = "9px monospace";
         ctx.textAlign = "right";
-        ctx.fillText(Math.round(maxVal).toLocaleString() + " f/s", w - pad, pad + 10);
+        ctx.textBaseline = "top";
+        ctx.fillText("peak " + Math.round(maxVal).toLocaleString() + " f/s", w - pad, pad);
       }
 
       progressOverlay.classList.add("active");
@@ -628,6 +650,7 @@
 
           var filesFound = Number(p.files_found || p.filesFound || 0);
           var dirsFound = Number(p.dirs_found || p.dirsFound || 0);
+          var bytesFound = Number(p.bytes_found || p.bytesFound || 0);
           var elapsedSecs = p.elapsed_secs || p.elapsedSecs || 0;
 
           // ── Update 3-icon metrics ──
@@ -645,9 +668,10 @@
           // ── Speed ──
           if (elapsedSecs > 0 && filesFound > 0) {
             var filesPerSec = (filesFound / elapsedSecs);
+            var bytesPerSec = (bytesFound / elapsedSecs);
             progressSpeedValEl.textContent = Math.round(filesPerSec).toLocaleString();
             // Track sample for chart
-            speedSamples.push(filesPerSec);
+            speedSamples.push({fps: filesPerSec, bps: bytesPerSec});
             if (speedSamples.length > maxSamples) speedSamples.shift();
             drawSpeedChart();
           } else {

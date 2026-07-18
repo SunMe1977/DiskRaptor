@@ -12,6 +12,7 @@ struct ScanState {
     result: Mutex<Option<ScanResultData>>,
     pub files_found: AtomicU64,
     pub dirs_found: AtomicU64,
+    pub bytes_found: AtomicU64,
     pub current_dir: Mutex<String>,
     pub start_time: Mutex<Instant>,
     running: AtomicBool,
@@ -31,6 +32,7 @@ static STATE: LazyLock<ScanState> = LazyLock::new(|| ScanState {
     result: Mutex::new(None),
     files_found: AtomicU64::new(0),
     dirs_found: AtomicU64::new(0),
+    bytes_found: AtomicU64::new(0),
     current_dir: Mutex::new(String::new()),
     start_time: Mutex::new(Instant::now()),
     running: AtomicBool::new(false),
@@ -57,6 +59,7 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
     let scan_id = state.scan_id.fetch_add(1, Ordering::Relaxed) + 1;
     state.files_found.store(0, Ordering::Relaxed);
     state.dirs_found.store(0, Ordering::Relaxed);
+    state.bytes_found.store(0, Ordering::Relaxed);
     *state.current_dir.lock().unwrap() = path_str.clone();
     *state.start_time.lock().unwrap() = Instant::now();
     *state.result.lock().unwrap() = None;
@@ -78,9 +81,10 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
                 root_path: path_clone.clone(),
                 ..walker::ScanConfig::default()
             };
-            let progress = Box::new(move |files: u64, dirs: u64, msg: &str| {
+            let progress = Box::new(move |files: u64, dirs: u64, bytes: u64, msg: &str| {
                 state.files_found.store(files, Ordering::Relaxed);
                 state.dirs_found.store(dirs, Ordering::Relaxed);
+                state.bytes_found.store(bytes, Ordering::Relaxed);
                 if !msg.is_empty() {
                     *state.current_dir.lock().unwrap() = msg.to_owned();
                 }
@@ -127,13 +131,14 @@ pub extern "C" fn dr_get_progress() -> *mut c_char {
     let is_running = state.running.load(Ordering::Acquire);
     let rg = state.result.lock().unwrap();
     let has_result = rg.is_some();
-    let (files, dirs) = if has_result {
+    let (files, dirs, bytes) = if has_result {
         let r = rg.as_ref().unwrap();
-        (r.stats.total_files, r.stats.total_dirs)
+        (r.stats.total_files, r.stats.total_dirs, r.stats.total_size)
     } else {
         (
             state.files_found.load(Ordering::Relaxed),
             state.dirs_found.load(Ordering::Relaxed),
+            state.bytes_found.load(Ordering::Relaxed),
         )
     };
     drop(rg);
@@ -149,6 +154,7 @@ pub extern "C" fn dr_get_progress() -> *mut c_char {
     CString::new(
         serde_json::json!({
             "files_found": files, "dirs_found": dirs,
+            "bytes_found": bytes,
             "is_running": is_running, "current_dir": cd,
             "elapsed_secs": elapsed, "phase": phase,
         })
