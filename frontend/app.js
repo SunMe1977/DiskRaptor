@@ -1,36 +1,3 @@
-
-// Qt bridge polyfill for Tauri compatibility
-(function() {
-    if (!window.__TAURI__ && window.bridge) {
-        window.__TAURI__ = {
-            invoke: function(cmd, args) {
-        if (window.bridge && typeof window.bridge[cmd] === 'function') {
-          try {
-            var result = window.bridge[cmd](args ? JSON.stringify(args) : '{}');
-            try {
-              var parsed = JSON.parse(result);
-              if (parsed && parsed.error) return Promise.reject(new Error(parsed.error));
-              return Promise.resolve(parsed && parsed.data !== undefined ? parsed.data : parsed);
-            } catch(e) {
-              return Promise.resolve(result);
-            }
-          } catch (err) {
-            return Promise.reject(err);
-          }
-                }
-        return Promise.reject(new Error('Bridge command not found: ' + cmd));
-            },
-            event: {
-                listen: function(event, cb) {
-                    document.addEventListener(event, function(e) { cb({ payload: e.detail }); });
-                },
-                emit: function(event, data) {
-                    document.dispatchEvent(new CustomEvent(event, { detail: data }));
-                }
-            }
-        };
-    }
-})();
 /**
  * DiskRaptor - Main application controller.
  */
@@ -115,15 +82,6 @@
       btnTheme.title = isLight ? "Switch to dark mode" : "Switch to light mode";
     });
 
-    // Set default scan path to home directory (works on all platforms)
-    window.__TAURI__.invoke("get_home_dir").then(function(home) {
-      var path = typeof home === "string" ? home : (home && home.data ? home.data : null);
-      if (path) {
-        var input = document.getElementById("scan-path");
-        if (input && !input.value) input.value = path;
-      }
-    }).catch(function(){});
-
     const loader = new ChunkLoader();
     window.__loader = loader;
     const treeView = new TreeView("tree-viewport", loader);
@@ -184,6 +142,17 @@
     var progressPath = document.getElementById("progress-path");
     var aboutOverlay = document.getElementById("about-overlay");
     var aboutClose = document.getElementById("btn-about-close");
+
+    // Set default scan path to user home after init and DOM binding.
+    try {
+      var home = await window.__TAURI__.invoke("get_home_dir");
+      var homePath = typeof home === "string" ? home : null;
+      if (homePath && scanPath && !scanPath.value) {
+        scanPath.value = homePath;
+      }
+    } catch (e) {
+      console.warn("get_home_dir failed:", e && e.message ? e.message : e);
+    }
 
     // Galaxy view state
     var galaxyView = null;
