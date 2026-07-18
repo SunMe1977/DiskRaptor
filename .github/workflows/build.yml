@@ -36,7 +36,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install aqtinstall
-          python -m aqt install-qt windows desktop 6.6.3 win64_msvc2019_64 -O C:\Qt
+          python -m aqt install-qt windows desktop 6.6.3 win64_msvc2022_64 --modules qtwebengine -O C:\Qt
           python -m aqt install-tool windows desktop tools_ninja -O C:\Qt
           python -m aqt install-tool windows desktop tools_cmake -O C:\Qt
 
@@ -67,7 +67,7 @@ jobs:
           )
           call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
           set "PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;%PATH%"
-          set "CMAKE_PREFIX_PATH=C:\Qt\6.6.3\msvc2019_64"
+          set "CMAKE_PREFIX_PATH=C:\Qt\6.6.3\msvc2022_64"
           pushd qt-app
           if exist build rmdir /s /q build
           mkdir build
