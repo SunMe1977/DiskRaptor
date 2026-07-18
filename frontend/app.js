@@ -539,10 +539,10 @@
       }
 
       function speedColor(ratio) {
-        // ratio 0..1: green -> yellow -> red
-        if (ratio > 0.7) return "#3fb950";  // green (normal)
-        if (ratio > 0.4) return "#d29922";  // yellow (medium)
-        return "#f85149";  // red (slow)
+        // ratio 0..1: low=green, normal=green, peak=red
+        if (ratio < 0.3) return "#d29922";  // yellow (low)
+        if (ratio < 0.7) return "#3fb950";  // green (normal)
+        return "#f85149";  // red (peak)
       }
 
       function drawSpeedChart() {
@@ -590,27 +590,34 @@
         if (current) {
           var cx = w / 2;
           var cy = h / 2;
-          // MB/s in large bold
-          ctx.fillStyle = "rgba(255,255,255,0.95)";
+          // MB/s in large bold — use solid dark text for light-theme compat
+          ctx.fillStyle = "#e6edf3";
+          ctx.shadowColor = "rgba(0,0,0,0.6)";
+          ctx.shadowBlur = 4;
           ctx.font = "bold 24px monospace";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(formatBytesPerSec(current.bps), cx, cy - 10);
           // f/s smaller below
-          ctx.fillStyle = "rgba(255,255,255,0.5)";
+          ctx.fillStyle = "#8b949e";
+          ctx.shadowBlur = 2;
           ctx.font = "12px monospace";
           ctx.fillText(Math.round(current.fps).toLocaleString() + " f/s", cx, cy + 14);
+          ctx.shadowBlur = 0;
         }
 
         // Peak labels top-right
-        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.shadowColor = "rgba(0,0,0,0.5)";
+        ctx.shadowBlur = 3;
+        ctx.fillStyle = "#8b949e";
         ctx.font = "9px monospace";
         ctx.textAlign = "right";
         ctx.textBaseline = "top";
         ctx.fillText("peak " + formatBytesPerSec(maxBps), w - pad, pad);
-        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.fillStyle = "#6e7681";
         ctx.font = "8px monospace";
         ctx.fillText(Math.round(maxVal).toLocaleString() + " f/s", w - pad, pad + 11);
+        ctx.shadowBlur = 0;
       }
 
       progressOverlay.classList.add("active");
