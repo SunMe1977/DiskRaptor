@@ -404,6 +404,7 @@ bool IpcBridge::loadRustLibrary()
     for (const QString &dir : searchPaths) {
         for (const QString &name : libNames) {
             QString fullPath = dir + "/" + name;
+            qDebug() << "[DiskRaptor] Looking for scanner at:" << fullPath << "exists:" << QFile::exists(fullPath);
             if (QFile::exists(fullPath)) {
                 m_rustLib = new QLibrary(fullPath);
                 if (m_rustLib->load()) {
