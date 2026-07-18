@@ -90,16 +90,6 @@ private:
     QHash<QString, quint64> m_cppTypeMap;
     QHash<QString, quint64> m_cppTypeBytes;
     QVector<QPair<quint64, QString>> m_cppTopFiles;
-    // Tree: parent path -> list of (name, isDir, size, fileCount, dirCount)
-    struct CppTreeNode {
-        QString name;
-        bool isDir;
-        quint64 size;
-        quint64 fileCount;
-        quint64 dirCount;
-    };
-    QHash<QString, QVector<CppTreeNode>> m_cppTree;
-    QStringList m_cppTreeLevel1; // sorted first-level dir names
 
     void cppStartScan(const QString &path);
     void cppCancelScan();
