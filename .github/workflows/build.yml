@@ -36,7 +36,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install aqtinstall
-          python -m aqt install-qt windows desktop 6.6.3 win64_msvc2019_64 --modules qtwebengine -O C:\Qt
+          python -m aqt install-qt windows desktop 6.6.3 win64_msvc2019_64 --modules qtwebengine qtwebchannel -O C:\Qt
           python -m aqt install-tool windows desktop tools_ninja -O C:\Qt
           python -m aqt install-tool windows desktop tools_cmake -O C:\Qt
 
