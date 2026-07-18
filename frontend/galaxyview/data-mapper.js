@@ -320,41 +320,35 @@
 
     _createMoons(topFiles, totalFiles, totalSize) {
       if (!topFiles || !topFiles.length) return;
-      const maxMoons = Math.min(topFiles.length, 200);
+      const maxPlanets = Math.min(topFiles.length, 500);
 
-      for (let i = 0; i < maxMoons; i++) {
+      for (let i = 0; i < maxPlanets; i++) {
         const file = topFiles[i];
         const filePath = (file.path || file || "");
         const fileName = filePath.split(/[/\\]/).pop() || filePath;
         const fileSize = file.size || 0;
         const fileType = getFileType(fileName);
 
-        // Assign to a parent planet
-        const parentPlanet = this.planets[i % Math.max(this.planets.length, 1)];
-        const parentPos = parentPlanet ? parentPlanet.position : [0, 0, 0];
-        const moonAngle = (i / maxMoons) * Math.PI * 2;
-        const moonRadius = 3 + fileSize * CFG.galaxy.moonOrbitScale;
+        const angle = (i / maxPlanets) * Math.PI * 2 + Math.random() * 0.1;
+        const radius = 20 + (i / maxPlanets) * 80 + Math.random() * 10;
 
-        this.moons.push({
-          type: "moon",
-          id: "moon-" + i,
+        this.planets.push({
+          type: "planet",
+          id: "file-planet-" + i,
           name: fileName,
           path: filePath,
           position: [
-            parentPos[0] + Math.cos(moonAngle) * moonRadius,
-            parentPos[1] + (Math.random() - 0.5) * 2,
-            parentPos[2] + Math.sin(moonAngle) * moonRadius,
+            Math.cos(angle) * radius,
+            (Math.random() - 0.5) * 10,
+            Math.sin(angle) * radius,
           ],
-          scale: sizeToRadius(fileSize, CFG.galaxy.moonMinRadius, CFG.galaxy.moonMaxRadius),
-          color: parseColor(getMoonColor(fileType)),
-          glow: 0.2,
+          scale: sizeToRadius(fileSize, 0.5, 8),
+          color: parseColor(getFileTypeColor(fileType)),
+          glow: 0.3,
           alpha: 0.9,
-          sparkle: Math.random() > 0.7,
-          parentId: parentPlanet ? parentPlanet.id : null,
-          parentPosition: parentPos,
-          orbitRadius: moonRadius,
-          orbitAngle: moonAngle,
-          orbitSpeed: 0.002 + Math.random() * 0.003,
+          orbitRadius: radius,
+          orbitAngle: angle,
+          orbitSpeed: 0.0002 + Math.random() * 0.0003,
           data: { size: fileSize, type: fileType, path: filePath },
           lodLevel: 0,
         });
