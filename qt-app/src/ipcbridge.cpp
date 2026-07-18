@@ -183,6 +183,8 @@ QString IpcBridge::openExplorer(const QString &path)
 #ifdef Q_OS_WIN
     ShellExecuteW(0, L"open", L"explorer.exe",
                   (L"/select,\"" + path.toStdWString() + L"\"").c_str(), 0, SW_SHOW);
+#elif defined(Q_OS_MACOS)
+    QProcess::startDetached("open", {"-R", path});
 #elif defined(Q_OS_LINUX)
     QProcess::startDetached("xdg-open", {QFileInfo(path).dir().absolutePath()});
 #endif
@@ -194,6 +196,8 @@ QString IpcBridge::openTerminal(const QString &path)
     QString dir = QFileInfo(path).isDir() ? path : QFileInfo(path).dir().absolutePath();
 #ifdef Q_OS_WIN
     QProcess::startDetached("cmd.exe", {"/k", "cd", "/d", dir});
+#elif defined(Q_OS_MACOS)
+    QProcess::startDetached("open", {"-a", "Terminal", dir});
 #elif defined(Q_OS_LINUX)
     QProcess::startDetached("x-terminal-emulator", {"--working-directory", dir});
 #endif
