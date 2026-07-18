@@ -41,7 +41,12 @@ static STATE: LazyLock<ScanState> = LazyLock::new(|| ScanState {
 #[no_mangle]
 pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
     let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s.replace('/', "\\"),
+        Ok(s) => {
+            #[cfg(windows)]
+            { s.replace('/', "\\") }
+            #[cfg(not(windows))]
+            { s.to_string() }
+        },
         Err(e) => return make_json_error(&format!("invalid path UTF-8: {}", e)),
     };
     let state = &*STATE;

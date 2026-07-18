@@ -64,63 +64,77 @@ jobs:
       env:
         CARGO_BUILD_JOBS: 2
 
-    - name: Debug env before Qt build
+    - name: Pre-build checks
       shell: pwsh
       run: |
-        Write-Host "=== Environment check ==="
-        Write-Host "Qt6_DIR: $env:Qt6_DIR"
-        Write-Host "CMAKE_PREFIX_PATH: $env:CMAKE_PREFIX_PATH"
-        $null = Get-Command cl.exe -ErrorAction SilentlyContinue; Write-Host "cl.exe found: $(Test-Path (Get-Command cl.exe -ErrorAction SilentlyContinue).Source)"
-        $null = Get-Command rc.exe -ErrorAction SilentlyContinue; Write-Host "rc.exe found: $(Test-Path (Get-Command rc.exe -ErrorAction SilentlyContinue).Source)"
-        Write-Host "=== Rust DLL check ==="
+        Write-Host "=== Tool checks ==="
+        Write-Host "cl.exe: $((Get-Command cl.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join ', ')"
+        Write-Host "rc.exe: $((Get-Command rc.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join ', ')"
+        Write-Host "cmake: $((Get-Command cmake.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join ', ')"
+        Write-Host ""
+        Write-Host "=== Qt directories under C:\Qt ==="
+        Get-ChildItem "C:\Qt" -Depth 1 -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
+        Write-Host ""
+        Write-Host "=== Rust DLL ==="
         $rustDll = "src-tauri/target/release/diskraptor_scanner.dll"
         Write-Host "$rustDll exists: $(Test-Path $rustDll)"
-        Write-Host "=== Qt install check (try both paths) ==="
-        @(
-          "C:\Qt\6.10.3\win64_msvc2022_64",
-          "C:\Qt\6.10.3\msvc2022_64"
-        ) | ForEach-Object {
-          Write-Host "$_ root: $(Test-Path $_)"
-          Write-Host "$_ cmake: $(Test-Path "$_/lib/cmake/Qt6/Qt6Config.cmake")"
-          Write-Host "$_ windeployqt: $(Test-Path "$_/bin/windeployqt.exe")"
-        }
-        Write-Host "=== Full Qt dir listing ==="
-        Get-ChildItem "C:\Qt\6.10.3" -ErrorAction SilentlyContinue | Select-Object Name | Format-Table -AutoSize
 
     - name: Build Qt app
-      shell: cmd
+      shell: pwsh
       run: |
-        :: aqtinstall with arch win64_msvc2022_64 puts Qt at this path
-        set QT=C:\Qt\6.10.3\win64_msvc2022_64
-        echo === Qt install dir ===
-        dir "%QT%" 2>nul || ( echo ERROR: Qt dir not found & exit /b 1 )
-        echo === Qt6 cmake ===
-        dir "%QT%\lib\cmake\Qt6" 2>nul || ( echo ERROR: Qt6 cmake config not found & exit /b 1 )
-        echo === cl.exe ===
-        where cl.exe 2>nul || echo cl.exe NOT FOUND
-        echo === rc.exe ===
-        where rc.exe 2>nul || echo rc.exe NOT FOUND
-        echo === lib.exe ===
-        where lib.exe 2>nul || echo lib.exe NOT FOUND
-        pushd qt-app
-        if exist build rmdir /s /q build
-        mkdir build
-        pushd build
-        echo --- cmake configure ---
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%QT%\lib\cmake\Qt6" -DCMAKE_PREFIX_PATH="%QT%" 2>&1
-        if errorlevel 1 (
-          echo === CONFIGURE FAILED ===
-          if exist CMakeFiles\CMakeError.log type CMakeFiles\CMakeError.log
-          exit /b 1
-        )
-        echo --- cmake build ---
+        # ── Find Qt installation (aqtinstall directory name is unpredictable) ──
+        Write-Host "=== Finding Qt6 installation ==="
+        $qtDirs = Get-ChildItem "C:\Qt\6.10.3" -Directory -ErrorAction SilentlyContinue
+        if (-not $qtDirs) {
+          Write-Host "C:\Qt\6.10.3 directories:"
+          Get-ChildItem "C:\Qt" -Depth 1 -ErrorAction SilentlyContinue | Select-Object FullName
+          throw "No Qt installation found under C:\Qt\6.10.3"
+        }
+        $qtRoot = $qtDirs[0].FullName
+        $qt6Dir = Join-Path $qtRoot "lib\cmake\Qt6"
+        Write-Host "Qt root: $qtRoot"
+        Write-Host "Qt6_DIR: $qt6Dir"
+        if (-not (Test-Path $qt6Dir)) {
+          Write-Host "Contents of $qtRoot :"
+          Get-ChildItem $qtRoot -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName
+          throw "Qt6 cmake config not found at $qt6Dir"
+        }
+        $windeploy = Join-Path $qtRoot "bin\windeployqt.exe"
+        Write-Host "windeployqt: $(Test-Path $windeploy)"
+
+        # ── Tool checks ──
+        Write-Host ""
+        Write-Host "=== Tool checks ==="
+        Write-Host "cl.exe: $(Get-Command cl.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)"
+        Write-Host "rc.exe: $(Get-Command rc.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)"
+        Write-Host "ninja: $(Get-Command ninja -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)"
+
+        # ── Build ──
+        Push-Location qt-app
+        Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path build | Out-Null
+        Push-Location build
+
+        Write-Host ""
+        Write-Host "=== CMake configure ==="
+        cmake .. -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=$qt6Dir" "-DCMAKE_PREFIX_PATH=$qtRoot" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "=== CONFIGURE FAILED ==="
+          $errorLog = "CMakeFiles\CMakeError.log"
+          if (Test-Path $errorLog) { Get-Content $errorLog }
+          throw "CMake configure failed (exit $LASTEXITCODE)"
+        }
+
+        Write-Host ""
+        Write-Host "=== CMake build ==="
         cmake --build . --config Release 2>&1
-        if errorlevel 1 (
-          echo === BUILD FAILED ===
-          exit /b 1
-        )
-        popd
-        popd
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "=== BUILD FAILED ==="
+          throw "CMake build failed (exit $LASTEXITCODE)"
+        }
+
+        Pop-Location
+        Pop-Location
 
     - name: Stage dist
       shell: cmd
