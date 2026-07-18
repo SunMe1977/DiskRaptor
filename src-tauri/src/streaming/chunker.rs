@@ -21,16 +21,13 @@ pub fn chunk_tree(arena: &TreeNodeArena) -> Result<Vec<TreeChunk>> {
     let total_chunks = total.div_ceil(CHUNK_SIZE);
     let mut chunks = Vec::with_capacity(total_chunks as usize);
 
-    // BFS order: process breadth‑first for parent‑before‑child guarantee
-    let bfs_order = bfs_indices(arena);
-
     for chunk_id in 0..total_chunks {
         let start = (chunk_id * CHUNK_SIZE) as usize;
         let end = ((chunk_id + 1) * CHUNK_SIZE).min(total) as usize;
 
         let mut nodes: Vec<TreeNode> = Vec::with_capacity(end - start);
-        for &idx in &bfs_order[start..end] {
-            let mut node = arena.nodes[idx as usize].clone();
+        for idx in start..end {
+            let mut node = arena.nodes[idx].clone();
             node.chunk_id = chunk_id;
             nodes.push(node);
         }
@@ -44,36 +41,6 @@ pub fn chunk_tree(arena: &TreeNodeArena) -> Result<Vec<TreeChunk>> {
     }
 
     Ok(chunks)
-}
-
-/// Generate BFS ordering of node indices.
-/// Level‑by‑level traversal from the root (index 0).
-fn bfs_indices(arena: &TreeNodeArena) -> Vec<u32> {
-    let mut result = Vec::with_capacity(arena.nodes.len());
-
-    // Simple BFS using a Vec as a queue
-    let mut queue = Vec::with_capacity(arena.nodes.len());
-    // Start from root (always index 0)
-    if arena.nodes.is_empty() {
-        return result;
-    }
-    queue.push(0u32);
-    let mut head = 0;
-    while head < queue.len() {
-        let idx = queue[head];
-        head += 1;
-        result.push(idx);
-
-        // Enqueue all children
-        let node = &arena.nodes[idx as usize];
-        let mut child = node.first_child;
-        while child != u32::MAX {
-            queue.push(child);
-            child = arena.nodes[child as usize].next_sibling;
-        }
-    }
-
-    result
 }
 
 /// Root node info sent to the UI immediately (before any chunk).

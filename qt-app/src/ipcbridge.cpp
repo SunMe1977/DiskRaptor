@@ -262,7 +262,29 @@ QString IpcBridge::openTerminal(const QString &path)
 #elif defined(Q_OS_MACOS)
     QProcess::startDetached("open", {"-a", "Terminal", dir});
 #elif defined(Q_OS_LINUX)
-    QProcess::startDetached("x-terminal-emulator", {"--working-directory", dir});
+    bool started = false;
+    auto tryStart = [&](const QString &program, const QStringList &args, bool useWorkingDir = false) -> bool {
+        if (QStandardPaths::findExecutable(program).isEmpty()) {
+            return false;
+        }
+        if (useWorkingDir) {
+            return QProcess::startDetached(program, args, dir);
+        }
+        return QProcess::startDetached(program, args);
+    };
+
+    started = started || tryStart("x-terminal-emulator", {}, true);
+    started = started || tryStart("gnome-terminal", {"--working-directory=" + dir});
+    started = started || tryStart("konsole", {"--workdir", dir});
+    started = started || tryStart("xfce4-terminal", {"--working-directory", dir});
+    started = started || tryStart("mate-terminal", {"--working-directory", dir});
+    started = started || tryStart("alacritty", {"--working-directory", dir});
+    started = started || tryStart("kitty", {"--directory", dir});
+    started = started || tryStart("xterm", {"-e", "sh", "-lc", "cd \"" + dir + "\" && exec ${SHELL:-/bin/sh}"});
+
+    if (!started) {
+        return resultToJson(false, QVariant(), "No terminal emulator found on Linux");
+    }
 #endif
     return resultToJson(true);
 }

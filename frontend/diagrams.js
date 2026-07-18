@@ -17,6 +17,9 @@ class DiagramRenderer {
     this.tooltipEl = null;
     this.contextMenu = null;
     this._hoveredIndex = -1;
+    this._isLinux =
+      /linux/i.test(navigator.platform || "") ||
+      /linux/i.test(navigator.userAgent || "");
     this._init();
   }
 
@@ -63,10 +66,13 @@ class DiagramRenderer {
       borderRadius: "6px",
       padding: "4px 0",
       minWidth: "200px",
+      maxHeight: "70vh",
+      overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
+    var explorerLabel = this._isLinux ? "Open in File Manager" : "Open in Explorer";
     this.contextMenu.innerHTML =
-      '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} Open in Explorer</div>' +
+      '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
       '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
       '<div class="diag-ctx-item" data-action="tree">\u{1F332} Jump in Tree</div>' +
       '<div class="diag-ctx-sep"></div>' +
@@ -505,8 +511,14 @@ class DiagramRenderer {
     this.contextMenu._fileName =
       hit.path.split("\\").pop() || hit.path.split("/").pop() || hit.path;
     this.contextMenu.style.display = "block";
-    this.contextMenu.style.left = x + "px";
-    this.contextMenu.style.top = y + "px";
+    var menuW = this.contextMenu.offsetWidth || 220;
+    var menuH = this.contextMenu.offsetHeight || 220;
+    var vw = window.innerWidth || document.documentElement.clientWidth;
+    var vh = window.innerHeight || document.documentElement.clientHeight;
+    var left = Math.max(8, Math.min(x, vw - menuW - 8));
+    var top = Math.max(8, Math.min(y, vh - menuH - 8));
+    this.contextMenu.style.left = left + "px";
+    this.contextMenu.style.top = top + "px";
   }
 
   _onContextMenuAction(e) {

@@ -14,6 +14,9 @@ class TreeView {
     this.maxDirCount = 0;
     this.sortBy = "size";
     this.sortDesc = true;
+    this._isLinux =
+      /linux/i.test(navigator.platform || "") ||
+      /linux/i.test(navigator.userAgent || "");
     this._initScroll();
     this._initContextMenu();
     this._initDiagramJump();
@@ -58,14 +61,14 @@ class TreeView {
         console.warn("Jump: no scan path");
         return;
       }
-      var root = scanPath.value.replace(/\\+$/, "");
+      var root = scanPath.value.replace(/[\\/]+$/, "");
       if (fullPath.indexOf(root) !== 0) {
         console.warn("Jump: path mismatch", fullPath, "vs", root);
         return;
       }
-      var rel = fullPath.substring(root.length).replace(/^\\/, "");
+      var rel = fullPath.substring(root.length).replace(/^[\\/]/, "");
       if (!rel) return; // clicking root
-      var parts = rel.split("\\");
+      var parts = rel.split(/[\\/]+/);
       // Remove the last part (the file name) — only navigate to the parent dir
       parts.pop();
       if (parts.length === 0) return;
@@ -166,10 +169,13 @@ class TreeView {
       borderRadius: "6px",
       padding: "4px 0",
       minWidth: "200px",
+      maxHeight: "70vh",
+      overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
+    const explorerLabel = this._isLinux ? "Open in File Manager" : "Open in Explorer";
     this._ctxMenu.innerHTML =
-      '<div class="tctx-item" data-action="explorer">\u{1F4C2} Open in Explorer</div>' +
+      '<div class="tctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
       '<div class="tctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
       '<div class="tctx-sep"></div>' +
       '<div class="tctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
@@ -191,9 +197,8 @@ class TreeView {
         var arenaIdx = self.visibleNodes[idx];
         if (arenaIdx === undefined) return;
         self._ctxMenu._arenaIdx = arenaIdx;
-        self._ctxMenu.style.left = e.clientX + "px";
-        self._ctxMenu.style.top = e.clientY + "px";
         self._ctxMenu.style.display = "block";
+        self._placeContextMenu(e.clientX, e.clientY);
       });
     }
 
@@ -304,17 +309,36 @@ class TreeView {
     if (parts.length === 0) return null;
     const scanPath = document.getElementById("scan-path");
     if (scanPath && scanPath.value) {
-      const root = scanPath.value.replace(/\\+$/, "");
-      return root + "\\" + parts.join("\\");
+      const root = scanPath.value.replace(/[\\/]+$/, "");
+      const sep = this._pathSep(root);
+      return root + sep + parts.join(sep);
     }
-    return parts.join("\\");
+    return parts.join(this._pathSep(""));
   }
 
   _buildParentPath(arenaIdx) {
     const path = this._buildPath(arenaIdx);
     if (!path) return null;
-    const idx = path.lastIndexOf("\\");
+    const idx = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
     return idx >= 0 ? path.substring(0, idx) : path;
+  }
+
+  _pathSep(rootPath) {
+    if (typeof rootPath === "string" && rootPath.indexOf("\\") >= 0) return "\\";
+    return this._isLinux ? "/" : "\\";
+  }
+
+  _placeContextMenu(x, y) {
+    const menu = this._ctxMenu;
+    if (!menu) return;
+    var menuW = menu.offsetWidth || 220;
+    var menuH = menu.offsetHeight || 220;
+    var vw = window.innerWidth || document.documentElement.clientWidth;
+    var vh = window.innerHeight || document.documentElement.clientHeight;
+    var left = Math.max(8, Math.min(x, vw - menuW - 8));
+    var top = Math.max(8, Math.min(y, vh - menuH - 8));
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
   }
 
   async rebuild() {
@@ -492,8 +516,7 @@ class TreeView {
       this.select(arenaIdx);
       this._ctxMenu._arenaIdx = arenaIdx;
       this._ctxMenu.style.display = "block";
-      this._ctxMenu.style.left = e.clientX + "px";
-      this._ctxMenu.style.top = e.clientY + "px";
+      this._placeContextMenu(e.clientX, e.clientY);
     };
 
     const indent = document.createElement("span");

@@ -99,9 +99,9 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
                 Ok(sr) => {
                     eprintln!("[scan] completed: {} files, {} dirs", sr.stats.total_files, sr.stats.total_dirs);
                     let elapsed = sr.stats.scan_time_ms;
-                    // Generate root-only chunk (safe for any tree size)
-                    let root_chunk = crate::streaming::chunker::make_root_chunk(&sr.arena);
-                    let chunks_json = serde_json::to_string(&root_chunk).unwrap_or_default();
+                    let chunks = crate::streaming::chunker::chunk_tree(&sr.arena)
+                        .unwrap_or_else(|_| crate::streaming::chunker::make_root_chunk(&sr.arena));
+                    let chunks_json = serde_json::to_string(&chunks).unwrap_or_default();
                     *state.result.lock().unwrap() = Some(ScanResultData {
                         scan_id,
                         arena: sr.arena,
