@@ -5,12 +5,14 @@
 #include <QTimer>
 #include <QFile>
 #include <QTextStream>
+#include <QApplication>
 
 MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     : QMainWindow(parent), m_frontendPath(frontendPath)
 {
     setupUI();
     setupMenuBar();
+    setupTrayIcon();
     setupWebEngine(frontendPath);
 
     m_statusLabel = new QLabel("Ready");
@@ -162,6 +164,61 @@ void MainWindow::setupWebEngine(const QString &frontendPath)
     });
 
     m_webView->page()->setBackgroundColor(QColor("#0d1117"));
+}
+
+void MainWindow::setupTrayIcon()
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+        qDebug() << "[DiskRaptor] System tray not available on this platform";
+        return;
+    }
+    m_trayIcon = new QSystemTrayIcon(this);
+    m_trayIcon->setIcon(QIcon(":/app.ico"));
+    m_trayIcon->setToolTip("DiskRaptor");
+
+    m_trayMenu = new QMenu(this);
+    auto *showAction = m_trayMenu->addAction(tr("Open DiskRaptor"));
+    connect(showAction, &QAction::triggered, this, [this]() {
+        showNormal();
+        activateWindow();
+        raise();
+    });
+    m_trayMenu->addSeparator();
+    auto *quitAction = m_trayMenu->addAction(tr("Exit"));
+    connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
+
+    m_trayIcon->setContextMenu(m_trayMenu);
+    m_trayIcon->show();
+
+    connect(m_trayIcon, &QSystemTrayIcon::activated, this, &MainWindow::onTrayActivated);
+
+    qDebug() << "[DiskRaptor] System tray icon created";
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (m_trayIcon && m_trayIcon->isVisible()) {
+        // Minimize to tray instead of closing
+        hide();
+        m_trayIcon->showMessage(
+            "DiskRaptor",
+            "DiskRaptor is still running in the system tray.",
+            QSystemTrayIcon::Information,
+            3000);
+        event->ignore();
+    } else {
+        event->accept();
+    }
+}
+
+void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
+{
+    if (reason == QSystemTrayIcon::DoubleClick ||
+        reason == QSystemTrayIcon::Trigger) {
+        showNormal();
+        activateWindow();
+        raise();
+    }
 }
 
 void MainWindow::runJS(const QString &js)
