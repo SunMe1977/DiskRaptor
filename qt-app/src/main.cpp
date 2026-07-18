@@ -189,6 +189,14 @@ int main(int argc, char *argv[])
             break;
         }
     }
+#ifdef Q_OS_LINUX
+    if (appIcon.isNull()) {
+        appIcon = QIcon::fromTheme("diskraptor");
+        if (!appIcon.isNull()) {
+            qDebug() << "[DiskRaptor] Loaded icon from theme: diskraptor";
+        }
+    }
+#endif
     if (!appIcon.isNull()) {
         window.setWindowIcon(appIcon);
         app.setWindowIcon(appIcon);

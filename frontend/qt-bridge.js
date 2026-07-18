@@ -173,12 +173,28 @@
             var prom = bridge.invoke(cmd, args || {});
             if (prom && typeof prom.then === 'function') {
               prom.then(function(result) {
-                try { resolve(JSON.parse(result).data || result); }
-                catch(e) { resolve(result); }
+                try {
+                  var parsed = JSON.parse(result);
+                  if (parsed && typeof parsed === "object" && Object.prototype.hasOwnProperty.call(parsed, "data")) {
+                    resolve(parsed.data);
+                  } else {
+                    resolve(parsed);
+                  }
+                } catch(e) {
+                  resolve(result);
+                }
               }).catch(function(e) { reject(e); });
             } else {
-              try { resolve(JSON.parse(prom).data || prom); }
-              catch(e) { resolve(prom); }
+              try {
+                var parsedSync = JSON.parse(prom);
+                if (parsedSync && typeof parsedSync === "object" && Object.prototype.hasOwnProperty.call(parsedSync, "data")) {
+                  resolve(parsedSync.data);
+                } else {
+                  resolve(parsedSync);
+                }
+              } catch(e) {
+                resolve(prom);
+              }
             }
           } catch (e) {
             reject(new Error("invoke error: " + e.message));
