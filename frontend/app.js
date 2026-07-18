@@ -105,6 +105,15 @@
       btnTheme.title = isLight ? "Switch to dark mode" : "Switch to light mode";
     });
 
+    // Set default scan path to home directory (works on all platforms)
+    window.__TAURI__.invoke("get_home_dir").then(function(home) {
+      var path = typeof home === "string" ? home : (home && home.data ? home.data : null);
+      if (path) {
+        var input = document.getElementById("scan-path");
+        if (input && !input.value) input.value = path;
+      }
+    }).catch(function(){});
+
     const loader = new ChunkLoader();
     window.__loader = loader;
     const treeView = new TreeView("tree-viewport", loader);

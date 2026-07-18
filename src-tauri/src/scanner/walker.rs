@@ -996,7 +996,7 @@ mod platform {
         ptix.insert(root_path.into(), root_idx);
         let mut lc: HashMap<u32, u32> = HashMap::new();
 
-        for entry_result in WalkDir::new(root_path).follow_links(false).same_file_system(true) {
+        for entry_result in WalkDir::new(root_path).follow_links(false) {
             if arena.nodes.len() > 20_000_000 {
                 break;
             }
