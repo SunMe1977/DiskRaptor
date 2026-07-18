@@ -139,6 +139,7 @@ int main(int argc, char *argv[])
         QApplication::applicationDirPath() + "/frontend",
         QDir::currentPath() + "/../frontend",
         QApplication::applicationDirPath() + "/share/DiskRaptor/frontend",
+        QApplication::applicationDirPath() + "/../Resources/frontend",
         QApplication::applicationDirPath() + "/../share/DiskRaptor/frontend",
         QDir::currentPath() + "/share/DiskRaptor/frontend",
         QDir::currentPath() + "/../share/DiskRaptor/frontend",

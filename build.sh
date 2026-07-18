@@ -94,6 +94,25 @@ echo "  Creating DiskRaptor.app bundle..."
 mkdir -p dist/DiskRaptor.app/Contents/MacOS
 mkdir -p dist/DiskRaptor.app/Contents/Resources
 
+# Generate .icns icon from source PNG (macOS only, uses built-in sips + iconutil)
+ICON_SRC="images/logo6_original.png"
+ICONSET="dist/DiskRaptor.app/Contents/Resources/DiskRaptor.iconset"
+ICON_DEST="dist/DiskRaptor.app/Contents/Resources/icon.icns"
+if [ -f "$ICON_SRC" ] && command -v iconutil &>/dev/null; then
+  echo "  Generating icon.icns..."
+  mkdir -p "$ICONSET"
+  for size in 16 32 64 128 256 512 1024; do
+    sips -z $size $size "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}.png" &>/dev/null
+    if [ $size -le 512 ]; then
+      sips -z $((size*2)) $((size*2)) "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}@2x.png" &>/dev/null
+    fi
+  done
+  iconutil -c icns "$ICONSET" -o "$ICON_DEST" 2>/dev/null && rm -rf "$ICONSET"
+  echo "  icon.icns created"
+elif [ -f "images/icon.ico" ] && command -v iconutil &>/dev/null; then
+  echo "  (PNG source not found, skipping icns generation)"
+fi
+
 # cmake with MACOSX_BUNDLE TRUE outputs inside .app bundle
 if [ -f qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor ]; then
   cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
@@ -141,6 +160,8 @@ cat > dist/DiskRaptor.app/Contents/Info.plist << 'EOF'
     <string>0.0.7</string>
     <key>CFBundleShortVersionString</key>
     <string>0.0.7</string>
+    <key>CFBundleIconFile</key>
+    <string>icon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
