@@ -12,6 +12,13 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ─── Windows ───────────────────────────────────────────
   windows:
@@ -19,13 +26,23 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
     - name: Install Qt
       shell: pwsh
       run: |
+        python -m pip install --upgrade pip
         pip install aqtinstall
         aqt install-qt --outputdir C:\Qt windows desktop 6.10.3 win64_msvc2022_64 --modules qtwebengine qtwebchannel
-        $qtDirs = Get-ChildItem "C:\Qt\6.10.3" -Directory
-        $qtRoot = $qtDirs[0].FullName
+        $qtRoot = "C:\Qt\6.10.3\msvc2022_64"
+        if (-not (Test-Path $qtRoot)) {
+          Write-Host "Expected Qt path not found: $qtRoot"
+          Get-ChildItem "C:\Qt\6.10.3" -Directory | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+          exit 1
+        }
         $qt6Dir = Join-Path $qtRoot "lib\cmake\Qt6"
         "Qt6_DIR=$qt6Dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "Qt6_ROOT=$qtRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -92,6 +109,15 @@ jobs:
         name: DiskRaptor-windows
         path: DiskRaptor-windows.zip
 
+    - name: Publish Windows asset to shared release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: DiskRaptor ${{ github.ref_name }}
+        files: DiskRaptor-windows.zip
+        fail_on_unmatched_files: true
+
   # ─── macOS ───────────────────────────────────────────
   macos:
     runs-on: macos-latest
@@ -114,6 +140,11 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '22'
+
+    - name: Install Node deps
+      run: npm ci --ignore-scripts
+      env:
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
     - name: Build Rust scanner
       run: cargo build --release
@@ -169,6 +200,15 @@ PLIST
         name: DiskRaptor-macos
         path: DiskRaptor-macos.zip
 
+    - name: Publish macOS asset to shared release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: DiskRaptor ${{ github.ref_name }}
+        files: DiskRaptor-macos.zip
+        fail_on_unmatched_files: true
+
   # ─── Linux ───────────────────────────────────────────
   linux:
     runs-on: ubuntu-latest
@@ -179,7 +219,7 @@ PLIST
       run: |
         sudo apt-get update -qq
         sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev \
-          cmake ninja-build pkg-config nodejs g++ \
+          cmake ninja-build pkg-config nodejs g++ zip \
           libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev \
           libgdk-pixbuf-2.0-dev libgtk-3-dev libxcb-cursor-dev \
           libxkbcommon-dev libegl1-mesa-dev libgl1-mesa-dev \
@@ -198,6 +238,11 @@ PLIST
       uses: actions/setup-node@v4
       with:
         node-version: '22'
+
+    - name: Install Node deps
+      run: npm ci --ignore-scripts
+      env:
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
     - name: Build Rust scanner
       run: cargo build --release
@@ -231,22 +276,11 @@ PLIST
         name: DiskRaptor-linux
         path: DiskRaptor-linux.zip
 
-  # ─── Release ──────────────────────────────────────────
-  release:
-    needs: [windows, macos, linux]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/download-artifact@v4
-      with:
-        pattern: DiskRaptor-*
-        merge-multiple: true
-
-    - name: Upload to Release
+    - name: Publish Linux asset to shared release
+      if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          DiskRaptor-windows.zip
-          DiskRaptor-macos.zip
-          DiskRaptor-linux.zip
+        tag_name: ${{ github.ref_name }}
+        name: DiskRaptor ${{ github.ref_name }}
+        files: DiskRaptor-linux.zip
         fail_on_unmatched_files: true
