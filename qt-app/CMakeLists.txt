@@ -43,19 +43,31 @@ elseif(APPLE)
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
 endif()
 
-# Copy frontend + modules + Rust scanner DLL after build
-# ── Post-build: deploy frontend, modules, Rust DLL, and Qt runtime ─────
+# Copy frontend + modules + Rust scanner library after build
+# ── Post-build: deploy frontend, modules, Rust scanner lib, and Qt runtime ─────
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/frontend")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../modulesPro" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/modulesPro")
-if(EXISTS "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll")
-  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/diskraptor_scanner.dll"
-    COMMENT "Copying diskraptor_scanner.dll...")
-  message(STATUS "Rust scanner DLL will be deployed: ${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll")
+
+if(WIN32)
+  set(RUST_SCANNER_SRC "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll")
+  set(RUST_SCANNER_DST "diskraptor_scanner.dll")
+elseif(APPLE)
+  set(RUST_SCANNER_SRC "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/libdiskraptor_scanner.dylib")
+  set(RUST_SCANNER_DST "libdiskraptor_scanner.dylib")
 else()
-  message(WARNING "Rust scanner DLL not found at ${CMAKE_SOURCE_DIR}/../src-tauri/target/release/diskraptor_scanner.dll — scan will be unavailable")
+  set(RUST_SCANNER_SRC "${CMAKE_SOURCE_DIR}/../src-tauri/target/release/libdiskraptor_scanner.so")
+  set(RUST_SCANNER_DST "libdiskraptor_scanner.so")
+endif()
+
+if(EXISTS "${RUST_SCANNER_SRC}")
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy "${RUST_SCANNER_SRC}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/${RUST_SCANNER_DST}"
+    COMMENT "Copying ${RUST_SCANNER_DST}...")
+  message(STATUS "Rust scanner library will be deployed: ${RUST_SCANNER_SRC}")
+else()
+  message(WARNING "Rust scanner library not found at ${RUST_SCANNER_SRC} — tree scan will fall back to flat mode")
 endif()
 
 # Deploy Qt6 runtime DLLs via windeployqt (Windows only)
