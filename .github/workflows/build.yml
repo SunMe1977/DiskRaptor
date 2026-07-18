@@ -68,23 +68,31 @@ jobs:
     - name: Build Qt app
       shell: cmd
       run: |
-        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
-        if errorlevel 1 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
-        if errorlevel 1 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64
-        echo === MSVC env ===
-        where cl.exe || echo NO cl.exe
-        where rc.exe || echo NO rc.exe
-        where link.exe || echo NO link.exe
-        echo === Qt check ===
-        dir "C:\Qt\6.10.3\win64_msvc2022_64\lib\cmake\Qt6\Qt6Config.cmake" || ( echo Qt6_DIR not found! & dir "C:\Qt\6.10.3" /s /b /a:d | head -5 & exit /b 1 )
+        echo === Qt6_DIR env ===
+        dir "%Qt6_DIR%" 2>nul && ( echo Qt6_DIR: %Qt6_DIR% ) || ( echo Qt6_DIR not found: %Qt6_DIR% & exit /b 1 )
+        echo === vcvarsall ===
+        for %%f in (
+          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
+          "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
+          "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
+          "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
+        ) do (
+          if exist %%f ( echo Found: %%f & call %%f x64 & goto :msvc_ok )
+        )
+        echo WARNING: No vcvarsall.bat found, trying cmake without MSVC env
+        :msvc_ok
+        echo === tools ===
+        where cl.exe || echo NO cl
+        where rc.exe || echo NO rc
+        where link.exe || echo NO link
         pushd qt-app
         if exist build rmdir /s /q build
         mkdir build
         pushd build
         echo === cmake configure ===
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="C:\Qt\6.10.3\win64_msvc2022_64\lib\cmake\Qt6" -DCMAKE_PREFIX_PATH="C:\Qt\6.10.3\win64_msvc2022_64" 2>&1
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" 2>&1
         if errorlevel 1 (
-          type CMakeFiles\CMakeError.log 2>nul
+          if exist CMakeFiles\CMakeError.log type CMakeFiles\CMakeError.log
           exit /b 1
         )
         echo === cmake build ===
