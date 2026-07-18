@@ -349,93 +349,16 @@ mod platform {
     }
 }
 
-// ─── Linux scanner (walkdir — same as macOS, reliable) ──
+// ─── Linux scanner (delegates to scan_simple) ──
 #[cfg(target_os = "linux")]
 mod platform {
     use super::*;
-
     pub fn scan(
         config: &ScanConfig,
         progress: &ScanProgressCallback,
         root_path: &str,
     ) -> Result<ScanResult> {
-        use walkdir::WalkDir;
-        let start = Instant::now();
-        let skip_dirs = Arc::new(config.skip_dirs.clone());
-        let top_files = Arc::new(TopFilesAccum::default());
-        let file_types = Arc::new(FileTypeAccum::default());
-        let top_count = config.top_files_count;
-        let mut arena = TreeNodeArena::with_capacity(4_000_000);
-        let root_name = Path::new(root_path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| root_path.into());
-        let root_idx = arena.alloc(TreeNode {
-            name: root_name, size: 0, file_count: 0, dir_count: 1,
-            node_type: NodeType::Directory, parent: u32::MAX,
-            first_child: u32::MAX, next_sibling: u32::MAX, depth: 0, chunk_id: 0,
-        });
-        let mut ptix: HashMap<String, u32> = HashMap::new();
-        ptix.insert(root_path.into(), root_idx);
-        let mut lc: HashMap<u32, u32> = HashMap::new();
-        let mut files_found: u64 = 0;
-        let mut dirs_found: u64 = 0;
-        let mut bytes_found: u64 = 0;
-        let mut last_progress = Instant::now();
-
-        for entry_result in WalkDir::new(root_path).follow_links(false) {
-            if arena.nodes.len() > 20_000_000 { break; }
-            let entry = match entry_result { Ok(e) => e, Err(_) => continue };
-            let full = entry.path().to_string_lossy().to_string();
-            if full == root_path { continue; }
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            let is_dir = entry.file_type().is_dir();
-            let parent = entry.path().parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| root_path.into());
-            let pi = *ptix.get(&parent).unwrap_or(&root_idx);
-            if is_dir {
-                dirs_found += 1;
-                if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) { continue; }
-                let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
-                let ci = arena.alloc(TreeNode {
-                    name: file_name, size: 0, file_count: 0, dir_count: 1,
-                    node_type: NodeType::Directory, parent: pi,
-                    first_child: u32::MAX, next_sibling: u32::MAX, depth, chunk_id: 0,
-                });
-                match lc.get(&pi) {
-                    Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                    None => arena.nodes[pi as usize].first_child = ci,
-                }
-                lc.insert(pi, ci);
-                ptix.insert(full.clone(), ci);
-            } else {
-                files_found += 1;
-                let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
-                let ci = arena.alloc(TreeNode {
-                    name: file_name, size: sz, file_count: 1, dir_count: 0,
-                    node_type: NodeType::File, parent: pi,
-                    first_child: u32::MAX, next_sibling: u32::MAX, depth, chunk_id: 0,
-                });
-                match lc.get(&pi) {
-                    Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                    None => arena.nodes[pi as usize].first_child = ci,
-                }
-                lc.insert(pi, ci);
-                if sz > 0 {
-                    top_files.insert(full.clone(), sz, top_count);
-                    file_types.add(&full, sz);
-                }
-                bytes_found += sz;
-            }
-            if last_progress.elapsed().as_millis() >= 100 {
-                progress(files_found, dirs_found, bytes_found, &full);
-                last_progress = Instant::now();
-            }
-        }
-        progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
-        finish_scan(start, arena, top_files, file_types, progress)
+        scan_simple(config, progress, root_path)
     }
 }
 
