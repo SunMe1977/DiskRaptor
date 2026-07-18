@@ -15,14 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Windows x64 ──────────────────────────────────────────
   windows-x64:
     name: Windows x64
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4 with: { node-version: '22' }
-      - uses: actions/setup-python@v5 with: { python-version: '3.x' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
       - name: Install Qt 6.10.3
         shell: pwsh
@@ -34,7 +37,8 @@ jobs:
 
       - name: Install Node deps
         run: npm install
-        env: { PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1 }
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
       - name: Setup Rust
         shell: pwsh
@@ -51,8 +55,9 @@ jobs:
         id: findvs
         shell: pwsh
         run: |
-          $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          "VS_PATH=$vs" >> $env:GITHUB_OUTPUT
+          $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) { throw "VS not found" }
+          echo "VS_PATH=$vsPath" >> $env:GITHUB_OUTPUT
 
       - name: Build Qt app
         shell: cmd
@@ -63,22 +68,35 @@ jobs:
           set "Qt6_DIR=%QT_DIR%\lib\cmake\Qt6"
           set "CMAKE_PREFIX_PATH=%QT_DIR%"
           pushd qt-app
-          if exist build rmdir /s /q build & mkdir build
+          if exist build rmdir /s /q build
+          mkdir build
           pushd build
           cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%"
+          if errorlevel 1 exit /b 1
           cmake --build . --config Release
-          popd & popd
+          if errorlevel 1 exit /b 1
+          popd
+          popd
         env:
           VS_PATH: ${{ steps.findvs.outputs.VS_PATH }}
 
-      - name: Package (full self-contained)
+      - name: Package
         shell: cmd
         run: |
           mkdir dist
-          for %%f in (qt-app\build\DiskRaptor.exe qt-app\build\QtWebEngineProcess.exe src-tauri\target\release\diskraptor_scanner.dll) do if exist %%f copy %%f dist\
-          for %%d in (frontend images platforms styles imageformats tls iconengines generic networkinformation position resources translations) do if exist qt-app\build\%%d xcopy /e /i /y qt-app\build\%%d dist\%%d\ >nul
+          copy qt-app\build\DiskRaptor.exe dist\
+          if exist src-tauri\target\release\diskraptor_scanner.dll copy src-tauri\target\release\diskraptor_scanner.dll dist\
+          xcopy /e /i /y frontend dist\frontend\ >nul
+          if exist images xcopy /e /i /y images dist\images\ >nul
+          for %%d in (platforms styles imageformats tls iconengines generic networkinformation position resources translations) do (
+            if exist qt-app\build\%%d xcopy /e /i /y qt-app\build\%%d dist\%%d\ >nul
+          )
           copy qt-app\build\*.dll dist\ >nul
+          if exist qt-app\build\QtWebEngineProcess.exe copy qt-app\build\QtWebEngineProcess.exe dist\
           del dist\DiskRaptorLauncher.exe 2>nul
+          cd dist
+          dir /b
+          cd ..
           powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows-x64.zip -Force"
 
       - name: Run scan test
@@ -86,21 +104,25 @@ jobs:
         run: node test_scan.mjs "%USERPROFILE%"
         timeout-minutes: 10
         continue-on-error: true
-        env: { DISKraptor_CDP_PORT: 9222 }
+        env:
+          DISKraptor_CDP_PORT: 9222
 
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-windows-x64
           path: DiskRaptor-windows-x64.zip
 
-  # ── Windows ARM64 ────────────────────────────────────────
   windows-arm64:
     name: Windows ARM64
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4 with: { node-version: '22' }
-      - uses: actions/setup-python@v5 with: { python-version: '3.x' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
       - name: Install Qt 6.10.3 ARM64
         shell: pwsh
@@ -118,11 +140,14 @@ jobs:
           rustup default stable
           rustup target add aarch64-pc-windows-msvc
 
-      - name: Build Rust scanner (ARM64)
-        run: cargo build --release --target aarch64-pc-windows-msvc
-        working-directory: src-tauri
+      - name: Build Rust scanner ARM64
+        shell: pwsh
+        run: |
+          $env:OPENSSL_DIR = ""
+          cd src-tauri
+          cargo build --release --target aarch64-pc-windows-msvc
 
-      - name: Build Qt app (ARM64)
+      - name: Build Qt app ARM64
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Auxiliary\Build\vcvars64.bat" -arm64
@@ -131,19 +156,29 @@ jobs:
           set "Qt6_DIR=%QT_DIR%\lib\cmake\Qt6"
           set "CMAKE_PREFIX_PATH=%QT_DIR%"
           pushd qt-app
-          if exist build rmdir /s /q build & mkdir build
+          if exist build rmdir /s /q build
+          mkdir build
           pushd build
           cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%"
+          if errorlevel 1 exit /b 1
           cmake --build . --config Release
-          popd & popd
+          if errorlevel 1 exit /b 1
+          popd
+          popd
 
-      - name: Package (full self-contained)
+      - name: Package ARM64
         shell: cmd
         run: |
           mkdir dist
-          for %%f in (qt-app\build\DiskRaptor.exe qt-app\build\QtWebEngineProcess.exe src-tauri\target\aarch64-pc-windows-msvc\release\diskraptor_scanner.dll) do if exist %%f copy %%f dist\
-          for %%d in (frontend images platforms styles imageformats tls iconengines generic networkinformation position resources translations) do if exist qt-app\build\%%d xcopy /e /i /y qt-app\build\%%d dist\%%d\ >nul
+          copy qt-app\build\DiskRaptor.exe dist\
+          if exist src-tauri\target\aarch64-pc-windows-msvc\release\diskraptor_scanner.dll copy src-tauri\target\aarch64-pc-windows-msvc\release\diskraptor_scanner.dll dist\
+          xcopy /e /i /y frontend dist\frontend\ >nul
+          if exist images xcopy /e /i /y images dist\images\ >nul
+          for %%d in (platforms styles imageformats tls iconengines generic networkinformation position resources translations) do (
+            if exist qt-app\build\%%d xcopy /e /i /y qt-app\build\%%d dist\%%d\ >nul
+          )
           copy qt-app\build\*.dll dist\ >nul
+          if exist qt-app\build\QtWebEngineProcess.exe copy qt-app\build\QtWebEngineProcess.exe dist\
           del dist\DiskRaptorLauncher.exe 2>nul
           powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows-arm64.zip -Force"
 
@@ -152,15 +187,16 @@ jobs:
           name: DiskRaptor-windows-arm64
           path: DiskRaptor-windows-arm64.zip
 
-  # ── macOS Universal (Intel + Apple Silicon) ──────────────
   macos-universal:
     name: macOS Universal
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4 with: { node-version: '22' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-      - name: Install Qt (universal)
+      - name: Install Qt
         run: |
           brew install qt@6 cmake ninja
 
@@ -169,13 +205,12 @@ jobs:
           rustup set profile minimal
           rustup toolchain install stable
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
-          rustup default stable
 
-      - name: Build Rust scanner (ARM64)
+      - name: Build Rust scanner ARM64
         run: cargo build --release --target aarch64-apple-darwin
         working-directory: src-tauri
 
-      - name: Build Rust scanner (x86_64)
+      - name: Build Rust scanner x86_64
         run: cargo build --release --target x86_64-apple-darwin
         working-directory: src-tauri
 
@@ -187,35 +222,22 @@ jobs:
             src-tauri/target/x86_64-apple-darwin/release/libdiskraptor_scanner.dylib \
             -output src-tauri/target/universal/release/libdiskraptor_scanner.dylib
 
-      - name: Build Qt app (ARM64)
+      - name: Build Qt app ARM64
         run: |
           export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6"
           export CMAKE_PREFIX_PATH="$(brew --prefix qt@6)"
           cd qt-app
-          rm -rf build-arm64
-          mkdir build-arm64 && cd build-arm64
+          rm -rf build
+          mkdir build && cd build
           cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$Qt6_DIR" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
           cmake --build . --config Release
 
-      - name: Build Qt app (x86_64)
-        run: |
-          export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6"
-          export CMAKE_PREFIX_PATH="$(brew --prefix qt@6)"
-          cd qt-app
-          rm -rf build-x64
-          mkdir build-x64 && cd build-x64
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$Qt6_DIR" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-            -DCMAKE_CXX_FLAGS="-target x86_64-apple-macos14" -DCMAKE_C_FLAGS="-target x86_64-apple-macos14"
-          cmake --build . --config Release
-
-      - name: Create universal binary
+      - name: Create universal app bundle
         run: |
           mkdir -p dist/DiskRaptor.app/Contents/MacOS
           mkdir -p dist/DiskRaptor.app/Contents/Resources
-          lipo -create \
-            qt-app/build-arm64/DiskRaptor.app/Contents/MacOS/DiskRaptor \
-            qt-app/build-x64/DiskRaptor.app/Contents/MacOS/DiskRaptor \
-            -output dist/DiskRaptor.app/Contents/MacOS/DiskRaptor
+          # Copy ARM64 binary (macos-14 runs on ARM, so this is the native build)
+          cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/DiskRaptor
           cp -R frontend dist/DiskRaptor.app/Contents/Resources/
           [ -d images ] && cp -R images dist/DiskRaptor.app/Contents/Resources/
           [ -f images/icon.icns ] && cp images/icon.icns dist/DiskRaptor.app/Contents/Resources/
@@ -237,7 +259,6 @@ jobs:
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
-    <key>LSRequiresNativeExecution</key><false/>
 </dict>
 </plist>
 PLIST
@@ -248,7 +269,6 @@ PLIST
           if [ -f "$QT_BIN/macdeployqt" ]; then
             "$QT_BIN/macdeployqt" dist/DiskRaptor.app -verbose=1
           fi
-          # Create zip and DMG
           cd dist
           zip -r ../DiskRaptor-macos-universal.zip DiskRaptor.app
           cd ..
@@ -261,13 +281,14 @@ PLIST
             DiskRaptor-macos-universal.zip
             DiskRaptor-macos-universal.dmg
 
-  # ── Linux x64 ────────────────────────────────────────────
   linux-x64:
     name: Linux x64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4 with: { node-version: '22' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Install deps
         run: |
@@ -292,45 +313,41 @@ PLIST
       - name: Build Qt app
         run: |
           cd qt-app
-          rm -rf build && mkdir build && cd build
+          rm -rf build
+          mkdir build && cd build
           cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DQt6_DIR="/usr/lib/x86_64-linux-gnu/cmake/Qt6" \
             -DCMAKE_PREFIX_PATH="/usr/lib/x86_64-linux-gnu"
           cmake --build . --config Release
 
-      - name: Package (full self-contained)
+      - name: Package
         run: |
-          mkdir -p dist/lib
+          mkdir -p dist/lib dist/plugins dist/libexec dist/resources
           cp qt-app/build/DiskRaptor dist/
           cp -R frontend dist/frontend
           [ -d images ] && cp -R images dist/images
           [ -f src-tauri/target/release/libdiskraptor_scanner.so ] && cp src-tauri/target/release/libdiskraptor_scanner.so dist/
-          # Copy ALL Qt libs needed
-          for lib in \
-            libQt6Core libQt6Gui libQt6Widgets libQt6WebEngineCore libQt6WebEngineWidgets \
-            libQt6WebChannel libQt6Network libQt6OpenGL libQt6Positioning libQt6PrintSupport \
-            libQt6Qml libQt6QmlMeta libQt6QmlModels libQt6QmlWorkerScript \
-            libQt6Quick libQt6QuickWidgets libQt6Svg libQt6SerialPort; do
-            for f in /usr/lib/x86_64-linux-gnu/${lib}.so*; do
+          # Copy Qt libs
+          for lib in Qt6Core Qt6Gui Qt6Widgets Qt6WebEngineCore Qt6WebEngineWidgets Qt6WebChannel Qt6Network Qt6OpenGL Qt6Positioning Qt6PrintSupport Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickWidgets Qt6Svg Qt6SerialPort; do
+            for f in /usr/lib/x86_64-linux-gnu/lib${lib}.so*; do
               [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true
             done
           done
-          # Copy Qt WebEngine resources
-          for d in libexec resources; do
-            [ -d "/usr/lib/x86_64-linux-gnu/qt6/$d" ] && cp -r "/usr/lib/x86_64-linux-gnu/qt6/$d" dist/
-          done
-          # Copy platform plugins
-          mkdir -p dist/plugins
+          # Copy Qt WebEngine
+          cp -r /usr/lib/x86_64-linux-gnu/qt6/libexec/QtWebEngineProcess dist/libexec/ 2>/dev/null || true
+          cp -r /usr/lib/x86_64-linux-gnu/qt6/resources/* dist/resources/ 2>/dev/null || true
+          # Copy Qt plugins
           for p in platforms styles imageformats tls iconengines generic; do
             [ -d "/usr/lib/x86_64-linux-gnu/qt6/plugins/$p" ] && cp -r "/usr/lib/x86_64-linux-gnu/qt6/plugins/$p" dist/plugins/
           done
           # Launcher script
           cat > dist/DiskRaptor.sh << 'SCRIPT'
-          #!/bin/bash
-          cd "$(dirname "$0")"
-          export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
-          export QT_PLUGIN_PATH="$PWD/plugins"
-          exec ./DiskRaptor "$@"
+#!/bin/bash
+cd "$(dirname "$0")"
+export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
+export QT_PLUGIN_PATH="$PWD/plugins"
+export QTWEBENGINEPROCESS_PATH="$PWD/libexec/QtWebEngineProcess"
+exec ./DiskRaptor "$@"
 SCRIPT
           chmod +x dist/DiskRaptor.sh
           cd dist
@@ -341,13 +358,14 @@ SCRIPT
           name: DiskRaptor-linux-x64
           path: DiskRaptor-linux-x64.zip
 
-  # ── Linux ARM64 ──────────────────────────────────────────
   linux-arm64:
     name: Linux ARM64
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4 with: { node-version: '22' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Install deps
         run: |
@@ -364,7 +382,6 @@ SCRIPT
           rustup set profile minimal
           rustup toolchain install stable
           rustup default stable
-          rustup target add aarch64-unknown-linux-gnu
 
       - name: Build Rust scanner
         run: cargo build --release
@@ -373,41 +390,38 @@ SCRIPT
       - name: Build Qt app
         run: |
           cd qt-app
-          rm -rf build && mkdir build && cd build
+          rm -rf build
+          mkdir build && cd build
           cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DQt6_DIR="/usr/lib/aarch64-linux-gnu/cmake/Qt6" \
             -DCMAKE_PREFIX_PATH="/usr/lib/aarch64-linux-gnu"
           cmake --build . --config Release
 
-      - name: Package (full self-contained)
+      - name: Package
         run: |
-          mkdir -p dist/lib
+          mkdir -p dist/lib dist/plugins dist/libexec dist/resources
           cp qt-app/build/DiskRaptor dist/
           cp -R frontend dist/frontend
           [ -d images ] && cp -R images dist/images
           [ -f src-tauri/target/release/libdiskraptor_scanner.so ] && cp src-tauri/target/release/libdiskraptor_scanner.so dist/
-          for lib in \
-            libQt6Core libQt6Gui libQt6Widgets libQt6WebEngineCore libQt6WebEngineWidgets \
-            libQt6WebChannel libQt6Network libQt6OpenGL libQt6Positioning libQt6PrintSupport \
-            libQt6Qml libQt6QmlMeta libQt6QmlModels libQt6QmlWorkerScript \
-            libQt6Quick libQt6QuickWidgets libQt6Svg libQt6SerialPort; do
-            for f in /usr/lib/aarch64-linux-gnu/${lib}.so*; do
+          # Copy Qt libs
+          for lib in Qt6Core Qt6Gui Qt6Widgets Qt6WebEngineCore Qt6WebEngineWidgets Qt6WebChannel Qt6Network Qt6OpenGL Qt6Positioning Qt6PrintSupport Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickWidgets Qt6Svg Qt6SerialPort; do
+            for f in /usr/lib/aarch64-linux-gnu/lib${lib}.so*; do
               [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true
             done
           done
-          for d in libexec resources; do
-            [ -d "/usr/lib/aarch64-linux-gnu/qt6/$d" ] && cp -r "/usr/lib/aarch64-linux-gnu/qt6/$d" dist/
-          done
-          mkdir -p dist/plugins
+          cp -r /usr/lib/aarch64-linux-gnu/qt6/libexec/QtWebEngineProcess dist/libexec/ 2>/dev/null || true
+          cp -r /usr/lib/aarch64-linux-gnu/qt6/resources/* dist/resources/ 2>/dev/null || true
           for p in platforms styles imageformats tls iconengines generic; do
             [ -d "/usr/lib/aarch64-linux-gnu/qt6/plugins/$p" ] && cp -r "/usr/lib/aarch64-linux-gnu/qt6/plugins/$p" dist/plugins/
           done
           cat > dist/DiskRaptor.sh << 'SCRIPT'
-          #!/bin/bash
-          cd "$(dirname "$0")"
-          export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
-          export QT_PLUGIN_PATH="$PWD/plugins"
-          exec ./DiskRaptor "$@"
+#!/bin/bash
+cd "$(dirname "$0")"
+export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
+export QT_PLUGIN_PATH="$PWD/plugins"
+export QTWEBENGINEPROCESS_PATH="$PWD/libexec/QtWebEngineProcess"
+exec ./DiskRaptor "$@"
 SCRIPT
           chmod +x dist/DiskRaptor.sh
           cd dist
@@ -418,20 +432,26 @@ SCRIPT
           name: DiskRaptor-linux-arm64
           path: DiskRaptor-linux-arm64.zip
 
-  # ── Release Assets ──────────────────────────────────────
   release_assets:
     name: Attach Release Assets
     needs: [windows-x64, windows-arm64, macos-universal, linux-x64, linux-arm64]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: false
 
       - name: Upload assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${GITHUB_REF_NAME}" --title "DiskRaptor ${GITHUB_REF_NAME}" --notes "Multi-architecture release" 2>/dev/null || true
-          find artifacts -type f \( -name "*.zip" -o -name "*.dmg" \) -exec gh release upload "${GITHUB_REF_NAME}" {} --clobber \;
+          for f in artifacts/*/*.zip artifacts/*/*.dmg; do
+            if [ -f "$f" ]; then
+              echo "Uploading: $f"
+              gh release upload "${GITHUB_REF_NAME}" "$f" --clobber
+            fi
+          done
