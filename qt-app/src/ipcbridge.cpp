@@ -438,7 +438,13 @@ bool IpcBridge::loadRustLibrary()
 {
     QStringList searchPaths;
     searchPaths << QCoreApplication::applicationDirPath()
-                << ".";
+                << "."
+                << QDir::currentPath()
+                << QCoreApplication::applicationDirPath() + "/.."
+                << QCoreApplication::applicationDirPath() + "/../.."
+                << QCoreApplication::applicationDirPath() + "/../../src-tauri/target/release"
+                << QDir::currentPath() + "/src-tauri/target/release"
+                << QDir::currentPath() + "/../src-tauri/target/release";
 
     // Different names on different platforms
     QStringList libNames;
