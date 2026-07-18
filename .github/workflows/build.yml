@@ -34,11 +34,15 @@ jobs:
       - name: Install Qt and tools
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           python -m pip install --upgrade pip
           python -m pip install aqtinstall
-          python -m aqt install-qt windows desktop 6.6.3 win64_msvc2019_64 --modules qtwebengine qtwebchannel qtpositioning qtdeclarative -O C:\Qt
+          python -m aqt install-qt windows desktop 6.6.3 win64_msvc2019_64 --modules qtwebengine qtwebchannel qtpositioning -O C:\Qt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m aqt install-tool windows desktop tools_ninja -O C:\Qt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m aqt install-tool windows desktop tools_cmake -O C:\Qt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install Node dependencies
         run: npm ci --ignore-scripts
@@ -67,7 +71,18 @@ jobs:
           )
           call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
           set "PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;%PATH%"
-          set "CMAKE_PREFIX_PATH=C:\Qt\6.6.3\msvc2019_64"
+          set "CMAKE_PREFIX_PATH="
+          for /d %%d in (C:\Qt\6.6.3\msvc*_64) do set "CMAKE_PREFIX_PATH=%%d"
+          if "%CMAKE_PREFIX_PATH%"=="" (
+            echo Qt install path not found under C:\Qt\6.6.3\msvc*_64
+            dir C:\Qt\6.6.3
+            exit /b 1
+          )
+          if not exist "%CMAKE_PREFIX_PATH%\lib\cmake\Qt6\Qt6Config.cmake" (
+            echo Qt6Config.cmake missing in %CMAKE_PREFIX_PATH%
+            dir "%CMAKE_PREFIX_PATH%\lib\cmake"
+            exit /b 1
+          )
           pushd qt-app
           if exist build rmdir /s /q build
           mkdir build
