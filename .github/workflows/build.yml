@@ -88,6 +88,34 @@ jobs:
           if exist images xcopy /e /i /y images dist\images\ >nul
           powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows.zip -Force"
 
+      - name: Prepare test data
+        shell: cmd
+        run: |
+          if not exist raw mkdir raw
+          mkdir raw\subdir1 raw\subdir2 2>nul
+          echo test1 > raw\file1.txt
+          echo test2 > raw\subdir1\file2.txt
+          echo test3 > raw\subdir2\file3.txt
+
+      - name: Run galaxy test
+        shell: cmd
+        run: node test_galaxy_windows_playwright.mjs
+        env:
+          DISKraptor_CDP_PORT: 9224
+
+      - name: Run menu test
+        shell: cmd
+        run: node test_menus.mjs
+        env:
+          DISKraptor_CDP_PORT: 9223
+
+      - name: Run scan test
+        shell: cmd
+        run: node test_scan.mjs "%USERPROFILE%"
+        timeout-minutes: 10
+        env:
+          DISKraptor_CDP_PORT: 9222
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
