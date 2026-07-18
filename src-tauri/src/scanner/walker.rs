@@ -1030,20 +1030,15 @@ mod platform {
     // FTS option flags
     const FTS_LOGICAL: c_int  = 0x0002;
     const FTS_NOCHDIR: c_int = 0x0004;
-    const FTS_NOSTAT: c_int  = 0x0008;
 
     // FTSENT info types
     const FTS_D: c_int        = 1;  // directory
     const FTS_DC: c_int       = 2;  // directory that causes a cycle
     const FTS_DEFAULT: c_int  = 3;  // none of the above
-    const FTS_DNR: c_int      = 4;  // directory with unreadable contents
-    const FTS_DOT: c_int      = 5;  // dot or dot-dot
     const FTS_DP: c_int       = 6;  // directory post-order
     const FTS_ERR: c_int      = 7;  // error
     const FTS_F: c_int        = 8;  // file
-    const FTS_INIT: c_int     = 9;  // initialized only
     const FTS_NS: c_int       = 10; // stat failed
-    const FTS_NSOK: c_int     = 11; // no stat requested
     const FTS_SL: c_int       = 12; // symlink
     const FTS_SLNONE: c_int   = 13; // symlink with no target
     const FTS_SKIP: c_int     = 4;  // fts_set skip command
