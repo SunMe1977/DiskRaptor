@@ -82,11 +82,13 @@ case "$PLATFORM" in
     echo "  Linux: checking system packages..."
     if command -v apt-get &>/dev/null; then
       APT_PKGS=""
+      dpkg -l pkg-config 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS pkg-config"
       dpkg -l libqt6webenginewidgets6 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS qt6-webengine-dev"
       dpkg -l libqt6widgets6 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS qt6-base-dev"
       dpkg -l cmake 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS cmake"
       dpkg -l ninja-build 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS ninja-build"
       dpkg -l nodejs 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS nodejs"
+      dpkg -l build-essential 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS build-essential"
       [ -n "$APT_PKGS" ] && sudo apt-get install -y $APT_PKGS
       # Qt6 cmake path on Debian/Ubuntu
       QT_PREFIX="/usr/lib/x86_64-linux-gnu/cmake/Qt6"
@@ -95,7 +97,8 @@ case "$PLATFORM" in
         [ -d "$p" ] && QT_PREFIX="$p" && break
       done
     elif command -v dnf &>/dev/null; then
-      rpm -q qt6-qtwebengine-devel 2>/dev/null || sudo dnf install -y qt6-qtwebengine-devel qt6-qtbase-devel cmake ninja-build nodejs
+      rpm -q pkg-config 2>/dev/null || sudo dnf install -y pkg-config
+      rpm -q qt6-qtwebengine-devel 2>/dev/null || sudo dnf install -y qt6-qtwebengine-devel qt6-qtbase-devel cmake ninja-build nodejs gcc-c++
       QT_PREFIX="/usr/lib64/cmake/Qt6"
     fi
     ;;
