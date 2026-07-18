@@ -411,6 +411,7 @@ bool IpcBridge::loadRustLibrary()
                     qDebug() << "[DiskRaptor] Loaded Rust scanner from:" << fullPath;
                     break;
                 } else {
+                    qWarning() << "[DiskRaptor] Found but FAILED to load:" << fullPath << "error:" << m_rustLib->errorString();
                     delete m_rustLib;
                     m_rustLib = nullptr;
                 }
@@ -420,12 +421,34 @@ bool IpcBridge::loadRustLibrary()
     }
 
     if (!m_rustLib || !m_rustLib->isLoaded()) {
+        // Try current directory and parent of app dir (Linux project root)
+        QStringList fallbackPaths = {".", QCoreApplication::applicationDirPath() + "/.."};
+        for (const QString &dir : fallbackPaths) {
+            QString fullPath = dir + "/libdiskraptor_scanner.so";
+            qDebug() << "[DiskRaptor] Fallback trying:" << fullPath << "exists:" << QFile::exists(fullPath);
+            if (QFile::exists(fullPath)) {
+                m_rustLib = new QLibrary(fullPath);
+                if (m_rustLib->load()) {
+                    qDebug() << "[DiskRaptor] Loaded from fallback:" << fullPath;
+                    break;
+                } else {
+                    qWarning() << "[DiskRaptor] Fallback failed:" << m_rustLib->errorString();
+                    delete m_rustLib;
+                    m_rustLib = nullptr;
+                }
+            }
+        }
+    }
+
+    if (!m_rustLib || !m_rustLib->isLoaded()) {
         // Try loading by name only (system library path)
+        qDebug() << "[DiskRaptor] Trying QLibrary by name: diskraptor_scanner";
         m_rustLib = new QLibrary("diskraptor_scanner");
         if (!m_rustLib->load()) {
             qWarning() << "[DiskRaptor] Failed to load Rust scanner library:" << m_rustLib->errorString();
             delete m_rustLib;
             m_rustLib = nullptr;
+            qWarning() << "[DiskRaptor] Scanner unavailable - check that libdiskraptor_scanner.so is in:" << QCoreApplication::applicationDirPath();
             return false;
         }
     }
