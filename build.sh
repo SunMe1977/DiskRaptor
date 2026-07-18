@@ -114,6 +114,8 @@ case "$PLATFORM" in
       dpkg -l libcairo2-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libcairo2-dev"
       dpkg -l libpango1.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libpango1.0-dev"
       dpkg -l libatk1.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libatk1.0-dev"
+      dpkg -l libgdk-pixbuf-2.0-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgdk-pixbuf-2.0-dev"
+      dpkg -l libgtk-3-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libgtk-3-dev"
       dpkg -l libfreetype6-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libfreetype6-dev"
       dpkg -l libfontconfig1-dev 2>/dev/null | grep -q '^ii' || APT_PKGS="$APT_PKGS libfontconfig1-dev"
       # GStreamer (WebEngine video)
@@ -136,7 +138,7 @@ case "$PLATFORM" in
       done
     elif command -v dnf &>/dev/null; then
       rpm -q pkg-config 2>/dev/null || sudo dnf install -y pkg-config
-      rpm -q qt6-qtwebengine-devel 2>/dev/null || sudo dnf install -y qt6-qtwebengine-devel qt6-qtbase-devel cmake ninja-build nodejs gcc-c++ glib2-devel cairo-devel pango-devel atk-devel
+      rpm -q qt6-qtwebengine-devel 2>/dev/null || sudo dnf install -y qt6-qtwebengine-devel qt6-qtbase-devel cmake ninja-build nodejs gcc-c++ glib2-devel cairo-devel pango-devel atk-devel gdk-pixbuf2-devel gtk3-devel
       QT_PREFIX="/usr/lib64/cmake/Qt6"
     fi
     ;;
