@@ -30,12 +30,16 @@ else
 fi
 
 # ── Rust ──────────────────────────────────────
+# Source cargo env in case shell hasn't loaded it
+if [ -f "$HOME/.cargo/env" ]; then
+  . "$HOME/.cargo/env"
+fi
 echo ""
 echo "[3] Rust: $(rustc --version 2>/dev/null || echo 'not found')"
 if ! command -v rustc &>/dev/null; then
   echo "  Installing Rust..."
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  source "$HOME/.cargo/env"
+  . "$HOME/.cargo/env"
 fi
 
 # ── Node deps ─────────────────────────────────
@@ -90,7 +94,16 @@ echo "  Creating DiskRaptor.app bundle..."
 mkdir -p dist/DiskRaptor.app/Contents/MacOS
 mkdir -p dist/DiskRaptor.app/Contents/Resources
 
-cp qt-app/build/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
+# cmake with MACOSX_BUNDLE TRUE outputs inside .app bundle
+if [ -f qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor ]; then
+  cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
+elif [ -f qt-app/build/DiskRaptor ]; then
+  cp qt-app/build/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
+else
+  echo "  ERROR: DiskRaptor binary not found!"
+  ls qt-app/build/ 2>/dev/null
+  exit 1
+fi
 cp -r frontend dist/DiskRaptor.app/Contents/Resources/
 cp -r images dist/DiskRaptor.app/Contents/Resources/ 2>/dev/null || true
 
