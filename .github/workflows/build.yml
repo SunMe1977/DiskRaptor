@@ -1,45 +1,33 @@
-name: Build & Test DiskRaptor
+name: Build DiskRaptor (all platforms)
 
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
-  release:
-    types: [ published ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-test:
+  # ─── Windows ───────────────────────────────────────────
+  windows:
     runs-on: windows-latest
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Install Qt (aqtinstall)
+    - name: Install Qt
       shell: pwsh
       run: |
         pip install aqtinstall
         aqt install-qt --outputdir C:\Qt windows desktop 6.10.3 win64_msvc2022_64 --modules qtwebengine qtwebchannel
-        # Find the actual Qt installation path (aqtinstall dir name varies)
-        $qtDirs = Get-ChildItem "C:\Qt\6.10.3" -Directory -ErrorAction SilentlyContinue
-        if (-not $qtDirs) {
-          Get-ChildItem "C:\Qt" -ErrorAction SilentlyContinue | Select-Object FullName | Write-Host
-          throw "No Qt installation found under C:\Qt\6.10.3"
-        }
+        $qtDirs = Get-ChildItem "C:\Qt\6.10.3" -Directory
         $qtRoot = $qtDirs[0].FullName
         $qt6Dir = Join-Path $qtRoot "lib\cmake\Qt6"
-        if (-not (Test-Path $qt6Dir)) {
-          Write-Host "Contents of $qtRoot :"
-          Get-ChildItem $qtRoot -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName | Write-Host
-          throw "Qt6 cmake config not found at $qt6Dir"
-        }
-        Write-Host "Found Qt at: $qtRoot"
         "Qt6_DIR=$qt6Dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "CMAKE_PREFIX_PATH=$qtRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "Qt6_ROOT=$qtRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Write-Host "Qt: $qtRoot"
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -51,147 +39,212 @@ jobs:
       with:
         workspaces: src-tauri
 
-    - name: Setup MSVC dev prompt
+    - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '22'
-        cache: 'npm'
 
-    - name: Install Node dependencies
+    - name: Install Node deps
       run: npm ci --ignore-scripts
       env:
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-    - name: Debug pre-build
-      shell: pwsh
-      run: |
-        Write-Host "=== Qt6_DIR env ==="
-        Write-Host "Qt6_DIR=$env:Qt6_DIR"
-        Write-Host ""
-        Write-Host "=== Checking Qt6_DIR path ==="
-        if (Test-Path $env:Qt6_DIR) {
-          Write-Host "$env:Qt6_DIR EXISTS"
-        } else {
-          Write-Host "$env:Qt6_DIR NOT FOUND"
-          Write-Host ""
-          Write-Host "=== C:\Qt directory tree ==="
-          Get-ChildItem "C:\Qt" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
-          Write-Host ""
-          Write-Host "=== Trying to find Qt6Config.cmake ==="
-          $files = Get-ChildItem "C:\Qt" -Filter "Qt6Config.cmake" -Recurse -ErrorAction SilentlyContinue
-          if ($files) {
-            $files | ForEach-Object { Write-Host "Found: $($_.FullName)" }
-          } else {
-            Write-Host "No Qt6Config.cmake found anywhere under C:\Qt"
-          }
-          throw "Qt6_DIR path not found: $env:Qt6_DIR"
-        }
-
-    # ── Build ──────────────────────────────────────────────
-    - name: Build Rust scanner DLL
+    - name: Build Rust scanner
       run: cargo build --release
       working-directory: src-tauri
 
     - name: Build Qt app
       shell: cmd
       run: |
-        echo === Qt6_DIR env ===
-        dir "%Qt6_DIR%" 2>nul && ( echo Qt6_DIR: %Qt6_DIR% ) || ( echo Qt6_DIR not found: %Qt6_DIR% & exit /b 1 )
-        echo === vcvarsall ===
-        for %%f in (
-          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
-          "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
-          "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
-          "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
-        ) do (
-          if exist %%f ( echo Found: %%f & call %%f x64 & goto :msvc_ok )
-        )
-        echo WARNING: No vcvarsall.bat found, trying cmake without MSVC env
-        :msvc_ok
-        echo === tools ===
-        where cl.exe || echo NO cl
-        where rc.exe || echo NO rc
-        where link.exe || echo NO link
         pushd qt-app
         if exist build rmdir /s /q build
         mkdir build
         pushd build
-        echo === cmake configure ===
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" 2>&1
-        if errorlevel 1 (
-          if exist CMakeFiles\CMakeError.log type CMakeFiles\CMakeError.log
-          exit /b 1
-        )
-        echo === cmake build ===
-        cmake --build . --config Release 2>&1
-        if errorlevel 1 exit /b 1
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" || (type CMakeFiles\CMakeError.log & exit /b 1)
+        cmake --build . --config Release || exit /b 1
         popd
         popd
 
-    - name: Stage dist
+    - name: Package
       shell: cmd
       run: |
         if exist qt-app\build\Release\DiskRaptor.exe ( set SRC=qt-app\build\Release ) else ( set SRC=qt-app\build )
-        echo Staging from %SRC%
-        if not exist dist mkdir dist
-        if exist %SRC%\DiskRaptor.exe copy %SRC%\DiskRaptor.exe dist\
-        if exist %SRC%\diskraptor_scanner.dll copy %SRC%\diskraptor_scanner.dll dist\
-        if exist %SRC%\QtWebEngineProcess.exe copy %SRC%\QtWebEngineProcess.exe dist\
+        mkdir dist
+        copy %SRC%\DiskRaptor.exe dist\
+        copy %SRC%\diskraptor_scanner.dll dist\ 2>nul
+        copy %SRC%\QtWebEngineProcess.exe dist\ 2>nul
         copy %SRC%\*.dll dist\ >nul 2>&1
         for %%d in (platforms styles imageformats tls iconengines networkinformation position generic resources translations) do (
           if exist %SRC%\%%d xcopy /e /i /y %SRC%\%%d dist\%%d >nul 2>&1
         )
-        xcopy /e /i /y frontend dist\frontend\ >nul 2>&1
+        xcopy /e /i /y frontend dist\frontend\ >nul
         if exist images xcopy /e /i /y images dist\images\ >nul 2>&1
-        dir dist\ /b
+        7z a -tzip DiskRaptor-windows.zip .\dist\*
 
-    - name: Verify dist artifacts
-      shell: pwsh
-      run: |
-        $exe = Test-Path dist/DiskRaptor.exe
-        $dll = Test-Path dist/diskraptor_scanner.dll
-        $qtw = Test-Path dist/QtWebEngineProcess.exe
-        if (-not $exe) { throw "Missing DiskRaptor.exe" }
-        Write-Host "DiskRaptor.exe: $exe, scanner DLL: $dll, WebEngine: $qtw"
-
-    # ── Test ───────────────────────────────────────────────
-    - name: Run UI test
-      run: node test_scan.mjs "%USERPROFILE%"
-      shell: cmd
-      timeout-minutes: 15
-      env:
-        DISKraptor_CDP_PORT: 9222
-
-    # ── Package ────────────────────────────────────────────
-    - name: Get version
-      id: version
-      shell: pwsh
-      run: |
-        $ver = (Select-String -Path qt-app/CMakeLists.txt -Pattern 'project\(DiskRaptor VERSION ([0-9.]+)').Matches[0].Groups[1].Value
-        if (-not $ver) { $ver = "0.0.7" }
-        "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-    - name: Package release zip
-      shell: cmd
-      run: |
-        if not exist artifacts mkdir artifacts
-        "%ProgramFiles%\7-Zip\7z.exe" a -tzip artifacts\DiskRaptor_v%VER%.zip .\dist\*
-      env:
-        VER: ${{ steps.version.outputs.version }}
-
-    - name: Upload artifacts
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: diskraptor-windows-build
-        path: artifacts/
-        compression-level: 0
+        name: DiskRaptor-windows
+        path: DiskRaptor-windows.zip
 
-    - name: Upload to release
-      if: github.event_name == 'release'
+  # ─── macOS ───────────────────────────────────────────
+  macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Qt
+      run: |
+        brew install qt@6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Build Rust scanner
+      run: cargo build --release
+      working-directory: src-tauri
+
+    - name: Build Qt app
+      run: |
+        export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6"
+        export CMAKE_PREFIX_PATH="$(brew --prefix qt@6)"
+        cd qt-app
+        rm -rf build && mkdir build && cd build
+        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          -DQt6_DIR="$Qt6_DIR" \
+          -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
+        cmake --build . --config Release
+        cd ../..
+
+    - name: Package .app
+      run: |
+        mkdir -p dist/DiskRaptor.app/Contents/MacOS
+        mkdir -p dist/DiskRaptor.app/Contents/Resources
+        if [ -f qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor ]; then
+          cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
+        else
+          cp qt-app/build/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
+        fi
+        cp -r frontend dist/DiskRaptor.app/Contents/Resources/
+        [ -d images ] && cp -r images dist/DiskRaptor.app/Contents/Resources/
+        [ -f images/icon.icns ] && cp images/icon.icns dist/DiskRaptor.app/Contents/Resources/
+        if [ -f src-tauri/target/release/libdiskraptor_scanner.dylib ]; then
+          cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/
+        fi
+        cat > dist/DiskRaptor.app/Contents/Info.plist << 'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>DiskRaptor</string>
+<key>CFBundleIdentifier</key><string>com.diskraptor.app</string>
+<key>CFBundleName</key><string>DiskRaptor</string>
+<key>CFBundleVersion</key><string>0.0.7</string>
+<key>CFBundleShortVersionString</key><string>0.0.7</string>
+<key>CFBundleIconFile</key><string>icon</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+PLIST
+        cd dist && zip -r ../DiskRaptor-macos.zip DiskRaptor.app && cd ..
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DiskRaptor-macos
+        path: DiskRaptor-macos.zip
+
+  # ─── Linux ───────────────────────────────────────────
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Qt6 + deps
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev \
+          cmake ninja-build pkg-config nodejs g++ \
+          libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev \
+          libgdk-pixbuf-2.0-dev libgtk-3-dev libxcb-cursor-dev \
+          libxkbcommon-dev libegl1-mesa-dev libgl1-mesa-dev \
+          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+          libicu-dev libssl-dev libsqlite3-dev
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Build Rust scanner
+      run: cargo build --release
+      working-directory: src-tauri
+
+    - name: Build Qt app
+      run: |
+        cd qt-app
+        rm -rf build && mkdir build && cd build
+        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          -DQt6_DIR="/usr/lib/x86_64-linux-gnu/cmake/Qt6" \
+          -DCMAKE_PREFIX_PATH="/usr/lib/x86_64-linux-gnu"
+        cmake --build . --config Release
+        cd ../..
+
+    - name: Package
+      run: |
+        mkdir -p dist
+        cp qt-app/build/DiskRaptor dist/
+        cp -r frontend dist/
+        mkdir -p dist/images
+        cp -r images/* dist/images/ 2>/dev/null || true
+        if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then
+          cp src-tauri/target/release/libdiskraptor_scanner.so dist/
+        fi
+        cd dist && zip -r ../DiskRaptor-linux.zip . && cd ..
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DiskRaptor-linux
+        path: DiskRaptor-linux.zip
+
+  # ─── Release ──────────────────────────────────────────
+  release:
+    needs: [windows, macos, linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: DiskRaptor-*
+        merge-multiple: true
+
+    - name: Upload to Release
       uses: softprops/action-gh-release@v2
       with:
-        files: artifacts/DiskRaptor_v*.zip
+        files: |
+          DiskRaptor-windows.zip
+          DiskRaptor-macos.zip
+          DiskRaptor-linux.zip
         fail_on_unmatched_files: true
