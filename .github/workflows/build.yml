@@ -68,6 +68,6 @@ jobs:
       - run: gh release create "$GITHUB_REF_NAME" --title "DiskRaptor $GITHUB_REF_NAME" --notes "Release" 2>/dev/null || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: for f in artifacts/*/*.zip; do [ -f "$f" ] && gh release upload "$GITHUB_REF_NAME" "$f" --clobber; done
+      - run: find artifacts -name "*.zip" -type f -exec gh release upload "$GITHUB_REF_NAME" {} --clobber \;
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
