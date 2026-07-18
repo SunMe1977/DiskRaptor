@@ -575,18 +575,15 @@
       var maxSamples = 40;
 
       function formatBytesPerSec(bps) {
-        if (bps <= 0) return "0 B/s";
-        var units = ["B/s","KB/s","MB/s","GB/s"];
-        var i = Math.min(Math.floor(Math.log(bps) / Math.log(1024)), 3);
-        var v = bps / Math.pow(1024, i);
-        return v.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+        if (bps <= 0) return "0 MB/s";
+        var mbps = bps / (1024 * 1024);
+        return mbps.toFixed(mbps < 10 ? 2 : 1) + " MB/s";
       }
 
       function speedColor(ratio) {
-        // ratio 0..1: low=green, normal=green, peak=red
-        if (ratio < 0.3) return "#d29922";  // yellow (low)
-        if (ratio < 0.7) return "#3fb950";  // green (normal)
-        return "#f85149";  // red (peak)
+        if (ratio > 0.8) return "#f85149";  // red (peak)
+        if (ratio > 0.4) return "#3fb950";  // green (normal)
+        return "#d29922";  // yellow (low)
       }
 
       function drawSpeedChart() {
@@ -596,71 +593,71 @@
         var ctx = speedChartCtx;
         ctx.clearRect(0, 0, w, h);
         if (speedSamples.length < 2) return;
-        var maxVal = Math.max.apply(null, speedSamples.map(function(s){return s.fps})) || 1;
         var maxBps = Math.max.apply(null, speedSamples.map(function(s){return s.bps})) || 1;
         var pad = 4;
         var cw = w - pad * 2;
         var ch = h - pad * 2;
         var step = cw / Math.max(speedSamples.length - 1, 1);
 
-        // Draw filled area with gradient from green to red
+        // Draw filled area with gradient colors
         for (var si = 0; si < speedSamples.length; si++) {
           var sx = pad + si * step;
-          var sy = pad + ch - (speedSamples[si].fps / maxVal) * ch;
-          var ratio = speedSamples[si].fps / maxVal;
+          var sy = pad + ch - (speedSamples[si].bps / maxBps) * ch;
+          var ratio = speedSamples[si].bps / maxBps;
           ctx.fillStyle = speedColor(ratio);
           ctx.globalAlpha = 0.15;
           ctx.fillRect(sx - step/2, sy, step, h - pad - sy);
         }
         ctx.globalAlpha = 1;
 
-        // Draw speed line with segment colors
+        // Draw speed line with segment colors (thicker, smoother)
+        ctx.shadowColor = "rgba(0,0,0,0.4)";
+        ctx.shadowBlur = 3;
+        ctx.lineWidth = 3;
+        ctx.lineJoin = "round";
         for (var si = 0; si < speedSamples.length - 1; si++) {
           var sx1 = pad + si * step;
-          var sy1 = pad + ch - (speedSamples[si].fps / maxVal) * ch;
+          var sy1 = pad + ch - (speedSamples[si].bps / maxBps) * ch;
           var sx2 = pad + (si + 1) * step;
-          var sy2 = pad + ch - (speedSamples[si+1].fps / maxVal) * ch;
-          var ratio = (speedSamples[si].fps + speedSamples[si+1].fps) / 2 / maxVal;
+          var sy2 = pad + ch - (speedSamples[si+1].bps / maxBps) * ch;
+          var ratio = (speedSamples[si].bps + speedSamples[si+1].bps) / 2 / maxBps;
           ctx.beginPath();
           ctx.moveTo(sx1, sy1);
           ctx.lineTo(sx2, sy2);
           ctx.strokeStyle = speedColor(ratio);
-          ctx.lineWidth = 2;
           ctx.stroke();
         }
+        ctx.shadowBlur = 0;
 
-        // Center: MB/s big, f/s smaller below
+        // Center: MB/s large green, f/s smaller below
         var current = speedSamples[speedSamples.length - 1];
         if (current) {
           var cx = w / 2;
           var cy = h / 2;
-          // MB/s in large bold — use solid dark text for light-theme compat
-          ctx.fillStyle = "#e6edf3";
-          ctx.shadowColor = "rgba(0,0,0,0.6)";
-          ctx.shadowBlur = 4;
-          ctx.font = "bold 24px monospace";
+          var mbps = current.bps / (1024 * 1024);
+          var mbColor = mbps > 100 ? "#3fb950" : mbps > 30 ? "#d29922" : "#e6edf3";
+          ctx.fillStyle = mbColor;
+          ctx.shadowColor = "rgba(0,0,0,0.7)";
+          ctx.shadowBlur = 6;
+          ctx.font = "bold 28px monospace";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText(formatBytesPerSec(current.bps), cx, cy - 10);
-          // f/s smaller below
-          ctx.fillStyle = "#8b949e";
-          ctx.shadowBlur = 2;
-          ctx.font = "12px monospace";
-          ctx.fillText(Math.round(current.fps).toLocaleString() + " f/s", cx, cy + 14);
+          ctx.fillText(formatBytesPerSec(current.bps), cx, cy - 8);
+          ctx.fillStyle = "#e6edf3";
+          ctx.shadowBlur = 3;
+          ctx.font = "bold 11px monospace";
+          ctx.fillText(Math.round(current.fps).toLocaleString() + " files/sec", cx, cy + 18);
           ctx.shadowBlur = 0;
         }
 
         // Peak labels top-right
-        ctx.shadowColor = "rgba(0,0,0,0.5)";
         ctx.shadowBlur = 3;
-        ctx.fillStyle = "#8b949e";
-        ctx.font = "9px monospace";
+        ctx.fillStyle = "#f85149";
+        ctx.font = "10px monospace";
         ctx.textAlign = "right";
         ctx.textBaseline = "top";
         ctx.fillText("peak " + formatBytesPerSec(maxBps), w - pad, pad);
-        ctx.fillStyle = "#6e7681";
-        ctx.font = "8px monospace";
-        ctx.fillText(Math.round(maxVal).toLocaleString() + " f/s", w - pad, pad + 11);
+        ctx.fillStyle = "#8b949e";
         ctx.shadowBlur = 0;
       }
 
@@ -737,17 +734,20 @@
           }
           progressElapsedValEl.textContent = elapsedStr;
 
-          // ── Speed ──
+          // ── Speed (MB/s primary, files/sec secondary) ──
           if (elapsedSecs > 0 && filesFound > 0) {
             var filesPerSec = (filesFound / elapsedSecs);
             var bytesPerSec = (bytesFound / elapsedSecs);
-            progressSpeedValEl.textContent = Math.round(filesPerSec).toLocaleString();
+            var mbPerSec = bytesPerSec / (1024 * 1024);
+            progressSpeedValEl.textContent = mbPerSec.toFixed(mbPerSec < 10 ? 2 : 1) + " MB/s";
+            progressSpeedValEl.style.color = mbPerSec > 100 ? "#3fb950" : mbPerSec > 30 ? "#d29922" : "#8b949e";
             // Track sample for chart
             speedSamples.push({fps: filesPerSec, bps: bytesPerSec});
             if (speedSamples.length > maxSamples) speedSamples.shift();
             drawSpeedChart();
           } else {
             progressSpeedValEl.textContent = "—";
+            progressSpeedValEl.style.color = "#8b949e";
           }
 
           // ── Live stats panel update ──
@@ -813,46 +813,25 @@ clearTimeout(safetyTimer);
           topFiles.render([], true);
         }
 
-        // Load tree
-        if (result.root_info && result.root_info.total_chunks > 0) {
-          loader.totalNodes = result.root_info.total_nodes;
-          loader.totalChunks = result.root_info.total_chunks;
-          loader.allNodes = new Array(loader.totalNodes);
-          loader.scanId = scanId;
-
+        // Fast tree loading: parse chunks directly from scan result
+        if (result && result.chunks) {
           try {
-            await loader.loadChunk(0);
-          } catch (e) {
-            console.warn("loadChunk(0) failed:", e);
-          }
-
-          // Auto-expand root so users see children immediately
-          treeView.expanded.add(0);
-
-          try {
+            loader.loadFromResult(result);
+            // Auto-expand root so users see children immediately
+            treeView.expanded.add(0);
             await treeView.rebuild();
           } catch (e) {
-            console.warn("Tree rebuild:", e.message);
-          }
-
-          // Background chunk loading (parallel batches of 10)
-          var BATCH_SIZE = 10;
-          for (var ci = 1; ci < loader.totalChunks; ci += BATCH_SIZE) {
-            var batch = [];
-            for (
-              var bj = 0;
-              bj < BATCH_SIZE && ci + bj < loader.totalChunks;
-              bj++
-            ) {
-              var chunkIdx = ci + bj;
-              if (!loader.loadedChunks.has(chunkIdx)) {
-                batch.push(loader.loadChunk(chunkIdx));
-              }
+            console.warn("Fast tree load failed:", e);
+            // Fallback: load chunk 0 manually
+            if (result.root_info && result.root_info.total_chunks > 0) {
+              loader.totalNodes = result.root_info.total_nodes;
+              loader.totalChunks = result.root_info.total_chunks;
+              loader.allNodes = new Array(loader.totalNodes);
+              loader.scanId = scanId;
+              try { await loader.loadChunk(0); } catch(e2) {}
+              treeView.expanded.add(0);
+              try { await treeView.rebuild(); } catch(e2) {}
             }
-            if (batch.length > 0) {
-              await Promise.all(batch);
-            }
-            await sleep(0); // yield to UI
           }
         }
 

@@ -133,6 +133,81 @@ class ChunkLoader {
     }
   }
 
+  /** Load all chunks from a scan result directly (fast path — no per-chunk FFI calls) */
+  loadFromResult(result) {
+    if (!result || !result.chunks) return;
+
+    var chunksArray;
+    if (typeof result.chunks === "string") {
+      try { chunksArray = JSON.parse(result.chunks); } catch(e) {
+        console.warn("Failed to parse chunks JSON:", e);
+        return;
+      }
+    } else if (Array.isArray(result.chunks)) {
+      chunksArray = result.chunks;
+    } else {
+      return;
+    }
+
+    this.totalChunks = chunksArray.length;
+    this.loadedChunks = new Set();
+    this.parentMap = new Map();
+
+    // First pass: count total nodes and allocate
+    var totalNodes = 0;
+    if (result.root_info && result.root_info.total_nodes) {
+      totalNodes = result.root_info.total_nodes;
+    } else {
+      for (var ci = 0; ci < chunksArray.length; ci++) {
+        totalNodes += (chunksArray[ci].nodes || []).length;
+      }
+    }
+    this.totalNodes = totalNodes;
+    this.allNodes = new Array(totalNodes);
+
+    // Second pass: populate all nodes and parent map
+    var nodeIdx = 0;
+    for (var ci = 0; ci < chunksArray.length; ci++) {
+      var chunk = chunksArray[ci];
+      var nodes = chunk.nodes || [];
+      for (var ni = 0; ni < nodes.length; ni++) {
+        var node = nodes[ni];
+        node._arenaIndex = nodeIdx;
+        node._children = [];
+        node._loadedChildren = false;
+        this.allNodes[nodeIdx] = node;
+
+        if (node.parent !== 4294967295) {
+          if (!this.parentMap.has(node.parent)) {
+            this.parentMap.set(node.parent, []);
+          }
+          this.parentMap.get(node.parent).push(nodeIdx);
+        }
+
+        nodeIdx++;
+      }
+      this.loadedChunks.add(ci);
+    }
+
+    this.loadedCount = nodeIdx;
+
+    // Sort children by size (largest first)
+    var self = this;
+    var entries = Array.from(this.parentMap.entries());
+    for (var ei = 0; ei < entries.length; ei++) {
+      var children = entries[ei][1];
+      children.sort(function (a, b) {
+        var na = self.allNodes[a];
+        var nb = self.allNodes[b];
+        return (nb ? nb.size : 0) - (na ? na.size : 0);
+      });
+    }
+
+    if (this.onProgress) {
+      this.onProgress(this.loadedChunks.size, this.totalChunks);
+    }
+  }
+
   async loadChunk(chunkIndex) {
     if (this.loadedChunks.has(chunkIndex)) return;
 
