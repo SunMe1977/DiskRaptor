@@ -282,9 +282,10 @@ EOF
     cp -r images/* dist/images/ 2>/dev/null || true
     if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then
       cp src-tauri/target/release/libdiskraptor_scanner.so dist/
+      echo "  Rust scanner: libdiskraptor_scanner.so"
     fi
     echo "  App: dist/DiskRaptor"
-    echo "  Run: ./dist/DiskRaptor"
+    echo "  Run: LD_LIBRARY_PATH=dist ./dist/DiskRaptor"
     ;;
 
   windows)
