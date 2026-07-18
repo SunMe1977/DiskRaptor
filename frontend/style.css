@@ -1295,6 +1295,56 @@ body.light-theme .about-bg {
     border: 1px solid var(--border);
 }
 
+/* Galaxy toolbar and close button */
+.galaxy-toolbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 6px;
+    background: rgba(0,0,0,0.6);
+    z-index: 10000;
+    backdrop-filter: blur(8px);
+}
+.gbtn {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #e6edf3;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+}
+.gbtn:hover {
+    background: rgba(255,255,255,0.2);
+}
+#g-close {
+    font-size: 18px;
+    padding: 4px 12px;
+    background: rgba(255,50,50,0.2);
+    border-color: rgba(255,50,50,0.4);
+}
+#g-close:hover {
+    background: rgba(255,50,50,0.4);
+}
+.g-separator {
+    width: 1px;
+    height: 20px;
+    background: rgba(255,255,255,0.2);
+    margin: 0 4px;
+}
+.g-fps {
+    margin-left: auto;
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    font-family: monospace;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    LIGHT THEME
    ═══════════════════════════════════════════════════════════════ */
