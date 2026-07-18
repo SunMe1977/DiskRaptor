@@ -1,5 +1,6 @@
 // DiskRaptor — IPC Bridge between C++ backend and JavaScript frontend
 // Uses Rust scanner DLL (.dll / .dylib) cross‑platform via QLibrary.
+// Falls back to C++ scanner when Rust library is not available.
 #pragma once
 
 #include <QObject>
@@ -9,6 +10,8 @@
 #include <QJsonObject>
 #include <QSettings>
 #include <QLibrary>
+#include <QMutex>
+#include <QAtomicInt>
 
 class IpcBridge : public QObject
 {
@@ -18,7 +21,6 @@ public:
     explicit IpcBridge(QObject *parent = nullptr);
     ~IpcBridge() override;
 
-    // These methods are callable from JavaScript via QWebChannel
     Q_INVOKABLE QString invoke(const QString &command, const QVariantMap &args);
     Q_INVOKABLE QString getHomeDir();
     Q_INVOKABLE QString pickDirectory();
@@ -51,7 +53,6 @@ private:
     // ── Rust scanner cross‑platform via QLibrary ─────────────────
     QLibrary *m_rustLib = nullptr;
 
-    // Function pointer types matching the Rust CDYLIB exports
     using FnStartScan   = char* (*)(const char* path);
     using FnGetProgress = char* (*)();
     using FnGetResult   = char* (*)();
@@ -70,4 +71,21 @@ private:
 
     bool loadRustLibrary();
     void unloadRustLibrary();
+
+    // ── C++ fallback scanner (when Rust .so not available) ─────
+    QThread *m_cppScanThread = nullptr;
+    QMutex m_cppMutex;
+    bool m_cppScanRunning = false;
+    quint64 m_cppFilesFound = 0;
+    quint64 m_cppDirsFound = 0;
+    quint64 m_cppBytesFound = 0;
+    QString m_cppCurrentDir;
+    qint64 m_cppStartTimeMs = 0;
+    QString m_cppScanPath;
+    int m_cppScanId = 0;
+
+    void cppStartScan(const QString &path);
+    void cppCancelScan();
+    QString cppGetProgressJson();
+    QString cppGetResultJson();
 };

@@ -16,6 +16,12 @@
 #include <QApplication>
 #include <QTimer>
 #include <QCoreApplication>
+#include <QDirIterator>
+#include <QThread>
+#include <QMutex>
+#include <QDateTime>
+#include <QAtomicInteger>
+#include <atomic>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -121,29 +127,34 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
         if (!path.isEmpty()) {
             m_scanId++;
             m_lastScanPath = path;
-            if (!m_drStartScan) {
-                return resultToJson(false, QVariant(), "Rust scanner not loaded");
-            }
-            QByteArray pathUtf8 = path.toUtf8();
-            char* result = m_drStartScan(pathUtf8.constData());
-            QString jsonResult;
-            if (result) {
-                jsonResult = QString::fromUtf8(result);
-                m_drFreeString(result);
-            }
-            QJsonDocument doc = QJsonDocument::fromJson(jsonResult.toUtf8());
-            int rustScanId = m_scanId;
-            if (!doc.isNull() && doc.isObject()) {
-                QJsonObject obj = doc.object();
-                if (obj.contains("scan_id")) {
-                    rustScanId = obj["scan_id"].toInt();
+            if (m_drStartScan) {
+                // Rust scanner available
+                QByteArray pathUtf8 = path.toUtf8();
+                char* result = m_drStartScan(pathUtf8.constData());
+                QString jsonResult;
+                if (result) {
+                    jsonResult = QString::fromUtf8(result);
+                    m_drFreeString(result);
                 }
-                if (obj.contains("success") && !obj["success"].toBool()) {
-                    QString err = obj["error"].toString();
-                    return resultToJson(false, QVariant(), err);
+                QJsonDocument doc = QJsonDocument::fromJson(jsonResult.toUtf8());
+                int rustScanId = m_scanId;
+                if (!doc.isNull() && doc.isObject()) {
+                    QJsonObject obj = doc.object();
+                    if (obj.contains("scan_id")) {
+                        rustScanId = obj["scan_id"].toInt();
+                    }
+                    if (obj.contains("success") && !obj["success"].toBool()) {
+                        QString err = obj["error"].toString();
+                        return resultToJson(false, QVariant(), err);
+                    }
                 }
+                return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", rustScanId}});
+            } else {
+                // Fallback to C++ scanner
+                qDebug() << "[DiskRaptor] Using C++ fallback scanner for:" << path;
+                cppStartScan(path);
+                return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", m_cppScanId}});
             }
-            return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", rustScanId}});
         }
         return resultToJson(false, QVariant(), "No path provided");
     }
@@ -223,94 +234,80 @@ QString IpcBridge::getIcon(const QString &path, bool isDir)
 
 QString IpcBridge::getScanProgress()
 {
-    if (!m_drGetProgress) {
-        return resultToJson(false, QVariant(), "Rust scanner not loaded");
+    if (m_drGetProgress) {
+        char* cjson = m_drGetProgress();
+        if (!cjson) {
+            return resultToJson(false, QVariant(), "null progress");
+        }
+        QString jsonStr = QString::fromUtf8(cjson);
+        m_drFreeString(cjson);
+        return "{\"success\":true,\"data\":" + jsonStr + "}";
     }
-
-    char* cjson = m_drGetProgress();
-    if (!cjson) {
-        return resultToJson(false, QVariant(), "null progress");
-    }
-
-    QString jsonStr = QString::fromUtf8(cjson);
-    m_drFreeString(cjson);
-
-    return "{\"success\":true,\"data\":" + jsonStr + "}";
+    // C++ fallback
+    return cppGetProgressJson();
 }
 
 QString IpcBridge::getScanResult()
 {
-    if (!m_drGetResult) {
-        return resultToJson(false, QVariant(), "Rust scanner not loaded");
-    }
-
-    char* cjson = m_drGetResult();
-    if (!cjson) {
-        return resultToJson(false, QVariant(), "null result");
-    }
-
-    QString jsonStr = QString::fromUtf8(cjson);
-    m_drFreeString(cjson);
-
-    QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
-
-    // If result is ready, return it
-    if (!doc.isNull() && doc.isObject()) {
-        QJsonObject obj = doc.object();
-        if (!obj.isEmpty() && obj.contains("stats")) {
-            QJsonObject resultObj;
-            resultObj["stats"] = obj["stats"];
-            if (obj.contains("root_info")) {
-                resultObj["root_info"] = obj["root_info"];
-            }
-            resultObj["scan_id"] = m_scanId;
-            m_chunksJson = jsonStr;
-            QJsonObject wrapper;
-            wrapper["success"] = true;
-            wrapper["data"] = resultObj;
-            return QString::fromUtf8(QJsonDocument(wrapper).toJson(QJsonDocument::Compact));
+    if (m_drGetResult) {
+        char* cjson = m_drGetResult();
+        if (!cjson) {
+            return resultToJson(false, QVariant(), "null result");
         }
-    }
-
-    // Rust result not ready — check if scan thread exited (crash/panic)
-    bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
-    if (!isRunning) {
-        // Scan thread exited without setting result — use last progress data
-        QString progressJson = getScanProgress();
-        QJsonDocument pdoc = QJsonDocument::fromJson(progressJson.toUtf8());
-        if (!pdoc.isNull() && pdoc.isObject()) {
-            QJsonObject pobj = pdoc.object();
-            if (pobj.contains("data")) {
-                QJsonObject data = pobj["data"].toObject();
-                qint64 files = static_cast<qint64>(data["files_found"].toDouble());
-                qint64 dirs = static_cast<qint64>(data["dirs_found"].toDouble());
-                qint64 elapsed = static_cast<qint64>(data["elapsed_secs"].toDouble());
-                QJsonObject stats;
-                stats["total_files"] = files;
-                stats["total_dirs"] = dirs;
-                stats["total_size"] = 0;
-                stats["scan_time_ms"] = elapsed * 1000;
-                stats["top_files"] = QJsonArray();
-                stats["file_type_breakdown"] = QJsonArray();
-                stats["size_human"] = "0 B";
-                stats["time_human"] = QString::number(elapsed) + "s";
-                QJsonObject ri;
-                ri["root_index"] = 0;
-                ri["total_nodes"] = files + dirs;
-                ri["total_chunks"] = 1;
+        QString jsonStr = QString::fromUtf8(cjson);
+        m_drFreeString(cjson);
+        QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
+        if (!doc.isNull() && doc.isObject()) {
+            QJsonObject obj = doc.object();
+            if (!obj.isEmpty() && obj.contains("stats")) {
                 QJsonObject resultObj;
-                resultObj["stats"] = stats;
-                resultObj["root_info"] = ri;
+                resultObj["stats"] = obj["stats"];
+                if (obj.contains("root_info")) {
+                    resultObj["root_info"] = obj["root_info"];
+                }
                 resultObj["scan_id"] = m_scanId;
+                m_chunksJson = jsonStr;
                 QJsonObject wrapper;
                 wrapper["success"] = true;
                 wrapper["data"] = resultObj;
                 return QString::fromUtf8(QJsonDocument(wrapper).toJson(QJsonDocument::Compact));
             }
         }
+        // Rust result fallback...
+        bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
+        if (!isRunning) {
+            QString progressJson = getScanProgress();
+            QJsonDocument pdoc = QJsonDocument::fromJson(progressJson.toUtf8());
+            if (!pdoc.isNull() && pdoc.isObject()) {
+                QJsonObject pobj = pdoc.object();
+                if (pobj.contains("data")) {
+                    QJsonObject data = pobj["data"].toObject();
+                    qint64 files = static_cast<qint64>(data["files_found"].toDouble());
+                    qint64 dirs = static_cast<qint64>(data["dirs_found"].toDouble());
+                    qint64 elapsed = static_cast<qint64>(data["elapsed_secs"].toDouble());
+                    QJsonObject stats;
+                    stats["total_files"] = files;
+                    stats["total_dirs"] = dirs;
+                    stats["total_size"] = 0;
+                    stats["scan_time_ms"] = elapsed * 1000;
+                    stats["top_files"] = QJsonArray();
+                    stats["file_type_breakdown"] = QJsonArray();
+                    stats["size_human"] = "0 B";
+                    stats["time_human"] = QString::number(elapsed) + "s";
+                    QJsonObject ri;
+                    ri["root_index"] = 0; ri["total_nodes"] = files + dirs; ri["total_chunks"] = 1;
+                    QJsonObject resultObj;
+                    resultObj["stats"] = stats; resultObj["root_info"] = ri; resultObj["scan_id"] = m_scanId;
+                    QJsonObject wrapper;
+                    wrapper["success"] = true; wrapper["data"] = resultObj;
+                    return QString::fromUtf8(QJsonDocument(wrapper).toJson(QJsonDocument::Compact));
+                }
+            }
+        }
+        return resultToJson(false, QVariant(), "result not ready yet");
     }
-
-    return resultToJson(false, QVariant(), "result not ready yet");
+    // C++ fallback
+    return cppGetResultJson();
 }
 
 QString IpcBridge::listDrives()
@@ -496,6 +493,111 @@ void IpcBridge::unloadRustLibrary()
         m_drIsRunning = nullptr;
         m_drFreeString = nullptr;
     }
+}
+
+// ── C++ fallback scanner (used when Rust scanner not available) ──
+
+void IpcBridge::cppStartScan(const QString &path)
+{
+    cppCancelScan();
+    m_cppScanId = ++m_scanId;
+    m_cppScanPath = path;
+    m_cppFilesFound = 0;
+    m_cppDirsFound = 0;
+    m_cppBytesFound = 0;
+    m_cppCurrentDir = path;
+    m_cppStartTimeMs = QDateTime::currentMSecsSinceEpoch();
+    m_cppScanRunning = true;
+
+    m_cppScanThread = QThread::create([this, path]() {
+        QDirIterator it(path, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                        QDirIterator::Subdirectories);
+        quint64 files = 0, dirs = 0, bytes = 0;
+        qint64 lastProgress = 0;
+        while (it.hasNext()) {
+            if (!m_cppScanRunning) break;
+            QString fullPath = it.next();
+            QFileInfo fi = it.fileInfo();
+            if (fi.isDir()) {
+                dirs++;
+            } else if (fi.isFile()) {
+                files++;
+                bytes += fi.size();
+            }
+            qint64 now = QDateTime::currentMSecsSinceEpoch();
+            if (now - lastProgress > 50) {
+                QMutexLocker lock(&m_cppMutex);
+                m_cppFilesFound = files;
+                m_cppDirsFound = dirs;
+                m_cppBytesFound = bytes;
+                m_cppCurrentDir = fullPath;
+                lastProgress = now;
+            }
+        }
+        QMutexLocker lock(&m_cppMutex);
+        m_cppFilesFound = files;
+        m_cppDirsFound = dirs;
+        m_cppBytesFound = bytes;
+        m_cppScanRunning = false;
+        qDebug() << "[DiskRaptor] C++ scan complete:" << files << "files," << dirs << "dirs";
+    });
+    connect(m_cppScanThread, &QThread::finished, m_cppScanThread, &QObject::deleteLater);
+    m_cppScanThread->start();
+}
+
+void IpcBridge::cppCancelScan()
+{
+    m_cppScanRunning = false;
+    if (m_cppScanThread && m_cppScanThread->isRunning()) {
+        m_cppScanThread->quit();
+        m_cppScanThread->wait(2000);
+    }
+    m_cppScanThread = nullptr;
+}
+
+QString IpcBridge::cppGetProgressJson()
+{
+    QMutexLocker lock(&m_cppMutex);
+    qint64 elapsed = (QDateTime::currentMSecsSinceEpoch() - m_cppStartTimeMs) / 1000;
+    QJsonObject obj;
+    obj["files_found"] = static_cast<qint64>(m_cppFilesFound);
+    obj["dirs_found"] = static_cast<qint64>(m_cppDirsFound);
+    obj["bytes_found"] = static_cast<qint64>(m_cppBytesFound);
+    obj["is_running"] = m_cppScanRunning;
+    obj["current_dir"] = m_cppCurrentDir;
+    obj["elapsed_secs"] = elapsed;
+    obj["phase"] = m_cppScanRunning ? 0 : 3;
+    return "{\"success\":true,\"data\":" + QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact)) + "}";
+}
+
+QString IpcBridge::cppGetResultJson()
+{
+    QMutexLocker lock(&m_cppMutex);
+    if (m_cppScanRunning) {
+        return resultToJson(false, QVariant(), "scan still running");
+    }
+    qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_cppStartTimeMs;
+    QJsonObject stats;
+    stats["total_files"] = static_cast<qint64>(m_cppFilesFound);
+    stats["total_dirs"] = static_cast<qint64>(m_cppDirsFound);
+    stats["total_size"] = static_cast<qint64>(m_cppBytesFound);
+    stats["scan_time_ms"] = elapsed;
+    stats["top_files"] = QJsonArray();
+    stats["file_type_breakdown"] = QJsonArray();
+    stats["size_human"] = "-";
+    stats["time_human"] = QString::number(elapsed / 1000) + "s";
+    QJsonObject ri;
+    ri["root_index"] = 0;
+    ri["total_nodes"] = static_cast<qint64>(m_cppFilesFound + m_cppDirsFound + 1);
+    ri["total_chunks"] = 1;
+    QJsonObject resultObj;
+    resultObj["stats"] = stats;
+    resultObj["root_info"] = ri;
+    resultObj["scan_id"] = m_cppScanId;
+    QJsonObject wrapper;
+    wrapper["success"] = true;
+    wrapper["data"] = resultObj;
+    return QString::fromUtf8(QJsonDocument(wrapper).toJson(QJsonDocument::Compact));
 }
 
 QString IpcBridge::saveSettings(const QVariantMap &settings)
