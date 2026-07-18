@@ -10,7 +10,7 @@ echo.
 setlocal
 
 REM -- Find tool paths ----------------------------
-set MSVC_ROOT=C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231
+set MSVC_ROOT=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207
 set WIN10_KIT=C:\Program Files (x86)\Windows Kits\10
 set QT_DIR=C:\Qt\6.10.3\msvc2022_64
 set CMAKE_DIR=C:\Qt\Tools\CMake_64

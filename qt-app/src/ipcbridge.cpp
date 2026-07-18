@@ -221,9 +221,16 @@ QString IpcBridge::getHomeDir()
 
 QString IpcBridge::pickDirectory()
 {
+    // Use active window as parent for proper dialog modality on all platforms
+    QWidget *parent = QApplication::activeWindow();
     QString dir = QFileDialog::getExistingDirectory(
-        nullptr, "Select Directory to Scan", QDir::homePath());
-    return resultToJson(true, dir);
+        parent, "Select Directory to Scan", QDir::homePath(),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (dir.isEmpty()) {
+        // User cancelled - return empty result
+        return resultToJson(true, QVariant());
+    }
+    return resultToJson(true, QDir::toNativeSeparators(dir));
 }
 
 QString IpcBridge::deletePath(const QString &path)

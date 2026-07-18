@@ -42,7 +42,13 @@ elseif(APPLE)
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.diskraptor.app"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_ICON_FILE "icon.icns")
+  # Copy .icns into the bundle Resources
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/../images/icon.icns"
+      "$<TARGET_FILE_DIR:${PROJECT_NAME}>/../Resources/icon.icns"
+    COMMENT "Copying icon.icns into app bundle...")
 endif()
 
 # Copy frontend + modules + Rust scanner library after build

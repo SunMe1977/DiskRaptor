@@ -171,14 +171,23 @@ int main(int argc, char *argv[])
     window.setWindowTitle("DiskRaptor " + app.applicationVersion());
     QIcon appIcon;
     // Try loading from filesystem first (works on all platforms)
+    // Icon file is always named 128x128@2x.png on all platforms for simplicity
+    QString iconFile = "128x128@2x.png";
     QStringList iconPaths = {
-        QApplication::applicationDirPath() + "/images/128x128@2x.png",
+        QApplication::applicationDirPath() + "/images/" + iconFile,
         QApplication::applicationDirPath() + "/images/icon.ico",
-        QApplication::applicationDirPath() + "/../images/128x128@2x.png",
+        QApplication::applicationDirPath() + "/../images/" + iconFile,
         QApplication::applicationDirPath() + "/../images/icon.ico",
+        QApplication::applicationDirPath() + "/../Resources/images/" + iconFile,
         QApplication::applicationDirPath() + "/../share/icons/hicolor/128x128/apps/diskraptor.png",
-        QDir::currentPath() + "/images/128x128@2x.png",
-        frontendPath + "/../images/128x128@2x.png",
+        QDir::currentPath() + "/images/" + iconFile,
+        frontendPath + "/../images/" + iconFile,
+#ifdef Q_OS_LINUX
+        // Flatpak / Snap paths
+        "/app/share/icons/hicolor/128x128/apps/diskraptor.png",
+        "/usr/local/share/icons/hicolor/128x128/apps/diskraptor.png",
+        "/usr/share/icons/hicolor/128x128/apps/diskraptor.png",
+#endif
         ":/app.png",
         ":/app.ico",
     };
