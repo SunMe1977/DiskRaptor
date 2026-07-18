@@ -167,7 +167,24 @@ int main(int argc, char *argv[])
     MainWindow window(frontendPath);
     window.setWindowTitle("DiskRaptor " + app.applicationVersion());
     QIcon appIcon(":/app.ico");
-    if (appIcon.isNull()) appIcon = QIcon(":/app.png");
+    if (appIcon.isNull()) {
+        // Try PNG (works on Linux)
+        appIcon = QIcon(":/app.png");
+    }
+    if (appIcon.isNull()) {
+        // Try loading from filesystem
+        QStringList iconPaths = {
+            QApplication::applicationDirPath() + "/../images/icon.ico",
+            QApplication::applicationDirPath() + "/../images/128x128@2x.png",
+            QDir::currentPath() + "/images/icon.ico",
+            QDir::currentPath() + "/../images/128x128@2x.png",
+            frontendPath + "/../images/128x128@2x.png",
+        };
+        for (const auto &p : iconPaths) {
+            appIcon = QIcon(p);
+            if (!appIcon.isNull()) break;
+        }
+    }
     window.setWindowIcon(appIcon);
     app.setWindowIcon(appIcon);
     window.resize(1280, 860);
