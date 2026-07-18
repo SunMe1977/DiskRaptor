@@ -58,3 +58,5 @@ release-assets/
 install/
 setup.nsi
 nul
+DiskRaptor-windows.zip
+*.zip
