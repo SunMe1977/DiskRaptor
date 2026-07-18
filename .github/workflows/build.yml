@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev cmake ninja-build pkg-config g++ zip
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev cmake ninja-build pkg-config g++ zip libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf-2.0-dev libgtk-3-dev
       - run: rustup set profile minimal && rustup toolchain install stable && rustup default stable
       - run: cargo build --release
         working-directory: src-tauri
@@ -55,3 +55,19 @@ jobs:
         with:
           name: DiskRaptor-linux
           path: DiskRaptor-linux.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: gh release create "$GITHUB_REF_NAME" --title "DiskRaptor $GITHUB_REF_NAME" --notes "Release" 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: for f in artifacts/*/*.zip; do [ -f "$f" ] && gh release upload "$GITHUB_REF_NAME" "$f" --clobber; done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
