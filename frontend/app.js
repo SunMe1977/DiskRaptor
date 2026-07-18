@@ -812,7 +812,7 @@ clearTimeout(safetyTimer);
       }
     });
 
-    // Cancel
+    // Cancel (toolbar + progress overlay)
     btnCancel.addEventListener("click", async function () {
       await loader.release();
       isScanning = false;
@@ -821,6 +821,12 @@ clearTimeout(safetyTimer);
       progressOverlay.classList.remove("active");
       document.querySelector(".status-bar").textContent = "Cancelled";
     });
+    var progressCancelBtn = document.getElementById("progress-cancel");
+    if (progressCancelBtn) {
+      progressCancelBtn.addEventListener("click", function() {
+        btnCancel.click();
+      });
+    }
 
     // Export
     btnExport.addEventListener("click", async function () {

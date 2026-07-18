@@ -337,8 +337,8 @@ mod platform {
                     top_files.insert(full.clone(), sz, top_count);
                     file_types.add(&full, sz);
                 }
+                bytes_found += sz;
             }
-            bytes_found += sz;
             if last_progress.elapsed().as_millis() >= 100 {
                 progress(files_found, dirs_found, bytes_found, &full);
                 last_progress = Instant::now();
