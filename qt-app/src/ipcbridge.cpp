@@ -25,15 +25,21 @@
 IpcBridge::IpcBridge(QObject *parent)
     : QObject(parent)
 {
+#ifdef Q_OS_WIN
     if (!loadRustLibrary()) {
         qWarning() << "[DiskRaptor] Failed to load diskraptor_scanner.dll --"
                     << "scan functionality will be unavailable.";
     }
+#else
+    qWarning() << "[DiskRaptor] Rust scanner DLL not available on this platform.";
+#endif
 }
 
 IpcBridge::~IpcBridge()
 {
+#ifdef Q_OS_WIN
     unloadRustLibrary();
+#endif
 }
 
 QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
@@ -56,6 +62,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "load_settings") return loadSettings();
 
     if (command == "get_chunk") {
+#ifdef Q_OS_WIN
         if (!m_drGetChunk) {
             return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
         }
@@ -79,9 +86,10 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
             rootNode["size"] = 0;
             rootNode["file_count"] = 0;
             rootNode["node_type"] = "Directory";
-            rootNode["parent"] = 4294967295;
-            rootNode["first_child"] = 4294967295;
-            rootNode["next_sibling"] = 4294967295;
+            const qint64 u32max = static_cast<qint64>(4294967295u);
+            rootNode["parent"] = u32max;
+            rootNode["first_child"] = u32max;
+            rootNode["next_sibling"] = u32max;
             rootNode["depth"] = 0;
             rootNode["chunk_id"] = 0;
             QJsonArray nodes;
@@ -94,6 +102,9 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
             return resultToJson(true, chunk);
         }
         return resultToJson(false, QVariant(), "invalid chunk JSON");
+#else
+        return resultToJson(false, QVariant(), "not supported on this platform");
+#endif
     }
     if (command == "get_children") {
         return resultToJson(true, QVariantMap{{"children", QJsonArray()}});
@@ -116,6 +127,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     }
 
     if (command == "start_scan") {
+#ifdef Q_OS_WIN
         QString path = QDir::toNativeSeparators(args.value("path").toString());
         if (!path.isEmpty()) {
             m_scanId++;
@@ -145,6 +157,9 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
             return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", rustScanId}});
         }
         return resultToJson(false, QVariant(), "No path provided");
+#else
+        return resultToJson(false, QVariant(), "scan not supported on this platform");
+#endif
     }
 
     return resultToJson(false, QVariant(), "Unknown command: " + command);
@@ -218,6 +233,7 @@ QString IpcBridge::getIcon(const QString &path, bool isDir)
 
 QString IpcBridge::getScanProgress()
 {
+#ifdef Q_OS_WIN
     if (!m_drGetProgress) {
         return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
     }
@@ -233,10 +249,14 @@ QString IpcBridge::getScanProgress()
     // Simple string concatenation to avoid QJsonDocument double-escaping.
     // jsonStr is already valid JSON, so wrapping it directly produces valid JSON.
     return "{\"success\":true,\"data\":" + jsonStr + "}";
+#else
+    return resultToJson(true, QVariantMap{{"files_found", 0}, {"dirs_found", 0}, {"is_running", false}, {"phase", 3}});
+#endif
 }
 
 QString IpcBridge::getScanResult()
 {
+#ifdef Q_OS_WIN
     if (!m_drGetResult) {
         return resultToJson(false, QVariant(), "Rust scanner DLL not loaded");
     }
@@ -308,6 +328,9 @@ QString IpcBridge::getScanResult()
     }
 
     return resultToJson(false, QVariant(), "result not ready yet");
+#else
+    return resultToJson(false, QVariant(), "not supported on this platform");
+#endif
 }
 
 QString IpcBridge::listDrives()

@@ -54,10 +54,11 @@ mkdir build
 cd build
 cmake .. -G Ninja ^
     -DCMAKE_BUILD_TYPE=Release ^
+    -DQt6_DIR="%Qt6_DIR%" ^
+    -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%" ^
     -DCMAKE_C_COMPILER="%MSVC_ROOT%\bin\Hostx64\x64\cl.exe" ^
     -DCMAKE_CXX_COMPILER="%MSVC_ROOT%\bin\Hostx64\x64\cl.exe" ^
-    -DQt6_DIR="%Qt6_DIR%" ^
-    -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%"
+    -DCMAKE_MT="%WIN10_KIT%\bin\10.0.26100.0\x64\mt.exe"
 if %ERRORLEVEL% neq 0 (
     echo ERROR: CMake configuration failed
     pause
@@ -85,30 +86,29 @@ mkdir dist
 
 REM Core EXEs + DLLs
 copy qt-app\build\DiskRaptor.exe dist\
-copy qt-app\build\DiskRaptorLauncher.exe dist\
 copy qt-app\build\diskraptor_scanner.dll dist\
 copy qt-app\build\QtWebEngineProcess.exe dist\
 copy qt-app\build\*.dll dist\
 
 REM Qt plugins
-xcopy /e /i /y qt-app\build\platforms dist\platforms >nul 2>&1
-xcopy /e /i /y qt-app\build\styles dist\styles >nul 2>&1
-xcopy /e /i /y qt-app\build\imageformats dist\imageformats >nul 2>&1
-xcopy /e /i /y qt-app\build\tls dist\tls >nul 2>&1
-xcopy /e /i /y qt-app\build\iconengines dist\iconengines >nul 2>&1
-xcopy /e /i /y qt-app\build\networkinformation dist\networkinformation >nul 2>&1
-xcopy /e /i /y qt-app\build\position dist\position >nul 2>&1
-xcopy /e /i /y qt-app\build\generic dist\generic >nul 2>&1
+if exist qt-app\build\platforms  xcopy /e /i /y qt-app\build\platforms  dist\platforms  >nul
+if exist qt-app\build\styles      xcopy /e /i /y qt-app\build\styles      dist\styles      >nul
+if exist qt-app\build\imageformats xcopy /e /i /y qt-app\build\imageformats dist\imageformats >nul
+if exist qt-app\build\tls         xcopy /e /i /y qt-app\build\tls         dist\tls         >nul
+if exist qt-app\build\iconengines xcopy /e /i /y qt-app\build\iconengines dist\iconengines >nul
+if exist qt-app\build\networkinformation xcopy /e /i /y qt-app\build\networkinformation dist\networkinformation >nul
+if exist qt-app\build\position    xcopy /e /i /y qt-app\build\position    dist\position    >nul
+if exist qt-app\build\generic     xcopy /e /i /y qt-app\build\generic     dist\generic     >nul
 
 REM WebEngine resources
-xcopy /e /i /y qt-app\build\resources dist\resources >nul 2>&1
-xcopy /e /i /y qt-app\build\translations dist\translations >nul 2>&1
+if exist qt-app\build\resources    xcopy /e /i /y qt-app\build\resources    dist\resources    >nul
+if exist qt-app\build\translations xcopy /e /i /y qt-app\build\translations dist\translations >nul
 
 REM Frontend
-xcopy /e /i /y qt-app\build\frontend dist\frontend >nul 2>&1
+xcopy /e /i /y frontend dist\frontend\ >nul
 
 REM Images
-if exist images xcopy /e /i /y images dist\images >nul 2>&1
+if exist images xcopy /e /i /y images dist\images\ >nul
 
 echo OK - dist\DiskRaptor.exe
 
