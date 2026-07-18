@@ -51,42 +51,48 @@ jobs:
         run: cargo build --release
         working-directory: src-tauri
 
-      - name: Find VS
-        id: findvs
+      - name: Build Qt app
         shell: pwsh
         run: |
-          $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          "VS_PATH=$vs" >> $env:GITHUB_OUTPUT
-
-      - name: Build Qt app
-        shell: cmd
-        run: |
-          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
-          set "PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;%PATH%"
-          set "Qt6_DIR=C:\Qt\6.10.3\msvc2022_64\lib\cmake\Qt6"
-          set "CMAKE_PREFIX_PATH=C:\Qt\6.10.3\msvc2022_64"
-          cd qt-app
-          if exist build rmdir /s /q build
-          mkdir build
-          cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%"
+          $ErrorActionPreference = "Stop"
+          # Import VS dev environment
+          $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) { throw "VS not found" }
+          Push-Location "$vsPath\VC\Auxiliary\Build"
+          cmd.exe /c "vcvars64.bat>nul 2>nul && set" | ForEach-Object {
+            if ($_ -match "^(.*?)=(.*)$") {
+              Set-Item -Path "env:$($matches[1])" -Value $matches[2]
+            }
+          }
+          Pop-Location
+          # Configure PATH for Qt tools
+          $env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;$env:PATH"
+          $env:Qt6_DIR = "C:\Qt\6.10.3\msvc2022_64\lib\cmake\Qt6"
+          $env:CMAKE_PREFIX_PATH = "C:\Qt\6.10.3\msvc2022_64"
+          # Build
+          Push-Location qt-app
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Push-Location build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$env:Qt6_DIR" -DCMAKE_PREFIX_PATH="$env:CMAKE_PREFIX_PATH"
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
           cmake --build . --config Release
-        env:
-          VS_PATH: ${{ steps.findvs.outputs.VS_PATH }}
+          if ($LASTEXITCODE -ne 0) { throw "CMake build failed" }
 
       - name: Package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item qt-app\build\DiskRaptor.exe dist\
-          if (Test-Path src-tauri\target\release\diskraptor_scanner.dll) { Copy-Item src-tauri\target\release\diskraptor_scanner.dll dist\ }
+          Copy-Item src-tauri\target\release\diskraptor_scanner.dll dist\
+          Copy-Item qt-app\build\QtWebEngineProcess.exe dist\
+          Copy-Item qt-app\build\*.dll dist\
           Copy-Item -Recurse frontend dist\frontend\
           if (Test-Path images) { Copy-Item -Recurse images dist\images\ }
-          Copy-Item qt-app\build\*.dll dist\
-          if (Test-Path qt-app\build\QtWebEngineProcess.exe) { Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ }
-          @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations") | ForEach-Object {
-            $p = "qt-app\build\$_"
-            if (Test-Path $p) { Copy-Item -Recurse $p "dist\$_\" }
+          $dirs = @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations")
+          foreach ($d in $dirs) {
+            $src = "qt-app\build\$d"
+            if (Test-Path $src) { Copy-Item -Recurse $src "dist\$d\" }
           }
           Remove-Item dist\DiskRaptorLauncher.exe -ErrorAction SilentlyContinue
           Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows.zip -Force
@@ -106,7 +112,7 @@ jobs:
 
   macos:
     name: macOS
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -114,8 +120,7 @@ jobs:
           node-version: '22'
 
       - name: Install Qt
-        run: |
-          brew install qt@6 cmake ninja
+        run: brew install qt@6 cmake ninja
 
       - name: Setup Rust
         run: |
@@ -143,20 +148,11 @@ jobs:
           mkdir -p dist
           if [ -d qt-app/build/DiskRaptor.app ]; then
             cp -R qt-app/build/DiskRaptor.app dist/
-          else
-            mkdir -p dist/DiskRaptor.app/Contents/MacOS
-            mkdir -p dist/DiskRaptor.app/Contents/Resources
-            cp qt-app/build/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
-            cp -R frontend dist/DiskRaptor.app/Contents/Resources/
-            [ -d images ] && cp -R images dist/DiskRaptor.app/Contents/Resources/
-            [ -f images/icon.icns ] && cp images/icon.icns dist/DiskRaptor.app/Contents/Resources/
           fi
-          # Bundle Qt frameworks
           QT_BIN="$(brew --prefix qt@6)/bin"
           if [ -f "$QT_BIN/macdeployqt" ]; then
             "$QT_BIN/macdeployqt" dist/DiskRaptor.app -verbose=1
           fi
-          # Copy Rust scanner
           if [ -f src-tauri/target/release/libdiskraptor_scanner.dylib ]; then
             cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/
           fi
@@ -182,10 +178,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             qt6-base-dev qt6-webengine-dev \
-            cmake ninja-build pkg-config g++ zip \
-            libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev \
-            libgdk-pixbuf-2.0-dev libgtk-3-dev libxcb-cursor-dev \
-            libxkbcommon-dev libegl1-mesa-dev libgl1-mesa-dev
+            cmake ninja-build pkg-config g++ zip
 
       - name: Setup Rust
         run: |
@@ -214,10 +207,8 @@ jobs:
           cp qt-app/build/DiskRaptor dist/
           cp -R frontend dist/frontend
           [ -d images ] && cp -R images dist/images
-          if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then
-            cp src-tauri/target/release/libdiskraptor_scanner.so dist/
-          fi
-          for lib in Core Gui Widgets WebEngineCore WebEngineWidgets WebChannel Network OpenGL Positioning PrintSupport Qml QmlMeta QmlModels QmlWorkerScript Quick QuickWidgets Svg SerialPort; do
+          [ -f src-tauri/target/release/libdiskraptor_scanner.so ] && cp src-tauri/target/release/libdiskraptor_scanner.so dist/
+          for lib in Core Gui Widgets WebEngineCore WebEngineWidgets WebChannel Network OpenGL Positioning PrintSupport Qml Quick Svg; do
             for f in /usr/lib/x86_64-linux-gnu/libQt6${lib}.so*; do
               [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true
             done
@@ -238,7 +229,7 @@ EOF
           path: DiskRaptor-linux.zip
 
   release:
-    name: Release
+    name: Upload Release
     needs: [windows, macos, linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
