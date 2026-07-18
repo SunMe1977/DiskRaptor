@@ -178,6 +178,25 @@ class TreeView {
       '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F Delete</div>';
     document.body.appendChild(this._ctxMenu);
 
+    // Show context menu on right-click
+    var self = this;
+    var scrollEl = document.getElementById("tree-scroll");
+    if (scrollEl) {
+      scrollEl.addEventListener("contextmenu", function(e) {
+        var row = e.target.closest(".tree-row");
+        if (!row) return;
+        e.preventDefault();
+        var idx = parseInt(row.dataset.index);
+        if (isNaN(idx)) return;
+        var arenaIdx = self.visibleNodes[idx];
+        if (arenaIdx === undefined) return;
+        self._ctxMenu._arenaIdx = arenaIdx;
+        self._ctxMenu.style.left = e.clientX + "px";
+        self._ctxMenu.style.top = e.clientY + "px";
+        self._ctxMenu.style.display = "block";
+      });
+    }
+
     const style = document.createElement("style");
     style.textContent =
       ".tctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
