@@ -204,6 +204,8 @@
       const toolbar = document.createElement("div");
       toolbar.className = "galaxy-toolbar";
       toolbar.innerHTML = `
+        <button class="gbtn" id="g-close" title="Close Galaxy (Esc)">✖</button>
+        <div class="g-separator"></div>
         <button class="gbtn" id="g-reset" title="Reset Camera (R)">⟲</button>
         <button class="gbtn" id="g-timeline-toggle" title="Time Travel">⏱</button>
         <button class="gbtn" id="g-insights-toggle" title="Toggle AI Insights">💡</button>
@@ -214,7 +216,7 @@
       this.container.appendChild(toolbar);
 
       // Bind toolbar buttons
-      document.getElementById("g-reset")?.addEventListener("click", () => this.interaction.resetCamera());
+      document.getElementById("g-close")?.addEventListener("click", () => this.hide());
       document.getElementById("g-timeline-toggle")?.addEventListener("click", () => {
         const wrap = this.container.querySelector(".galaxy-timeline-wrap");
         if (wrap) wrap.style.display = wrap.style.display === "none" ? "block" : "none";
@@ -864,16 +866,10 @@
       const w = this.canvas.width;
       const h = this.canvas.height;
 
-      // Parallax offset based on camera position
-      const parallaxX = this.camera.position[0] * CFG.animation.parallaxStrength;
-      const parallaxY = this.camera.position[1] * CFG.animation.parallaxStrength;
-      const offsetX = (parallaxX % w + w) % w - w / 2;
-      const offsetY = (parallaxY % h + h) % h - h / 2;
-
       for (const star of this.backgroundStars) {
         const twinkle = Math.sin(time * star.twinkleSpeed + star.twinklePhase) * 0.3 + 0.7;
-        const sx = (star.x * w + w) / 2 + offsetX;
-        const sy = (star.y * h + h) / 2 + offsetY;
+        const sx = star.x * w;
+        const sy = star.y * h;
         const alpha = star.alpha * twinkle;
 
         ctx.fillStyle = `rgba(200,200,255,${alpha})`;
@@ -1040,15 +1036,39 @@
     show() {
       this.active = true;
       this.container.style.display = "flex";
+      this.container.style.position = "fixed";
+      this.container.style.inset = "0";
+      this.container.style.zIndex = "9999";
       this._resize();
       if (this.objects.length > 0) {
         this._startRenderLoop();
       }
+      // Hide main layout elements
+      var toolbar = document.getElementById("toolbar");
+      if (toolbar) toolbar.style.display = "none";
+      var mainLayout = document.getElementById("main-layout");
+      if (mainLayout) mainLayout.style.display = "none";
+      // Escape key to close
+      this._escHandler = (e) => { if (e.key === "Escape") this.hide(); };
+      document.addEventListener("keydown", this._escHandler);
     }
 
     hide() {
       this.active = false;
       this.container.style.display = "none";
+      this.container.style.position = "";
+      this.container.style.inset = "";
+      this.container.style.zIndex = "";
+      // Restore main layout elements
+      var toolbar = document.getElementById("toolbar");
+      if (toolbar) toolbar.style.display = "";
+      var mainLayout = document.getElementById("main-layout");
+      if (mainLayout) mainLayout.style.display = "";
+      // Remove Escape handler
+      if (this._escHandler) {
+        document.removeEventListener("keydown", this._escHandler);
+        this._escHandler = null;
+      }
     }
 
     /** Format bytes */
