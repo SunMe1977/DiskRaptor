@@ -20,6 +20,8 @@ if(WIN32)
   configure_file(resources/windows/app.rc.in ${CMAKE_BINARY_DIR}/app-icon.rc @ONLY)
   configure_file(resources/windows/launcher.rc.in ${CMAKE_BINARY_DIR}/launcher-icon.rc @ONLY)
   list(APPEND SOURCES ${CMAKE_BINARY_DIR}/app-icon.rc)
+elseif(UNIX AND NOT APPLE)
+  configure_file(resources/linux/DiskRaptor.desktop.in ${CMAKE_BINARY_DIR}/DiskRaptor.desktop @ONLY)
 endif()
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${RESOURCES})
@@ -140,6 +142,11 @@ endif()
 
 # Install frontend
 install(DIRECTORY ../frontend/ DESTINATION share/${PROJECT_NAME}/frontend)
+
+if(UNIX AND NOT APPLE)
+  install(FILES ${CMAKE_BINARY_DIR}/DiskRaptor.desktop DESTINATION share/applications)
+  install(FILES ${CMAKE_SOURCE_DIR}/../images/128x128@2x.png DESTINATION share/icons/hicolor/128x128/apps RENAME DiskRaptor.png)
+endif()
 
 # â”€â”€ CPack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # IMPORTANT: set CPack variables BEFORE include(CPack) â€” CPack reads them at include time

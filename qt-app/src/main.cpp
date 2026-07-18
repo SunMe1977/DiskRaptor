@@ -115,6 +115,9 @@ int main(int argc, char *argv[])
     app.setApplicationName("DiskRaptor");
     app.setApplicationVersion("0.0.7");
     app.setOrganizationName("DiskRaptor");
+#ifdef Q_OS_LINUX
+    app.setDesktopFileName("DiskRaptor");
+#endif
 
     // â”€â”€ WebEngine configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     auto *profile = QWebEngineProfile::defaultProfile();

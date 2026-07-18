@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=DiskRaptor
+Comment=Ultra-fast disk space analyzer
+Exec=DiskRaptor
+Icon=DiskRaptor
+Terminal=false
+Categories=Utility;System;FileTools;
+StartupNotify=true
