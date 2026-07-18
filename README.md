@@ -248,3 +248,9 @@ Pre-built binaries for each release are available on the [Releases](https://gith
 ## 📄 License
 
 MIT
+
+---
+
+## 💡 About This Project
+
+This is my first major Rust project. Coming from a Java background, I used AI as a development assistant to learn Rust and speed up implementation.
