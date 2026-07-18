@@ -2,13 +2,10 @@ name: Build DiskRaptor CI
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [main]
+    tags: ['v*']
   pull_request:
-    branches: [ main ]
-
-env:
-  CARGO_TERM_COLOR: always
+    branches: [main]
 
 permissions:
   contents: write
@@ -18,256 +15,201 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Windows
   windows:
+    name: Windows Build
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-    - name: Install Qt
-      shell: pwsh
-      run: |
-        python -m pip install --upgrade pip
-        pip install aqtinstall
-        aqt install-qt --outputdir C:\Qt windows desktop 6.10.3 win64_msvc2022_64 --modules qtwebengine qtwebchannel
-        $qtRoot = "C:\Qt\6.10.3\msvc2022_64"
-        if (-not (Test-Path $qtRoot)) {
-          Write-Host "Expected Qt path not found: $qtRoot"
-          Get-ChildItem "C:\Qt\6.10.3" -Directory | ForEach-Object { Write-Host "Found: $($_.FullName)" }
-          exit 1
-        }
-        $qt6Dir = Join-Path $qtRoot "lib\cmake\Qt6"
-        "Qt6_DIR=$qt6Dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "Qt6_ROOT=$qtRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        Write-Host "Qt: $qtRoot"
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-    - name: Install Rust
-      shell: pwsh
-      run: |
-        rustup set profile minimal
-        rustup toolchain install stable
-        rustup default stable
-        rustup target add x86_64-pc-windows-msvc
+      - name: Setup Rust toolchain
+        shell: pwsh
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup default stable
+          rustup target add x86_64-pc-windows-msvc
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22'
+      - name: Build Rust scanner
+        run: cargo build --release
+        working-directory: src-tauri
 
-    - name: Install Node deps
-      run: npm ci --ignore-scripts
-      env:
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      - name: Build Qt app
+        shell: cmd
+        run: |
+          pushd qt-app
+          if exist build rmdir /s /q build
+          mkdir build
+          pushd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release
+          popd
+          popd
 
-    - name: Build Rust scanner
-      run: cargo build --release
-      working-directory: src-tauri
+      - name: Package
+        shell: cmd
+        run: |
+          if exist qt-app\build\Release\DiskRaptor.exe ( set SRC=qt-app\build\Release ) else ( set SRC=qt-app\build )
+          mkdir dist
+          copy %SRC%\DiskRaptor.exe dist\
+          if exist src-tauri\target\release\diskraptor_scanner.dll copy src-tauri\target\release\diskraptor_scanner.dll dist\
+          xcopy /e /i /y frontend dist\frontend\ >nul
+          if exist images xcopy /e /i /y images dist\images\ >nul
+          powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows.zip -Force"
 
-    - name: Build Qt app
-      shell: cmd
-      run: |
-        pushd qt-app
-        if exist build rmdir /s /q build
-        mkdir build
-        pushd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="%Qt6_DIR%" || (type CMakeFiles\CMakeError.log & exit /b 1)
-        cmake --build . --config Release || exit /b 1
-        popd
-        popd
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiskRaptor-windows
+          path: DiskRaptor-windows.zip
 
-    - name: Package
-      shell: cmd
-      run: |
-        if exist qt-app\build\Release\DiskRaptor.exe ( set SRC=qt-app\build\Release ) else ( set SRC=qt-app\build )
-        mkdir dist
-        copy %SRC%\DiskRaptor.exe dist\
-        copy %SRC%\diskraptor_scanner.dll dist\ 2>nul
-        copy %SRC%\QtWebEngineProcess.exe dist\ 2>nul
-        copy %SRC%\*.dll dist\ >nul 2>&1
-        for %%d in (platforms styles imageformats tls iconengines networkinformation position generic resources translations) do (
-          if exist %SRC%\%%d xcopy /e /i /y %SRC%\%%d dist\%%d >nul 2>&1
-        )
-        xcopy /e /i /y frontend dist\frontend\ >nul
-        if exist images xcopy /e /i /y images dist\images\ >nul 2>&1
-        7z a -tzip DiskRaptor-windows.zip .\dist\*
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: DiskRaptor-windows
-        path: DiskRaptor-windows.zip
-
-    - name: Publish Windows asset to shared release
-      if: startsWith(github.ref, 'refs/tags/v')
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      shell: bash
-      run: |
-        gh release create "${GITHUB_REF_NAME}" --title "DiskRaptor ${GITHUB_REF_NAME}" --notes "Automated release" 2>/dev/null || true
-        gh release upload "${GITHUB_REF_NAME}" DiskRaptor-windows.zip --clobber
-
-  # macOS
   macos:
+    name: macOS Build
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install Qt
-      run: |
-        brew install qt@6
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-    - name: Install Rust
-      run: |
-        rustup set profile minimal
-        rustup toolchain install stable
-        rustup default stable
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22'
+      - name: Install Qt and tools
+        run: |
+          brew install qt@6 cmake ninja
 
-    - name: Install Node deps
-      run: npm ci --ignore-scripts
-      env:
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      - name: Setup Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup default stable
 
-    - name: Build Rust scanner
-      run: cargo build --release
-      working-directory: src-tauri
+      - name: Build Rust scanner
+        run: cargo build --release
+        working-directory: src-tauri
 
-    - name: Build Qt app
-      run: |
-        export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6"
-        export CMAKE_PREFIX_PATH="$(brew --prefix qt@6)"
-        cd qt-app
-        rm -rf build && mkdir build && cd build
-        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
-          -DQt6_DIR="$Qt6_DIR" \
-          -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
-        cmake --build . --config Release
-        cd ../..
+      - name: Build Qt app
+        run: |
+          export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6"
+          export CMAKE_PREFIX_PATH="$(brew --prefix qt@6)"
+          cd qt-app
+          rm -rf build
+          mkdir build
+          cd build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$Qt6_DIR" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
+          cmake --build . --config Release
 
-    - name: Package .app
-      run: |
-        mkdir -p dist/DiskRaptor.app/Contents/MacOS
-        mkdir -p dist/DiskRaptor.app/Contents/Resources
-        if [ -f qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor ]; then
-          cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
-        else
-          cp qt-app/build/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
-        fi
-        cp -r frontend dist/DiskRaptor.app/Contents/Resources/
-        [ -d images ] && cp -r images dist/DiskRaptor.app/Contents/Resources/
-        [ -f images/icon.icns ] && cp images/icon.icns dist/DiskRaptor.app/Contents/Resources/
-        if [ -f src-tauri/target/release/libdiskraptor_scanner.dylib ]; then
-          cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/
-        fi
-        cat > dist/DiskRaptor.app/Contents/Info.plist << 'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleExecutable</key><string>DiskRaptor</string>
-<key>CFBundleIdentifier</key><string>com.diskraptor.app</string>
-<key>CFBundleName</key><string>DiskRaptor</string>
-<key>CFBundleVersion</key><string>0.0.7</string>
-<key>CFBundleShortVersionString</key><string>0.0.7</string>
-<key>CFBundleIconFile</key><string>icon</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>NSHighResolutionCapable</key><true/>
-</dict></plist>
-PLIST
-        cd dist && zip -r ../DiskRaptor-macos.zip DiskRaptor.app && cd ..
+      - name: Package
+        run: |
+          mkdir -p dist
+          if [ -d qt-app/build/DiskRaptor.app ]; then
+            cp -R qt-app/build/DiskRaptor.app dist/
+          else
+            cp qt-app/build/DiskRaptor dist/
+          fi
+          cp -R frontend dist/frontend
+          if [ -d images ]; then cp -R images dist/images; fi
+          cd dist
+          zip -r ../DiskRaptor-macos.zip .
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: DiskRaptor-macos
-        path: DiskRaptor-macos.zip
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiskRaptor-macos
+          path: DiskRaptor-macos.zip
 
-    - name: Publish macOS asset to shared release
-      if: startsWith(github.ref, 'refs/tags/v')
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        gh release create "${GITHUB_REF_NAME}" --title "DiskRaptor ${GITHUB_REF_NAME}" --notes "Automated release" 2>/dev/null || true
-        gh release upload "${GITHUB_REF_NAME}" DiskRaptor-macos.zip --clobber
-
-  # Linux
   linux:
+    name: Linux Build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install Qt6 + deps
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev \
-          cmake ninja-build pkg-config nodejs g++ zip \
-          libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev \
-          libgdk-pixbuf-2.0-dev libgtk-3-dev libxcb-cursor-dev \
-          libxkbcommon-dev libegl1-mesa-dev libgl1-mesa-dev \
-          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-          libicu-dev libssl-dev libsqlite3-dev
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-    - name: Install Rust
-      run: |
-        rustup set profile minimal
-        rustup toolchain install stable
-        rustup default stable
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22'
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            qt6-base-dev qt6-webengine-dev \
+            cmake ninja-build pkg-config g++ zip \
+            libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev \
+            libgdk-pixbuf-2.0-dev libgtk-3-dev libxcb-cursor-dev \
+            libxkbcommon-dev libegl1-mesa-dev libgl1-mesa-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libicu-dev libssl-dev libsqlite3-dev
 
-    - name: Install Node deps
-      run: npm ci --ignore-scripts
-      env:
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      - name: Setup Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup default stable
 
-    - name: Build Rust scanner
-      run: cargo build --release
-      working-directory: src-tauri
+      - name: Build Rust scanner
+        run: cargo build --release
+        working-directory: src-tauri
 
-    - name: Build Qt app
-      run: |
-        cd qt-app
-        rm -rf build && mkdir build && cd build
-        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release \
-          -DQt6_DIR="/usr/lib/x86_64-linux-gnu/cmake/Qt6" \
-          -DCMAKE_PREFIX_PATH="/usr/lib/x86_64-linux-gnu"
-        cmake --build . --config Release
-        cd ../..
+      - name: Build Qt app
+        run: |
+          cd qt-app
+          rm -rf build
+          mkdir build
+          cd build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="/usr/lib/x86_64-linux-gnu/cmake/Qt6" -DCMAKE_PREFIX_PATH="/usr/lib/x86_64-linux-gnu"
+          cmake --build . --config Release
 
-    - name: Package
-      run: |
-        mkdir -p dist
-        cp qt-app/build/DiskRaptor dist/
-        cp -r frontend dist/
-        mkdir -p dist/images
-        cp -r images/* dist/images/ 2>/dev/null || true
-        if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then
-          cp src-tauri/target/release/libdiskraptor_scanner.so dist/
-        fi
-        cd dist && zip -r ../DiskRaptor-linux.zip . && cd ..
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp qt-app/build/DiskRaptor dist/
+          cp -R frontend dist/frontend
+          if [ -d images ]; then cp -R images dist/images; fi
+          if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then cp src-tauri/target/release/libdiskraptor_scanner.so dist/; fi
+          cd dist
+          zip -r ../DiskRaptor-linux.zip .
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: DiskRaptor-linux
-        path: DiskRaptor-linux.zip
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiskRaptor-linux
+          path: DiskRaptor-linux.zip
 
-    - name: Publish Linux asset to shared release
-      if: startsWith(github.ref, 'refs/tags/v')
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        gh release create "${GITHUB_REF_NAME}" --title "DiskRaptor ${GITHUB_REF_NAME}" --notes "Automated release" 2>/dev/null || true
-        gh release upload "${GITHUB_REF_NAME}" DiskRaptor-linux.zip --clobber
+  release_assets:
+    name: Attach Release Assets
+    needs: [windows, macos, linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload assets to tag release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --title "DiskRaptor ${GITHUB_REF_NAME}" --notes "Automated release" 2>/dev/null || true
+          gh release upload "${GITHUB_REF_NAME}" artifacts/DiskRaptor-windows/DiskRaptor-windows.zip --clobber
+          gh release upload "${GITHUB_REF_NAME}" artifacts/DiskRaptor-macos/DiskRaptor-macos.zip --clobber
+          gh release upload "${GITHUB_REF_NAME}" artifacts/DiskRaptor-linux/DiskRaptor-linux.zip --clobber
