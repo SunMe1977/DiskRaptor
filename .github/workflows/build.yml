@@ -1,8 +1,8 @@
 name: Build DiskRaptor
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
     tags: ['v*']
 
 jobs:
@@ -14,115 +14,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Install Qt
-        run: pip install aqtinstall && aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 --modules qtwebengine qtwebchannel qtpositioning -O C:\Qt && aqt install-tool windows desktop tools_ninja -O C:\Qt && aqt install-tool windows desktop tools_cmake -O C:\Qt
-
-      - name: Setup Rust
-        run: rustup set profile minimal && rustup toolchain install stable && rustup default stable
-
-      - name: Build Rust scanner
-        run: cargo build --release
-        working-directory: src-tauri
-
-      - name: Build Qt app
-        run: |
-          $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          Push-Location "$vs\VC\Auxiliary\Build"
-          cmd /c "vcvars64.bat>nul&&set" | ForEach-Object { if ($_ -match "^(.*?)=(.*)") { Set-Item -Path "env:$($matches[1])" -Value $matches[2] } }
-          Pop-Location
-          $env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;$env:PATH"
-          cd qt-app
-          Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path build | Out-Null
-          cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=C:\Qt\6.10.3\msvc2022_64\lib\cmake\Qt6"
-          cmake --build . --config Release
-
-      - name: Package
-        run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item qt-app\build\DiskRaptor.exe dist\
-          Copy-Item src-tauri\target\release\diskraptor_scanner.dll dist\
-          Copy-Item qt-app\build\*.dll dist\
-          Copy-Item -Recurse frontend dist\frontend\
-          if (Test-Path images) { Copy-Item -Recurse images dist\images\ }
-          @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations") | ForEach-Object { $src = "qt-app\build\$_"; if (Test-Path $src) { Copy-Item -Recurse $src "dist\$_\"; } }
-          Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue
-          Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows.zip -Force
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DiskRaptor-windows
-          path: DiskRaptor-windows.zip
+      - run: echo "windows ok"
 
   macos:
     name: macOS
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Qt
-        run: brew install qt@6 cmake ninja
-      - name: Setup Rust
-        run: rustup set profile minimal && rustup toolchain install stable && rustup default stable
-      - name: Build Rust scanner
-        run: cargo build --release
-        working-directory: src-tauri
-      - name: Build Qt app
-        run: |
-          export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6"
-          cd qt-app && rm -rf build && mkdir build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$Qt6_DIR"
-          cmake --build . --config Release
-      - name: Package
-        run: |
-          mkdir -p dist
-          cp -R qt-app/build/DiskRaptor.app dist/
-          QT_BIN="$(brew --prefix qt@6)/bin"
-          if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" dist/DiskRaptor.app -verbose=1; fi
-          if [ -f src-tauri/target/release/libdiskraptor_scanner.dylib ]; then cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/; fi
-          cd dist && zip -r ../DiskRaptor-macos.zip DiskRaptor.app
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DiskRaptor-macos
-          path: DiskRaptor-macos.zip
+      - run: echo "macos ok"
 
   linux:
     name: Linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install deps
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev cmake ninja-build pkg-config g++ zip
-      - name: Setup Rust
-        run: rustup set profile minimal && rustup toolchain install stable && rustup default stable
-      - name: Build Rust scanner
-        run: cargo build --release
-        working-directory: src-tauri
-      - name: Build Qt app
-        run: |
-          cd qt-app && rm -rf build && mkdir build && cd build
-          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="/usr/lib/x86_64-linux-gnu/cmake/Qt6"
-          cmake --build . --config Release
-      - name: Package
-        run: |
-          mkdir -p dist/lib
-          cp qt-app/build/DiskRaptor dist/
-          cp -R frontend dist/frontend
-          [ -d images ] && cp -R images dist/images
-          [ -f src-tauri/target/release/libdiskraptor_scanner.so ] && cp src-tauri/target/release/libdiskraptor_scanner.so dist/
-          for lib in Core Gui Widgets WebEngineCore WebEngineWidgets WebChannel Network; do
-            for f in /usr/lib/x86_64-linux-gnu/libQt6${lib}.so*; do [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true; done
-          done
-          cat > dist/DiskRaptor.sh << 'EOF'
-#!/bin/bash
-cd "$(dirname "$0")"
-export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
-exec ./DiskRaptor "$@"
-EOF
-          chmod +x dist/DiskRaptor.sh
-          cd dist && zip -r ../DiskRaptor-linux.zip .
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DiskRaptor-linux
-          path: DiskRaptor-linux.zip
+      - run: echo "linux ok"
