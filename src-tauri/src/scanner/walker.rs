@@ -259,8 +259,8 @@ mod platform {
     }
 }
 
-// ─── macOS / Linux walkdir scanner with progress ──────────
-#[cfg(not(windows))]
+// ─── macOS walkdir scanner ────────────────────────
+#[cfg(target_os = "macos")]
 mod platform {
     use super::*;
 
@@ -344,6 +344,255 @@ mod platform {
                 last_progress = Instant::now();
             }
         }
+        progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
+        finish_scan(start, arena, top_files, file_types, progress)
+    }
+}
+
+// ─── Linux native scanner (getdents64 + openat + fstatat) ──
+// Uses raw Linux syscalls for maximum traversal speed.
+#[cfg(target_os = "linux")]
+mod platform {
+    use super::*;
+    use std::ffi::{CStr, CString, OsStr};
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::RawFd;
+
+    const DT_DIR: u8 = 4;
+    const DT_REG: u8 = 8;
+    const DT_LNK: u8 = 10;
+    const DT_UNKNOWN: u8 = 0;
+
+    const O_RDONLY: i32 = 0;
+    const O_DIRECTORY: i32 = 0o100000; // 00200000 on most arches
+    const O_CLOEXEC: i32 = 0o2000000;
+    const AT_FDCWD: i32 = -100;
+    const AT_SYMLINK_NOFOLLOW: i32 = 0x100;
+
+    const BUF_SIZE: usize = 32768;
+
+    extern "C" {
+        fn open(pathname: *const i8, flags: i32, mode: u32) -> RawFd;
+        fn openat(dirfd: RawFd, pathname: *const i8, flags: i32, mode: u32) -> RawFd;
+        fn close(fd: RawFd) -> i32;
+        fn fstatat(dirfd: RawFd, pathname: *const i8, buf: *mut libc::stat, flags: i32) -> i32;
+    }
+
+    #[repr(C, packed)]
+    struct dirent64 {
+        d_ino: u64,
+        d_off: i64,
+        d_reclen: u16,
+        d_type: u8,
+        d_name: [u8; 256],
+    }
+
+    unsafe fn getdents64(fd: RawFd, buf: *mut u8, count: usize) -> i64 {
+        let result: i64;
+        core::arch::asm!(
+            "syscall",
+            in("rax") 217i64,  // SYS_getdents64
+            in("rdi") fd as i64,
+            in("rsi") buf,
+            in("rdx") count,
+            lateout("rax") result,
+            out("rcx") _, out("r11") _,
+            options(nostack, preserves_flags),
+        );
+        result
+    }
+
+    /// Get file size via fstatat (only when needed, e.g. d_type == DT_UNKNOWN)
+    unsafe fn get_size(dirfd: RawFd, name: &[u8]) -> u64 {
+        let mut st: libc::stat = std::mem::zeroed();
+        let cname = CString::new(name).unwrap_or_default();
+        if fstatat(dirfd, cname.as_ptr(), &mut st, AT_SYMLINK_NOFOLLOW) == 0 {
+            st.st_size as u64
+        } else {
+            0
+        }
+    }
+
+    pub fn scan(
+        config: &ScanConfig,
+        progress: &ScanProgressCallback,
+        root_path: &str,
+    ) -> Result<ScanResult> {
+        let start = Instant::now();
+        let skip_dirs = Arc::new(config.skip_dirs.clone());
+        let top_files = Arc::new(TopFilesAccum::default());
+        let file_types = Arc::new(FileTypeAccum::default());
+        let top_count = config.top_files_count;
+        let mut arena = TreeNodeArena::with_capacity(8_000_000);
+
+        let root_name = Path::new(root_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| root_path.into());
+
+        let root_idx = arena.alloc(TreeNode {
+            name: root_name, size: 0, file_count: 0, dir_count: 1,
+            node_type: NodeType::Directory, parent: u32::MAX,
+            first_child: u32::MAX, next_sibling: u32::MAX, depth: 0, chunk_id: 0,
+        });
+
+        let mut ptix: HashMap<String, u32> = HashMap::new();
+        ptix.insert(root_path.to_owned(), root_idx);
+        let mut lc: HashMap<u32, u32> = HashMap::new();
+
+        let mut files_found: u64 = 0;
+        let mut dirs_found: u64 = 0;
+        let mut bytes_found: u64 = 0;
+        let mut last_progress = Instant::now();
+
+        // Dir queue: (fd, parent_arena_idx, depth, path_string)
+        let croot = CString::new(root_path.as_bytes()).unwrap_or_default();
+        let root_fd = unsafe { open(croot.as_ptr(), O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0) };
+        if root_fd < 0 {
+            return Err(anyhow::anyhow!("Cannot open root: {}", root_path));
+        }
+
+        let mut queue: Vec<(RawFd, u32, u16, String)> = Vec::new();
+        queue.push((root_fd, root_idx, 0, root_path.to_owned()));
+
+        let mut buf: Vec<u8> = vec![0u8; BUF_SIZE];
+
+        while let Some((dir_fd, parent_idx, depth, parent_path)) = queue.pop() {
+            if arena.nodes.len() > 20_000_000 { break; }
+
+            unsafe {
+                loop {
+                    let nread = getdents64(dir_fd, buf.as_mut_ptr(), BUF_SIZE);
+                    if nread <= 0 { break; }
+
+                    let mut pos = 0usize;
+                    while pos < nread as usize {
+                        let ent = &*buf.as_ptr().add(pos).cast::<dirent64>();
+                        let d_type = ent.d_type;
+                        let d_reclen = ent.d_reclen as usize;
+                        if d_reclen == 0 { break; }
+
+                        // Get name as bytes up to first nul
+                        let name_bytes = &ent.d_name[..ent.d_name.iter().position(|&b| b == 0).unwrap_or(0)];
+                        pos += d_reclen;
+
+                        // Skip . and ..
+                        if name_bytes.len() <= 2
+                            && (name_bytes == b"." || name_bytes == b"..")
+                        {
+                            continue;
+                        }
+
+                        let name = String::from_utf8_lossy(name_bytes).to_string();
+
+                        // Build full path for parent resolution
+                        let full = if parent_path.ends_with('/') {
+                            format!("{}{}", parent_path, name)
+                        } else {
+                            format!("{}/{}", parent_path, name)
+                        };
+
+                        let entry_type = match d_type {
+                            DT_DIR => {
+                                // Check skip dirs before opening
+                                if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+                                    continue;
+                                }
+                                Some(0u8) // directory
+                            }
+                            DT_REG | DT_LNK => Some(1u8), // file or symlink
+                            DT_UNKNOWN => {
+                                // Fallback: try fstatat to determine type
+                                let cname = CString::new(name_bytes).unwrap_or_default();
+                                let mut st: libc::stat = std::mem::zeroed();
+                                if fstatat(dir_fd, cname.as_ptr(), &mut st, AT_SYMLINK_NOFOLLOW) == 0 {
+                                    if st.st_mode & libc::S_IFMT == libc::S_IFDIR {
+                                        Some(0u8)
+                                    } else {
+                                        Some(1u8)
+                                    }
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None, // skip other types
+                        };
+
+                        let Some(is_dir_val) = entry_type else { continue };
+                        let is_dir = is_dir_val == 0u8;
+
+                        if is_dir { dirs_found += 1; } else { files_found += 1; }
+                        let depth_u16 = depth + 1;
+
+                        let ci = if is_dir {
+                            // Open subdirectory for later traversal
+                            let cname = CString::new(name_bytes).unwrap_or_default();
+                            let sub_fd = openat(dir_fd, cname.as_ptr(), O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
+                            if sub_fd >= 0 {
+                                queue.push((sub_fd, 0, depth_u16, full.clone()));
+                            }
+                            // Alloc node (will fix parent after queue push)
+                            let idx = arena.alloc(TreeNode {
+                                name: name.clone(), size: 0, file_count: 0, dir_count: 1,
+                                node_type: NodeType::Directory, parent: parent_idx,
+                                first_child: u32::MAX, next_sibling: u32::MAX, depth: depth_u16, chunk_id: 0,
+                            });
+                            // Update parent link
+                            match lc.get(&parent_idx) {
+                                Some(&last) => arena.nodes[last as usize].next_sibling = idx,
+                                None => arena.nodes[parent_idx as usize].first_child = idx,
+                            }
+                            lc.insert(parent_idx, idx);
+                            ptix.insert(full.clone(), idx);
+                            idx
+                        } else {
+                            // File — get size via fstatat
+                            let sz = if d_type == DT_UNKNOWN || d_type == DT_LNK {
+                                unsafe { get_size(dir_fd, name_bytes) }
+                            } else {
+                                // For DT_REG, we still need size — use fstatat
+                                unsafe { get_size(dir_fd, name_bytes) }
+                            };
+
+                            let idx = arena.alloc(TreeNode {
+                                name: name.clone(), size: sz, file_count: 1, dir_count: 0,
+                                node_type: NodeType::File, parent: parent_idx,
+                                first_child: u32::MAX, next_sibling: u32::MAX, depth: depth_u16, chunk_id: 0,
+                            });
+                            match lc.get(&parent_idx) {
+                                Some(&last) => arena.nodes[last as usize].next_sibling = idx,
+                                None => arena.nodes[parent_idx as usize].first_child = idx,
+                            }
+                            lc.insert(parent_idx, idx);
+                            if sz > 0 {
+                                top_files.insert(full.clone(), sz, top_count);
+                                file_types.add(&full, sz);
+                            }
+                            bytes_found += sz;
+                            idx
+                        };
+
+                        // Fix directory queue entry parent index
+                        if is_dir {
+                            if let Some(last) = queue.last_mut() {
+                                if last.2 == depth_u16 && last.3 == full {
+                                    last.1 = ci;
+                                }
+                            }
+                        }
+
+                        let now = Instant::now();
+                        if now.duration_since(last_progress).as_millis() >= 100 {
+                            progress(files_found, dirs_found, bytes_found, &full);
+                            last_progress = now;
+                        }
+                    }
+                }
+            }
+
+            unsafe { close(dir_fd); }
+        }
+
         progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
         finish_scan(start, arena, top_files, file_types, progress)
     }
