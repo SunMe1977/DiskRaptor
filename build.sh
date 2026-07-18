@@ -105,28 +105,21 @@ echo "  Creating DiskRaptor.app bundle..."
 mkdir -p dist/DiskRaptor.app/Contents/MacOS
 mkdir -p dist/DiskRaptor.app/Contents/Resources
 
-# Generate .icns icon from source PNG
-ICON_SRC="images/logo6_original.png"
-ICONSET="dist/DiskRaptor.app/Contents/Resources/DiskRaptor.iconset"
-ICON_DEST="dist/DiskRaptor.app/Contents/Resources/icon.icns"
-if [ -f "$ICON_SRC" ] && command -v iconutil &>/dev/null; then
-  echo "  Generating icon.icns..."
+# Use pre-generated icon.icns from images/ (or generate with iconutil)
+ICON_SRC_FILE="images/icon.icns"
+if [ -f "$ICON_SRC_FILE" ]; then
+  cp "$ICON_SRC_FILE" "dist/DiskRaptor.app/Contents/Resources/icon.icns"
+  echo "  icon.icns copied from images/"
+elif [ -f "images/logo6_original.png" ] && command -v iconutil &>/dev/null; then
+  echo "  Generating icon.icns from logo6_original.png..."
+  ICONSET="dist/DiskRaptor.app/Contents/Resources/DiskRaptor.iconset"
   rm -rf "$ICONSET"
   mkdir -p "$ICONSET"
   for size in 16 32 64 128 256 512 1024; do
-    sips -z $size $size "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}.png" &>/dev/null
-    if [ $size -le 512 ]; then
-      sips -z $((size*2)) $((size*2)) "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}@2x.png" &>/dev/null
-    fi
+    sips -z $size $size "images/logo6_original.png" --out "$ICONSET/icon_${size}x${size}.png" &>/dev/null
+    [ $size -le 512 ] && sips -z $((size*2)) $((size*2)) "images/logo6_original.png" --out "$ICONSET/icon_${size}x${size}@2x.png" &>/dev/null
   done
-  echo "  Running iconutil..."
-  iconutil -c icns "$ICONSET" -o "$ICON_DEST"
-  if [ $? -eq 0 ] && [ -f "$ICON_DEST" ]; then
-    rm -rf "$ICONSET"
-    echo "  icon.icns created ($(stat -f%z "$ICON_DEST" 2>/dev/null || stat -c%s "$ICON_DEST" 2>/dev/null || echo 'ok') bytes)"
-  else
-    echo "  Warning: icon.icns creation failed, using placeholder"
-  fi
+  iconutil -c icns "$ICONSET" -o "dist/DiskRaptor.app/Contents/Resources/icon.icns" && rm -rf "$ICONSET"
 fi
 
 # cmake with MACOSX_BUNDLE TRUE outputs inside .app bundle
