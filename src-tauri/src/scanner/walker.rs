@@ -958,27 +958,35 @@ mod platform {
     }
 }
 
-// ─── Cross-platform fallback ──────────────────────────────
+// ─── macOS / Linux native scanner (fts) ───────────────────────
+// Uses POSIX fts_open/fts_read for fast directory traversal
+// with minimal stat() calls via d_type / fts_info.
 #[cfg(not(windows))]
 mod platform {
     use super::*;
+    use libc;
+    use std::ffi::{CStr, CString};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::PathBuf;
 
     pub fn scan(
         config: &ScanConfig,
         progress: &ScanProgressCallback,
         root_path: &str,
     ) -> Result<ScanResult> {
-        use walkdir::WalkDir;
         let start = Instant::now();
         let skip_dirs = Arc::new(config.skip_dirs.clone());
         let top_files = Arc::new(TopFilesAccum::default());
         let file_types = Arc::new(FileTypeAccum::default());
         let top_count = config.top_files_count;
-        let mut arena = TreeNodeArena::with_capacity(2_000_000);
+
+        let mut arena = TreeNodeArena::with_capacity(8_000_000);
+
         let root_name = Path::new(root_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| root_path.into());
+
         let root_idx = arena.alloc(TreeNode {
             name: root_name,
             size: 0,
@@ -991,93 +999,183 @@ mod platform {
             depth: 0,
             chunk_id: 0,
         });
+
+        // Maps full path -> arena index
         let mut ptix: HashMap<String, u32> = HashMap::new();
-        ptix.insert(root_path.into(), root_idx);
+        ptix.insert(root_path.to_owned(), root_idx);
+        // Maps parent index -> last child index (for sibling linking)
         let mut lc: HashMap<u32, u32> = HashMap::new();
 
-        for entry_result in WalkDir::new(root_path).follow_links(false) {
-            if arena.nodes.len() > 20_000_000 {
-                break;
-            }
-            let entry = match entry_result {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            let full = entry.path().to_string_lossy().to_string();
-            if full == root_path {
-                continue;
-            }
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            let is_dir = entry.file_type().is_dir();
-            let parent = entry
-                .path()
-                .parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| root_path.into());
-            let pi = *ptix.get(&parent).unwrap_or(&root_idx);
-            if is_dir {
-                if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+        // Convert root_path to CString for fts
+        let croot = CString::new(root_path.as_bytes()).map_err(|_| {
+            anyhow::anyhow!("Invalid path for fts: {}", root_path)
+        })?;
+        let mut argv = [croot.as_ptr(), std::ptr::null()];
+
+        // FTS options:
+        // FTS_LOGICAL  - follow symlinks (like -L)
+        // FTS_NOCHDIR  - don't change directory (thread-safe)
+        // FTS_NOSTAT   - don't populate stat buffer automatically (we'll stat selectively)
+        // Actually, FTS_NOSTAT means we must call fts_set ourselves.
+        // Better to let fts stat and use fts_info for type detection.
+        let options = libc::FTS_LOGICAL | libc::FTS_NOCHDIR;
+
+        let ftsp = unsafe { libc::fts_open(argv.as_mut_ptr(), options as libc::c_int, None) };
+        if ftsp.is_null() {
+            return Err(anyhow::anyhow!("fts_open failed for: {}", root_path));
+        }
+
+        let mut files_found: u64 = 0;
+        let mut dirs_found: u64 = 0;
+        let mut last_progress_update = Instant::now();
+
+        unsafe {
+            while let Some(ent) = {
+                let p = libc::fts_read(ftsp);
+                if p.is_null() { None } else { Some(&*p) }
+            } {
+                if arena.nodes.len() > 20_000_000 {
+                    break;
+                }
+
+                let fts_info = ent.fts_info as libc::c_int;
+                let name = CStr::from_ptr(ent.fts_name).to_string_lossy();
+                let path = CStr::from_ptr(ent.fts_path).to_string_lossy();
+
+                // Skip root (level 0) and special entries
+                if ent.fts_level == 0 {
                     continue;
                 }
-                let ci = arena.alloc(TreeNode {
-                    name: file_name,
-                    size: 0,
-                    file_count: 0,
-                    dir_count: 1,
-                    node_type: NodeType::Directory,
-                    parent: pi,
-                    first_child: u32::MAX,
-                    next_sibling: u32::MAX,
-                    depth: if pi == root_idx {
-                        1
-                    } else {
-                        arena.nodes[pi as usize].depth + 1
-                    },
-                    chunk_id: 0,
-                });
-                match lc.get(&pi) {
-                    Some(&last) => {
-                        arena.nodes[last as usize].next_sibling = ci;
+
+                // Skip . and ..
+                if name == "." || name == ".." {
+                    continue;
+                }
+
+                let full = path.to_string();
+                let file_name = name.to_string();
+
+                // Determine if this is a directory
+                let is_dir = matches!(
+                    fts_info,
+                    libc::FTS_D | libc::FTS_DC | libc::FTS_DEFAULT |
+                    libc::FTS_DP | libc::FTS_SL | libc::FTS_SLNONE
+                ) && {
+                    // Only truly directories
+                    fts_info == libc::FTS_D || fts_info == libc::FTS_DC || fts_info == libc::FTS_DP
+                };
+
+                let is_file = matches!(
+                    fts_info,
+                    libc::FTS_F | libc::FTS_SL | libc::FTS_SLNONE | libc::FTS_DEFAULT
+                ) && !is_dir;
+
+                // Skip non-file, non-dir (errors etc)
+                if !is_dir && !is_file {
+                    if fts_info == libc::FTS_ERR || fts_info == libc::FTS_NS {
+                        // Error or stat failed — skip silently
+                        continue;
                     }
-                    None => {
-                        arena.nodes[pi as usize].first_child = ci;
+                    continue;
+                }
+
+                if is_dir {
+                    dirs_found += 1;
+                } else {
+                    files_found += 1;
+                }
+
+                // Determine parent path
+                let parent_path = if ent.fts_level == 1 {
+                    root_path.to_owned()
+                } else {
+                    let parent = Path::new(&full).parent();
+                    match parent {
+                        Some(p) => p.to_string_lossy().to_string(),
+                        None => root_path.to_owned(),
+                    }
+                };
+
+                let pi = *ptix.get(&parent_path).unwrap_or(&root_idx);
+
+                if is_dir {
+                    // Check skip dirs
+                    if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+                        // Tell fts to skip this subtree
+                        unsafe {
+                            libc::fts_set(ftsp, ent as *const _ as *mut _, libc::FTS_SKIP);
+                        }
+                        continue;
+                    }
+
+                    let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+
+                    let ci = arena.alloc(TreeNode {
+                        name: file_name,
+                        size: 0,
+                        file_count: 0,
+                        dir_count: 1,
+                        node_type: NodeType::Directory,
+                        parent: pi,
+                        first_child: u32::MAX,
+                        next_sibling: u32::MAX,
+                        depth,
+                        chunk_id: 0,
+                    });
+
+                    match lc.get(&pi) {
+                        Some(&last) => arena.nodes[last as usize].next_sibling = ci,
+                        None => arena.nodes[pi as usize].first_child = ci,
+                    }
+                    lc.insert(pi, ci);
+                    ptix.insert(full, ci);
+                } else {
+                    // File — get size from fts_statp (already populated by fts)
+                    let sz = if !ent.fts_statp.is_null() {
+                        (*ent.fts_statp).st_size as u64
+                    } else {
+                        0
+                    };
+
+                    let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+
+                    let ci = arena.alloc(TreeNode {
+                        name: file_name,
+                        size: sz,
+                        file_count: 1,
+                        dir_count: 0,
+                        node_type: NodeType::File,
+                        parent: pi,
+                        first_child: u32::MAX,
+                        next_sibling: u32::MAX,
+                        depth,
+                        chunk_id: 0,
+                    });
+
+                    match lc.get(&pi) {
+                        Some(&last) => arena.nodes[last as usize].next_sibling = ci,
+                        None => arena.nodes[pi as usize].first_child = ci,
+                    }
+                    lc.insert(pi, ci);
+
+                    if sz > 0 {
+                        top_files.insert(full.clone(), sz, top_count);
+                        file_types.add(&full, sz);
                     }
                 }
-                lc.insert(pi, ci);
-                ptix.insert(full, ci);
-            } else {
-                let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                let ci = arena.alloc(TreeNode {
-                    name: file_name,
-                    size: sz,
-                    file_count: 1,
-                    dir_count: 0,
-                    node_type: NodeType::File,
-                    parent: pi,
-                    first_child: u32::MAX,
-                    next_sibling: u32::MAX,
-                    depth: if pi == root_idx {
-                        1
-                    } else {
-                        arena.nodes[pi as usize].depth + 1
-                    },
-                    chunk_id: 0,
-                });
-                match lc.get(&pi) {
-                    Some(&last) => {
-                        arena.nodes[last as usize].next_sibling = ci;
-                    }
-                    None => {
-                        arena.nodes[pi as usize].first_child = ci;
-                    }
-                }
-                lc.insert(pi, ci);
-                if sz > 0 {
-                    top_files.insert(full.clone(), sz, top_count);
-                    file_types.add(&full, sz);
+
+                // Progress update every 100ms
+                let now = Instant::now();
+                if now.duration_since(last_progress_update).as_millis() >= 100 {
+                    progress(files_found, dirs_found, &full);
+                    last_progress_update = now;
                 }
             }
         }
+
+        unsafe { libc::fts_close(ftsp); }
+
+        progress(files_found, dirs_found, "Finalizing tree...");
         finish_scan(start, arena, top_files, file_types, progress)
     }
 }
