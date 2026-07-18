@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-pub type ScanProgressCallback = Box<dyn Fn(u64, u64, &str) + Send + Sync>;
+pub type ScanProgressCallback = Box<dyn Fn(u64, u64, u64, &str) + Send + Sync>;
 
 pub struct ScanConfig {
     pub root_path: String,
@@ -201,6 +201,7 @@ mod platform {
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut files_found: u64 = 0;
         let mut dirs_found: u64 = 0;
+        let mut bytes_found: u64 = 0;
         let mut last_progress = Instant::now();
         for entry_result in WalkDir::new(root_path).follow_links(false) {
             if arena.nodes.len() > 20_000_000 { break; }
@@ -246,13 +247,14 @@ mod platform {
                     top_files.insert(full.clone(), sz, top_count);
                     file_types.add(&full, sz);
                 }
+                bytes_found += sz;
             }
             if last_progress.elapsed().as_millis() >= 100 {
-                progress(files_found, dirs_found, &full);
+                progress(files_found, dirs_found, bytes_found, &full);
                 last_progress = Instant::now();
             }
         }
-        progress(files_found, dirs_found, "Finalizing tree...");
+        progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
         finish_scan(start, arena, top_files, file_types, progress)
     }
 }
@@ -288,6 +290,7 @@ mod platform {
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut files_found: u64 = 0;
         let mut dirs_found: u64 = 0;
+        let mut bytes_found: u64 = 0;
         let mut last_progress = Instant::now();
 
         for entry_result in WalkDir::new(root_path).follow_links(false) {
@@ -335,12 +338,13 @@ mod platform {
                     file_types.add(&full, sz);
                 }
             }
+            bytes_found += sz;
             if last_progress.elapsed().as_millis() >= 100 {
-                progress(files_found, dirs_found, &full);
+                progress(files_found, dirs_found, bytes_found, &full);
                 last_progress = Instant::now();
             }
         }
-        progress(files_found, dirs_found, "Finalizing tree...");
+        progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
         finish_scan(start, arena, top_files, file_types, progress)
     }
 }
