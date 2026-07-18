@@ -585,27 +585,32 @@
           ctx.stroke();
         }
 
-        // Center: big speed number
+        // Center: MB/s big, f/s smaller below
         var current = speedSamples[speedSamples.length - 1];
         if (current) {
           var cx = w / 2;
           var cy = h / 2;
-          ctx.fillStyle = "rgba(255,255,255,0.9)";
-          ctx.font = "bold 22px monospace";
+          // MB/s in large bold
+          ctx.fillStyle = "rgba(255,255,255,0.95)";
+          ctx.font = "bold 24px monospace";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText(Math.round(current.fps).toLocaleString() + " f/s", cx, cy - 8);
+          ctx.fillText(formatBytesPerSec(current.bps), cx, cy - 10);
+          // f/s smaller below
           ctx.fillStyle = "rgba(255,255,255,0.5)";
-          ctx.font = "11px monospace";
-          ctx.fillText(formatBytesPerSec(current.bps), cx, cy + 14);
+          ctx.font = "12px monospace";
+          ctx.fillText(Math.round(current.fps).toLocaleString() + " f/s", cx, cy + 14);
         }
 
-        // Peak label top-right
+        // Peak labels top-right
         ctx.fillStyle = "rgba(255,255,255,0.25)";
         ctx.font = "9px monospace";
         ctx.textAlign = "right";
         ctx.textBaseline = "top";
-        ctx.fillText("peak " + Math.round(maxVal).toLocaleString() + " f/s", w - pad, pad);
+        ctx.fillText("peak " + formatBytesPerSec(maxBps), w - pad, pad);
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.font = "8px monospace";
+        ctx.fillText(Math.round(maxVal).toLocaleString() + " f/s", w - pad, pad + 11);
       }
 
       progressOverlay.classList.add("active");
