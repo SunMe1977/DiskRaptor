@@ -960,14 +960,100 @@ mod platform {
 
 // ─── macOS / Linux native scanner (fts) ───────────────────────
 // Uses POSIX fts_open/fts_read for fast directory traversal
-// with minimal stat() calls via d_type / fts_info.
+// with minimal stat() calls via fts_info.
+//
+// fts is not in the libc crate on all platforms, so we define
+// the bindings ourselves via raw extern "C".
 #[cfg(not(windows))]
 mod platform {
     use super::*;
-    use libc;
     use std::ffi::{CStr, CString};
-    use std::os::unix::ffi::OsStrExt;
-    use std::path::PathBuf;
+    use std::os::raw::{c_char, c_int};
+
+    // ── Raw fts FFI bindings (macOS/BSD) ───────────────────────
+    #[repr(C)]
+    struct _ftsent {
+        fts_cycle: *mut _ftsent,   // FTSEN*  fts_cycle
+        fts_parent: *mut _ftsent,  // FTSENT* fts_parent
+        fts_link: *mut _ftsent,    // FTSENT* fts_link
+        fts_dir: *mut u8,          // dir dir (not used directly)
+        fts_number: i64,           // fts_number
+        fts_pointer: *mut u8,      // fts_pointer
+        fts_path: *mut c_char,     // fts_path
+        fts_statp: *mut stat_struct, // fts_statp
+        fts_info: c_int,           // fts_info
+        fts_level: u16,            // fts_level
+        fts_flags: u16,            // fts_flags
+        fts_errno: c_int,          // fts_errno
+        fts_namelen: u16,          // fts_namelen
+        fts_name: [c_char; 1],     // flexible member
+    }
+
+    #[repr(C)]
+    struct stat_struct {
+        st_dev: i64,
+        st_mode: u16,
+        st_nlink: u16,
+        st_ino: u64,
+        st_uid: u32,
+        st_gid: u32,
+        st_rdev: i64,
+        st_atime: i64,
+        st_mtime: i64,
+        st_ctime: i64,
+        st_birthtime: i64,
+        st_size: i64,
+        st_blocks: i64,
+        st_blksize: i32,
+        st_flags: u32,
+        st_gen: u32,
+        st_spare: [i32; 2],
+    }
+
+    #[repr(C)]
+    struct _fts {
+        fts_cur: *mut _ftsent,
+        fts_child: *mut _ftsent,
+        fts_array: *mut *mut _ftsent,
+        fts_dev: i64,
+        fts_path: [c_char; 1024],
+        fts_rfd: *mut u8,
+        fts_pathlen: usize,
+        fts_nitems: usize,
+        fts_compar: *mut u8,
+        fts_options: c_int,
+    }
+
+    type FTS = _fts;
+    type FTSENT = _ftsent;
+
+    // FTS option flags
+    const FTS_LOGICAL: c_int  = 0x0002;
+    const FTS_NOCHDIR: c_int = 0x0004;
+    const FTS_NOSTAT: c_int  = 0x0008;
+
+    // FTSENT info types
+    const FTS_D: c_int        = 1;  // directory
+    const FTS_DC: c_int       = 2;  // directory that causes a cycle
+    const FTS_DEFAULT: c_int  = 3;  // none of the above
+    const FTS_DNR: c_int      = 4;  // directory with unreadable contents
+    const FTS_DOT: c_int      = 5;  // dot or dot-dot
+    const FTS_DP: c_int       = 6;  // directory post-order
+    const FTS_ERR: c_int      = 7;  // error
+    const FTS_F: c_int        = 8;  // file
+    const FTS_INIT: c_int     = 9;  // initialized only
+    const FTS_NS: c_int       = 10; // stat failed
+    const FTS_NSOK: c_int     = 11; // no stat requested
+    const FTS_SL: c_int       = 12; // symlink
+    const FTS_SLNONE: c_int   = 13; // symlink with no target
+    const FTS_SKIP: c_int     = 4;  // fts_set skip command
+
+    extern "C" {
+        fn fts_open(argv: *mut *mut c_char, options: c_int, compar: *mut u8) -> *mut FTS;
+        fn fts_read(ftsp: *mut FTS) -> *mut FTSENT;
+        fn fts_set(ftsp: *mut FTS, ftsent: *mut FTSENT, command: c_int) -> c_int;
+        fn fts_close(ftsp: *mut FTS) -> c_int;
+    }
 
     pub fn scan(
         config: &ScanConfig,
@@ -1000,27 +1086,17 @@ mod platform {
             chunk_id: 0,
         });
 
-        // Maps full path -> arena index
         let mut ptix: HashMap<String, u32> = HashMap::new();
         ptix.insert(root_path.to_owned(), root_idx);
-        // Maps parent index -> last child index (for sibling linking)
         let mut lc: HashMap<u32, u32> = HashMap::new();
 
-        // Convert root_path to CString for fts
         let croot = CString::new(root_path.as_bytes()).map_err(|_| {
             anyhow::anyhow!("Invalid path for fts: {}", root_path)
         })?;
-        let mut argv = [croot.as_ptr(), std::ptr::null()];
+        let mut argv = [croot.as_ptr() as *mut c_char, std::ptr::null_mut()];
 
-        // FTS options:
-        // FTS_LOGICAL  - follow symlinks (like -L)
-        // FTS_NOCHDIR  - don't change directory (thread-safe)
-        // FTS_NOSTAT   - don't populate stat buffer automatically (we'll stat selectively)
-        // Actually, FTS_NOSTAT means we must call fts_set ourselves.
-        // Better to let fts stat and use fts_info for type detection.
-        let options = libc::FTS_LOGICAL | libc::FTS_NOCHDIR;
-
-        let ftsp = unsafe { libc::fts_open(argv.as_mut_ptr(), options as libc::c_int, None) };
+        let options = FTS_LOGICAL | FTS_NOCHDIR;
+        let ftsp = unsafe { fts_open(argv.as_mut_ptr(), options, std::ptr::null_mut()) };
         if ftsp.is_null() {
             return Err(anyhow::anyhow!("fts_open failed for: {}", root_path));
         }
@@ -1030,85 +1106,58 @@ mod platform {
         let mut last_progress_update = Instant::now();
 
         unsafe {
-            while let Some(ent) = {
-                let p = libc::fts_read(ftsp);
-                if p.is_null() { None } else { Some(&*p) }
-            } {
-                if arena.nodes.len() > 20_000_000 {
-                    break;
-                }
+            loop {
+                let ent = fts_read(ftsp);
+                if ent.is_null() { break; }
 
-                let fts_info = ent.fts_info as libc::c_int;
-                let name = CStr::from_ptr(ent.fts_name).to_string_lossy();
-                let path = CStr::from_ptr(ent.fts_path).to_string_lossy();
+                let info = (*ent).fts_info;
+                let fts_level = (*ent).fts_level;
 
-                // Skip root (level 0) and special entries
-                if ent.fts_level == 0 {
-                    continue;
-                }
+                // Skip root
+                if fts_level == 0 { continue; }
+
+                let name_ptr = (*ent).fts_name.as_ptr();
+                let name = CStr::from_ptr(name_ptr).to_string_lossy();
 
                 // Skip . and ..
-                if name == "." || name == ".." {
-                    continue;
-                }
+                if name == "." || name == ".." { continue; }
 
-                let full = path.to_string();
+                let path_ptr = (*ent).fts_path;
+                let full = CStr::from_ptr(path_ptr).to_string_lossy().to_string();
                 let file_name = name.to_string();
 
-                // Determine if this is a directory
-                let is_dir = matches!(
-                    fts_info,
-                    libc::FTS_D | libc::FTS_DC | libc::FTS_DEFAULT |
-                    libc::FTS_DP | libc::FTS_SL | libc::FTS_SLNONE
-                ) && {
-                    // Only truly directories
-                    fts_info == libc::FTS_D || fts_info == libc::FTS_DC || fts_info == libc::FTS_DP
-                };
+                // Determine entry type using fts_info
+                let is_dir = info == FTS_D || info == FTS_DC || info == FTS_DP;
+                let is_file = info == FTS_F || info == FTS_SL || info == FTS_SLNONE || info == FTS_DEFAULT;
 
-                let is_file = matches!(
-                    fts_info,
-                    libc::FTS_F | libc::FTS_SL | libc::FTS_SLNONE | libc::FTS_DEFAULT
-                ) && !is_dir;
-
-                // Skip non-file, non-dir (errors etc)
                 if !is_dir && !is_file {
-                    if fts_info == libc::FTS_ERR || fts_info == libc::FTS_NS {
-                        // Error or stat failed — skip silently
-                        continue;
-                    }
+                    if info == FTS_ERR || info == FTS_NS { continue; }
                     continue;
                 }
 
-                if is_dir {
-                    dirs_found += 1;
-                } else {
-                    files_found += 1;
-                }
+                if is_dir { dirs_found += 1; } else { files_found += 1; }
 
-                // Determine parent path
-                let parent_path = if ent.fts_level == 1 {
+                // Determine parent path index
+                let parent_path = if fts_level == 1 {
                     root_path.to_owned()
                 } else {
-                    let parent = Path::new(&full).parent();
-                    match parent {
-                        Some(p) => p.to_string_lossy().to_string(),
-                        None => root_path.to_owned(),
-                    }
+                    Path::new(&full).parent()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| root_path.to_owned())
                 };
-
                 let pi = *ptix.get(&parent_path).unwrap_or(&root_idx);
 
                 if is_dir {
-                    // Check skip dirs
                     if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
-                        // Tell fts to skip this subtree
-                        unsafe {
-                            libc::fts_set(ftsp, ent as *const _ as *mut _, libc::FTS_SKIP);
-                        }
+                        fts_set(ftsp, ent, FTS_SKIP);
                         continue;
                     }
 
-                    let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+                    let depth = if pi == root_idx {
+                        1
+                    } else {
+                        arena.nodes[pi as usize].depth + 1
+                    };
 
                     let ci = arena.alloc(TreeNode {
                         name: file_name,
@@ -1131,13 +1180,17 @@ mod platform {
                     ptix.insert(full, ci);
                 } else {
                     // File — get size from fts_statp (already populated by fts)
-                    let sz = if !ent.fts_statp.is_null() {
-                        (*ent.fts_statp).st_size as u64
+                    let sz = if !(*ent).fts_statp.is_null() {
+                        (*(*ent).fts_statp).st_size as u64
                     } else {
                         0
                     };
 
-                    let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+                    let depth = if pi == root_idx {
+                        1
+                    } else {
+                        arena.nodes[pi as usize].depth + 1
+                    };
 
                     let ci = arena.alloc(TreeNode {
                         name: file_name,
@@ -1164,7 +1217,6 @@ mod platform {
                     }
                 }
 
-                // Progress update every 100ms
                 let now = Instant::now();
                 if now.duration_since(last_progress_update).as_millis() >= 100 {
                     progress(files_found, dirs_found, &full);
@@ -1173,7 +1225,7 @@ mod platform {
             }
         }
 
-        unsafe { libc::fts_close(ftsp); }
+        fts_close(ftsp);
 
         progress(files_found, dirs_found, "Finalizing tree...");
         finish_scan(start, arena, top_files, file_types, progress)
