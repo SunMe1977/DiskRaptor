@@ -346,6 +346,9 @@ QString IpcBridge::getScanResult()
                 if (obj.contains("root_info")) {
                     resultObj["root_info"] = obj["root_info"];
                 }
+                if (obj.contains("chunks")) {
+                    resultObj["chunks"] = obj["chunks"];
+                }
                 resultObj["scan_id"] = m_scanId;
                 m_chunksJson = jsonStr;
                 QJsonObject wrapper;
