@@ -74,6 +74,33 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
                 if (!doc.isNull() && doc.isObject()) {
                     return resultToJson(true, doc.object());
                 }
+
+                // Fallback: decode chunk from cached Rust result payload.
+                if (!m_chunksJson.isEmpty()) {
+                    QJsonDocument fullDoc = QJsonDocument::fromJson(m_chunksJson.toUtf8());
+                    if (!fullDoc.isNull() && fullDoc.isObject()) {
+                        QJsonObject fullObj = fullDoc.object();
+                        if (fullObj.contains("chunks")) {
+                            QString chunksRaw;
+                            if (fullObj.value("chunks").isString()) {
+                                chunksRaw = fullObj.value("chunks").toString();
+                            } else if (fullObj.value("chunks").isArray()) {
+                                chunksRaw = QString::fromUtf8(
+                                    QJsonDocument(fullObj.value("chunks").toArray()).toJson(QJsonDocument::Compact));
+                            }
+                            if (!chunksRaw.isEmpty()) {
+                                QJsonDocument chunksDoc = QJsonDocument::fromJson(chunksRaw.toUtf8());
+                                if (!chunksDoc.isNull() && chunksDoc.isArray()) {
+                                    QJsonArray chunks = chunksDoc.array();
+                                    if (chunkIndex < static_cast<uint32_t>(chunks.size()) && chunks[static_cast<int>(chunkIndex)].isObject()) {
+                                        return resultToJson(true, chunks[static_cast<int>(chunkIndex)].toObject());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
                 if (!isRunning && chunkIndex == 0) {
                     // Return synthetic root chunk

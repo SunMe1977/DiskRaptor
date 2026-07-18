@@ -198,7 +198,13 @@ class ChunkLoader {
       scanId: this.scanId,
       nodeIndex: arenaIndex,
     });
-    return result || [];
+    if (Array.isArray(result)) {
+      return result;
+    }
+    if (result && Array.isArray(result.children)) {
+      return result.children;
+    }
+    return [];
   }
 
   async ensureChunks(startChunk, endChunk) {
