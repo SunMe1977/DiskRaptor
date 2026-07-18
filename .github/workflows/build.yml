@@ -16,16 +16,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - run: pip install aqtinstall && aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 --modules qtwebengine qtwebchannel qtpositioning -O C:\Qt && aqt install-tool windows desktop tools_ninja -O C:\Qt && aqt install-tool windows desktop tools_cmake -O C:\Qt
       - run: rustup set profile minimal && rustup toolchain install stable && rustup default stable
       - run: cargo build --release
         working-directory: src-tauri
       - run: $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath; Push-Location "$vs\VC\Auxiliary\Build"; cmd /c "vcvars64.bat>nul&&set" | ForEach-Object { if ($_ -match "^(.*?)=(.*)") { Set-Item -Path "env:$($matches[1])" -Value $matches[2] } }; Pop-Location; $env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;$env:PATH"; cd qt-app; Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force -Path build | Out-Null; cd build; cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=C:\Qt\6.10.3\msvc2022_64\lib\cmake\Qt6"; cmake --build . --config Release
       - run: New-Item -ItemType Directory -Force -Path dist | Out-Null; Copy-Item qt-app\build\DiskRaptor.exe dist\; Copy-Item src-tauri\target\release\diskraptor_scanner.dll dist\; Copy-Item qt-app\build\*.dll dist\; Copy-Item -Recurse frontend dist\frontend\; if (Test-Path images) { Copy-Item -Recurse images dist\images\ }; @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations") | ForEach-Object { $src = "qt-app\build\$_"; if (Test-Path $src) { Copy-Item -Recurse $src "dist\$_\"; } }; Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue; Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows.zip -Force
+      - run: choco install nsis -y --no-progress && & "C:\Program Files (x86)\NSIS\makensis.exe" installer\nsis\DiskRaptor.nsi
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-windows
-          path: DiskRaptor-windows.zip
+          path: |
+            DiskRaptor-windows.zip
+            installer\nsis\DiskRaptor_*.exe
 
   macos:
     name: macOS
@@ -37,11 +41,13 @@ jobs:
       - run: cargo build --release
         working-directory: src-tauri
       - run: export Qt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6" && cd qt-app && rm -rf build && mkdir build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="$Qt6_DIR" && cmake --build . --config Release
-      - run: mkdir -p dist && cp -R qt-app/build/DiskRaptor.app dist/ && QT_BIN="$(brew --prefix qt@6)/bin" && if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" dist/DiskRaptor.app -verbose=1; fi && if [ -f src-tauri/target/release/libdiskraptor_scanner.dylib ]; then cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/; fi && cd dist && zip -r ../DiskRaptor-macos.zip DiskRaptor.app
+      - run: mkdir -p dist && cp -R qt-app/build/DiskRaptor.app dist/ && QT_BIN="$(brew --prefix qt@6)/bin" && if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" dist/DiskRaptor.app -verbose=1; fi && if [ -f src-tauri/target/release/libdiskraptor_scanner.dylib ]; then cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/; fi && cd dist && zip -r ../DiskRaptor-macos.zip DiskRaptor.app && cd .. && hdiutil create -volname DiskRaptor -srcfolder dist/DiskRaptor.app -ov -format UDZO DiskRaptor-macos.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-macos
-          path: DiskRaptor-macos.zip
+          path: |
+            DiskRaptor-macos.zip
+            DiskRaptor-macos.dmg
 
   linux:
     name: Linux
@@ -53,11 +59,13 @@ jobs:
       - run: cargo build --release
         working-directory: src-tauri
       - run: cd qt-app && rm -rf build && mkdir build && cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DQt6_DIR="/usr/lib/x86_64-linux-gnu/cmake/Qt6" && cmake --build . --config Release
-      - run: mkdir -p dist/lib && cp qt-app/build/DiskRaptor dist/ && cp -R frontend dist/frontend && { [ -d images ] && cp -R images dist/images; } && { [ -f src-tauri/target/release/libdiskraptor_scanner.so ] && cp src-tauri/target/release/libdiskraptor_scanner.so dist/; } && for lib in Core Gui Widgets WebEngineCore WebEngineWidgets WebChannel Network; do for f in /usr/lib/x86_64-linux-gnu/libQt6${lib}.so*; do [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true; done; done && printf '#!/bin/bash\ncd "$(dirname "$0")"\nexport LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"\nexec ./DiskRaptor "$@"\n' > dist/DiskRaptor.sh && chmod +x dist/DiskRaptor.sh && cd dist && zip -r ../DiskRaptor-linux.zip .
+      - run: mkdir -p dist/lib && cp qt-app/build/DiskRaptor dist/ && cp -R frontend dist/frontend && { [ -d images ] && cp -R images dist/images; } && { [ -f src-tauri/target/release/libdiskraptor_scanner.so ] && cp src-tauri/target/release/libdiskraptor_scanner.so dist/; } && for lib in Core Gui Widgets WebEngineCore WebEngineWidgets WebChannel Network; do for f in /usr/lib/x86_64-linux-gnu/libQt6${lib}.so*; do [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true; done; done && printf '#!/bin/bash\ncd "$(dirname "$0")"\nexport LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"\nexec ./DiskRaptor "$@"\n' > dist/DiskRaptor.sh && chmod +x dist/DiskRaptor.sh && cd dist && zip -r ../DiskRaptor-linux.zip . && cd .. && VERSION=${GITHUB_REF_NAME#v} && mkdir -p deb/DEBIAN && printf "Package: diskraptor\nVersion: $VERSION\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: DiskRaptor Team\nDescription: Ultra-fast disk space analyzer\n" > deb/DEBIAN/control && mkdir -p deb/usr/bin deb/usr/share/applications deb/usr/share/icons/hicolor/128x128/apps && cp dist/DiskRaptor deb/usr/bin/ && cp dist/DiskRaptor.sh deb/usr/bin/ && cp dist/lib/*.so* deb/usr/lib/ 2>/dev/null; true && { [ -f images/128x128@2x.png ] && cp images/128x128@2x.png deb/usr/share/icons/hicolor/128x128/apps/diskraptor.png; } && dpkg-deb --build deb DiskRaptor_${VERSION}_amd64.deb
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-linux
-          path: DiskRaptor-linux.zip
+          path: |
+            DiskRaptor-linux.zip
+            DiskRaptor_*.deb
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -75,7 +83,9 @@ jobs:
         run: |
           echo "Tag: $GITHUB_REF_NAME, Repo: $GITHUB_REPOSITORY"
           ls -la artifacts/
-          for f in artifacts/*.zip; do
-            echo "Uploading to $GITHUB_REF_NAME: $f ($(stat -c%s "$f") bytes)"
-            gh release upload "$GITHUB_REF_NAME" "$f" --clobber -R "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          for f in artifacts/*; do
+            if [ -f "$f" ]; then
+              echo "Uploading: $f ($(stat -c%s "$f") bytes)"
+              gh release upload "$GITHUB_REF_NAME" "$f" --clobber -R "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+            fi
           done
