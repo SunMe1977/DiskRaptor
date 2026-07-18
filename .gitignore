@@ -13,6 +13,7 @@ release/
 *.so
 *.lib
 *.exp
+*.dll
 
 # ── Node ────────────────────────────
 node_modules/
@@ -37,8 +38,6 @@ Thumbs.db
 *.bat
 !build.cmd
 test-results/
-debug_path.txt
-launch_cdp.bat
 
 # ── Qt runtime (launcher downloads) ─
 qtwebengine_runtime/

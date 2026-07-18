@@ -12,8 +12,6 @@ env:
   CARGO_TERM_COLOR: always
   QT_VERSION: "6.10.3"
   QT_ARCH: win64_msvc2022_64
-  QT_ROOT: C:\Qt\6.10.3\msvc2022_64
-  QT_DIR: C:\Qt\6.10.3\msvc2022_64
 
 jobs:
   build-and-test:
@@ -30,8 +28,6 @@ jobs:
         aqt install-qt --outputdir C:\Qt windows desktop $env:QT_VERSION $env:QT_ARCH --modules qtwebengine qtwebchannel
         "Qt6_DIR=C:\Qt\$env:QT_VERSION\$env:QT_ARCH\lib\cmake\Qt6" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "CMAKE_PREFIX_PATH=C:\Qt\$env:QT_VERSION\$env:QT_ARCH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -64,107 +60,45 @@ jobs:
       env:
         CARGO_BUILD_JOBS: 2
 
-    - name: Pre-build checks
-      shell: pwsh
-      run: |
-        Write-Host "=== Tool checks ==="
-        Write-Host "cl.exe: $((Get-Command cl.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join ', ')"
-        Write-Host "rc.exe: $((Get-Command rc.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join ', ')"
-        Write-Host "cmake: $((Get-Command cmake.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join ', ')"
-        Write-Host ""
-        Write-Host "=== Qt directories under C:\Qt ==="
-        Get-ChildItem "C:\Qt" -Depth 1 -ErrorAction SilentlyContinue | Select-Object FullName, Mode | Format-Table -AutoSize
-        Write-Host ""
-        Write-Host "=== Rust DLL ==="
-        $rustDll = "src-tauri/target/release/diskraptor_scanner.dll"
-        Write-Host "$rustDll exists: $(Test-Path $rustDll)"
-
     - name: Build Qt app
       shell: pwsh
       run: |
-        # ── Find Qt installation (aqtinstall directory name is unpredictable) ──
-        Write-Host "=== Finding Qt6 installation ==="
-        $qtDirs = Get-ChildItem "C:\Qt\6.10.3" -Directory -ErrorAction SilentlyContinue
-        if (-not $qtDirs) {
-          Write-Host "C:\Qt\6.10.3 directories:"
-          Get-ChildItem "C:\Qt" -Depth 1 -ErrorAction SilentlyContinue | Select-Object FullName
-          throw "No Qt installation found under C:\Qt\6.10.3"
-        }
-        $qtRoot = $qtDirs[0].FullName
-        $qt6Dir = Join-Path $qtRoot "lib\cmake\Qt6"
-        Write-Host "Qt root: $qtRoot"
-        Write-Host "Qt6_DIR: $qt6Dir"
-        if (-not (Test-Path $qt6Dir)) {
-          Write-Host "Contents of $qtRoot :"
-          Get-ChildItem $qtRoot -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName
-          throw "Qt6 cmake config not found at $qt6Dir"
-        }
-        $windeploy = Join-Path $qtRoot "bin\windeployqt.exe"
-        Write-Host "windeployqt: $(Test-Path $windeploy)"
-
-        # ── Tool checks ──
-        Write-Host ""
-        Write-Host "=== Tool checks ==="
-        Write-Host "cl.exe: $(Get-Command cl.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)"
-        Write-Host "rc.exe: $(Get-Command rc.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)"
-        Write-Host "ninja: $(Get-Command ninja -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)"
-
-        # ── Build ──
         Push-Location qt-app
         Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Path build | Out-Null
         Push-Location build
 
-        Write-Host ""
         Write-Host "=== CMake configure ==="
-        cmake .. -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=$qt6Dir" "-DCMAKE_PREFIX_PATH=$qtRoot" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "=== CONFIGURE FAILED ==="
-          $errorLog = "CMakeFiles\CMakeError.log"
-          if (Test-Path $errorLog) { Get-Content $errorLog }
-          throw "CMake configure failed (exit $LASTEXITCODE)"
-        }
+        cmake .. -G Ninja `
+          -DCMAKE_BUILD_TYPE=Release `
+          "-DQt6_DIR=$env:Qt6_DIR" `
+          "-DCMAKE_PREFIX_PATH=$env:CMAKE_PREFIX_PATH"
+        if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
-        Write-Host ""
         Write-Host "=== CMake build ==="
-        cmake --build . --config Release 2>&1
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "=== BUILD FAILED ==="
-          throw "CMake build failed (exit $LASTEXITCODE)"
-        }
+        cmake --build . --config Release
+        if ($LASTEXITCODE -ne 0) { throw "CMake build failed" }
 
         Pop-Location
         Pop-Location
 
     - name: Stage dist
-      shell: cmd
+      shell: pwsh
       run: |
-        :: VS generator puts output in Release\, Ninja puts it at build root
-        if exist qt-app\build\Release\DiskRaptor.exe (
-          set SRC=qt-app\build\Release
-        ) else (
-          set SRC=qt-app\build
-        )
-        echo === Staging from %SRC% ===
-        if not exist dist mkdir dist
-        if exist %SRC%\DiskRaptor.exe copy %SRC%\DiskRaptor.exe dist\ >nul
-        if exist %SRC%\DiskRaptorLauncher.exe copy %SRC%\DiskRaptorLauncher.exe dist\ >nul
-        if exist %SRC%\diskraptor_scanner.dll copy %SRC%\diskraptor_scanner.dll dist\ >nul
-        if exist %SRC%\QtWebEngineProcess.exe copy %SRC%\QtWebEngineProcess.exe dist\ >nul
-        if exist %SRC%\*.dll copy %SRC%\*.dll dist\ >nul
-        if exist %SRC%\platforms xcopy /e /i /y %SRC%\platforms dist\platforms >nul 2>&1
-        if exist %SRC%\styles xcopy /e /i /y %SRC%\styles dist\styles >nul 2>&1
-        if exist %SRC%\imageformats xcopy /e /i /y %SRC%\imageformats dist\imageformats >nul 2>&1
-        if exist %SRC%\tls xcopy /e /i /y %SRC%\tls dist\tls >nul 2>&1
-        if exist %SRC%\iconengines xcopy /e /i /y %SRC%\iconengines dist\iconengines >nul 2>&1
-        if exist %SRC%\networkinformation xcopy /e /i /y %SRC%\networkinformation dist\networkinformation >nul 2>&1
-        if exist %SRC%\position xcopy /e /i /y %SRC%\position dist\position >nul 2>&1
-        if exist %SRC%\generic xcopy /e /i /y %SRC%\generic dist\generic >nul 2>&1
-        if exist %SRC%\resources xcopy /e /i /y %SRC%\resources dist\resources >nul 2>&1
-        if exist %SRC%\translations xcopy /e /i /y %SRC%\translations dist\translations >nul 2>&1
-        xcopy /e /i /y frontend dist\frontend\ >nul
-        if exist images xcopy /e /i /y images dist\images\ >nul 2>&1
-        dir dist\ /b
+        $SRC = "qt-app/build"
+        if (Test-Path "qt-app/build/Release/DiskRaptor.exe") { $SRC = "qt-app/build/Release" }
+        Write-Host "=== Staging from $SRC ==="
+        New-Item -ItemType Directory -Force -Path dist | Out-Null
+        Copy-Item "$SRC/DiskRaptor.exe" dist/ -ErrorAction SilentlyContinue
+        Copy-Item "$SRC/diskraptor_scanner.dll" dist/ -ErrorAction SilentlyContinue
+        Copy-Item "$SRC/QtWebEngineProcess.exe" dist/ -ErrorAction SilentlyContinue
+        Get-ChildItem "$SRC/*.dll" | Copy-Item -Destination dist -ErrorAction SilentlyContinue
+        @("platforms","styles","imageformats","tls","iconengines","networkinformation","position","generic","resources","translations") | ForEach-Object {
+          $p = Join-Path $SRC $_
+          if (Test-Path $p) { Copy-Item -Recurse -Force $p dist/ }
+        }
+        Copy-Item -Recurse -Force frontend dist/frontend
+        if (Test-Path images) { Copy-Item -Recurse -Force images dist/images }
 
     - name: Verify dist artifacts
       shell: pwsh
@@ -175,15 +109,15 @@ jobs:
         $dll = Test-Path dist\diskraptor_scanner.dll
         $qtw = Test-Path dist\QtWebEngineProcess.exe
         if (-not $exe) { throw "Missing DiskRaptor.exe in dist" }
-        if (-not $dll) { Write-Warning "Missing diskraptor_scanner.dll — Rust build may have failed" }
-        if (-not $qtw) { Write-Warning "Missing QtWebEngineProcess.exe — windeployqt may not have run" }
+        if (-not $dll) { Write-Warning "Missing diskraptor_scanner.dll" }
+        if (-not $qtw) { Write-Warning "Missing QtWebEngineProcess.exe" }
         Write-Host "DiskRaptor.exe: $exe, scanner DLL: $dll, WebEngine: $qtw"
 
     # ── Test ───────────────────────────────────────────────
     - name: Run UI test
       run: node test_scan.mjs "%USERPROFILE%"
       shell: cmd
-      timeout-minutes: 10
+      timeout-minutes: 15
       env:
         DISKraptor_CDP_PORT: 9222
 
@@ -192,18 +126,15 @@ jobs:
       id: version
       shell: pwsh
       run: |
-        # Read version from CMakeLists.txt
         $ver = (Select-String -Path qt-app/CMakeLists.txt -Pattern 'project\(DiskRaptor VERSION ([0-9.]+)').Matches[0].Groups[1].Value
-        if (-not $ver) { $ver = "0.0.1" }
-        Write-Host "Version: $ver"
+        if (-not $ver) { $ver = "0.0.7" }
         "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
     - name: Package release zip
-      shell: cmd
+      shell: pwsh
       run: |
-        if not exist artifacts mkdir artifacts
-        cd dist
-        "%ProgramFiles%\7-Zip\7z.exe" a -tzip ..\artifacts\DiskRaptor_v%VER%.zip *
+        New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+        & "C:\Program Files\7-Zip\7z.exe" a -tzip "artifacts/DiskRaptor_v$env:VER.zip" ./dist/* 2>&1
       env:
         VER: ${{ steps.version.outputs.version }}
 
