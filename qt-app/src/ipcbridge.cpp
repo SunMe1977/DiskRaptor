@@ -100,49 +100,28 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
             }
         }
 
-        // C++ fallback: return tree chunk with first-level children
+        // C++ fallback: return flat root chunk with stats but no tree
         if (chunkIndex == 0) {
             QMutexLocker lock(&m_cppMutex);
             QJsonArray nodes;
 
-            // Root node
             QJsonObject rootNode;
             rootNode["name"] = m_cppScanPath.isEmpty() ? (m_lastScanPath.isEmpty() ? QStringLiteral("/") : m_lastScanPath) : m_cppScanPath;
             rootNode["size"] = static_cast<qint64>(m_cppBytesFound);
             rootNode["file_count"] = static_cast<qint64>(m_cppFilesFound);
             rootNode["dir_count"] = static_cast<qint64>(m_cppDirsFound);
-            rootNode["node_type"] = 0; // Directory
+            rootNode["node_type"] = 0;
             rootNode["parent"] = static_cast<qint64>(4294967295u);
-            rootNode["first_child"] = 1; // first child is index 1
+            rootNode["first_child"] = static_cast<qint64>(4294967295u);
             rootNode["next_sibling"] = static_cast<qint64>(4294967295u);
             rootNode["depth"] = 0;
             rootNode["chunk_id"] = 0;
             nodes.append(rootNode);
 
-            // First-level children from tree
-            QString scanPath = m_cppScanPath;
-            auto it = m_cppTree.find(scanPath);
-            if (it != m_cppTree.end()) {
-                for (const auto &child : it.value()) {
-                    QJsonObject cn;
-                    cn["name"] = child.name;
-                    cn["size"] = static_cast<qint64>(child.size);
-                    cn["file_count"] = static_cast<qint64>(child.fileCount);
-                    cn["dir_count"] = static_cast<qint64>(child.dirCount);
-                    cn["node_type"] = child.isDir ? 0 : 1;
-                    cn["parent"] = 0;
-                    cn["first_child"] = static_cast<qint64>(4294967295u);
-                    cn["next_sibling"] = static_cast<qint64>(4294967295u);
-                    cn["depth"] = 1;
-                    cn["chunk_id"] = 0;
-                    nodes.append(cn);
-                }
-            }
-
             QJsonObject chunk;
             chunk["chunk_id"] = 0;
             chunk["total_chunks"] = 1;
-            chunk["total_nodes"] = nodes.size();
+            chunk["total_nodes"] = 1;
             chunk["nodes"] = nodes;
             return resultToJson(true, chunk);
         }
@@ -554,8 +533,6 @@ void IpcBridge::cppStartScan(const QString &path)
     m_cppCurrentDir = path;
     m_cppStartTimeMs = QDateTime::currentMSecsSinceEpoch();
     m_cppScanRunning = true;
-    m_cppTree.clear();
-    m_cppTreeLevel1.clear();
 
     m_cppScanThread = QThread::create([this, path]() {
         QDirIterator it(path, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
@@ -565,47 +542,21 @@ void IpcBridge::cppStartScan(const QString &path)
         QHash<QString, quint64> typeMap;
         QHash<QString, quint64> typeBytes;
         QVector<QPair<quint64, QString>> topFiles;
-        QHash<QString, QVector<CppTreeNode>> tree;
-        QSet<QString> treeDirs;
-        QStringList l1;
 
         while (it.hasNext()) {
             if (!m_cppScanRunning) break;
             QString fullPath = it.next();
             QFileInfo fi = it.fileInfo();
-            QString parentDir = fi.path(); // parent directory path
 
             if (fi.isDir()) {
                 dirs++;
-                // Add to tree
-                CppTreeNode node;
-                node.name = fi.fileName();
-                node.isDir = true;
-                node.size = 0;
-                node.fileCount = 0;
-                node.dirCount = 1;
-                tree[parentDir].append(node);
-                treeDirs.insert(fullPath);
             } else if (fi.isFile()) {
                 files++;
                 qint64 sz = fi.size();
                 bytes += sz;
-
-                // Add file to tree
-                CppTreeNode node;
-                node.name = fi.fileName();
-                node.isDir = false;
-                node.size = sz;
-                node.fileCount = 1;
-                node.dirCount = 0;
-                tree[parentDir].append(node);
-
-                // Track file type
                 QString ext = fi.suffix().isEmpty() ? "(none)" : fi.suffix().toLower();
                 typeMap[ext]++;
                 typeBytes[ext] += sz;
-
-                // Track top files
                 if (sz > 0) {
                     topFiles.append({static_cast<quint64>(sz), fullPath});
                     std::sort(topFiles.begin(), topFiles.end(),
@@ -624,48 +575,19 @@ void IpcBridge::cppStartScan(const QString &path)
                 m_cppTypeMap = typeMap;
                 m_cppTypeBytes = typeBytes;
                 m_cppTopFiles = topFiles;
-                m_cppTree = tree;
-                m_cppTreeLevel1 = l1;
                 lastProgress = now;
             }
         }
 
-        // Build flat tree and aggregate sizes
-        // First pass: collect all nodes
-        // Second pass: aggregate sizes up the tree
-        {
-            QStringList dirList = tree.keys();
-            // Sort by depth descending (deepest first) for bottom-up aggregation
-            std::sort(dirList.begin(), dirList.end(),
-                [](const QString &a, const QString &b) {
-                    return a.count(u'/') > b.count(u'/');
-                });
-            for (const QString &dirPath : dirList) {
-                if (dirPath == path) continue;
-                QFileInfo pfi(dirPath);
-                QString parent = pfi.path();
-                if (parent == dirPath || !tree.contains(parent)) continue;
-                QString dirName = pfi.fileName();
-                auto &parentNodes = tree[parent];
-                for (auto &pn : parentNodes) {
-                    if (pn.isDir && pn.name == dirName) {
-                        for (const auto &child : tree[dirPath]) {
-                            pn.fileCount += child.fileCount;
-                            pn.dirCount += child.dirCount;
-                            pn.size += child.size;
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        for (const QString &d : treeDirs) {
-            if (d != path && d.startsWith(path + QDir::separator()) && d.mid(path.length() + 1).indexOf(QDir::separator()) == -1)
-                l1.append(d);
-        }
+        QMutexLocker lock(&m_cppMutex);
+        m_cppFilesFound = files;
+        m_cppDirsFound = dirs;
+        m_cppBytesFound = bytes;
+        m_cppTypeMap = typeMap;
+        m_cppTypeBytes = typeBytes;
+        m_cppTopFiles = topFiles;
         m_cppScanRunning = false;
-        qDebug() << "[DiskRaptor] C++ scan complete:" << files << "files," << dirs << "dirs," << tree.size() << "dirs in tree";
+        qDebug() << "[DiskRaptor] C++ scan complete:" << files << "files," << dirs << "dirs";
     });
     connect(m_cppScanThread, &QThread::finished, m_cppScanThread, &QObject::deleteLater);
     m_cppScanThread->start();
@@ -743,7 +665,7 @@ QString IpcBridge::cppGetResultJson()
 
     QJsonObject ri;
     ri["root_index"] = 0;
-    ri["total_nodes"] = static_cast<qint64>(m_cppFilesFound + m_cppDirsFound + 1);
+    ri["total_nodes"] = 1;
     ri["total_chunks"] = 1;
 
     QJsonObject resultObj;
