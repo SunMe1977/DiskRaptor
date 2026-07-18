@@ -62,28 +62,52 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "load_settings") return loadSettings();
 
     if (command == "get_chunk") {
-        if (!m_drGetChunk) {
-            return resultToJson(false, QVariant(), "Rust scanner not loaded");
-        }
         uint32_t chunkIndex = static_cast<uint32_t>(args.value("chunkIndex", 0).toUInt());
-        char* cjson = m_drGetChunk(chunkIndex);
-        if (!cjson) {
-            return resultToJson(false, QVariant(), "null chunk");
+
+        // Try Rust scanner first
+        if (m_drGetChunk) {
+            char* cjson = m_drGetChunk(chunkIndex);
+            if (cjson) {
+                QString jsonStr = QString::fromUtf8(cjson);
+                m_drFreeString(cjson);
+                QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
+                if (!doc.isNull() && doc.isObject()) {
+                    return resultToJson(true, doc.object());
+                }
+                bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
+                if (!isRunning && chunkIndex == 0) {
+                    // Return synthetic root chunk
+                    QJsonObject rootNode;
+                    rootNode["name"] = m_lastScanPath.isEmpty() ? QStringLiteral("/") : m_lastScanPath;
+                    rootNode["size"] = 0;
+                    rootNode["file_count"] = 0;
+                    rootNode["node_type"] = "Directory";
+                    const qint64 u32max = static_cast<qint64>(4294967295u);
+                    rootNode["parent"] = u32max;
+                    rootNode["first_child"] = u32max;
+                    rootNode["next_sibling"] = u32max;
+                    rootNode["depth"] = 0;
+                    rootNode["chunk_id"] = 0;
+                    QJsonArray nodes;
+                    nodes.append(rootNode);
+                    QJsonObject chunk;
+                    chunk["chunk_id"] = 0;
+                    chunk["total_chunks"] = 1;
+                    chunk["total_nodes"] = 1;
+                    chunk["nodes"] = nodes;
+                    return resultToJson(true, chunk);
+                }
+            }
         }
-        QString jsonStr = QString::fromUtf8(cjson);
-        m_drFreeString(cjson);
-        QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
-        if (!doc.isNull() && doc.isObject()) {
-            return resultToJson(true, doc.object());
-        }
-        // Rust returned empty chunk — check if scan is done
-        bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
-        if (!isRunning && chunkIndex == 0) {
-            // Return synthetic root chunk
+
+        // C++ fallback: return synthetic root with total files + dirs from last C++ scan
+        if (chunkIndex == 0) {
+            QMutexLocker lock(&m_cppMutex);
             QJsonObject rootNode;
-            rootNode["name"] = m_lastScanPath.isEmpty() ? QStringLiteral("/") : m_lastScanPath;
-            rootNode["size"] = 0;
-            rootNode["file_count"] = 0;
+            rootNode["name"] = m_cppScanPath.isEmpty() ? (m_lastScanPath.isEmpty() ? QStringLiteral("/") : m_lastScanPath) : m_cppScanPath;
+            rootNode["size"] = static_cast<qint64>(m_cppBytesFound);
+            rootNode["file_count"] = static_cast<qint64>(m_cppFilesFound);
+            rootNode["dir_count"] = static_cast<qint64>(m_cppDirsFound);
             rootNode["node_type"] = "Directory";
             const qint64 u32max = static_cast<qint64>(4294967295u);
             rootNode["parent"] = u32max;
@@ -100,7 +124,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
             chunk["nodes"] = nodes;
             return resultToJson(true, chunk);
         }
-        return resultToJson(false, QVariant(), "invalid chunk JSON");
+        return resultToJson(false, QVariant(), "invalid chunk");
     }
     if (command == "get_children") {
         return resultToJson(true, QVariantMap{{"children", QJsonArray()}});
