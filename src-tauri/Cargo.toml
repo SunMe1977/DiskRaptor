@@ -7,7 +7,7 @@ edition = "2021"
 
 [lib]
 name = "diskraptor_scanner"
-crate-type = ["staticlib", "cdylib", "lib"]
+crate-type = ["cdylib", "lib"]
 
 [dev-dependencies]
 walkdir = "2"
