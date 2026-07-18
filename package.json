@@ -5,7 +5,8 @@
   "description": "Ultra-fast disk space analyzer",
   "scripts": {
     "test:home": "node test_scan.mjs",
-    "test:c": "node test_scan_c.mjs"
+    "test:c": "node test_scan_c.mjs",
+    "test:galaxy": "node test_galaxy_windows_playwright.mjs"
   },
   "dependencies": {
     "playwright": "^1.61.1",
