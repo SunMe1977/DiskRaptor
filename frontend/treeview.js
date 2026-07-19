@@ -557,17 +557,18 @@ class TreeView {
         .catch(function () {});
     }
 
-    // Green percentage bar + percentage text
+    // Gradient percentage bar (green → yellow → red, like RAM bar)
     const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
     const pctBar = document.createElement("span");
     pctBar.className = "tree-pct-bar";
     const pctFill = document.createElement("span");
     pctFill.className = "tree-pct-fill";
     pctFill.style.width = Math.max(1, pct) + "%";
-    if (pct > 50) pctFill.style.background = "#2ea043";
-    else if (pct > 20) pctFill.style.background = "#238636";
-    else if (pct > 5) pctFill.style.background = "#1a7f37";
-    else pctFill.style.background = "var(--accent-green)";
+    // Gradient color based on usage: green < 40% < yellow < 70% < red
+    if (pct > 70) pctFill.style.background = "linear-gradient(90deg, #f85149, #da3633)";
+    else if (pct > 40) pctFill.style.background = "linear-gradient(90deg, #d29922, #bb8009)";
+    else if (pct > 10) pctFill.style.background = "linear-gradient(90deg, #3fb950, #2ea043)";
+    else pctFill.style.background = "#238636";
     pctBar.appendChild(pctFill);
     el.appendChild(pctBar);
 
