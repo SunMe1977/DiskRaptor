@@ -22,7 +22,25 @@ jobs:
         working-directory: src-tauri
       - run: $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath; Push-Location "$vs\VC\Auxiliary\Build"; cmd /c "vcvars64.bat>nul&&set" | ForEach-Object { if ($_ -match "^(.*?)=(.*)") { Set-Item -Path "env:$($matches[1])" -Value $matches[2] } }; Pop-Location; $env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;$env:PATH"; cd qt-app; Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force -Path build | Out-Null; cd build; cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=C:\Qt\6.10.3\msvc2022_64\lib\cmake\Qt6"; cmake --build . --config Release
       - run: New-Item -ItemType Directory -Force -Path dist | Out-Null; Copy-Item qt-app\build\DiskRaptor.exe dist\; Copy-Item src-tauri\target\release\diskraptor_scanner.dll dist\; Copy-Item qt-app\build\*.dll dist\; Copy-Item -Recurse frontend dist\frontend\; if (Test-Path images) { Copy-Item -Recurse images dist\images\ }; @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations") | ForEach-Object { $src = "qt-app\build\$_"; if (Test-Path $src) { Copy-Item -Recurse $src "dist\$_\"; } }; Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue; Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows-x64.zip -Force
-      - run: choco install nsis -y --no-progress && & "C:\Program Files (x86)\NSIS\makensis.exe" installer\nsis\DiskRaptor.nsi
+      - name: Build NSIS Installer
+        shell: powershell
+        run: |
+          choco install nsis -y --no-progress --limit-output
+          $nsisPaths = @(
+            "$env:ProgramFiles\NSIS\makensis.exe",
+            "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
+            "C:\Program Files (x86)\NSIS\makensis.exe"
+          )
+          $makensis = $null
+          foreach ($p in $nsisPaths) {
+            if (Test-Path $p) { $makensis = $p; break }
+          }
+          if (-not $makensis) {
+            Write-Error "NSIS makensis.exe not found"
+            exit 1
+          }
+          Write-Host "Using makensis: $makensis"
+          & $makensis installer\nsis\DiskRaptor.nsi
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-windows-x64
@@ -32,6 +50,8 @@ jobs:
 
   windows-arm64:
     name: Windows ARM64
+    # windows-11-arm runners require GitHub Enterprise plan — disabled
+    if: false
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v4
@@ -41,8 +61,37 @@ jobs:
       - run: pip install aqtinstall && aqt install-qt windows desktop 6.10.3 win64_msvc2022_arm64 --modules qtwebengine qtwebchannel qtpositioning -O C:\Qt && aqt install-tool windows desktop tools_ninja -O C:\Qt && aqt install-tool windows desktop tools_cmake -O C:\Qt
       - run: rustup set profile minimal && rustup toolchain install stable && rustup default stable && rustup target add aarch64-pc-windows-msvc
       - run: cd src-tauri && cargo build --release --target aarch64-pc-windows-msvc
-      - run: $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath; Push-Location "$vs\VC\Auxiliary\Build"; cmd /c "vcvars64.bat -arm64>nul&&set" | ForEach-Object { if ($_ -match "^(.*?)=(.*)") { Set-Item -Path "env:$($matches[1])" -Value $matches[2] } }; Pop-Location; $env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;$env:PATH"; cd qt-app; Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force -Path build | Out-Null; cd build; cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=C:\Qt\6.10.3\msvc2022_arm64\lib\cmake\Qt6"; cmake --build . --config Release
-      - run: New-Item -ItemType Directory -Force -Path dist | Out-Null; Copy-Item qt-app\build\DiskRaptor.exe dist\; Copy-Item src-tauri\target\aarch64-pc-windows-msvc\release\diskraptor_scanner.dll dist\; Copy-Item qt-app\build\*.dll dist\; Copy-Item -Recurse frontend dist\frontend\; if (Test-Path images) { Copy-Item -Recurse images dist\images\ }; @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations") | ForEach-Object { $src = "qt-app\build\$_"; if (Test-Path $src) { Copy-Item -Recurse $src "dist\$_\"; } }; Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue; Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows-arm64.zip -Force
+      - name: Build Qt app (ARM64)
+        shell: powershell
+        run: |
+          $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          Push-Location "$vsPath\VC\Auxiliary\Build"
+          cmd /c "vcvars64.bat -arm64>nul&&set" | ForEach-Object {
+            if ($_ -match "^(.*?)=(.*)") { Set-Item -Path "env:$($matches[1])" -Value $matches[2] }
+          }
+          Pop-Location
+          $env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;$env:PATH"
+          cd qt-app
+          Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          cd build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=C:\Qt\6.10.3\msvc2022_arm64\lib\cmake\Qt6"
+          cmake --build . --config Release
+      - name: Package ARM64
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item qt-app\build\DiskRaptor.exe dist\
+          Copy-Item src-tauri\target\aarch64-pc-windows-msvc\release\diskraptor_scanner.dll dist\
+          Copy-Item qt-app\build\*.dll dist\
+          Copy-Item -Recurse frontend dist\frontend\
+          if (Test-Path images) { Copy-Item -Recurse images dist\images\ }
+          @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations") | ForEach-Object {
+            $src = "qt-app\build\$_"
+            if (Test-Path $src) { Copy-Item -Recurse $src "dist\$_\" }
+          }
+          Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows-arm64.zip -Force
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-windows-arm64
@@ -151,7 +200,7 @@ jobs:
           Architecture: amd64
           Maintainer: DiskRaptor Team
           Description: Ultra-fast disk space analyzer
-          Depends: libglib2.0-0, libcairo2, libpango-1.0-0, libatk1.0-0, libgdk-pixbuf-2.0-0, libgtk-3-0
+          Depends: libglib2.0-0t64, libcairo2, libpango-1.0-0, libatk1.0-0t64, libgdk-pixbuf-2.0-0, libgtk-3-0
           CONTROL
           mkdir -p deb/usr/bin deb/usr/lib
           cp dist/DiskRaptor deb/usr/bin/
@@ -159,6 +208,9 @@ jobs:
           cp -r dist/lib/*.so* deb/usr/lib/ 2>/dev/null || true
           mkdir -p deb/usr/share/icons/hicolor/128x128/apps
           [ -f images/128x128@2x.png ] && cp images/128x128@2x.png deb/usr/share/icons/hicolor/128x128/apps/diskraptor.png
+          # Bundle Qt libs into DEB for self-contained package
+          mkdir -p deb/usr/lib/diskraptor
+          [ -d dist/lib ] && cp -r dist/lib/*.so* deb/usr/lib/diskraptor/ 2>/dev/null || true
           dpkg-deb --build deb "DiskRaptor_${VERSION}_amd64.deb"
       - uses: actions/upload-artifact@v4
         with:
@@ -206,7 +258,7 @@ jobs:
           Architecture: arm64
           Maintainer: DiskRaptor Team
           Description: Ultra-fast disk space analyzer
-          Depends: libglib2.0-0, libcairo2, libpango-1.0-0, libatk1.0-0, libgdk-pixbuf-2.0-0, libgtk-3-0
+          Depends: libglib2.0-0t64, libcairo2, libpango-1.0-0, libatk1.0-0t64, libgdk-pixbuf-2.0-0, libgtk-3-0
           CONTROL
           mkdir -p deb/usr/bin deb/usr/lib
           cp dist/DiskRaptor deb/usr/bin/
@@ -214,6 +266,9 @@ jobs:
           cp -r dist/lib/*.so* deb/usr/lib/ 2>/dev/null || true
           mkdir -p deb/usr/share/icons/hicolor/128x128/apps
           [ -f images/128x128@2x.png ] && cp images/128x128@2x.png deb/usr/share/icons/hicolor/128x128/apps/diskraptor.png
+          # Bundle Qt libs into DEB for self-contained package
+          mkdir -p deb/usr/lib/diskraptor
+          [ -d dist/lib ] && cp -r dist/lib/*.so* deb/usr/lib/diskraptor/ 2>/dev/null || true
           dpkg-deb --build deb "DiskRaptor_${VERSION}_arm64.deb"
       - uses: actions/upload-artifact@v4
         with:

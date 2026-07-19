@@ -85,10 +85,10 @@ if exist dist rmdir /s /q dist
 mkdir dist
 
 REM Core EXEs + DLLs
-copy qt-app\build\DiskRaptor.exe dist\
-copy qt-app\build\diskraptor_scanner.dll dist\
-copy qt-app\build\QtWebEngineProcess.exe dist\
-copy qt-app\build\*.dll dist\
+copy qt-app\build\DiskRaptor.exe dist\ >nul
+copy qt-app\build\QtWebEngineProcess.exe dist\ >nul 2>nul
+copy src-tauri\target\release\diskraptor_scanner.dll dist\ >nul
+copy qt-app\build\*.dll dist\ >nul 2>nul
 
 REM Qt plugins
 if exist qt-app\build\platforms  xcopy /e /i /y qt-app\build\platforms  dist\platforms  >nul
