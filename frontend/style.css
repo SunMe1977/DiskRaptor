@@ -1752,3 +1752,112 @@ body.light-theme #about-overlay {
   border-color: var(--accent-red);
   color: #fff;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   ANIMATIONS — subtle motion & hover effects
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(56,139,253,0.2); }
+  50% { box-shadow: 0 0 12px rgba(56,139,253,0.4); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Subtle float on stat cards */
+.card {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+  will-change: transform;
+}
+.card:hover {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3), 0 0 30px rgba(56,139,253,0.08);
+}
+
+/* Pulse glow on active elements */
+.tree-row:hover {
+  transform: translateX(2px);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.tree-row.selected {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Zoom on hover for buttons */
+button:not(:disabled):hover {
+  transform: scale(1.04);
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+button:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+/* Subtle float on progress stats */
+.progress-stat {
+  transition: transform 0.2s ease;
+}
+.progress-stat:hover {
+  transform: translateY(-2px);
+}
+
+/* Drive menu items */
+.drive-item {
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.drive-item:hover {
+  transform: translateX(3px);
+}
+
+/* Diagram canvas subtle glow on hover */
+#diagram-container canvas {
+  transition: filter 0.3s ease;
+}
+#diagram-container canvas:hover {
+  filter: brightness(1.05) drop-shadow(0 0 8px rgba(56,139,253,0.15));
+}
+
+/* Top files table rows */
+#topfiles-table tbody tr {
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+#topfiles-table tbody tr:hover {
+  transform: scale(1.002);
+}
+
+/* Smooth page load animation */
+#main-layout {
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Splitter hover glow */
+#v-splitter, #h-splitter, #tf-splitter {
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+#v-splitter:hover, #h-splitter:hover, #tf-splitter:hover {
+  box-shadow: 0 0 8px rgba(56,139,253,0.4);
+}
+
+/* Light theme adjustments */
+body.light-theme .card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+}
+body.light-theme .tree-row.selected {
+  animation: pulse-glow-light 2s ease-in-out infinite;
+}
+@keyframes pulse-glow-light {
+  0%, 100% { box-shadow: inset 3px 0 0 var(--accent); }
+  50% { box-shadow: inset 3px 0 0 var(--accent), 0 0 8px rgba(56,139,253,0.2); }
+}
