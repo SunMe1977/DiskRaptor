@@ -29,20 +29,35 @@ fi
 # ── Tag and push ─────────────────────────────
 echo ""
 echo "  Tag: $TAG"
+
+# Delete old GitHub release if possible (needs gh CLI or token)
+if command -v gh &>/dev/null; then
+  echo "  Deleting old GitHub release (if exists)..."
+  gh release delete "$TAG" --yes 2>/dev/null || true
+elif [ -n "${GITHUB_TOKEN:-}" ]; then
+  echo "  Deleting old GitHub release via API..."
+  RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$GH_REPO/releases/tags/$TAG" | grep -o '"id": [0-9]*' | head -1 | cut -d' ' -f2 2>/dev/null || true)
+  [ -n "$RELEASE_ID" ] && curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$GH_REPO/releases/$RELEASE_ID" > /dev/null 2>&1 || true
+fi
+
+echo "  Deleting old remote tag (if exists)..."
+git push origin --delete "$TAG" 2>/dev/null || true
 git tag -f "$TAG" 2>/dev/null
 
 echo "  Pushing tag via SSH..."
 if git push origin "$TAG" 2>&1; then
   echo "  ✓ Tag pushed: https://github.com/$GH_REPO/releases/tag/$TAG"
 else
-  echo "  ✗ Tag push failed. Test SSH connection:"
-  echo "    ssh -T git@github.com"
-  echo ""
-  echo "  If your SSH key is not set up:"
-  echo "    1. Generate key: ssh-keygen -t ed25519 -C \"your@email.com\""
-  echo "    2. Add to agent: eval \"\$(ssh-agent -s)\" && ssh-add ~/.ssh/id_ed25519"
-  echo "    3. Add to GitHub: https://github.com/settings/ssh/new"
-  exit 1
+  echo "  ✗ Push failed. Retrying with force delete..."
+  git push origin --delete "$TAG" 2>/dev/null || true
+  sleep 1
+  if git push origin "$TAG" 2>&1; then
+    echo "  ✓ Tag pushed after force delete"
+  else
+    echo "  ✗ Still failing. Check SSH access:"
+    echo "    ssh -T git@github.com"
+    exit 1
+  fi
 fi
 
 echo ""
