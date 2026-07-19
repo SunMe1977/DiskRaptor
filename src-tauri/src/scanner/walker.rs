@@ -208,42 +208,36 @@ mod platform {
         let mut dirs_found: u64 = 0;
         let mut bytes_found: u64 = 0;
         let mut last_progress = Instant::now();
-        let mut last_entry_time = Instant::now();
         let follow = config.follow_symlinks;
         let errors = config.errors.clone();
         let timeout = config.scan_timeout_secs;
-        let mut walker = WalkDir::new(root_path).follow_links(follow).into_iter();
-        loop {
+        let mut iter_count = 0u64;
+        for entry_result in WalkDir::new(root_path).follow_links(follow) {
             if arena.nodes.len() > 50_000_000 {
-                eprintln!("[walker] Node limit reached (50M), stopping scan");
                 break;
             }
-            // Check for timeout (NAS dead share detection)
-            if timeout > 0 && last_entry_time.elapsed().as_secs() > timeout {
+            iter_count += 1;
+            // Timeout check throttled to every 5000 iterations
+            if timeout > 0
+                && (iter_count & 0x1FFF) == 0
+                && last_progress.elapsed().as_secs() > timeout
+            {
                 errors.lock().unwrap().push(format!(
                     "TIMEOUT: No progress for {}s at {}",
                     timeout, root_path
                 ));
-                eprintln!("[walker] Timeout after {}s, stopping scan", timeout);
                 break;
             }
-            let entry_result = match walker.next() {
-                Some(r) => r,
-                None => break,
-            };
             let entry = match entry_result {
-                Ok(e) => {
-                    last_entry_time = Instant::now();
-                    e
-                }
+                Ok(e) => e,
                 Err(e) => {
-                    // Report permission errors
+                    // Report permission errors (throttled: only first 100 per scan)
                     if let Some(path) = e.path() {
                         let err_path = path.to_string_lossy().to_string();
-                        errors
-                            .lock()
-                            .unwrap()
-                            .push(format!("Access denied: {}", err_path));
+                        let mut errs = errors.lock().unwrap();
+                        if errs.len() < 100 {
+                            errs.push(format!("Access denied: {}", err_path));
+                        }
                     }
                     continue;
                 }
