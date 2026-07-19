@@ -197,18 +197,9 @@ void MainWindow::setupTrayIcon()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    if (m_trayIcon && m_trayIcon->isVisible()) {
-        // Minimize to tray instead of closing
-        hide();
-        m_trayIcon->showMessage(
-            "DiskRaptor",
-            "DiskRaptor is still running in the system tray.",
-            QSystemTrayIcon::Information,
-            3000);
-        event->ignore();
-    } else {
-        event->accept();
-    }
+    // Actually quit the application
+    event->accept();
+    qApp->quit();
 }
 
 void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
