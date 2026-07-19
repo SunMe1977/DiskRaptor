@@ -542,6 +542,26 @@
       }
     });
 
+    // ── Follow symlinks toggle ──
+    var chkFollow = document.getElementById("chk-follow-symlinks");
+    if (!chkFollow) {
+      chkFollow = document.createElement("label");
+      chkFollow.id = "chk-follow-symlinks";
+      chkFollow.className = "symlink-toggle";
+      chkFollow.innerHTML = '<input type="checkbox"> Follow symlinks';
+      btnScan.parentNode.insertBefore(chkFollow, btnScan);
+    }
+
+    // ── Error display ──
+    var errDisplay = document.getElementById("scan-errors");
+    if (!errDisplay) {
+      errDisplay = document.createElement("div");
+      errDisplay.id = "scan-errors";
+      errDisplay.className = "scan-errors";
+      errDisplay.style.display = "none";
+      document.getElementById("progress-overlay").appendChild(errDisplay);
+    }
+
     // Scan
     btnScan.addEventListener("click", async function () {
       if (isScanning) return;
@@ -557,6 +577,7 @@
       btnBrowse.disabled = true;
       btnCancel.disabled = false;
       btnExport.disabled = true;
+      var followLinks = chkFollow.querySelector("input").checked;
 
       var safetyTimer = setTimeout(function () {
         progressOverlay.classList.remove("active");
@@ -675,6 +696,8 @@
       try {
         var initScan = await window.__TAURI__.invoke("start_scan", {
           path: path,
+          follow_symlinks: followLinks,
+          timeout_secs: 30,
         });
         // Check for error response (e.g. "Rust scanner not loaded")
         if (initScan && initScan.error) {
@@ -752,6 +775,15 @@
 
           // ── Live stats panel update ──
           statsPanel.updateLive(filesFound, dirsFound, elapsedSecs);
+
+          // ── Errors ──
+          if (p.error_count > 0 && errDisplay) {
+            var errMsg = p.last_error || "";
+            errDisplay.textContent = "⚠ " + p.error_count + " permission denied — " + errMsg.substring(0, 80);
+            errDisplay.style.display = "block";
+          } else if (errDisplay) {
+            errDisplay.style.display = "none";
+          }
 
           // ── Current dir ──
           var dirInfo = "";
