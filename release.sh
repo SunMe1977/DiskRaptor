@@ -35,7 +35,8 @@ fi
 echo "  ✓ gh CLI authenticated"
 
 # ── Detect platform assets ────────────────────
-case "$(uname -s)" in
+PLATFORM="$(uname -s)"
+case "$PLATFORM" in
   Darwin*)
     echo "  Platform: macOS"
     ASSETS="dist/DiskRaptor-$VERSION-macos.dmg dist/DiskRaptor-$VERSION-macos.zip"
@@ -50,7 +51,7 @@ case "$(uname -s)" in
     for f in dist/DiskRaptor_*_Setup.exe; do [ -f "$f" ] && ASSETS="$ASSETS $f"; done
     ;;
   *)
-    echo "Unknown OS: $(uname -s)"
+    echo "Unknown OS: $PLATFORM"
     exit 1
     ;;
 esac
@@ -68,20 +69,30 @@ fi
 # ── Upload assets ─────────────────────────────
 echo ""
 echo "  Uploading artifacts..."
+COUNT=0
 for FILE in $ASSETS; do
   if [ ! -f "$FILE" ]; then
-    echo "    SKIP (file not found): $FILE"
+    echo "    SKIP (not found): $FILE"
     continue
   fi
+  COUNT=$((COUNT+1))
   NAME=$(basename "$FILE")
-  # Skip if already uploaded (gh will error, we catch it)
   echo "    Uploading: $NAME ($(du -h "$FILE" | cut -f1))..."
   if "$GH" release upload "$TAG" "$FILE" --clobber 2>&1; then
     echo "      ✓ Done"
   else
-    echo "      ⚠ Upload failed (may already exist)"
+    echo "      ⚠ Upload failed"
   fi
 done
+
+if [ "$COUNT" -eq 0 ]; then
+  echo "  No files found in dist/ for platform '$PLATFORM'."
+  echo "  Make sure you ran: ./build.sh"
+  echo "  Expected files:"
+  for FILE in $ASSETS; do
+    echo "    - $FILE"
+  done
+fi
 
 echo ""
 echo "=========================================="
