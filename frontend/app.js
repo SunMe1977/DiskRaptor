@@ -921,9 +921,12 @@ clearTimeout(safetyTimer);
       await loader.release();
       isScanning = false;
       btnScan.disabled = false;
+      btnBrowse.disabled = false;
       btnCancel.disabled = true;
+      btnExport.disabled = false;
       progressOverlay.classList.remove("active");
-      document.querySelector(".status-bar").textContent = "Cancelled";
+      document.querySelector(".status-bar").textContent =
+        "Scan cancelled - showing partial results";
     });
     var progressCancelBtn = document.getElementById("progress-cancel");
     if (progressCancelBtn) {
