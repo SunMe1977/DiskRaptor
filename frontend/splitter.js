@@ -3,6 +3,9 @@
  *
  * 1. Vertical: between #left-column and #detail-panel (drag left/right)
  * 2. Horizontal: between #diagram-panel and #tree-panel (drag up/down)
+ * 3. Topfiles: between Selection and Top 50
+ *
+ * Double-click any splitter to reset to 50/50.
  */
 (function () {
   "use strict";
@@ -47,11 +50,18 @@
           document.body.style.userSelect = "";
         }
       });
+
+      // Double-click to reset width
+      vSplit.addEventListener("dblclick", function () {
+        leftCol.style.flex = "";
+        leftCol.style.width = "";
+      });
     }
 
     // ── Horizontal Splitter ──────────────────────────────────
     var hSplit = document.getElementById("h-splitter");
     var diagPanel = document.getElementById("diagram-panel");
+    var treePanel = document.getElementById("tree-panel");
 
     if (hSplit && diagPanel && leftCol) {
       var hDragging = false;
@@ -72,11 +82,15 @@
         var dy = e.clientY - hStartY;
         var newHeight = hStartHeight + dy;
         newHeight = Math.max(
-          120,
+          80,
           Math.min(newHeight, leftCol.offsetHeight - 80),
         );
         diagPanel.style.flex = "none";
         diagPanel.style.height = newHeight + "px";
+        // Allow tree panel to fill rest
+        if (treePanel) {
+          treePanel.style.flex = "";
+        }
       });
 
       document.addEventListener("mouseup", function () {
@@ -85,6 +99,16 @@
           hSplit.classList.remove("active");
           document.body.style.cursor = "";
           document.body.style.userSelect = "";
+        }
+      });
+
+      // Double-click to reset to 50/50
+      hSplit.addEventListener("dblclick", function () {
+        diagPanel.style.flex = "";
+        diagPanel.style.height = "";
+        diagPanel.style.flex = "1";
+        if (treePanel) {
+          treePanel.style.flex = "1";
         }
       });
     }
@@ -129,6 +153,12 @@
           document.body.style.cursor = "";
           document.body.style.userSelect = "";
         }
+      });
+
+      // Double-click to reset topfiles splitter
+      tfSplit.addEventListener("dblclick", function () {
+        topfilesCard.style.flex = "";
+        topfilesCard.style.height = "";
       });
     }
   });
