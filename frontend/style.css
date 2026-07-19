@@ -1293,8 +1293,6 @@ body.light-theme .about-bg {
     font-size: 11px;
     margin: 0 0 10px;
 }
-    font-family: var(--font-mono);
-}
 .about-desc {
     color: var(--text-secondary);
     font-size: 15px;
