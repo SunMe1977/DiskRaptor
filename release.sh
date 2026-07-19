@@ -78,16 +78,19 @@ for FILE in $ASSETS; do
   SIZE=$(du -h "$FILE" | cut -f1)
   echo "    Uploading: $NAME ($SIZE)..."
   echo "    (this may take a while for large files)"
-  if timeout 600 "$GH" release upload "$TAG" "$FILE" --clobber 2>&1; then
+  # Use timeout if available (Linux), otherwise run directly
+  TIMEOUT_CMD=""
+  if command -v timeout &>/dev/null; then
+    TIMEOUT_CMD="timeout 600"
+  elif command -v gtimeout &>/dev/null; then
+    TIMEOUT_CMD="gtimeout 600"
+  fi
+  if $TIMEOUT_CMD "$GH" release upload "$TAG" "$FILE" --clobber 2>&1; then
     echo "      ✓ Done"
   else
     EXIT_CODE=$?
-    if [ $EXIT_CODE -eq 124 ]; then
-      echo "      ⚠ Timed out after 10 minutes. The file may be too large."
-      echo "      Upload manually: gh release upload $TAG $FILE --clobber"
-    else
-      echo "      ⚠ Upload failed (exit code: $EXIT_CODE)"
-    fi
+    echo "      ⚠ Upload failed (exit code: $EXIT_CODE)"
+    echo "      Try manual upload: gh release upload $TAG $FILE --clobber"
   fi
 done
 
