@@ -23,15 +23,9 @@ fi
 # Get GitHub token
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 if [ -z "$GITHUB_TOKEN" ]; then
-  # Try to read from gh config if available
-  if [ -f "$HOME/.config/gh/hosts.yml" ]; then
-    GITHUB_TOKEN="$(grep -A2 'github.com' "$HOME/.config/gh/hosts.yml" | grep 'oauth_token' | awk '{print $2}' 2>/dev/null || true)"
-  fi
-fi
-if [ -z "$GITHUB_TOKEN" ]; then
   echo "ERROR: GITHUB_TOKEN not set."
   echo "  Set it with: export GITHUB_TOKEN=ghp_xxx"
-  echo "  Or login with: gh auth login  (then token is read from ~/.config/gh/hosts.yml)"
+  echo "  Create a token at: https://github.com/settings/tokens"
   exit 1
 fi
 
