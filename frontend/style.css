@@ -80,6 +80,7 @@ body {
     color: var(--text-primary);
     background: var(--bg-primary);
     -webkit-font-smoothing: antialiased;
+    box-sizing: border-box;
 }
 
 /* ── Scrollbar ────────────────────────────────────────────── */
@@ -226,7 +227,6 @@ button.icon-btn {
     display: flex;
     flex: 1;
     overflow: hidden;
-    padding-bottom: 24px;
 }
 #left-column {
     flex: 1;
@@ -277,12 +277,16 @@ button.icon-btn {
     flex: 1;
     overflow: hidden;
     position: relative;
+    min-height: 50px;
 }
 #tree-scroll {
-    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     overflow-y: auto;
     overflow-x: auto;
-    position: relative;
     scrollbar-width: thin;
 }
 #tree-viewport {
