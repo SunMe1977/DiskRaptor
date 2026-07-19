@@ -813,26 +813,29 @@ clearTimeout(safetyTimer);
           topFiles.render([], true);
         }
 
-        // Fast tree loading: parse chunks directly from scan result
-        if (result && result.chunks) {
-          try {
-            loader.loadFromResult(result);
-            // Auto-expand root so users see children immediately
-            treeView.expanded.add(0);
-            await treeView.rebuild();
-          } catch (e) {
-            console.warn("Fast tree load failed:", e);
-            // Fallback: load chunk 0 manually
-            if (result.root_info && result.root_info.total_chunks > 0) {
-              loader.totalNodes = result.root_info.total_nodes;
-              loader.totalChunks = result.root_info.total_chunks;
-              loader.allNodes = new Array(loader.totalNodes);
-              loader.scanId = scanId;
-              try { await loader.loadChunk(0); } catch(e2) {}
-              treeView.expanded.add(0);
-              try { await treeView.rebuild(); } catch(e2) {}
+        // Load tree chunks sequentially after scan
+        if (result && result.root_info && result.root_info.total_chunks > 0) {
+          loader.totalNodes = result.root_info.total_nodes;
+          loader.totalChunks = result.root_info.total_chunks;
+          loader.allNodes = new Array(loader.totalNodes);
+          loader.scanId = scanId;
+          
+          // Load first chunk immediately (root)
+          try { await loader.loadChunk(0); } catch(e) { console.warn("Chunk 0:", e); }
+          treeView.expanded.add(0);
+          try { await treeView.rebuild(); } catch(e) {}
+          
+          // Load remaining chunks in background (no await - let UI breathe)
+          (async function() {
+            for (var ci = 1; ci < loader.totalChunks; ci++) {
+              try { await loader.loadChunk(ci); } catch(e) {}
+              if (ci % 10 === 0) {
+                try { await treeView.rebuild(); } catch(e) {}
+                await sleep(0); // yield to UI
+              }
             }
-          }
+            try { await treeView.rebuild(); } catch(e) {}
+          })();
         }
 
         btnExport.disabled = false;
