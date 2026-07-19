@@ -1,5 +1,5 @@
 // DiskRaptor Rust Scanner - C FFI for Qt integration
-use crate::scanner::tree::{ScanStats, TreeNodeArena};
+use crate::scanner::tree::{ScanStats, TreeChunk, TreeNodeArena};
 use crate::scanner::walker;
 
 use std::ffi::{CStr, CString};
@@ -24,7 +24,7 @@ struct ScanResultData {
     arena: TreeNodeArena,
     stats: ScanStats,
     scan_time_ms: u64,
-    chunks_json: String,
+    chunks: Vec<TreeChunk>,
 }
 
 use std::sync::LazyLock;
@@ -45,10 +45,14 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
     let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
         Ok(s) => {
             #[cfg(windows)]
-            { s.replace('/', "\\") }
+            {
+                s.replace('/', "\\")
+            }
             #[cfg(not(windows))]
-            { s.to_string() }
-        },
+            {
+                s.to_string()
+            }
+        }
         Err(e) => return make_json_error(&format!("invalid path UTF-8: {}", e)),
     };
     let state = &*STATE;
@@ -97,17 +101,19 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
 
             match walker::scan_directory_with_progress(config, progress) {
                 Ok(sr) => {
-                    eprintln!("[scan] completed: {} files, {} dirs", sr.stats.total_files, sr.stats.total_dirs);
+                    eprintln!(
+                        "[scan] completed: {} files, {} dirs",
+                        sr.stats.total_files, sr.stats.total_dirs
+                    );
                     let elapsed = sr.stats.scan_time_ms;
                     let chunks = crate::streaming::chunker::chunk_tree(&sr.arena)
                         .unwrap_or_else(|_| crate::streaming::chunker::make_root_chunk(&sr.arena));
-                    let chunks_json = serde_json::to_string(&chunks).unwrap_or_default();
                     *state.result.lock().unwrap() = Some(ScanResultData {
                         scan_id,
                         arena: sr.arena,
                         stats: sr.stats,
                         scan_time_ms: elapsed,
-                        chunks_json,
+                        chunks,
                     });
                 }
                 Err(e) => {
@@ -171,25 +177,14 @@ pub extern "C" fn dr_get_result() -> *mut c_char {
     let g = STATE.result.lock().unwrap();
     if let Some(ref d) = *g {
         let sid = d.scan_id;
-        let cj = d.chunks_json.clone();
-        let sj = serde_json::json!({"total_files":d.stats.total_files,"total_dirs":d.stats.total_dirs,"total_size":d.stats.total_size,"scan_time_ms":d.scan_time_ms,"top_files":d.stats.top_files,"file_type_breakdown":d.stats.file_type_breakdown,"size_human":format_size(d.stats.total_size),"time_human":format!("{:.2}s",d.scan_time_ms as f64/1000.0)});
         let tn = d.arena.len() as u32;
-        let tc = if !d.chunks_json.is_empty() {
-            if let Ok(chunks) = serde_json::from_str::<Vec<serde_json::Value>>(&d.chunks_json) {
-                chunks.len() as u32
-            } else {
-                1
-            }
-        } else {
-            0
-        };
+        let tc = d.chunks.len() as u32;
+        let sj = serde_json::json!({"total_files":d.stats.total_files,"total_dirs":d.stats.total_dirs,"total_size":d.stats.total_size,"scan_time_ms":d.scan_time_ms,"top_files":d.stats.top_files,"file_type_breakdown":d.stats.file_type_breakdown,"size_human":format_size(d.stats.total_size),"time_human":format!("{:.2}s",d.scan_time_ms as f64/1000.0)});
         let ri = serde_json::json!({"root_index":0,"total_nodes":tn,"total_chunks":tc});
         drop(g);
-        CString::new(
-            serde_json::json!({"stats":sj,"root_info":ri,"scan_id":sid,"chunks":cj}).to_string(),
-        )
-        .unwrap()
-        .into_raw()
+        CString::new(serde_json::json!({"stats":sj,"root_info":ri,"scan_id":sid}).to_string())
+            .unwrap()
+            .into_raw()
     } else {
         drop(g);
         CString::new("{}").unwrap().into_raw()
@@ -214,12 +209,14 @@ pub extern "C" fn dr_get_chunk(c: u32) -> *mut c_char {
     let s = &*STATE;
     let g = s.result.lock().unwrap();
     if let Some(ref d) = *g {
-        if let Ok(v) = serde_json::from_str::<Vec<serde_json::Value>>(&d.chunks_json) {
-            if (c as usize) < v.len() {
-                return CString::new(v[c as usize].to_string()).unwrap().into_raw();
+        if (c as usize) < d.chunks.len() {
+            if let Ok(json) = serde_json::to_string(&d.chunks[c as usize]) {
+                drop(g);
+                return CString::new(json).unwrap().into_raw();
             }
         }
     }
+    drop(g);
     CString::new("{}").unwrap().into_raw()
 }
 #[no_mangle]

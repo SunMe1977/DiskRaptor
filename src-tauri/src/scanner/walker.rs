@@ -176,7 +176,7 @@ mod platform {
         let top_files = Arc::new(TopFilesAccum::default());
         let file_types = Arc::new(FileTypeAccum::default());
         let top_count = config.top_files_count;
-        let mut arena = TreeNodeArena::with_capacity(4_000_000);
+        let mut arena = TreeNodeArena::with_capacity(16_000_000);
         let root_name = Path::new(root_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -193,8 +193,6 @@ mod platform {
             depth: 0,
             chunk_id: 0,
         });
-        // Use crossbeam-channel for parallel processing
-        // ...
         use walkdir::WalkDir;
         let mut ptix: HashMap<String, u32> = HashMap::new();
         ptix.insert(root_path.into(), root_idx);
@@ -204,24 +202,46 @@ mod platform {
         let mut bytes_found: u64 = 0;
         let mut last_progress = Instant::now();
         for entry_result in WalkDir::new(root_path).follow_links(false) {
-            if arena.nodes.len() > 20_000_000 { break; }
-            let entry = match entry_result { Ok(e) => e, Err(_) => continue };
+            if arena.nodes.len() > 50_000_000 {
+                break;
+            }
+            let entry = match entry_result {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
             let full = entry.path().to_string_lossy().to_string();
-            if full == root_path { continue; }
+            if full == root_path {
+                continue;
+            }
             let file_name = entry.file_name().to_string_lossy().to_string();
             let is_dir = entry.file_type().is_dir();
-            let parent = entry.path().parent()
+            let parent = entry
+                .path()
+                .parent()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| root_path.into());
             let pi = *ptix.get(&parent).unwrap_or(&root_idx);
             if is_dir {
                 dirs_found += 1;
-                if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) { continue; }
-                let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+                if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+                    continue;
+                }
+                let depth = if pi == root_idx {
+                    1
+                } else {
+                    arena.nodes[pi as usize].depth + 1
+                };
                 let ci = arena.alloc(TreeNode {
-                    name: file_name, size: 0, file_count: 0, dir_count: 1,
-                    node_type: NodeType::Directory, parent: pi,
-                    first_child: u32::MAX, next_sibling: u32::MAX, depth, chunk_id: 0,
+                    name: file_name,
+                    size: 0,
+                    file_count: 0,
+                    dir_count: 1,
+                    node_type: NodeType::Directory,
+                    parent: pi,
+                    first_child: u32::MAX,
+                    next_sibling: u32::MAX,
+                    depth,
+                    chunk_id: 0,
                 });
                 match lc.get(&pi) {
                     Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -232,11 +252,22 @@ mod platform {
             } else {
                 files_found += 1;
                 let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+                let depth = if pi == root_idx {
+                    1
+                } else {
+                    arena.nodes[pi as usize].depth + 1
+                };
                 let ci = arena.alloc(TreeNode {
-                    name: file_name, size: sz, file_count: 1, dir_count: 0,
-                    node_type: NodeType::File, parent: pi,
-                    first_child: u32::MAX, next_sibling: u32::MAX, depth, chunk_id: 0,
+                    name: file_name,
+                    size: sz,
+                    file_count: 1,
+                    dir_count: 0,
+                    node_type: NodeType::File,
+                    parent: pi,
+                    first_child: u32::MAX,
+                    next_sibling: u32::MAX,
+                    depth,
+                    chunk_id: 0,
                 });
                 match lc.get(&pi) {
                     Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -281,9 +312,16 @@ mod platform {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| root_path.into());
         let root_idx = arena.alloc(TreeNode {
-            name: root_name, size: 0, file_count: 0, dir_count: 1,
-            node_type: NodeType::Directory, parent: u32::MAX,
-            first_child: u32::MAX, next_sibling: u32::MAX, depth: 0, chunk_id: 0,
+            name: root_name,
+            size: 0,
+            file_count: 0,
+            dir_count: 1,
+            node_type: NodeType::Directory,
+            parent: u32::MAX,
+            first_child: u32::MAX,
+            next_sibling: u32::MAX,
+            depth: 0,
+            chunk_id: 0,
         });
         let mut ptix: HashMap<String, u32> = HashMap::new();
         ptix.insert(root_path.into(), root_idx);
@@ -294,24 +332,46 @@ mod platform {
         let mut last_progress = Instant::now();
 
         for entry_result in WalkDir::new(root_path).follow_links(false) {
-            if arena.nodes.len() > 20_000_000 { break; }
-            let entry = match entry_result { Ok(e) => e, Err(_) => continue };
+            if arena.nodes.len() > 20_000_000 {
+                break;
+            }
+            let entry = match entry_result {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
             let full = entry.path().to_string_lossy().to_string();
-            if full == root_path { continue; }
+            if full == root_path {
+                continue;
+            }
             let file_name = entry.file_name().to_string_lossy().to_string();
             let is_dir = entry.file_type().is_dir();
-            let parent = entry.path().parent()
+            let parent = entry
+                .path()
+                .parent()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| root_path.into());
             let pi = *ptix.get(&parent).unwrap_or(&root_idx);
             if is_dir {
                 dirs_found += 1;
-                if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) { continue; }
-                let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+                if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+                    continue;
+                }
+                let depth = if pi == root_idx {
+                    1
+                } else {
+                    arena.nodes[pi as usize].depth + 1
+                };
                 let ci = arena.alloc(TreeNode {
-                    name: file_name, size: 0, file_count: 0, dir_count: 1,
-                    node_type: NodeType::Directory, parent: pi,
-                    first_child: u32::MAX, next_sibling: u32::MAX, depth, chunk_id: 0,
+                    name: file_name,
+                    size: 0,
+                    file_count: 0,
+                    dir_count: 1,
+                    node_type: NodeType::Directory,
+                    parent: pi,
+                    first_child: u32::MAX,
+                    next_sibling: u32::MAX,
+                    depth,
+                    chunk_id: 0,
                 });
                 match lc.get(&pi) {
                     Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -322,11 +382,22 @@ mod platform {
             } else {
                 files_found += 1;
                 let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+                let depth = if pi == root_idx {
+                    1
+                } else {
+                    arena.nodes[pi as usize].depth + 1
+                };
                 let ci = arena.alloc(TreeNode {
-                    name: file_name, size: sz, file_count: 1, dir_count: 0,
-                    node_type: NodeType::File, parent: pi,
-                    first_child: u32::MAX, next_sibling: u32::MAX, depth, chunk_id: 0,
+                    name: file_name,
+                    size: sz,
+                    file_count: 1,
+                    dir_count: 0,
+                    node_type: NodeType::File,
+                    parent: pi,
+                    first_child: u32::MAX,
+                    next_sibling: u32::MAX,
+                    depth,
+                    chunk_id: 0,
                 });
                 match lc.get(&pi) {
                     Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -416,15 +487,22 @@ pub fn scan_simple(
     let top_files = Arc::new(TopFilesAccum::default());
     let file_types = Arc::new(FileTypeAccum::default());
     let top_count = config.top_files_count;
-    let mut arena = TreeNodeArena::with_capacity(2_000_000);
+    let mut arena = TreeNodeArena::with_capacity(16_000_000);
     let root_name = Path::new(root_path)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| root_path.into());
     let root_idx = arena.alloc(TreeNode {
-        name: root_name, size: 0, file_count: 0, dir_count: 1,
-        node_type: NodeType::Directory, parent: u32::MAX,
-        first_child: u32::MAX, next_sibling: u32::MAX, depth: 0, chunk_id: 0,
+        name: root_name,
+        size: 0,
+        file_count: 0,
+        dir_count: 1,
+        node_type: NodeType::Directory,
+        parent: u32::MAX,
+        first_child: u32::MAX,
+        next_sibling: u32::MAX,
+        depth: 0,
+        chunk_id: 0,
     });
     let mut ptix: HashMap<String, u32> = HashMap::new();
     ptix.insert(root_path.into(), root_idx);
@@ -435,24 +513,46 @@ pub fn scan_simple(
     let mut last_progress = Instant::now();
 
     for entry_result in WalkDir::new(root_path).follow_links(false) {
-        if arena.nodes.len() > 20_000_000 { break; }
-        let entry = match entry_result { Ok(e) => e, Err(_) => continue };
+        if arena.nodes.len() > 20_000_000 {
+            break;
+        }
+        let entry = match entry_result {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         let full = entry.path().to_string_lossy().to_string();
-        if full == root_path { continue; }
+        if full == root_path {
+            continue;
+        }
         let file_name = entry.file_name().to_string_lossy().to_string();
         let is_dir = entry.file_type().is_dir();
-        let parent = entry.path().parent()
+        let parent = entry
+            .path()
+            .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| root_path.into());
         let pi = *ptix.get(&parent).unwrap_or(&root_idx);
         if is_dir {
             dirs_found += 1;
-            if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) { continue; }
-            let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+            if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+                continue;
+            }
+            let depth = if pi == root_idx {
+                1
+            } else {
+                arena.nodes[pi as usize].depth + 1
+            };
             let ci = arena.alloc(TreeNode {
-                name: file_name, size: 0, file_count: 0, dir_count: 1,
-                node_type: NodeType::Directory, parent: pi,
-                first_child: u32::MAX, next_sibling: u32::MAX, depth, chunk_id: 0,
+                name: file_name,
+                size: 0,
+                file_count: 0,
+                dir_count: 1,
+                node_type: NodeType::Directory,
+                parent: pi,
+                first_child: u32::MAX,
+                next_sibling: u32::MAX,
+                depth,
+                chunk_id: 0,
             });
             match lc.get(&pi) {
                 Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -464,11 +564,22 @@ pub fn scan_simple(
             files_found += 1;
             let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
             bytes_found += sz;
-            let depth = if pi == root_idx { 1 } else { arena.nodes[pi as usize].depth + 1 };
+            let depth = if pi == root_idx {
+                1
+            } else {
+                arena.nodes[pi as usize].depth + 1
+            };
             let ci = arena.alloc(TreeNode {
-                name: file_name, size: sz, file_count: 1, dir_count: 0,
-                node_type: NodeType::File, parent: pi,
-                first_child: u32::MAX, next_sibling: u32::MAX, depth, chunk_id: 0,
+                name: file_name,
+                size: sz,
+                file_count: 1,
+                dir_count: 0,
+                node_type: NodeType::File,
+                parent: pi,
+                first_child: u32::MAX,
+                next_sibling: u32::MAX,
+                depth,
+                chunk_id: 0,
             });
             match lc.get(&pi) {
                 Some(&last) => arena.nodes[last as usize].next_sibling = ci,
