@@ -23,7 +23,7 @@ if ! command -v gh &>/dev/null; then
   exit 1
 fi
 
-if ! gh auth status 2>&1 | grep -q "active"; then
+if ! gh auth status 2>&1 | grep -qi "active account: true"; then
   echo "ERROR: Not authenticated. Run: gh auth login"
   exit 1
 fi
