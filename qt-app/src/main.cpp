@@ -21,7 +21,8 @@
 #include "platform_utils.h"
 
 // ── Admin check at startup ──────────────────────────────────
-// If not running as admin, ask the user whether to elevate.
+// Logs admin status but lets the app start regardless.
+// Users can right-click → If not running as admin, ask the user whether to elevate.
 // Passes DISKraptor_CDP_PORT as command-line argument to preserve it.
 static bool EnsureAdmin(int argc, char *argv[])
 {
@@ -37,47 +38,12 @@ static bool EnsureAdmin(int argc, char *argv[])
         CloseHandle(hToken);
     }
 
-    if (isAdmin)
-        return true;
-
-    // Ask user if they want to run as Administrator
-    int ret = MessageBoxW(NULL,
-        L"DiskRaptor can scan more files when run as Administrator.\n\n"
-        L"Some protected system directories require admin privileges.\n"
-        L"Without elevation, certain files may not be accessible.\n\n"
-        L"Do you want to restart as Administrator?",
-        L"DiskRaptor",
-        MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
-    if (ret != IDYES)
-        return true; // Continue without admin
-
-    // Relaunch with runas verb, preserving CDP port
-    WCHAR exePath[MAX_PATH];
-    GetModuleFileNameW(NULL, exePath, MAX_PATH);
-
-    // Build command line with CDP port if set (env vars are stripped by runas)
-    WCHAR params[256] = {0};
-    GetEnvironmentVariableW(L"DISKraptor_CDP_PORT", params + 11, 16);
-    if (params[11]) {
-        wmemcpy(params, L"--cdp-port=", 11);
+    if (isAdmin) {
+        qDebug() << "[DiskRaptor] Running as Administrator";
     } else {
-        wmemcpy(params, L"--elevated", 10);
+        qDebug() << "[DiskRaptor] NOT running as Administrator (some paths may be inaccessible)";
     }
-
-    SHELLEXECUTEINFOW sei = { sizeof(sei) };
-    sei.lpVerb = L"runas";
-    sei.lpFile = exePath;
-    sei.lpParameters = params;
-    sei.nShow = SW_SHOWNORMAL;
-    sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS;
-
-    if (ShellExecuteExW(&sei)) {
-        if (sei.hProcess) {
-            WaitForSingleObject(sei.hProcess, INFINITE);
-            CloseHandle(sei.hProcess);
-        }
-    }
-    return false; // exit current process
+    return true; // Always continue, no elevation prompt
 #else
     return true;
 #endif
