@@ -168,7 +168,11 @@
       var home = await window.__TAURI__.invoke("get_home_dir");
       var homePath = null;
       if (typeof home === "string") {
-        homePath = home;
+        // Check if it's JSON-wrapped
+        if (home.charAt(0) === '{') {
+          try { var j = JSON.parse(home); if (j && j.data) homePath = String(j.data); } catch(e) {}
+        }
+        if (!homePath) homePath = home;
       } else if (home && typeof home === "object") {
         // Handle wrapped response format
         homePath = home.data ? String(home.data) : null;
@@ -544,7 +548,11 @@
         var selected = await window.__TAURI__.invoke("pick_directory");
         var dir = null;
         if (typeof selected === "string" && selected.length > 0) {
-          dir = selected;
+          // Check if it's JSON-wrapped (e.g. {"data":"path","success":true})
+          if (selected.charAt(0) === '{') {
+            try { var j = JSON.parse(selected); if (j && j.data) dir = String(j.data); } catch(e) {}
+          }
+          if (!dir) dir = selected;
         } else if (selected && typeof selected === "object" && selected.data) {
           dir = String(selected.data);
         }

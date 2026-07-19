@@ -27,6 +27,10 @@ Var StartMenuFolder
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_STARTMENU Application $StartMenuFolder
 !insertmacro MUI_PAGE_INSTFILES
+!define MUI_FINISHPAGE_RUN "$INSTDIR\DiskRaptor.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "$(^RunText)"
+!define MUI_FINISHPAGE_RUN_NOTCHECKED
+
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -35,6 +39,10 @@ Var StartMenuFolder
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "German"
 !insertmacro MUI_LANGUAGE "French"
+
+LangString ^RunText ${LANG_ENGLISH} "Run DiskRaptor"
+LangString ^RunText ${LANG_GERMAN} "DiskRaptor starten"
+LangString ^RunText ${LANG_FRENCH} "Lancer DiskRaptor"
 
 Section "Install"
   SetOutPath "$INSTDIR"
