@@ -7,7 +7,7 @@
 **Ultra-fast directory scanner** — A modern, high-performance successor to JDiskReport, built with **Rust + Qt 6 + QtWebEngine**.
 
 <p align="center">
-  <img src="images/demo.gif" alt="DiskRaptor Demo" width="100%" max-width="800px">
+  <img src="images/demo.gif" alt="DiskRaptor Demo" style="width:100%;max-width:800px">
 </p>
 
 DiskRaptor scans directories using a **parallel Win32 traversal engine** (Windows) or **walkdir** (macOS/Linux) and renders results in a **virtual tree view** capable of handling **20+ million files** without UI lag.
@@ -20,7 +20,7 @@ DiskRaptor scans directories using a **parallel Win32 traversal engine** (Window
 - **Parallel Win32 engine** — 4–8 worker threads for 2–6× faster scanning
 - **Exact file counts** — Follows NTFS junctions (reparse points), matches `dir /s`
 - **Long path support** — `\\?\` prefix for paths >260 characters
-- **Admin elevation** — Optional restart as Administrator for full system folder access
+- **Permission resilience** — Gracefully handles access-denied folders, logs errors, continues scanning
 - **20M node limit** — Scans entire drives with millions of files
 
 ### Visualization
@@ -47,19 +47,21 @@ DiskRaptor scans directories using a **parallel Win32 traversal engine** (Window
 
 | Module | Purpose |
 |--------|---------|
+| Module | Purpose |
+|--------|---------|
 | `scanner/tree.rs` | Arena-allocated `TreeNode` (~56 bytes/node) |
 | `scanner/walker.rs` | Parallel Win32 scanner + walkdir fallback |
 | `scanner/win32_scanner.rs` | Standalone Win32 scanner |
 | `streaming/chunker.rs` | BFS chunk splitting (10k nodes/chunk) |
-| `commands.rs` | Tauri IPC bridge (18 commands) |
-| `main.rs` | App entry, native menus, system tray, window maximize |
+| `scanner_api.rs` | C FFI bridge for Qt integration |
 
 ### Key Technical Decisions
 
 - **Two-phase parallel scan**: Phase 1 = N worker threads scan directories independently. Phase 2 = single-threaded tree building from collected entries. No arena locking during scan.
 - **Squarified treemap**: Recursive subdivision algorithm — full area fill, no gaps, professional look.
 - **Native Windows icons**: Extracted via `SHGetFileInfoW` + raw GDI (`CreateDIBSection` + `DrawIconEx`), returned as base64 RGBA to frontend.
-- **Admin elevation**: `ShellExecuteW` with `"runas"` verb — optional, user-initiated UAC prompt.
+- **Qt WebChannel IPC**: Rust scanner loaded as DLL via `QLibrary`, JSON bridge to JavaScript frontend.
+
 
 ---
 
@@ -73,10 +75,10 @@ DiskRaptor scans directories using a **parallel Win32 traversal engine** (Window
 | `diagrams.js` | Pie chart + squarified treemap with hit regions |
 | `stats.js` | Statistics panel |
 | `topfiles.js` | Largest files table with file-type badges |
-| `iconcache.js` | Real Windows shell icons via Tauri IPC |
+| `iconcache.js` | Real Windows shell icons via C++ bridge |
 | `splitter.js` | 3 resizable splitters (vertical, horizontal x2) |
 | `app.js` | Main controller, scan flow, theme toggle |
-| `tauri-api-bridge.js` | Custom IPC bridge for Tauri v1 |
+| `qt-bridge.js` | Qt WebChannel IPC bridge |
 
 ---
 
@@ -121,15 +123,11 @@ build.cmd  # builds EXE + runs makensis automatically
 ## 🧪 Running Tests
 
 ```bash
-# Rust integration tests
-cd src-tauri && cargo test --test scanner_test -- --nocapture
+# Rust tests
+cd src-tauri && cargo test -- --nocapture
 
-# UI unit tests (headless Playwright)
-node run-tests.mjs
-
-# E2E test (requires release build + WebView2 debugging port)
-cd src-tauri && cargo build --release && cd ..
-node e2e-test.mjs
+# UI test with Playwright (requires running EXE with CDP port)
+node test_scan.mjs
 ```
 
 ---
@@ -138,21 +136,13 @@ node e2e-test.mjs
 
 | Metric | Value | Details |
 |--------|-------|---------|
-| Scan speed | ~1.35M files in 20s | `C:\Users\hansj` on NVMe SSD |
+| Scan speed | ~12M files in 3 min | `C:\Users\hansj` on NVMe SSD (100k dirs) |
 | Parallel workers | 4–8 threads | Auto-detected from CPU cores |
-| Max nodes | 20,000,000 | Safety limit (configurable) |
+| Max nodes | 30,000,000+ | Arena-allocated, auto-grows |
 | Memory per node | ~56 bytes | Arena-allocated `Vec<TreeNode>` |
 | UI nodes rendered | 50–200 | VirtualScroll with DOM recycling |
 | Chunk size | 10,000 nodes | ~1–2 MB JSON per chunk |
 | Arena capacity | 2,000,000 (initial) | Auto-grows as needed |
-
-### Expected Speedup
-
-| Drive Type | vs Single-Threaded |
-|------------|-------------------|
-| NVMe SSD | 4–6× faster |
-| SATA SSD | 3–4× faster |
-| HDD | 2–3× faster |
 
 ---
 
@@ -183,7 +173,9 @@ node e2e-test.mjs
 | `Enter` | Start scan |
 | `⌘/Ctrl+1` | Pie Chart |
 | `⌘/Ctrl+2` | Treemap |
+| `⌘/Ctrl+3` | Galaxy View |
 | `⌘/Ctrl+I` | About dialog |
+| `⌘/Ctrl+Q` | Exit
 
 ---
 
@@ -193,11 +185,11 @@ Pre-built binaries for each release are available on the [Releases](https://gith
 
 | Platform | Format |
 |----------|--------|
-| **Windows** | `.msi` installer or `.exe` standalone |
-| **macOS** | `.dmg` bundle (unsigned) or raw binary |
-| **Linux** | `.AppImage` (unsigned) or raw binary |
+| **Windows** | `.exe` (NSIS Installer) or `.zip` (Portable) |
+| **macOS** | `.dmg` bundle or `.zip` (unsigned) |
+| **Linux** | `.deb` (Debian/Ubuntu) or `.zip` (Portable) |
 
-> ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open. On Linux: `chmod +x`.
+> ⚠️ macOS & Linux builds are unsigned. On macOS: right-click → Open. On Linux: `sudo dpkg -i *.deb` or `chmod +x DiskRaptor.sh && ./DiskRaptor.sh`.
 
 ---
 
