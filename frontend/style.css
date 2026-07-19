@@ -506,12 +506,13 @@ button.icon-btn {
     background: var(--bg-primary);
     height: 340px;
     min-height: 160px;
-    overflow: hidden;
+    overflow: auto;
 }
 #diagram-container {
     flex: 1;
-    overflow: hidden;
+    overflow: auto;
     position: relative;
+    min-height: 200px;
 }
 #diagram-container canvas {
     position: absolute;
