@@ -121,6 +121,26 @@
     const diagram = new DiagramRenderer("diagram-container");
     window.__diagram = diagram;
 
+    // Wire zoom buttons
+    diagram.onZoomChanged = function(zoom) {
+      var label = document.getElementById('zoom-label');
+      if (label) label.textContent = Math.round(zoom * 100) + '%';
+      var btns = document.querySelectorAll('.zoom-btn');
+      btns.forEach(function(b) {
+        var z = b.dataset.zoom;
+        if (z === 'fit') return;
+        b.classList.toggle('active', Math.abs(Number(z) - zoom) < 0.01);
+      });
+    };
+    document.querySelectorAll('.zoom-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var z = this.dataset.zoom;
+        document.querySelectorAll('.zoom-btn').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        diagram.setZoom(z);
+      });
+    });
+
     let isScanning = false;
     let currentStats = null;
     let currentScanResult = null;

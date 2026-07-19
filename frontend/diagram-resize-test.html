@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DiskRaptor Diagram Resize Test</title>
+</title><style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding: 20px;
+  }
+  h1 { font-size: 18px; margin-bottom: 8px; color: #58a6ff; }
+  h2 { font-size: 13px; margin: 16px 0 6px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+  p { font-size: 12px; color: #8b949e; margin-bottom: 12px; }
+  .toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding: 10px; background: #161b22; border-radius: 6px; margin-bottom: 16px;
+    border: 1px solid #30363d;
+  }
+  .toolbar button {
+    padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+    background: #21262d; border: 1px solid #30363d; border-radius: 4px;
+    color: #e6edf3; transition: all 0.15s;
+  }
+  .toolbar button:hover { background: #30363d; }
+  .toolbar button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  .toolbar .size-label { font-size: 11px; color: #8b949e; margin-left: 12px; font-variant-numeric: tabular-nums; }
+  .toolbar .sep { width: 1px; height: 24px; background: #30363d; margin: 0 4px; }
+  .viewport {
+    background: #0d1117;
+    border: 1px dashed #30363d;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    transition: width 0.2s ease, height 0.2s ease;
+    resize: both;
+  }
+  .viewport iframe {
+    width: 100%; height: 100%; border: none; display: block;
+  }
+  .viewport-label {
+    position: absolute; bottom: 4px; right: 8px;
+    font-size: 10px; color: #484f58; background: rgba(13,17,23,0.8);
+    padding: 2px 6px; border-radius: 3px; pointer-events: none;
+  }
+  .results {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+  }
+  .result-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    overflow: hidden;
+  }
+  .result-card .card-header {
+    padding: 8px 12px; font-size: 11px; font-weight: 600;
+    background: #21262d; border-bottom: 1px solid #30363d;
+    display: flex; justify-content: space-between;
+  }
+  .result-card .card-body {
+    padding: 8px 12px; font-size: 11px; color: #8b949e;
+  }
+  .result-card .card-body .pass { color: #3fb950; }
+  .result-card .card-body .fail { color: #f85149; }
+  .result-card .card-body .warn { color: #d29922; }
+  .status-pass { color: #3fb950; }
+  .status-fail { color: #f85149; }
+</style>
+</head>
+<body>
+
+<h1>🦖 DiskRaptor Diagram Resize Test</h1>
+<p>Tests the diagram at various viewport sizes to verify responsiveness, zoom</h1></p>, and no overlapping/clipping.</p>
+
+<div class="toolbar">
+  <button data-w="320" data-h="568">320×568</button>
+  <button data-w="768" data-h="1024">768×1024</button>
+  <button data-w="1280" data-h="720" class="active">1280×720</button>
+  <button data-w="1920" data-h="1080">1920×1080</button>
+  <button data-w="2560" data-h="1440">2560×1440</button>
+  <span class="sep"></span>
+  <button id="btn-run-all">▶ Run All Sizes</button>
+  <span id="viewport-label" class="size-label">1280 × 720</span>
+</div>
+
+<div id="viewport" class="viewport" style="width:1280px;height:720px;">
+  <div class="viewport-label" id="vp-label">1280×720</div>
+</div>
+
+<h2>Test Results</h2>
+<div id="results" class="results"></div>
+
+<script>
+  const viewport = document.getElementById('viewport');
+  const vpLabel = document.getElementById('viewport-label');
+  const resultsDiv</h2> = document.getElementById('results');
+  let currentIframe = null;
+
+  const sizes = [
+    { w: 320, h: 568, name: '320×568 (small mobile)' },
+    { w: 768, h: 1024, name: '768×1024 (tablet)' },
+    { w: 1280, h: 720, name: '1280×720 (laptop)' },
+    { w: 1920, h: 1080, name: '1920×1080 (desktop)' },
+    { w: 2560, h: 1440, name: '2560×1440 (large monitor)' },
+  ];
+
+  // Sample data for diagram
+  const sampleData = {
+    top_files: [
+      { path: 'C:\\Users\\test\\Documents\\project\\video.mp4', size: 214748364800, size_human: '200.00 GB' },
+      { path: 'C:\\Users\\test\\Downloads\\ubuntu.iso', size: 48318382080, size_human: '45.00 GB' },
+      { path: 'C:\\Users\\test\\Videos\\vacation.mp4', size: 10737418240, size_human: '10.00 GB' },
+      { path: 'C:\\Users\\test\\Desktop\\presentation.pdf', size: 5368709120, size_human: '5.00 GB' },
+      { path: 'C:\\Users\\test\\Music\\album.zip', size: 2147483648, size_human: '2.00 GB' },
+      { path: 'C:\\Users\\test\\Pictures\\photo.jpg', size: 1073741824, size_human: '1.00 GB' },
+      { path: 'C:\\Users\\test\\Documents\\report.docx', size: 524288000, size_human: '500.00 MB' },
+      { path: 'C:\\Users\\test\\Downloads\\setup.exe', size: 262144000, size_human: '250.00 MB' },
+      { path: 'C:\\Users\\test\\AppData\\cache.bin', size: 104857600, size_human: '100.00 MB' },
+      { path: 'C:\\Users\\test\\Desktop\\notes.txt', size: 52428800, size_human: '50.00 MB' },
+      { path: 'C:\\test\\large_file_1.bin', size: 32212254720, size_human: '30.00 GB' },
+      { path: 'C:\\test\\large_file_2.bin', size: 26843545600, size_human: '25.00 GB' },
+      { path: 'D:\\backup\\system.img', size: 85899345920, size_human: '80.00 GB' },
+      { path: 'D:\\backup\\documents.zip', size: 4294967296, size_human: '4.00 GB' },
+      { path: 'E:\\movies\\movie.mkv', size: 15728640000, size_human: '14.65 GB' },
+    ],
+    total_files: 15000000,
+    total_dirs: 1500000,
+    total_size: 1099511627776,
+    scan_time_ms: 12345,
+  };
+
+  // Toolbar buttons
+  document.querySelectorAll('.toolbar button[data-w]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.toolbar button[data-w]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const w = parseInt(btn.dataset.w);
+      const h = parseInt(btn.dataset.h);
+      setViewportSize(w, h);
+    });
+  });
+
+  document.getElementById('btn-run-all').addEventListener('click', runAllTests);
+
+  function setViewportSize(w, h) {
+    viewport.style.width = w + 'px';
+    viewport.style.height = h + 'px';
+    vpLabel.textContent = w + ' × ' + h;
+    document.getElementById('viewport-label').textContent = w + ' × ' + h;
+    document.getElementById('vp-label').textContent = w + '×' + h;
+    loadDiagramInViewport(w, h);
+  }
+
+  function loadDiagramInViewport(w, h) {
+    // Create iframe with diagram
+    const iframe = document.createElement('iframe');
+    iframe.src = 'about:blank';
+    viewport.innerHTML = '';
+    viewport.appendChild(iframe);
+    currentIframe = iframe;
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html><head>
+      <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        html, body { width:100%; height:100%; overflow:hidden; background:#0d1117; }
+        #diagram-container { width:100%; height:calc(100% - 32px); position:relative; }
+        #info { height:32px; display:flex; align-items:center; padding:0 12px; font:11px sans-serif; color:#8b949e; background:#161b22; border-bottom:1px solid #30363d; gap:12px; }
+        #info button { padding:2px 8px; font:10px sans-serif; cursor:pointer; background:#21262d; border:1px solid #30363d; border-radius:3px; color:#e6edf3; }
+        #info button:hover { background:#30363d; }
+        #info button.active { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+        #info .sep { width:1px; height:16px; background:#30363d; }
+        #info .zoom-lbl { min-width:30px; text-align:right; }
+      </style>
+    </head><body>
+      <div id="info">
+        <span>${w}×${h}</span>
+        <span class="sep"></span>
+        <button class="zm" data-z="0.2">20%</button>
+        <button class="zm active" data-z="1">100%</button>
+        <button class="zm" data-z="fit">Fit</button>
+        <span class="sep"></span>
+        <button class="zm" data-z="pie" class="active">Pie</button>
+        <button class="zm" data-z="treemap">Treemap</button>
+        <span class="sep"></span>
+        <span id="zl" class="zoom-lbl">100%</span>
+      </div>
+      <div id="diagram-container"></div>
+      <script>
+        // Minimal DiagramRenderer for testing (zoom-aware version)
+        ${diagramRendererCode.toString()}
+        var d = new DiagramRenderer('diagram-container');
+        d.setData(${JSON.stringify(sampleData)});
+        d.onZoomChanged = function(z) { document.getElementById('zl').textContent = Math.round(z*100)+'%'; };
+        document.querySelectorAll('.zm[data-z]').forEach(function(b) {
+          b.addEventListener('click', function() {
+            var z = this.dataset.z;
+            if (z === 'pie' || z === 'treemap') {
+              document.querySelectorAll('.zm[data-z]').forEach(function(x) { x.classList.remove('active'); });
+              this.classList.add('active');
+              d.setMode(z);
+              return;
+            }
+            document.querySelectorAll('.zm[data-z]').forEach(function(x) { x.classList.remove('active'); });
+            this.classList.add('active');
+            d.setZoom(z);
+          });
+        });
+      <\/script>
+    </body></html>`);
+    doc.close();
+  }
+
+  async function runAllTests() {
+    resultsDiv.innerHTML = '<p style="color:#d29922;">Running all tests...</p>';
+    const results = [];
+    for (const size of sizes) {
+      setViewportSize(size.w, size.h);
+      await new Promise(r => setTimeout(r, 600));
+      try {
+        const result = await testViewport(size, currentIframe);
+        results.push(result);
+      } catch(e) {
+        results.push({ name: size.name, pass: false, errors: [e.message] });
+      }
+    }
+    renderResults(results);
+  }
+
+  function testViewport(size, iframe) {
+    return new Promise((resolve) => {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        const diagramEl = doc.getElementById('diagram-container');
+        const canvas = diagramEl ? diagramEl.querySelector('canvas') : null;
+        if (!canvas) { resolve({ name: size.name, pass: false, errors: ['No canvas'] }); return; }
+
+        const rect = canvas.getBoundingClientRect();
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        const errors = [];
+        if (rect.width < 10 || rect.height < 10) errors.push('Canvas too small: ' + rect.width + 'x' + rect.height);
+        if (rect.width > size.w) errors.push('Canvas overflow width: ' + rect.width + ' > ' + size.w);
+        if (rect.height > size.h - 32) errors.push('Canvas overflow height: ' + rect.height + ' > ' + (size.h-32));
+
+        // Check non-empty content
+        let nonBlack = 0;
+        for (let i = 0; i < imgData.data.length; i += 32) {
+          if (imgData.data[i] > 20 || imgData.data[i+1] > 20 || imgData.data[i+2] > 20) nonBlack++;
+        }
+        if (nonBlack < 50) errors.push('Diagram has no visible content (' + nonBlack + ' pixels)');
+
+        // Check scrollbars (if scrollHeight > clientHeight)
+        if (doc.body.scrollHeight > doc.body.clientHeight + 5) {
+          errors.push('Body has scrollbar: ' + doc.body.scrollHeight + ' > ' + doc.body.clientHeight);
+        }
+
+        resolve({ name: size.name, pass: errors.length === 0, errors, rect: rect.width + 'x' + rect.height });
+      } catch(e) {
+        resolve({ name: size.name, pass: false, errors: [e.message] });
+      }
+    });
+  }
+
+  function renderResults(results) {
+    resultsDiv.innerHTML = '';
+    for (const r of results) {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.innerHTML = `
+        <div class="card-header">
+          <span>${r.name}</span>
+          <span class="${r.pass ? 'status-pass' : 'status-fail'}">${r.pass ? '✓ PASS' : '✗ FAIL'}</span>
+        </div>
+        <div class="card-body">
+          ${r.rect ? '<div>Canvas: ' + r.rect + '</div>' : ''}
+          ${r.errors && r.errors.length ? r.errors.map(e => '<div class="fail">' + e + '</div>').join('') : '<div class="pass">No errors</div>'}
+        </div>
+      `;
+      resultsDiv.appendChild(card);
+    }
+    const passCount = results.filter(r => r.pass).length;
+    const total = results.length;
+    const summary = document.createElement('p');
+    summary.style.cssText = 'margin-top:12px;font-size:13px;font-weight:600;';
+    summary.className = passCount === total ? 'status-pass' : 'status-fail';
+    summary.textContent = passCount === total
+      ? '✓ All ' + total + ' tests PASSED'
+      : '✗ ' + (total - passCount) + '/' + total + ' tests FAILED';
+    resultsDiv.appendChild(summary);
+  }
+
+  // Initial load
+  setViewportSize(1280, 720);
+</script>
+</body>
+</html>
