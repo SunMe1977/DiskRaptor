@@ -73,12 +73,6 @@
                         </div>
                     </div>
                     <div id="tree-status" class="status-bar" data-i18n="tree.ready">Ready</div>
-                    <div id="ram-bar-wrap" class="ram-bar-wrap">
-                        <div class="ram-bar-inner">
-                            <div id="ram-bar-fill" class="ram-bar-fill" style="width:0%"></div>
-                            <span id="ram-text" class="ram-text">Loading RAM...</span>
-                        </div>
-                    </div>
 
                 <!-- Horizontal splitter between tree and diagram -->
                 <div id="h-splitter"></div>
@@ -293,6 +287,24 @@
                     <p class="about-copy">© 2026 DiskRaptor</p>
                     <button id="btn-about-close" class="primary" data-i18n="about.done">✓ Done</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- RAM status bar at the bottom of the page -->
+        <div id="ram-bar" class="ram-bar-bottom">
+            <div class="ram-section">
+                <span class="ram-label">📊 App</span>
+                <div class="ram-bar-track">
+                    <div id="ram-app-fill" class="ram-bar-fill-app" style="width:0%"></div>
+                </div>
+                <span id="ram-app-text" class="ram-value">—</span>
+            </div>
+            <div class="ram-section">
+                <span class="ram-label">💻 System</span>
+                <div class="ram-bar-track">
+                    <div id="ram-sys-fill" class="ram-bar-fill-sys" style="width:0%"></div>
+                </div>
+                <span id="ram-sys-text" class="ram-value">—</span>
             </div>
         </div>
 

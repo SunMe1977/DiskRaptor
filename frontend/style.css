@@ -224,8 +224,9 @@ button.icon-btn {
    ═══════════════════════════════════════════════════════════════ */
 #main-layout {
     display: flex;
-    height: calc(100vh - var(--toolbar-height));
+    flex: 1;
     overflow: hidden;
+    padding-bottom: 24px;
 }
 #left-column {
     flex: 1;
@@ -1345,51 +1346,66 @@ body.light-theme .about-bg {
     font-family: monospace;
 }
 
-.ram-bar-wrap {
-    padding: 2px 12px;
-    background: var(--bg-secondary);
-    border-top: 1px solid var(--border);
+.ram-bar-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
     display: flex;
     align-items: center;
+    gap: 16px;
+    padding: 3px 12px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    z-index: 1000;
+    font-size: 10px;
+    font-family: monospace;
 }
-.ram-bar-inner {
+.ram-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex: 1;
-    height: 18px;
+}
+.ram-label {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    min-width: 40px;
+}
+.ram-bar-track {
+    flex: 1;
+    height: 12px;
     background: rgba(0,0,0,0.3);
     border-radius: 3px;
     overflow: hidden;
-    position: relative;
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
+    max-width: 200px;
 }
-.ram-bar-fill {
+.ram-bar-fill-app {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+    background: linear-gradient(90deg, #58a6ff, #1f6feb);
+    box-shadow: 0 0 6px rgba(88,166,255,0.5), 0 0 12px rgba(31,111,235,0.3);
+}
+.ram-bar-fill-sys {
     height: 100%;
     border-radius: 3px;
     transition: width 0.5s ease;
     background: linear-gradient(90deg, #3fb950, #d29922, #f85149);
-    box-shadow: 0 0 8px rgba(63,185,80,0.4), 0 0 16px rgba(63,185,80,0.2);
+    box-shadow: 0 0 6px rgba(63,185,80,0.4), 0 0 12px rgba(63,185,80,0.2);
 }
-.ram-bar-fill.warning {
-    box-shadow: 0 0 8px rgba(210,153,34,0.5), 0 0 16px rgba(210,153,34,0.3);
+.ram-bar-fill-sys.warning {
+    box-shadow: 0 0 6px rgba(210,153,34,0.5), 0 0 12px rgba(210,153,34,0.3);
 }
-.ram-bar-fill.critical {
-    box-shadow: 0 0 8px rgba(248,81,73,0.6), 0 0 16px rgba(248,81,73,0.4);
+.ram-bar-fill-sys.critical {
+    box-shadow: 0 0 6px rgba(248,81,73,0.6), 0 0 12px rgba(248,81,73,0.4);
 }
-.ram-text {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 10px;
-    font-family: monospace;
-    color: #e6edf3;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.5);
-    z-index: 1;
-    letter-spacing: 0.5px;
-    font-weight: 600;
+.ram-value {
+    color: var(--text-primary);
+    white-space: nowrap;
+    min-width: 100px;
+    text-align: right;
 }
 
 /* Symlink toggle */

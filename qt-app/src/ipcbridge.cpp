@@ -31,6 +31,7 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <shellapi.h>
+#include <psapi.h>
 #endif
 
 #ifdef Q_OS_MACOS
@@ -72,6 +73,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "save_settings") return saveSettings(args);
     if (command == "load_settings") return loadSettings();
     if (command == "get_memory_info") return getMemoryInfo();
+    if (command == "get_process_memory") return getProcessMemory();
 
     if (command == "get_chunk") {
         uint32_t chunkIndex = static_cast<uint32_t>(args.value("chunkIndex", 0).toUInt());
@@ -303,6 +305,49 @@ QString IpcBridge::getMemoryInfo()
     return resultToJson(true, QVariantMap{
         {"total_bytes", 0}, {"used_bytes", 0}, {"avail_bytes", 0}, {"percent_used", 0},
     });
+}
+
+QString IpcBridge::getProcessMemory()
+{
+#ifdef Q_OS_WIN
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        return resultToJson(true, QVariantMap{
+            {"resident_bytes", static_cast<qint64>(pmc.WorkingSetSize)},
+            {"private_bytes", static_cast<qint64>(pmc.PagefileUsage)},
+            {"virtual_bytes", static_cast<qint64>(pmc.PagefileUsage)},
+        });
+    }
+#elif defined(Q_OS_MACOS)
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &count) == KERN_SUCCESS) {
+        return resultToJson(true, QVariantMap{
+            {"resident_bytes", static_cast<qint64>(info.resident_size)},
+            {"private_bytes", static_cast<qint64>(info.resident_size)},
+        });
+    }
+#else
+    QFile f("/proc/self/status");
+    if (f.open(QIODevice::ReadOnly)) {
+        QTextStream in(&f);
+        quint64 vmRSS = 0;
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("VmRSS:")) {
+                vmRSS = line.section(' ', -2, -2).toULongLong() * 1024;
+                break;
+            }
+        }
+        if (vmRSS > 0) {
+            return resultToJson(true, QVariantMap{
+                {"resident_bytes", static_cast<qint64>(vmRSS)},
+                {"private_bytes", static_cast<qint64>(vmRSS)},
+            });
+        }
+    }
+#endif
+    return resultToJson(true, QVariantMap{{"resident_bytes", 0}, {"private_bytes", 0}});
 }
 
 QString IpcBridge::pickDirectory()

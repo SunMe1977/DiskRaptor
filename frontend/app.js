@@ -936,9 +936,11 @@ clearTimeout(safetyTimer);
       if (e.key === "Enter") btnScan.click();
     });
 
-    // ── RAM status bar ──────────────────────────────────────
-    var ramFill = document.getElementById("ram-bar-fill");
-    var ramText = document.getElementById("ram-text");
+    // ── RAM status bars (bottom of page) ────────────────────
+    var ramAppFill = document.getElementById("ram-app-fill");
+    var ramSysFill = document.getElementById("ram-sys-fill");
+    var ramAppText = document.getElementById("ram-app-text");
+    var ramSysText = document.getElementById("ram-sys-text");
     function formatBytes(v) {
       var u = ["B","KB","MB","GB","TB"];
       var i = 0;
@@ -947,14 +949,23 @@ clearTimeout(safetyTimer);
     }
     async function updateRam() {
       try {
-        var m = await window.__TAURI__.invoke("get_memory_info");
-        if (m && m.percent_used !== undefined) {
-          var pct = Math.round(m.percent_used);
-          var used = formatBytes(m.used_bytes);
-          var total = formatBytes(m.total_bytes);
-          ramFill.style.width = pct + "%";
-          ramFill.className = "ram-bar-fill" + (pct > 85 ? " critical" : pct > 70 ? " warning" : "");
-          ramText.textContent = "RAM  " + used + " / " + total + "  (" + pct + "%)";
+        var [sysMem, procMem] = await Promise.all([
+          window.__TAURI__.invoke("get_memory_info").catch(e=>null),
+          window.__TAURI__.invoke("get_process_memory").catch(e=>null),
+        ]);
+        if (sysMem && sysMem.total_bytes > 0) {
+          var total = sysMem.total_bytes;
+          var sysUsed = sysMem.used_bytes;
+          var sysPct = Math.round(sysUsed / total * 100);
+          ramSysFill.style.width = sysPct + "%";
+          ramSysFill.className = "ram-bar-fill-sys" + (sysPct > 85 ? " critical" : sysPct > 70 ? " warning" : "");
+          ramSysText.textContent = formatBytes(sysUsed) + " / " + formatBytes(total) + " (" + sysPct + "%)";
+        }
+        if (procMem && procMem.resident_bytes > 0) {
+          var appMem = procMem.resident_bytes;
+          var appPct = Math.round(appMem / total * 100);
+          ramAppFill.style.width = appPct + "%";
+          ramAppText.textContent = formatBytes(appMem) + " (" + appPct + "%)";
         }
       } catch(e) {}
     }

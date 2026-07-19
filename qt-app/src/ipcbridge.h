@@ -43,6 +43,7 @@ public:
     Q_INVOKABLE QString saveSettings(const QVariantMap &settings);
     Q_INVOKABLE QString loadSettings();
     Q_INVOKABLE QString getMemoryInfo();
+    Q_INVOKABLE QString getProcessMemory();
 
 signals:
     void eventEmitted(const QString &event, const QVariant &payload);
