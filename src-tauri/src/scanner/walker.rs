@@ -13,6 +13,10 @@ pub struct ScanConfig {
     pub skip_dirs: Vec<String>,
     pub top_file_min_size: u64,
     pub top_files_count: usize,
+    pub follow_symlinks: bool,
+    pub scan_timeout_secs: u64,
+    /// Shared error list — scanner pushes inaccessible paths here
+    pub errors: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl Default for ScanConfig {
@@ -31,6 +35,9 @@ impl Default for ScanConfig {
             ],
             top_file_min_size: 0,
             top_files_count: 100,
+            follow_symlinks: false,
+            scan_timeout_secs: 0,
+            errors: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 }
@@ -201,13 +208,45 @@ mod platform {
         let mut dirs_found: u64 = 0;
         let mut bytes_found: u64 = 0;
         let mut last_progress = Instant::now();
-        for entry_result in WalkDir::new(root_path).follow_links(false) {
+        let mut last_entry_time = Instant::now();
+        let follow = config.follow_symlinks;
+        let errors = config.errors.clone();
+        let timeout = config.scan_timeout_secs;
+        let mut walker = WalkDir::new(root_path).follow_links(follow).into_iter();
+        loop {
             if arena.nodes.len() > 50_000_000 {
+                eprintln!("[walker] Node limit reached (50M), stopping scan");
                 break;
             }
+            // Check for timeout (NAS dead share detection)
+            if timeout > 0 && last_entry_time.elapsed().as_secs() > timeout {
+                errors.lock().unwrap().push(format!(
+                    "TIMEOUT: No progress for {}s at {}",
+                    timeout, root_path
+                ));
+                eprintln!("[walker] Timeout after {}s, stopping scan", timeout);
+                break;
+            }
+            let entry_result = match walker.next() {
+                Some(r) => r,
+                None => break,
+            };
             let entry = match entry_result {
-                Ok(e) => e,
-                Err(_) => continue,
+                Ok(e) => {
+                    last_entry_time = Instant::now();
+                    e
+                }
+                Err(e) => {
+                    // Report permission errors
+                    if let Some(path) = e.path() {
+                        let err_path = path.to_string_lossy().to_string();
+                        errors
+                            .lock()
+                            .unwrap()
+                            .push(format!("Access denied: {}", err_path));
+                    }
+                    continue;
+                }
             };
             let full = entry.path().to_string_lossy().to_string();
             if full == root_path {

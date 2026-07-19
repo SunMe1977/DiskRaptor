@@ -1392,6 +1392,36 @@ body.light-theme .about-bg {
     font-weight: 600;
 }
 
+/* Symlink toggle */
+.symlink-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius);
+    white-space: nowrap;
+}
+.symlink-toggle:hover { color: var(--text-primary); }
+.symlink-toggle input { margin: 0; cursor: pointer; }
+
+/* Scan errors */
+.scan-errors {
+    display: none;
+    margin-top: 8px;
+    padding: 6px 10px;
+    background: rgba(248,81,73,0.1);
+    border: 1px solid rgba(248,81,73,0.3);
+    border-radius: var(--radius);
+    font-size: 11px;
+    color: #f85149;
+    font-family: monospace;
+    max-height: 60px;
+    overflow-y: auto;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    LIGHT THEME
    ═══════════════════════════════════════════════════════════════ */

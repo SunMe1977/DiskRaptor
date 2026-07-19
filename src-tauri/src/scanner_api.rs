@@ -18,6 +18,7 @@ struct ScanState {
     running: AtomicBool,
     cancelled: AtomicBool,
     scan_id: AtomicU64,
+    pub errors: Mutex<Vec<String>>,
 }
 struct ScanResultData {
     scan_id: u64,
@@ -25,6 +26,7 @@ struct ScanResultData {
     stats: ScanStats,
     scan_time_ms: u64,
     chunks: Vec<TreeChunk>,
+    errors: Vec<String>,
 }
 
 use std::sync::LazyLock;
@@ -38,23 +40,50 @@ static STATE: LazyLock<ScanState> = LazyLock::new(|| ScanState {
     running: AtomicBool::new(false),
     cancelled: AtomicBool::new(false),
     scan_id: AtomicU64::new(0),
+    errors: Mutex::new(Vec::new()),
 });
 
 #[no_mangle]
-pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
-    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
-        Ok(s) => {
-            #[cfg(windows)]
-            {
-                s.replace('/', "\\")
-            }
-            #[cfg(not(windows))]
-            {
-                s.to_string()
-            }
-        }
-        Err(e) => return make_json_error(&format!("invalid path UTF-8: {}", e)),
+pub extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_char {
+    let config_str = match unsafe { CStr::from_ptr(json_config) }.to_str() {
+        Ok(s) => s.to_string(),
+        Err(e) => return make_json_error(&format!("invalid config UTF-8: {}", e)),
     };
+    // Parse JSON config
+    let (path_str, follow_symlinks, timeout_secs) =
+        match serde_json::from_str::<serde_json::Value>(&config_str) {
+            Ok(v) => {
+                let p = v.get("path").and_then(|s| s.as_str()).unwrap_or("");
+                let fs = v
+                    .get("follow_symlinks")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false);
+                let ts = v.get("timeout_secs").and_then(|n| n.as_u64()).unwrap_or(0);
+                #[cfg(windows)]
+                {
+                    (p.replace('/', "\\"), fs, ts)
+                }
+                #[cfg(not(windows))]
+                {
+                    (p.to_string(), fs, ts)
+                }
+            }
+            Err(_) => {
+                // Fallback: treat entire string as path
+                let p = config_str.clone();
+                #[cfg(windows)]
+                {
+                    (p.replace('/', "\\"), false, 0u64)
+                }
+                #[cfg(not(windows))]
+                {
+                    (p.to_string(), false, 0u64)
+                }
+            }
+        };
+    if path_str.is_empty() {
+        return make_json_error("no path provided");
+    }
     let state = &*STATE;
     if state.running.swap(true, Ordering::Acquire) {
         return make_json_error("scan already running");
@@ -82,8 +111,12 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
             let _g = Guard;
 
             let state = &*STATE;
+            let errors = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
             let config = walker::ScanConfig {
                 root_path: path_clone.clone(),
+                follow_symlinks,
+                scan_timeout_secs: timeout_secs,
+                errors: errors.clone(),
                 ..walker::ScanConfig::default()
             };
             let progress = Box::new(move |files: u64, dirs: u64, bytes: u64, msg: &str| {
@@ -108,12 +141,15 @@ pub extern "C" fn dr_start_scan(path: *const c_char) -> *mut c_char {
                     let elapsed = sr.stats.scan_time_ms;
                     let chunks = crate::streaming::chunker::chunk_tree(&sr.arena)
                         .unwrap_or_else(|_| crate::streaming::chunker::make_root_chunk(&sr.arena));
+                    let errs = errors.lock().unwrap().clone();
+                    *state.errors.lock().unwrap() = errs.clone();
                     *state.result.lock().unwrap() = Some(ScanResultData {
                         scan_id,
                         arena: sr.arena,
                         stats: sr.stats,
                         scan_time_ms: elapsed,
                         chunks,
+                        errors: errs,
                     });
                 }
                 Err(e) => {
@@ -159,12 +195,18 @@ pub extern "C" fn dr_get_progress() -> *mut c_char {
     };
     let elapsed = state.start_time.lock().unwrap().elapsed().as_secs();
     let cd = state.current_dir.lock().unwrap().clone();
+    let errs: Vec<String> = state.errors.lock().unwrap().clone();
+    let err_count = errs.len();
+    let last_err = errs.last().cloned().unwrap_or_default();
     CString::new(
         serde_json::json!({
             "files_found": files, "dirs_found": dirs,
             "bytes_found": bytes,
             "is_running": is_running, "current_dir": cd,
             "elapsed_secs": elapsed, "phase": phase,
+            "errors": errs,
+            "error_count": err_count,
+            "last_error": last_err,
         })
         .to_string(),
     )
@@ -177,14 +219,17 @@ pub extern "C" fn dr_get_result() -> *mut c_char {
     let g = STATE.result.lock().unwrap();
     if let Some(ref d) = *g {
         let sid = d.scan_id;
+        let sj = serde_json::json!({"total_files":d.stats.total_files,"total_dirs":d.stats.total_dirs,"total_size":d.stats.total_size,"scan_time_ms":d.scan_time_ms,"top_files":d.stats.top_files,"file_type_breakdown":d.stats.file_type_breakdown,"size_human":format_size(d.stats.total_size),"time_human":format!("{:.2}s",d.scan_time_ms as f64/1000.0)});
         let tn = d.arena.len() as u32;
         let tc = d.chunks.len() as u32;
-        let sj = serde_json::json!({"total_files":d.stats.total_files,"total_dirs":d.stats.total_dirs,"total_size":d.stats.total_size,"scan_time_ms":d.scan_time_ms,"top_files":d.stats.top_files,"file_type_breakdown":d.stats.file_type_breakdown,"size_human":format_size(d.stats.total_size),"time_human":format!("{:.2}s",d.scan_time_ms as f64/1000.0)});
         let ri = serde_json::json!({"root_index":0,"total_nodes":tn,"total_chunks":tc});
+        let errs: Vec<String> = d.errors.clone();
         drop(g);
-        CString::new(serde_json::json!({"stats":sj,"root_info":ri,"scan_id":sid}).to_string())
-            .unwrap()
-            .into_raw()
+        CString::new(
+            serde_json::json!({"stats":sj,"root_info":ri,"scan_id":sid,"errors":errs}).to_string(),
+        )
+        .unwrap()
+        .into_raw()
     } else {
         drop(g);
         CString::new("{}").unwrap().into_raw()

@@ -188,13 +188,20 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
 
     if (command == "start_scan") {
         QString path = QDir::toNativeSeparators(args.value("path").toString());
+        bool followLinks = args.value("follow_symlinks", false).toBool();
+        quint64 timeoutSecs = args.value("timeout_secs", 0).toULongLong();
         if (!path.isEmpty()) {
             m_scanId++;
             m_lastScanPath = path;
             if (m_drStartScan) {
-                // Rust scanner available
-                QByteArray pathUtf8 = path.toUtf8();
-                char* result = m_drStartScan(pathUtf8.constData());
+                // Pass options as JSON config string
+                QJsonObject config;
+                config["path"] = path;
+                config["follow_symlinks"] = followLinks;
+                config["timeout_secs"] = static_cast<qint64>(timeoutSecs);
+                QByteArray configUtf8 = QString::fromUtf8(
+                    QJsonDocument(config).toJson(QJsonDocument::Compact)).toUtf8();
+                char* result = m_drStartScan(configUtf8.constData());
                 QString jsonResult;
                 if (result) {
                     jsonResult = QString::fromUtf8(result);
