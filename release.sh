@@ -1,119 +1,68 @@
 #!/bin/bash
 # DiskRaptor Release Upload Script
-# Uses curl + GitHub API directly (no gh CLI needed).
+# Uses SSH + git push for tags (no tokens, no gh CLI).
 # Run AFTER build.sh completes successfully.
 set -euo pipefail
 
 VERSION="0.0.1"
 TAG="v$VERSION"
-OS="$(uname -s)"
-GH_REPO="SunMe1977/DiskRaptor"
 
 echo "=========================================="
-echo "  DiskRaptor Release Upload v$VERSION"
+echo "  DiskRaptor Release v$VERSION"
 echo "=========================================="
 echo ""
 
-# Check curl
-if ! command -v curl &>/dev/null; then
-  echo "ERROR: curl not found. Install with: sudo apt install curl"
-  exit 1
+# ── Check git remote ─────────────────────────
+REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+if echo "$REMOTE" | grep -q "^https://"; then
+  echo "  Remote uses HTTPS. Switch to SSH for token-free push:"
+  echo "    git remote set-url origin git@github.com:$(echo "$REMOTE" | sed 's|https://github.com/||')"
+  echo ""
+  echo "  Or set GITHUB_TOKEN for API uploads."
+  echo "  Continuing with tag push only..."
 fi
 
-# Get GitHub token
-GITHUB_TOKEN="${GITHUB_TOKEN:-}"
-if [ -z "$GITHUB_TOKEN" ]; then
-  echo "ERROR: GITHUB_TOKEN not set."
-  echo "  Set it with: export GITHUB_TOKEN=ghp_xxx"
-  echo "  Create a token at: https://github.com/settings/tokens"
-  exit 1
-fi
-
-GH_API="https://api.github.com/repos/$GH_REPO"
-GH_UPLOAD="https://uploads.github.com/repos/$GH_REPO"
-
-echo "  Repository: $GH_REPO"
+# ── Tag and push ─────────────────────────────
 echo "  Tag: $TAG"
-echo ""
+echo "  Creating tag..."
+git tag -f "$TAG" 2>/dev/null
 
-# Check if release exists, create if not
-RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$GH_API/releases/tags/$TAG" | grep -o '"id": [0-9]*' | head -1 | cut -d' ' -f2)
-
-if [ -z "$RELEASE_ID" ]; then
-  echo "  Creating release $TAG..."
-  RESP=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"tag_name\":\"$TAG\",\"name\":\"DiskRaptor v$VERSION\",\"body\":\"DiskRaptor v$VERSION\"}" \
-    "$GH_API/releases")
-  RELEASE_ID=$(echo "$RESP" | grep -o '"id": [0-9]*' | head -1 | cut -d' ' -f2)
-  echo "  Release ID: $RELEASE_ID"
+echo "  Pushing tag via SSH..."
+if git push origin "$TAG" 2>&1; then
+  echo "  ✓ Tag pushed: https://github.com/SunMe1977/DiskRaptor/releases/tag/$TAG"
+  echo ""
+  echo "  Release created from tag. Add assets manually at:"
+  echo "    https://github.com/SunMe1977/DiskRaptor/releases/new"
 else
-  echo "  Release exists (ID: $RELEASE_ID)"
+  echo "  ✗ Tag push failed. Make sure SSH key is set up:"
+  echo "    ssh -T git@github.com"
+  exit 1
 fi
 
-# Detect files to upload
-FILES=""
-case "$OS" in
+echo ""
+echo "=========================================="
+echo "  RELEASE TAG PUSHED"
+echo "=========================================="
+echo ""
+echo "  Next steps:"
+echo "  1. Go to: https://github.com/SunMe1977/DiskRaptor/releases/new"
+echo "  2. Select tag: $TAG"
+echo "  3. Upload these artifacts:"
+echo ""
+
+case "$(uname -s)" in
   Darwin*)
-    echo "  Platform: macOS"
-    FILES="dist/DiskRaptor-$VERSION-macos.dmg dist/DiskRaptor-$VERSION-macos.zip"
+    echo "     - dist/DiskRaptor-$VERSION-macos.dmg"
+    echo "     - dist/DiskRaptor-$VERSION-macos.zip"
     ;;
   Linux*)
-    echo "  Platform: Linux"
-    FILES="dist/DiskRaptor-$VERSION-linux-x64.zip dist/DiskRaptor-$VERSION-amd64.deb"
+    echo "     - dist/DiskRaptor-$VERSION-amd64.deb"
+    echo "     - dist/DiskRaptor-$VERSION-linux-x64.zip"
     ;;
   CYGWIN*|MINGW*|MSYS*)
-    echo "  Platform: Windows"
-    FILES="dist/DiskRaptor-$VERSION-win64.zip"
-    for f in dist/DiskRaptor_*_Setup.exe; do
-      [ -f "$f" ] && FILES="$FILES $f"
-    done
-    ;;
-  *)
-    echo "Unknown OS: $OS"
-    exit 1
+    echo "     - dist/DiskRaptor-$VERSION-win64.zip"
+    echo "     - dist/DiskRaptor_*_Setup.exe"
     ;;
 esac
-
-# Upload each file
 echo ""
-echo "  Uploading artifacts..."
-for FILE in $FILES; do
-  if [ ! -f "$FILE" ]; then
-    echo "    SKIP (not found): $FILE"
-    continue
-  fi
-
-  FILENAME=$(basename "$FILE")
-  FILESIZE=$(stat -c%s "$FILE" 2>/dev/null || stat -f%z "$FILE" 2>/dev/null || echo "0")
-
-  echo "    Uploading: $FILENAME ($(du -h "$FILE" | cut -f1))"
-
-  # Check if asset already exists
-  EXISTING_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-    "$GH_API/releases/$RELEASE_ID/assets" | \
-    grep -o "\"name\":\"$FILENAME\",\"id\":[0-9]*" | \
-    grep -o '"id":[0-9]*' | cut -d: -f2 | head -1)
-
-  # Delete existing asset if present
-  if [ -n "$EXISTING_ID" ]; then
-    echo "      Removing existing asset..."
-    curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
-      "$GH_API/releases/assets/$EXISTING_ID" > /dev/null
-  fi
-
-  # Upload
-  curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
-    -H "Content-Type: application/octet-stream" \
-    "$GH_UPLOAD/releases/$RELEASE_ID/assets?name=$FILENAME" \
-    --data-binary @"$FILE" > /dev/null
-
-  echo "      Done"
-done
-
-echo ""
-echo "=========================================="
-echo "  UPLOAD COMPLETE"
-echo "=========================================="
-echo ""
-echo "  View: https://github.com/$GH_REPO/releases/tag/$TAG"
+echo "  4. Publish release"
