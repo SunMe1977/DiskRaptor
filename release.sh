@@ -1,6 +1,7 @@
 #!/bin/bash
 # DiskRaptor Release Upload Script
-# Uses SSH + git push for tags (no tokens, no gh CLI).
+# Creates/updates a GitHub release and uploads build artifacts.
+# Uses gh CLI for auth (run 'gh auth login' once).
 # Run AFTER build.sh completes successfully.
 set -euo pipefail
 
@@ -13,73 +14,75 @@ echo "  DiskRaptor Release v$VERSION"
 echo "=========================================="
 echo ""
 
-# ── Switch remote to SSH ────────────────────
-REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
-if echo "$REMOTE" | grep -q "^https://github.com/"; then
-  SSH_URL="git@github.com:$(echo "$REMOTE" | sed 's|https://github.com/||')"
-  echo "  Switching remote from HTTPS to SSH..."
-  git remote set-url origin "$SSH_URL"
-  echo "  New remote: $SSH_URL"
-elif echo "$REMOTE" | grep -q "^git@github.com:"; then
-  echo "  Remote already uses SSH: $REMOTE"
-else
-  echo "  WARNING: Unknown remote URL: $REMOTE"
+# ── Check gh CLI ─────────────────────────────
+if ! command -v gh &>/dev/null; then
+  echo "ERROR: GitHub CLI not found."
+  echo "  Install:"
+  echo "    macOS: brew install gh"
+  echo "    Linux: sudo apt install gh  (or: sudo dnf install gh)"
+  echo "    Windows: winget install GitHub.cli"
+  echo ""
+  echo "  Then authenticate: gh auth login"
+  exit 1
 fi
 
-# ── Tag and push ─────────────────────────────
+if ! gh auth status 2>&1 | grep -q "active"; then
+  echo "ERROR: Not authenticated with GitHub."
+  echo "  Run: gh auth login"
+  echo "  Select: 'GitHub.com' → 'SSH' → 'Use your SSH key'"
+  exit 1
+fi
+echo "  ✓ gh CLI authenticated"
+
+# ── Detect platform assets ────────────────────
+case "$(uname -s)" in
+  Darwin*)
+    ASSETS="dist/DiskRaptor-$VERSION-macos.dmg dist/DiskRaptor-$VERSION-macos.zip"
+    ;;
+  Linux*)
+    ASSETS="dist/DiskRaptor-$VERSION-amd64.deb dist/DiskRaptor-$VERSION-linux-x64.zip"
+    ;;
+  CYGWIN*|MINGW*|MSYS*)
+    ASSETS="dist/DiskRaptor-$VERSION-win64.zip"
+    for f in dist/DiskRaptor_*_Setup.exe; do [ -f "$f" ] && ASSETS="$ASSETS $f"; done
+    ;;
+  *)
+    echo "Unknown OS: $(uname -s)"
+    exit 1
+    ;;
+esac
+
+# ── Delete old release + tag ──────────────────
 echo ""
-echo "  Tag: $TAG"
-
-# Delete old GitHub release if possible (needs gh CLI or token)
-if command -v gh &>/dev/null; then
-  echo "  Deleting old GitHub release (if exists)..."
-  gh release delete "$TAG" --yes 2>/dev/null || true
-elif [ -n "${GITHUB_TOKEN:-}" ]; then
-  echo "  Deleting old GitHub release via API..."
-  RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$GH_REPO/releases/tags/$TAG" | grep -o '"id": [0-9]*' | head -1 | cut -d' ' -f2 2>/dev/null || true)
-  [ -n "$RELEASE_ID" ] && curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$GH_REPO/releases/$RELEASE_ID" > /dev/null 2>&1 || true
-fi
-
-echo "  Deleting old remote tag (if exists)..."
+echo "  Cleaning up old release/tag..."
+gh release delete "$TAG" --yes 2>/dev/null || true
 git push origin --delete "$TAG" 2>/dev/null || true
 git tag -f "$TAG" 2>/dev/null
 
-echo "  Pushing tag via SSH..."
-if git push origin "$TAG" 2>&1; then
-  echo "  ✓ Tag pushed: https://github.com/$GH_REPO/releases/tag/$TAG"
-else
-  echo "  ✗ Push failed. Retrying with force delete..."
-  git push origin --delete "$TAG" 2>/dev/null || true
-  sleep 1
-  if git push origin "$TAG" 2>&1; then
-    echo "  ✓ Tag pushed after force delete"
-  else
-    echo "  ✗ Still failing. Check SSH access:"
-    echo "    ssh -T git@github.com"
-    exit 1
-  fi
+# ── Create release ────────────────────────────
+echo "  Creating release $TAG..."
+if ! gh release create "$TAG" --title "DiskRaptor v$VERSION" --notes "Release v$VERSION" 2>&1; then
+  echo "  ERROR: Could not create release"
+  exit 1
 fi
+echo "  ✓ Release created"
+
+# ── Upload assets ─────────────────────────────
+echo ""
+echo "  Uploading artifacts..."
+for FILE in $ASSETS; do
+  if [ ! -f "$FILE" ]; then
+    echo "    SKIP (not found): $FILE"
+    continue
+  fi
+  echo "    Uploading: $FILE ($(du -h "$FILE" | cut -f1))..."
+  gh release upload "$TAG" "$FILE" --clobber
+  echo "      Done"
+done
 
 echo ""
 echo "=========================================="
-echo "  RELEASE TAG PUSHED"
+echo "  RELEASE COMPLETE"
 echo "=========================================="
 echo ""
 echo "  View: https://github.com/$GH_REPO/releases/tag/$TAG"
-echo ""
-echo "  Artifacts to upload (optional, via web UI):"
-
-case "$(uname -s)" in
-  Darwin*)
-    echo "    - dist/DiskRaptor-$VERSION-macos.dmg"
-    echo "    - dist/DiskRaptor-$VERSION-macos.zip"
-    ;;
-  Linux*)
-    echo "    - dist/DiskRaptor-$VERSION-amd64.deb"
-    echo "    - dist/DiskRaptor-$VERSION-linux-x64.zip"
-    ;;
-  CYGWIN*|MINGW*|MSYS*)
-    echo "    - dist/DiskRaptor-$VERSION-win64.zip"
-    echo "    - dist/DiskRaptor_*_Setup.exe"
-    ;;
-esac
