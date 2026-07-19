@@ -1,8 +1,10 @@
-![alt text](path/to/image.png)
-
 # 🦖 DiskRaptor
 
-**Ultra-fast directory scanner** — A modern, high-performance successor to JDiskReport, built with **Rust + Tauri**.
+**Ultra-fast directory scanner** — A modern, high-performance successor to JDiskReport, built with **Rust + Qt 6 + QtWebEngine**.
+
+<p align="center">
+  <img src="images/demo.gif" alt="DiskRaptor Demo" width="100%" max-width="800px">
+</p>
 
 DiskRaptor scans directories using a **parallel Win32 traversal engine** (Windows) or **walkdir** (macOS/Linux) and renders results in a **virtual tree view** capable of handling **20+ million files** without UI lag.
 
@@ -34,36 +36,6 @@ DiskRaptor scans directories using a **parallel Win32 traversal engine** (Window
 - **Top 50 files** — Largest files with file-type badges (ISO, VHDX, ZIP, EXE, PDF…)
 - **JSON export** — Full scan results as JSON
 - **Chunk streaming** — 10k-node chunks for instant UI responsiveness
-
----
-
-## 🖼️ UI Overview
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  🦖 DiskRaptor  [📁 Browse] [🔍 Scan] [✖ Cancel] [☾]    │
-├──────────────────────────────┬───────────────────────────────┤
-│  ┌─ Top 50 Files ─────────┐  │  ┌─ Scan Summary ──────────┐  │
-│  │  [Pie] [Treemap]       │  │  │ Files         1,196,643 │  │
-│  │   🍰 Diagram           │  │  │ Directories     153,199 │  │
-│  ├─ (resizable splitter) ─┤  │  │ Total Size    538.64 GB│  │
-│  │  ┌─ Directory Tree ───┐│  │  │ Scan Time        20.06s│  │
-│  │  │ 📁 C:\              ││  │  ├─ Selection ───────────┤  │
-│  │  │  📁 Users           ││  │  │ 📄 Name  (selected)   │  │
-│  │  │   📁 hansj          ││  │  │ 💾 Size  1.2 GB       │  │
-│  │  │    📄 file.txt       ││  │  │ 📂 Files 5,432       │  │
-│  │  │    📁 AppData        ││  │  │ 🏷️ Type Directory    │  │
-│  │  │    ...               ││  │  │ [📂][💻][⚙️][📋][🗑️] │  │
-│  │  └─────────────────────┘│  │  ├─ (resizable) ────────┤  │
-│  └─────────────────────────┘  │  │ ┌─ Top 50 Files ────┐ │  │
-│                                │  │ │ #  Path       Size│ │  │
-│                                │  │ │ 1  big.iso 4.2 GB│ │  │
-│                                │  │ │ 2  data.zip 2.1GB│ │  │
-│                                │  │ │ 3  doc.pdf  1.9MB│ │  │
-│                                │  │ └──────────────────┘ │  │
-│                                └─────────────────────────┘  │
-└──────────────────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -109,30 +81,35 @@ DiskRaptor scans directories using a **parallel Win32 traversal engine** (Window
 ### Prerequisites
 
 - Rust ≥ 1.70
-- Node.js ≥ 18
-- Tauri v1 toolchain
+- Qt 6.10+ (WebEngine, WebChannel, Widgets)
+- CMake ≥ 3.20 + Ninja
+- Visual Studio 2022 Build Tools (Windows) or Xcode (macOS)
 
-### Quick Start (Development)
+### Quick Start (Windows)
 
 ```bash
 git clone https://github.com/SunMe1977/DiskRaptor.git
 cd DiskRaptor
-npm install
-npm run tauri dev
+build.cmd
+# Binary: dist/DiskRaptor.exe
 ```
 
-### Build Release
+### Quick Start (macOS/Linux)
 
 ```bash
-cd src-tauri && cargo build --release
-# Binary: src-tauri/target/release/diskraptor.exe
+git clone https://github.com/SunMe1977/DiskRaptor.git
+cd DiskRaptor
+chmod +x build.sh
+./build.sh
+# Binary: dist/DiskRaptor  (Linux) or dist/DiskRaptor.app (macOS)
 ```
 
-### MSI Installer (Windows)
+### NSIS Installer (Windows)
 
 ```bash
-cd src-tauri && npx tauri build --bundles msi --ci
-# MSI: target/release/bundle/msi/DiskRaptor_0.1.0_x64_en-US.msi
+# Install NSIS from https://nsis.sourceforge.io
+build.cmd  # builds EXE + runs makensis automatically
+# Installer: installer/nsis/DiskRaptor_*_Setup.exe
 ```
 
 ---
