@@ -134,22 +134,41 @@ case "$PLATFORM" in
     # Icon — generate .icns from PNG if missing
     if [ ! -f "images/icon.icns" ] && [ -f "images/logo6_original.png" ]; then
       echo "  Generating icon.icns from logo6_original.png..."
-      mkdir -p icon_tmp
-      # Create iconset
-      for s in 16 32 64 128 256 512; do
-        convert "images/logo6_original.png" -resize ${s}x${s} "icon_tmp/icon_${s}x${s}.png" 2>/dev/null || \
-        ffmpeg -y -i "images/logo6_original.png" -vf "scale=${s}:${s}" "icon_tmp/icon_${s}x${s}.png" 2>/dev/null || true
-      done
-      # Create iconset directory for iconutil
       mkdir -p icon_tmp/diskraptor.iconset
-      for s in 16 32 128 256 512; do
-        if [ -f "icon_tmp/icon_${s}x${s}.png" ]; then
-          cp "icon_tmp/icon_${s}x${s}.png" "icon_tmp/diskraptor.iconset/icon_${s}x${s}.png"
-          cp "icon_tmp/icon_${s}x${s}.png" "icon_tmp/diskraptor.iconset/icon_${s}x${s}x2.png" 2>/dev/null || true
+      SRC="images/logo6_original.png"
+      # Generate all required sizes for a complete iconset
+      # macOS requires: 16, 32, 128, 256, 512 + @2x variants (32, 64, 256, 512, 1024)
+      for s in 16 32 128 256 512 1024; do
+        if command -v convert &>/dev/null; then
+          convert "$SRC" -resize ${s}x${s} "icon_tmp/diskraptor.iconset/icon_${s}x${s}.png" 2>/dev/null || true
+        elif command -v ffmpeg &>/dev/null; then
+          ffmpeg -y -i "$SRC" -vf "scale=${s}:${s}" "icon_tmp/diskraptor.iconset/icon_${s}x${s}.png" 2>/dev/null || true
+        elif command -v sips &>/dev/null; then
+          sips -z $s $s "$SRC" --out "icon_tmp/diskraptor.iconset/icon_${s}x${s}.png" 2>/dev/null || true
         fi
       done
+      # Create @2x variants (retina) from the larger sizes
+      # 16x16@2x = 32, 32x32@2x = 64, 128x128@2x = 256, 256x256@2x = 512, 512x512@2x = 1024
+      for pair in "16 32" "32 64" "128 256" "256 512" "512 1024"; do
+        read -r base retina <<< "$pair"
+        src="icon_tmp/diskraptor.iconset/icon_${retina}x${retina}.png"
+        dst="icon_tmp/diskraptor.iconset/icon_${base}x${base}@2x.png"
+        [ -f "$src" ] && cp "$src" "$dst" 2>/dev/null || true
+      done
+      # Fallback: create missing @2x from base size
+      for base in 16 32 128 256 512; do
+        dst="icon_tmp/diskraptor.iconset/icon_${base}x${base}@2x.png"
+        if [ ! -f "$dst" ]; then
+          src="icon_tmp/diskraptor.iconset/icon_${base}x${base}.png"
+          [ -f "$src" ] && cp "$src" "$dst" 2>/dev/null || true
+        fi
+      done
+      # Build .icns
       if command -v iconutil &>/dev/null; then
         iconutil -c icns icon_tmp/diskraptor.iconset -o images/icon.icns 2>/dev/null || true
+        if [ -f "images/icon.icns" ]; then
+          echo "  icon.icns created ($(du -h images/icon.icns | cut -f1))"
+        fi
       fi
       rm -rf icon_tmp
     fi
