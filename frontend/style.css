@@ -651,7 +651,7 @@ button.icon-btn {
     background: var(--bg-secondary);
     padding: var(--space-md);
     gap: var(--space-md);
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .card {
@@ -776,6 +776,7 @@ button.icon-btn {
 #topfiles-container {
     flex: 1;
     overflow-y: auto;
+    min-height: 0;
     margin: 0 calc(-1 * var(--space-lg)) calc(-1 * var(--space-md));
 }
 #topfiles-table {
