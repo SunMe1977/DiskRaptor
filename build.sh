@@ -188,9 +188,7 @@ EOF
     echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
 
     # Create ZIP
-    cd dist
-    zip -r "DiskRaptor-$VERSION-macos.zip" DiskRaptor.app 2>/dev/null || true
-    cd ..
+    zip -r "dist/DiskRaptor-$VERSION-macos.zip" "dist/DiskRaptor.app" 2>/dev/null || true
     echo "  ZIP: dist/DiskRaptor-$VERSION-macos.zip"
     echo ""
     echo "  Run: open dist/DiskRaptor.app"
@@ -237,10 +235,8 @@ exec ./DiskRaptor "$@"
 SCRIPT
     chmod +x dist/DiskRaptor.sh
 
-    # Create ZIP
-    cd dist
-    zip -r "../dist/DiskRaptor-$VERSION-linux-x64.zip" . 2>/dev/null || true
-    cd ..
+    # Create ZIP (exclude installer packages to avoid recursion)
+    zip -r "dist/DiskRaptor-$VERSION-linux-x64.zip" "dist/" -x "dist/DiskRaptor-*.zip" "dist/DiskRaptor-*.deb" 2>/dev/null || true
 
     # Create DEB package
     echo "  Creating DEB package..."
