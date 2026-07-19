@@ -14,6 +14,9 @@ echo "=========================================="
 echo "  DiskRaptor Release Upload v$VERSION"
 echo "=========================================="
 echo ""
+echo "  Note: Large files (DMG, ZIP, DEB) may take several minutes to upload."
+echo "  A 10-minute timeout is set per file."
+echo ""
 
 # ── Find gh CLI ──────────────────────────────
 GH=""
@@ -72,8 +75,20 @@ for FILE in $ASSETS; do
   fi
   COUNT=$((COUNT+1))
   NAME=$(basename "$FILE")
-  echo "    Uploading: $NAME ($(du -h "$FILE" | cut -f1))..."
-  "$GH" release upload "$TAG" "$FILE" --clobber 2>&1 && echo "      ✓ Done" || echo "      ⚠ Upload failed"
+  SIZE=$(du -h "$FILE" | cut -f1)
+  echo "    Uploading: $NAME ($SIZE)..."
+  echo "    (this may take a while for large files)"
+  if timeout 600 "$GH" release upload "$TAG" "$FILE" --clobber 2>&1; then
+    echo "      ✓ Done"
+  else
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 124 ]; then
+      echo "      ⚠ Timed out after 10 minutes. The file may be too large."
+      echo "      Upload manually: gh release upload $TAG $FILE --clobber"
+    else
+      echo "      ⚠ Upload failed (exit code: $EXIT_CODE)"
+    fi
+  fi
 done
 
 if [ "$COUNT" -eq 0 ]; then
