@@ -58,13 +58,8 @@ esac
 
 # ── Ensure release exists ─────────────────────
 echo ""
-echo "  Checking release $TAG..."
-if "$GH" release view "$TAG" &>/dev/null; then
-  echo "  Release exists, will add assets"
-else
-  echo "  Creating release..."
-  "$GH" release create "$TAG" --title "DiskRaptor v$VERSION" --notes "Release v$VERSION"
-fi
+echo "  Ensuring release $TAG exists..."
+"$GH" release create "$TAG" --title "DiskRaptor v$VERSION" --notes "" 2>/dev/null || true
 
 # ── Upload assets ─────────────────────────────
 echo ""
@@ -78,11 +73,7 @@ for FILE in $ASSETS; do
   COUNT=$((COUNT+1))
   NAME=$(basename "$FILE")
   echo "    Uploading: $NAME ($(du -h "$FILE" | cut -f1))..."
-  if "$GH" release upload "$TAG" "$FILE" --clobber 2>&1; then
-    echo "      ✓ Done"
-  else
-    echo "      ⚠ Upload failed"
-  fi
+  "$GH" release upload "$TAG" "$FILE" --clobber 2>&1 && echo "      ✓ Done" || echo "      ⚠ Upload failed"
 done
 
 if [ "$COUNT" -eq 0 ]; then
