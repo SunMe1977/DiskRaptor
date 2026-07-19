@@ -42,6 +42,7 @@ public:
     Q_INVOKABLE QString restartAsAdmin();
     Q_INVOKABLE QString saveSettings(const QVariantMap &settings);
     Q_INVOKABLE QString loadSettings();
+    Q_INVOKABLE QString getMemoryInfo();
 
 signals:
     void eventEmitted(const QString &event, const QVariant &payload);

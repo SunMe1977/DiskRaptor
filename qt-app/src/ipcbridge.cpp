@@ -23,9 +23,20 @@
 #include <QAtomicInteger>
 #include <atomic>
 
+#ifdef Q_OS_LINUX
+#include <QFile>
+#include <QTextStream>
+#endif
+
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <shellapi.h>
+#endif
+
+#ifdef Q_OS_MACOS
+#include <sys/sysctl.h>
+#include <mach/mach.h>
+#include <mach/vm_statistics.h>
 #endif
 
 IpcBridge::IpcBridge(QObject *parent)
@@ -60,6 +71,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "restart_as_admin") return restartAsAdmin();
     if (command == "save_settings") return saveSettings(args);
     if (command == "load_settings") return loadSettings();
+    if (command == "get_memory_info") return getMemoryInfo();
 
     if (command == "get_chunk") {
         uint32_t chunkIndex = static_cast<uint32_t>(args.value("chunkIndex", 0).toUInt());
@@ -217,6 +229,73 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
 QString IpcBridge::getHomeDir()
 {
     return resultToJson(true, QDir::homePath());
+}
+
+QString IpcBridge::getMemoryInfo()
+{
+#ifdef Q_OS_WIN
+    MEMORYSTATUSEX mem;
+    mem.dwLength = sizeof(mem);
+    if (GlobalMemoryStatusEx(&mem)) {
+        quint64 total = static_cast<quint64>(mem.ullTotalPhys);
+        quint64 avail = static_cast<quint64>(mem.ullAvailPhys);
+        quint64 used = total - avail;
+        return resultToJson(true, QVariantMap{
+            {"total_bytes", static_cast<qint64>(total)},
+            {"used_bytes", static_cast<qint64>(used)},
+            {"avail_bytes", static_cast<qint64>(avail)},
+            {"percent_used", static_cast<double>(used) / total * 100.0},
+        });
+    }
+#elif defined(Q_OS_MACOS)
+    // macOS: use sysctl
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+    quint64 total = 0;
+    size_t len = sizeof(total);
+    if (sysctl(mib, 2, &total, &len, nullptr, 0) == 0) {
+        // Get used memory via vm_statistics
+        vm_statistics64_data_t vm_stat;
+        mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+        mach_port_t host = mach_host_self();
+        if (host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vm_stat, &count) == KERN_SUCCESS) {
+            quint64 pageSize = static_cast<quint64>(vm_page_size);
+            quint64 freeMem = static_cast<quint64>(vm_stat.free_count + vm_stat.inactive_count) * pageSize;
+            quint64 used = total - freeMem;
+            return resultToJson(true, QVariantMap{
+                {"total_bytes", static_cast<qint64>(total)},
+                {"used_bytes", static_cast<qint64>(used)},
+                {"avail_bytes", static_cast<qint64>(freeMem)},
+                {"percent_used", static_cast<double>(used) / total * 100.0},
+            });
+        }
+    }
+#else
+    // Linux: read /proc/meminfo
+    QFile f("/proc/meminfo");
+    if (f.open(QIODevice::ReadOnly)) {
+        QTextStream in(&f);
+        quint64 total = 0, avail = 0;
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("MemTotal:"))
+                total = line.section(' ', -2, -2).toULongLong() * 1024;
+            else if (line.startsWith("MemAvailable:"))
+                avail = line.section(' ', -2, -2).toULongLong() * 1024;
+        }
+        if (total > 0) {
+            quint64 used = total - avail;
+            return resultToJson(true, QVariantMap{
+                {"total_bytes", static_cast<qint64>(total)},
+                {"used_bytes", static_cast<qint64>(used)},
+                {"avail_bytes", static_cast<qint64>(avail)},
+                {"percent_used", static_cast<double>(used) / total * 100.0},
+            });
+        }
+    }
+#endif
+    return resultToJson(true, QVariantMap{
+        {"total_bytes", 0}, {"used_bytes", 0}, {"avail_bytes", 0}, {"percent_used", 0},
+    });
 }
 
 QString IpcBridge::pickDirectory()

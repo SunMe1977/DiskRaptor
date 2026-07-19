@@ -904,6 +904,31 @@ clearTimeout(safetyTimer);
       if (e.key === "Enter") btnScan.click();
     });
 
+    // ── RAM status bar ──────────────────────────────────────
+    var ramFill = document.getElementById("ram-bar-fill");
+    var ramText = document.getElementById("ram-text");
+    function formatBytes(v) {
+      var u = ["B","KB","MB","GB","TB"];
+      var i = 0;
+      while (v >= 1024 && i < u.length-1) { v /= 1024; i++; }
+      return (i === 0 ? v : v.toFixed(1)) + " " + u[i];
+    }
+    async function updateRam() {
+      try {
+        var m = await window.__TAURI__.invoke("get_memory_info");
+        if (m && m.percent_used !== undefined) {
+          var pct = Math.round(m.percent_used);
+          var used = formatBytes(m.used_bytes);
+          var total = formatBytes(m.total_bytes);
+          ramFill.style.width = pct + "%";
+          ramFill.className = "ram-bar-fill" + (pct > 85 ? " critical" : pct > 70 ? " warning" : "");
+          ramText.textContent = "RAM  " + used + " / " + total + "  (" + pct + "%)";
+        }
+      } catch(e) {}
+    }
+    updateRam();
+    setInterval(updateRam, 3000);
+
     console.log("DiskRaptor ready.");
   }
 
