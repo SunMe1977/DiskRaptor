@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/logo6_transparent.webp" alt="DiskRaptor Logo" width="400px">
+</p>
+
 # 🦖 DiskRaptor
 
 **Ultra-fast directory scanner** — A modern, high-performance successor to JDiskReport, built with **Rust + Qt 6 + QtWebEngine**.
