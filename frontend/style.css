@@ -23,12 +23,28 @@
     --border: #30363d;
     --border-light: #21262d;
 
-    /* ── Shadows ─────────────────────────────────────────── */
+    /* ── Shadows — layered for depth ─────────────────────── */
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.35);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-sm:
+      0 1px 3px rgba(0,0,0,0.35),
+      0 1px 2px rgba(0,0,0,0.25);
+    --shadow-md:
+      0 4px 8px rgba(0,0,0,0.35),
+      0 2px 4px rgba(0,0,0,0.25),
+      0 1px 2px rgba(0,0,0,0.15);
+    --shadow-lg:
+      0 8px 24px rgba(0,0,0,0.4),
+      0 4px 12px rgba(0,0,0,0.3),
+      0 2px 4px rgba(0,0,0,0.2);
+    --shadow-xl:
+      0 16px 48px rgba(0,0,0,0.5),
+      0 8px 24px rgba(0,0,0,0.4),
+      0 4px 8px rgba(0,0,0,0.25);
     --shadow-glow: 0 0 12px rgba(88, 166, 255, 0.25);
+
+    /* ── Glass effect — shared backdrop-filter ───────────── */
+    --glass-bg: rgba(22, 27, 34, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.06);
 
     /* ── Radius ──────────────────────────────────────────── */
     --radius-sm: 4px;
@@ -90,6 +106,26 @@ body {
     flex-direction: column;
 }
 
+/* Subtle ambient glow */
+body::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 20%, rgba(56,139,253,0.03) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 80%, rgba(56,139,253,0.02) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Ensure main content sits above the glow */
+#toolbar, #main-layout {
+    position: relative;
+    z-index: 1;
+}
+
 /* ── Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar {
     width: 6px;
@@ -118,9 +154,12 @@ body {
     gap: var(--space-sm);
     height: var(--toolbar-height);
     padding: 0 var(--space-md);
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--glass-border);
     user-select: none;
+    z-index: 10;
 }
 .logo {
     font-size: 18px;
@@ -206,17 +245,31 @@ button:disabled {
     cursor: not-allowed;
     filter: grayscale(0.5);
 }
+@keyframes primary-shimmer {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
 button.primary {
-    background: linear-gradient(135deg, #1f6feb, #388bfd);
+    background: linear-gradient(135deg, #1f6feb, #388bfd, #58a6ff, #1f6feb);
+    background-size: 300% 300%;
+    animation: primary-shimmer 25s ease infinite;
     border-color: #1f6feb;
     color: #fff;
     font-weight: 600;
-    box-shadow: 0 2px 8px rgba(31, 111, 235, 0.3);
+    box-shadow:
+      0 2px 8px rgba(31, 111, 235, 0.3),
+      0 1px 2px rgba(31, 111, 235, 0.15);
 }
+
 button.primary:hover:not(:disabled) {
     background: linear-gradient(135deg, #388bfd, #58a6ff);
+    background-size: 200% 200%;
     border-color: #388bfd;
-    box-shadow: 0 4px 12px rgba(31, 111, 235, 0.4);
+    box-shadow:
+      0 4px 16px rgba(31, 111, 235, 0.4),
+      0 2px 4px rgba(31, 111, 235, 0.2);
     transform: translateY(-1px);
 }
 button.icon-btn {
@@ -661,7 +714,13 @@ button.icon-btn {
     padding: 12px 16px;
     flex-shrink: 0;
     box-shadow: var(--shadow-sm);
-    transition: box-shadow var(--transition);
+    transition: box-shadow var(--transition), border-color var(--transition);
+}
+
+/* Elevated card variant for selected/hover state */
+.card.elevated, .card:hover {
+    border-color: rgba(255,255,255,0.08);
+    box-shadow: var(--shadow-md);
 }
 .card:hover {
     box-shadow: var(--shadow-md);
@@ -1129,8 +1188,10 @@ button.icon-btn {
     text-align: center;
     min-width: 520px;
     max-width: 580px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
+    background: rgba(22, 27, 34, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.06);
     box-shadow:
         0 0 0 1px rgba(255, 255, 255, 0.08),
         0 20px 60px rgba(0, 0, 0, 0.6);
@@ -1752,6 +1813,102 @@ body.light-theme #about-overlay {
   background: var(--accent-red);
   border-color: var(--accent-red);
   color: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PREMIUM ENHANCEMENTS — subtle depth & polish
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Skeleton shimmer loading ────────────────────────── */
+@keyframes skeleton-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 50%, var(--bg-tertiary) 75%);
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+/* ── Scan pulse icon ────────────────────────────────── */
+@keyframes scan-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+.scanning-icon {
+  animation: scan-pulse 2s ease-in-out infinite;
+}
+
+/* ── Success checkmark animation ────────────────────── */
+@keyframes checkmark-draw {
+  to { stroke-dashoffset: 0; }
+}
+.checkmark-path {
+  stroke-dasharray: 50;
+  stroke-dashoffset: 50;
+  animation: checkmark-draw 0.4s ease-out forwards;
+}
+
+/* ── Refresh icon rotation ──────────────────────────── */
+@keyframes icon-spin {
+  to { transform: rotate(360deg); }
+}
+.icon-spin {
+  animation: icon-spin 0.6s ease-out;
+}
+
+/* ── Folder open transition ─────────────────────────── */
+.folder-toggle {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.folder-toggle.open {
+  transform: rotate(90deg);
+}
+
+
+
+/* ── About card glass effect ────────────────────────── */
+.about-card {
+  background: rgba(22, 27, 34, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: var(--shadow-xl);
+}
+
+/* ── Tree row border highlight on hover ─────────────── */
+.tree-row {
+  border-left: 1px solid transparent;
+  transition: border-color 0.2s ease, background 0.15s ease;
+}
+.tree-row:hover {
+  border-left-color: rgba(255,255,255,0.06);
+}
+.tree-row.selected {
+  border-left-color: rgba(80,140,255,0.35);
+}
+
+/* ── Primary button icon bounce ─────────────────────── */
+#btn-scan:not(:disabled) .btn-icon {
+  display: inline-block;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#btn-scan:not(:disabled):hover .btn-icon {
+  transform: scale(1.15);
+}
+
+/* ── Timeline / progress ring placeholder ───────────── */
+.progress-ring {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 3px solid var(--bg-tertiary);
+  border-top-color: var(--accent);
+  animation: ring-spin 1s linear infinite;
+}
+@keyframes ring-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ═══════════════════════════════════════════════════════════════
