@@ -227,7 +227,7 @@ class DiagramRenderer {
   setMode(mode) {
     if (mode !== "pie" && mode !== "treemap") return;
     this.mode = mode;
-    this._fitToView();
+    this._resize();
   }
 
   setData(data) {
@@ -240,7 +240,7 @@ class DiagramRenderer {
       index: i,
     }));
     this.files.sort((a, b) => b.size - a.size);
-    this._fitToView();
+    this._resize();
   }
 
   _draw() {
