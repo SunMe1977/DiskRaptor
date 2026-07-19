@@ -3,7 +3,7 @@
 **Ultra-fast directory scanner** — A modern, high-performance successor to JDiskReport, built with **Rust + Qt 6 + QtWebEngine**.
 
 <p align="center">
-  <img src="demo.gif" alt="DiskRaptor Demo" width="100%" max-width="800px">
+  <img src="images/demo.gif" alt="DiskRaptor Demo" width="100%" max-width="800px">
 </p>
 
 DiskRaptor scans directories using a **parallel Win32 traversal engine** (Windows) or **walkdir** (macOS/Linux) and renders results in a **virtual tree view** capable of handling **20+ million files** without UI lag.
