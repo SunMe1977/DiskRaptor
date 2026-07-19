@@ -165,12 +165,12 @@ class DiagramRenderer {
   // ── Pie Chart ──────────────────────────────────────────────
   _drawPie(w, h) {
     const ctx = this.ctx;
-    const margin = 10;
-    const legendW = Math.min(160, w * 0.3);
+    const margin = 6;
+    const legendW = Math.min(120, w * 0.18);
     const pieArea = w - legendW - margin * 3;
     const cx = margin + pieArea / 2;
     const cy = h / 2;
-    const radius = Math.min(pieArea / 2, cy) - 8;
+    const radius = Math.min(pieArea / 2, cy) - 4;
     const totalSize = this.files.reduce((s, f) => s + f.size, 1);
     const colors = this._colors();
 
