@@ -393,6 +393,7 @@ button.icon-btn {
     background: #2ea043;
     border-radius: 4px;
     transition: width var(--transition);
+    box-shadow: 0 0 4px rgba(63,185,80,0.3), 0 0 8px rgba(63,185,80,0.15);
 }
 
 /* File count column */
