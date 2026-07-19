@@ -198,7 +198,12 @@ EOF
     echo "  Bundling..."
     mkdir -p dist/lib
 
-    # Binary
+    # Binary (check it exists)
+    if [ ! -f qt-app/build/DiskRaptor ]; then
+      echo "  ERROR: Binary not found at qt-app/build/DiskRaptor"
+      echo "  Qt build may have failed. Check output above."
+      exit 1
+    fi
     cp qt-app/build/DiskRaptor dist/
 
     # Frontend + Images
@@ -235,8 +240,15 @@ exec ./DiskRaptor "$@"
 SCRIPT
     chmod +x dist/DiskRaptor.sh
 
-    # Create ZIP (exclude installer packages to avoid recursion)
-    zip -r "dist/DiskRaptor-$VERSION-linux-x64.zip" "dist/" -x "dist/DiskRaptor-*.zip" "dist/DiskRaptor-*.deb" 2>/dev/null || true
+    # Create ZIP
+    if command -v zip &>/dev/null; then
+      ROOT="$(pwd)"
+      cd "$ROOT"
+      zip -r "dist/DiskRaptor-$VERSION-linux-x64.zip" "dist/" -x "dist/DiskRaptor-*.zip" "dist/DiskRaptor-*.deb" 2>/dev/null || true
+      echo "  ZIP: dist/DiskRaptor-$VERSION-linux-x64.zip"
+    else
+      echo "  SKIP ZIP: 'zip' not installed (sudo apt install zip)"
+    fi
 
     # Create DEB package
     echo "  Creating DEB package..."
@@ -317,8 +329,12 @@ LAUNCHER
     chmod 755 "$DEB_DIR/usr/bin/diskraptor"
     chmod 755 "$DEB_DIR/usr/bin/DiskRaptor.sh"
 
-    dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-$VERSION-amd64.deb"
-    echo "  DEB: dist/DiskRaptor-$VERSION-amd64.deb"
+    if command -v dpkg-deb &>/dev/null; then
+      dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-$VERSION-amd64.deb"
+      echo "  DEB: dist/DiskRaptor-$VERSION-amd64.deb"
+    else
+      echo "  SKIP DEB: 'dpkg-deb' not installed"
+    fi
     echo "  ZIP: dist/DiskRaptor-$VERSION-linux-x64.zip"
     echo ""
     echo "  Run: LD_LIBRARY_PATH=dist/lib ./dist/DiskRaptor"
