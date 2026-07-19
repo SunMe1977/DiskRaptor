@@ -3,6 +3,7 @@
  *
  * Pie Chart and Treemap of the 50 largest files.
  * Hover → full filename tooltip.  Click → action menu + jump in tree.
+ * Supports zoom: 20%, 50%, 100% (Actual Size), Fit (auto-zoom to viewport).
  */
 class DiagramRenderer {
   constructor(containerId) {
@@ -20,6 +21,14 @@ class DiagramRenderer {
     this._isLinux =
       /linux/i.test(navigator.platform || "") ||
       /linux/i.test(navigator.userAgent || "");
+
+    // Zoom state
+    this._zoom = 1;
+    this._panX = 0;
+    this._panY = 0;
+    this._baseW = 0;
+    this._baseH = 0;
+
     this._init();
   }
 
@@ -108,8 +117,97 @@ class DiagramRenderer {
       this._onContextMenuAction(e),
     );
 
+    // Mouse wheel zoom
+    this.canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.05, Math.min(10, this._zoom * delta));
+      // Zoom toward mouse cursor
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const scale = newZoom / this._zoom;
+      this._panX = mx - scale * (mx - this._panX);
+      this._panY = my - scale * (my - this._panY);
+      this._zoom = newZoom;
+      this._updateZoomUI();
+      this._draw();
+    }, { passive: false });
+
     this._resize();
     window.addEventListener("resize", () => this._resize());
+  }
+
+  // ── Zoom API ─────────────────────────────────────────────────
+
+  /** Set zoom level: 0.2, 0.5, 1.0, or "fit" for auto-fit */
+  setZoom(level) {
+    if (level === "fit") {
+      this._fitToView();
+      return;
+    }
+    this._zoom = Math.max(0.05, Math.min(10, Number(level) || 1));
+    this._panX = 0;
+    this._panY = 0;
+    this._updateZoomUI();
+    this._draw();
+  }
+
+  /** Return current zoom level */
+  getZoom() { return this._zoom; }
+
+  /** Fit the entire diagram into the viewport, centered */
+  _fitToView() {
+    if (!this.canvas || !this.data || this.files.length === 0) {
+      this._zoom = 1;
+      this._panX = 0;
+      this._panY = 0;
+      this._updateZoomUI();
+      this._draw();
+      return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const viewW = this.canvas.width / dpr;
+    const viewH = this.canvas.height / dpr;
+
+    // Compute the bounding box of the diagram at 100% scale
+    // For pie: circle radius + margins
+    // For treemap: full area
+    let contentW, contentH;
+    if (this.mode === "pie") {
+      const margin = 6;
+      const legendW = Math.min(120, this._baseW * 0.18 || 120);
+      const pieArea = (this._baseW || viewW) - legendW - margin * 3;
+      contentW = pieArea + legendW + margin * 3;
+      contentH = (this._baseH || viewH || 200);
+    } else {
+      contentW = this._baseW || viewW;
+      contentH = this._baseH || viewH || 200;
+    }
+
+    if (contentW <= 0 || contentH <= 0) {
+      this._zoom = 1;
+      this._panX = 0;
+      this._panY = 0;
+      this._updateZoomUI();
+      this._draw();
+      return;
+    }
+
+    const scaleX = viewW / contentW;
+    const scaleY = viewH / contentH;
+    this._zoom = Math.min(scaleX, scaleY) * 0.95; // 5% padding
+    this._panX = (viewW - contentW * this._zoom) / 2;
+    this._panY = (viewH - contentH * this._zoom) / 2;
+    this._updateZoomUI();
+    this._draw();
+  }
+
+  /** Callback for zoom UI buttons — override externally */
+  onZoomChanged(zoom) {}
+
+  _updateZoomUI() {
+    if (this.onZoomChanged) this.onZoomChanged(this._zoom);
   }
 
   _resize() {
@@ -120,14 +218,16 @@ class DiagramRenderer {
     this.canvas.height = rect.height * dpr;
     this.canvas.style.width = rect.width + "px";
     this.canvas.style.height = rect.height + "px";
+    this._baseW = rect.width;
+    this._baseH = rect.height;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this._draw();
+    this._fitToView();
   }
 
   setMode(mode) {
     if (mode !== "pie" && mode !== "treemap") return;
     this.mode = mode;
-    this._draw();
+    this._fitToView();
   }
 
   setData(data) {
@@ -140,13 +240,16 @@ class DiagramRenderer {
       index: i,
     }));
     this.files.sort((a, b) => b.size - a.size);
-    this._draw();
+    this._fitToView();
   }
 
   _draw() {
     if (!this.ctx || !this.canvas || !this.data) return;
-    const w = this.canvas.width / (window.devicePixelRatio || 1);
-    const h = this.canvas.height / (window.devicePixelRatio || 1);
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
+
+    // Clear entire canvas
     this.ctx.clearRect(0, 0, w, h);
     this.hitRegions = [];
 
@@ -158,8 +261,19 @@ class DiagramRenderer {
       return;
     }
 
-    if (this.mode === "pie") this._drawPie(w, h);
-    else this._drawTreemap(w, h);
+    // Save, apply zoom transform, draw, restore
+    this.ctx.save();
+    this.ctx.translate(this._panX, this._panY);
+    this.ctx.scale(this._zoom, this._zoom);
+
+    if (this.mode === "pie") {
+      // Draw pie at its natural size (baseW x baseH)
+      this._drawPie(this._baseW, this._baseH);
+    } else {
+      this._drawTreemap(this._baseW, this._baseH);
+    }
+
+    this.ctx.restore();
   }
 
   // ── Pie Chart ──────────────────────────────────────────────
@@ -304,7 +418,6 @@ class DiagramRenderer {
     });
 
     // Squarified treemap using recursive subdivision
-    // We precompute all rectangles into this.rects
     const rects = [];
     const stack = [
       { x: margin, y: margin, w: availW, h: availH, items: items },
@@ -327,12 +440,9 @@ class DiagramRenderer {
         continue;
       }
 
-      // Decide orientation: split along the longest axis
       const horizontal = cell.w >= cell.h;
       const total = cell.items.reduce((s, it) => s + it.area, 0);
 
-      // Find the split point where items are partitioned as evenly as possible
-      // while maintaining good aspect ratios
       let splitIdx = 1;
       let bestScore = Infinity;
       let cumSum = 0;
@@ -347,7 +457,6 @@ class DiagramRenderer {
         const secondDim = (1 - ratio) * secondSize;
         const otherDim = horizontal ? cell.h : cell.w;
 
-        // Aspect ratios of the two sub-rectangles
         const ar1 = horizontal ? firstDim / otherDim : otherDim / firstDim;
         const ar2 = horizontal ? secondDim / otherDim : otherDim / secondDim;
 
@@ -400,13 +509,12 @@ class DiagramRenderer {
       }
     }
 
-    // Draw all rectangles (no gaps, no overlaps)
-    const gap = 1; // 1px gap between rectangles
+    // Draw all rectangles
+    const gap = 1;
     for (const r of rects) {
       const isHov = r.index === this._hoveredIndex;
       const color = colors[r.index % colors.length];
 
-      // Shrink slightly for the gap
       const rx = r.x + gap;
       const ry = r.y + gap;
       const rw = Math.max(2, r.w - gap * 2);
@@ -433,7 +541,6 @@ class DiagramRenderer {
         h: rh,
       });
 
-      // Label if cell is big enough
       if (rw > 44 && rh > 16) {
         ctx.save();
         ctx.beginPath();
@@ -448,7 +555,6 @@ class DiagramRenderer {
         const name = this._ellipsize(this._shortName(r.path), maxNameChars);
         ctx.fillText(name, rx + 3, ry + 3);
 
-        // Size on second line if enough room
         if (rh > 28 && rw > 70) {
           ctx.fillStyle = "rgba(255,255,255,0.7)";
           ctx.font = "8px sans-serif";
@@ -468,11 +574,15 @@ class DiagramRenderer {
 
   // ── Hit Testing ────────────────────────────────────────────
   _hitTest(mx, my) {
+    // Convert mouse coordinates to diagram space
+    const mxTransformed = (mx - this._panX) / this._zoom;
+    const myTransformed = (my - this._panY) / this._zoom;
+
     for (let i = this.hitRegions.length - 1; i >= 0; i--) {
       const r = this.hitRegions[i];
       if (r.type === "pie") {
-        const dx = mx - r.cx,
-          dy = my - r.cy;
+        const dx = mxTransformed - r.cx;
+        const dy = myTransformed - r.cy;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > r.radius) continue;
         let angle = Math.atan2(dy, dx);
@@ -481,12 +591,17 @@ class DiagramRenderer {
         if (sa < 0) sa += Math.PI * 2;
         let ea = r.endAngle;
         if (ea < 0) ea += Math.PI * 2;
-        if (sa > ea) ea += Math.PI * 2;
-        if (angle < sa) angle += Math.PI * 2;
         if (angle >= sa && angle <= ea) return r;
-      } else {
-        if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h)
+        if (ea < sa && (angle >= sa || angle <= ea)) return r;
+      } else if (r.type === "treemap") {
+        if (
+          mxTransformed >= r.x &&
+          mxTransformed <= r.x + r.w &&
+          myTransformed >= r.y &&
+          myTransformed <= r.y + r.h
+        ) {
           return r;
+        }
       }
     }
     return null;
@@ -525,80 +640,54 @@ class DiagramRenderer {
   }
 
   _showContextMenu(x, y, hit) {
-    this.contextMenu._filePath = hit.path;
-    this.contextMenu._fileName =
-      hit.path.split("\\").pop() || hit.path.split("/").pop() || hit.path;
     this.contextMenu.style.display = "block";
-    var menuW = this.contextMenu.offsetWidth || 220;
-    var menuH = this.contextMenu.offsetHeight || 220;
-    var vw = window.innerWidth || document.documentElement.clientWidth;
-    var vh = window.innerHeight || document.documentElement.clientHeight;
-    var left = Math.max(8, Math.min(x, vw - menuW - 8));
-    var top = Math.max(8, Math.min(y, vh - menuH - 8));
-    this.contextMenu.style.left = left + "px";
-    this.contextMenu.style.top = top + "px";
+    this.contextMenu.style.left = x + "px";
+    this.contextMenu.style.top = y + "px";
+    this._contextHit = hit;
   }
 
   _onContextMenuAction(e) {
     const item = e.target.closest(".diag-ctx-item");
     if (!item) return;
     const action = item.dataset.action;
-    const filePath = this.contextMenu._filePath;
-    this.contextMenu.style.display = "none";
-    if (!filePath) return;
-
-    const sb = document.querySelector(".status-bar");
+    const filePath = this._contextHit ? this._contextHit.path : "";
+    const sb = document.getElementById("tree-status") || document.querySelector(".status-bar");
 
     switch (action) {
       case "explorer":
         this._invoke("open_explorer", { path: filePath }).catch(() => {});
+        if (sb) sb.textContent = "Opened: " + filePath;
         break;
-      case "terminal": {
-        const dir = filePath.includes("\\")
-          ? filePath.substring(0, filePath.lastIndexOf("\\"))
-          : filePath.includes("/")
-            ? filePath.substring(0, filePath.lastIndexOf("/"))
-            : filePath;
-        this._invoke("open_terminal", { path: dir }).catch(() => {});
-        break;
-      }
-      case "properties":
-        this._invoke("open_properties", { path: filePath }).catch(() => {});
-        break;
-      case "copy":
-        navigator.clipboard
-          .writeText(filePath)
-          .then(() => {
-            if (sb) sb.textContent = "Copied: " + filePath;
-          })
-          .catch(() => {});
+      case "terminal":
+        this._invoke("open_terminal", { path: filePath }).catch(() => {});
+        if (sb) sb.textContent = "Terminal: " + filePath;
         break;
       case "tree":
-        // Dispatch a custom event for the tree to jump to this path
         window.dispatchEvent(
           new CustomEvent("diagram-jump-to-path", {
             detail: { path: filePath },
           }),
         );
-        if (sb) sb.textContent = "Locating: " + filePath;
+        break;
+      case "properties":
+        this._invoke("open_properties", { path: filePath }).catch(() => {});
+        break;
+      case "copy":
+        navigator.clipboard.writeText(filePath).then(() => {
+          if (sb) sb.textContent = "Copied: " + filePath;
+        });
         break;
       case "delete":
-        if (confirm("Delete file?\n" + filePath)) {
-          this._invoke("delete_path", { path: filePath })
-            .then(() => {
-              if (sb) sb.textContent = "Deleted: " + this.contextMenu._fileName;
-              this.files = this.files.filter((f) => f.path !== filePath);
-              if (this.data && this.data.top_files) {
-                this.data.top_files = this.data.top_files.filter(
-                  (f) => f.path !== filePath,
-                );
-              }
-              this._draw();
-            })
-            .catch((err) => alert("Delete failed: " + err));
-        }
+        this._invoke("delete_path", { path: filePath }).then((ok) => {
+          if (ok) {
+            this.files = this.files.filter((f) => f.path !== filePath);
+            this._draw();
+            if (sb) sb.textContent = "Deleted: " + filePath;
+          }
+        });
         break;
     }
+    this.contextMenu.style.display = "none";
   }
 
   _invoke(cmd, args) {
@@ -615,7 +704,7 @@ class DiagramRenderer {
     if (!text) return "";
     if (text.length <= maxChars) return text;
     if (maxChars <= 1) return text.substring(0, 1);
-    return text.substring(0, Math.max(1, maxChars - 1)) + "…";
+    return text.substring(0, Math.max(1, maxChars - 1)) + "\u2026";
   }
 
   _colors() {

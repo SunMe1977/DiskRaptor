@@ -73,6 +73,8 @@
 html,
 body {
     height: 100%;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
     font-family: var(--font-sans);
     font-size: 14px;
@@ -81,6 +83,11 @@ body {
     background: var(--bg-primary);
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
 }
 
 /* ── Scrollbar ────────────────────────────────────────────── */
@@ -233,6 +240,7 @@ button.icon-btn {
     display: flex;
     flex-direction: column;
     min-width: 200px;
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -240,11 +248,11 @@ button.icon-btn {
    TREE VIEW
    ═══════════════════════════════════════════════════════════════ */
 #tree-panel {
-    flex: 1;
+    flex: 1 1 50%;
     display: flex;
     flex-direction: column;
     background: var(--bg-primary);
-    min-height: 80px;
+    min-height: 0;
     overflow: hidden;
 }
 .panel-header {
@@ -277,7 +285,7 @@ button.icon-btn {
     flex: 1;
     overflow: hidden;
     position: relative;
-    min-height: 50px;
+    min-height: 0;
 }
 #tree-scroll {
     flex: 1;
@@ -285,6 +293,7 @@ button.icon-btn {
     overflow-x: auto;
     position: relative;
     scrollbar-width: thin;
+    min-height: 0;
 }
 #tree-viewport {
     position: relative;
@@ -292,7 +301,7 @@ button.icon-btn {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    min-height: 200px;
+    min-height: 0;
 }
 
 .tree-row {
@@ -501,11 +510,11 @@ button.icon-btn {
    ═══════════════════════════════════════════════════════════════ */
 #diagram-panel {
     position: relative;
-    flex: 1;
+    flex: 1 1 50%;
     display: flex;
     flex-direction: column;
     background: var(--bg-primary);
-    min-height: 80px;
+    min-height: 0;
     overflow: hidden;
 }
 #diagram-container {
@@ -548,6 +557,44 @@ button.icon-btn {
     color: #fff;
     border-color: var(--accent);
     box-shadow: var(--shadow-glow);
+}
+
+/* ── Zoom Controls ──────────────────────────────── */
+.zoom-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 6px;
+    flex-shrink: 0;
+}
+.zoom-btn {
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+.zoom-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+.zoom-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+.zoom-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 32px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 /* ═══════════════════════════════════════════════════════════════
