@@ -29,11 +29,22 @@ fi
 # ── Quick tool checks (fast, no brew) ─────────
 echo "[1] Checking tools..."
 for cmd in cmake ninja node rustc cargo git; do
-  if ! command -v $cmd &>/dev/null; then
+  LOC=""
+  LOC="$(which $cmd 2>/dev/null || true)"
+  if [ -z "$LOC" ]; then
+    LOC="$(command -v $cmd 2>/dev/null || true)"
+  fi
+  if [ -z "$LOC" ]; then
+    for p in /usr/bin/$cmd /usr/local/bin/$cmd /snap/bin/$cmd; do
+      if [ -x "$p" ]; then LOC="$p"; break; fi
+    done
+  fi
+  if [ -z "$LOC" ]; then
     echo "  Missing: $cmd"
     exit 1
   fi
 done
+echo "  All tools present"
 echo "  All tools present"
 
 # ── Platform-specific deps ────────────────────
