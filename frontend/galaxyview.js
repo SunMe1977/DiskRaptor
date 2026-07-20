@@ -1017,6 +1017,15 @@
         }
       }
 
+      // Pause animation when hovering an object, resume when not
+      if (nearest && !this.hoveredObject) {
+        // Just started hovering — pause animation
+        if (this.animation) this.animation.paused = true;
+      } else if (!nearest && this.hoveredObject) {
+        // Just stopped hovering — resume animation
+        if (this.animation) this.animation.paused = false;
+      }
+
       this.hoveredObject = nearest;
 
       // Cursor change
