@@ -827,23 +827,18 @@ class DiagramRenderer {
 
     const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
     if (hit) {
-      if (this._hoveredIndex !== hit.index) {
+      // Only redraw when hovered index actually changes — avoids flicker
+      const indexChanged = this._hoveredIndex !== hit.index;
+      if (indexChanged) {
         this._hoveredIndex = hit.index;
-      }
-      // Micro‑Scatter: ensure scatter is active and slice is redrawn
-      if (this._scatterAmt !== 1) {
+        // Scatter the hovered slice (instant snap, no animation loop)
         this._startScatter(1);
-      } else {
-        this._draw(); // redraw every frame to keep slice offset visible
       }
       this.canvas.style.cursor = "pointer";
       this.tooltipEl.textContent = hit.path + "  [" + hit.size_human + "]";
       this.tooltipEl.style.display = "block";
       this.tooltipEl.style.left = e.clientX + 12 + "px";
       this.tooltipEl.style.top = e.clientY - 10 + "px";
-      // Soft pressure: scale down slightly
-      this.canvas.style.transform = "scale(0.985)";
-      this.canvas.style.boxShadow = "0 0 20px rgba(88,166,255,0.15)";
     } else {
       this._hideTooltip();
     }

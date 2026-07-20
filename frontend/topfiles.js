@@ -177,19 +177,22 @@ class TopFilesPanel {
       var tr = document.createElement("tr");
       tr.style.cursor = "context-menu";
 
-      // Right-click context menu on each row
-      tr.addEventListener(
-        "contextmenu",
-        function (p) {
-          return function (e) {
-            e.preventDefault();
-            this._ctxMenu._filePath = p;
-            this._ctxMenu.style.display = "block";
-            this._ctxMenu.style.left = e.clientX + "px";
-            this._ctxMenu.style.top = e.clientY + "px";
-          }.bind(this);
-        }.call(this, entry.path),
-      );
+      // Context menu on right-click or left-click (same menu)
+      var self = this;
+      var filePath = entry.path;
+      tr.addEventListener("contextmenu", function(e) {
+        e.preventDefault();
+        self._ctxMenu._filePath = filePath;
+        self._ctxMenu.style.display = "block";
+        self._ctxMenu.style.left = e.clientX + "px";
+        self._ctxMenu.style.top = e.clientY + "px";
+      });
+      tr.addEventListener("click", function(e) {
+        self._ctxMenu._filePath = filePath;
+        self._ctxMenu.style.display = "block";
+        self._ctxMenu.style.left = e.clientX + "px";
+        self._ctxMenu.style.top = e.clientY + "px";
+      });
 
       // Rank
       var rankTd = document.createElement("td");
