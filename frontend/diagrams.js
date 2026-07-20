@@ -279,16 +279,6 @@ class DiagramRenderer {
       const eased = ease(t);
       this._scatterAmt = fromAmt + (this._scatterTarget - fromAmt) * eased;
       this._draw();
-      // CSS transform for additional canvas-level pulse
-      if (this.canvas) {
-        if (target === 1) {
-          // Scattering: subtle scale-down + micro-rotation
-          this.canvas.style.transform = "scale(0.992) rotate(-0.3deg)";
-        } else {
-          // Reassembling: return to normal
-          this.canvas.style.transform = "scale(1) rotate(0deg)";
-        }
-      }
       if (t < 1) {
         this._scatterAnimId = requestAnimationFrame(animate);
       } else {
@@ -503,15 +493,16 @@ class DiagramRenderer {
       const midAngle = startAngle + sliceAngle / 2;
       const selOffset = isSel ? 8 : 0;
       // Scatter weight: hovered=1, adjacent=0.3, rest=0.05
-      let scatterWeight = 0.05;
+      // Each slice scatters radially outward from center like explosion fragments
+      let scatterWeight = 0.08;
       if (isHov) scatterWeight = 1.0;
       else if (this._hoveredIndex >= 0) {
         const dist = Math.abs(i - this._hoveredIndex);
-        if (dist === 1) scatterWeight = 0.45;
-        else if (dist === 2) scatterWeight = 0.2;
-        else if (dist === 3) scatterWeight = 0.1;
+        if (dist === 1) scatterWeight = 0.55;
+        else if (dist === 2) scatterWeight = 0.3;
+        else if (dist === 3) scatterWeight = 0.18;
       }
-      const scatterDist = 5 * scatterStrength * scatterWeight;
+      const scatterDist = 8 * scatterStrength * scatterWeight;
       const sliceCx = cx + Math.cos(midAngle) * (scatterDist + selOffset);
       const sliceCy = cy + Math.sin(midAngle) * (scatterDist + selOffset);
 
@@ -737,13 +728,13 @@ class DiagramRenderer {
 
       // Micro‑Scatter offset: hovered moves toward center, adjacent shift too
       const scatterStrength = this._scatterAmt || 0;
-      let scatterWeight = 0.05;
+      let scatterWeight = 0.08;
       if (isHov) scatterWeight = 1.0;
       else if (this._hoveredIndex >= 0) {
         const dist = Math.abs(r.index - this._hoveredIndex);
-        if (dist === 1) scatterWeight = 0.45;
-        else if (dist === 2) scatterWeight = 0.2;
-        else if (dist === 3) scatterWeight = 0.1;
+        if (dist === 1) scatterWeight = 0.55;
+        else if (dist === 2) scatterWeight = 0.3;
+        else if (dist === 3) scatterWeight = 0.18;
       }
       if (scatterWeight > 0.05 || isHov) {
         const rectCx = rx + rw / 2;
@@ -751,7 +742,7 @@ class DiagramRenderer {
         const dx = centerX - rectCx;
         const dy = centerY - rectCy;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const pull = 5 * scatterStrength * scatterWeight;
+        const pull = 8 * scatterStrength * scatterWeight;
         rx += (dx / dist) * pull;
         ry += (dy / dist) * pull;
       }
