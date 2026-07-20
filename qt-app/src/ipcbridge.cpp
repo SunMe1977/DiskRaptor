@@ -574,8 +574,17 @@ QString IpcBridge::checkForUpdates()
 
 QString IpcBridge::findDuplicates(const QString &path)
 {
-    Q_UNUSED(path)
-    return resultToJson(true, "[]");
+    if (!m_drFindDuplicates) {
+        return resultToJson(true, "{}");
+    }
+    QByteArray pathUtf8 = path.toUtf8();
+    char* result = m_drFindDuplicates(pathUtf8.constData());
+    if (!result) {
+        return resultToJson(true, "{}");
+    }
+    QString json = QString::fromUtf8(result);
+    if (m_drFreeString) m_drFreeString(result);
+    return json;
 }
 
 QString IpcBridge::checkAdminNeeded(const QString &path)
@@ -679,9 +688,10 @@ bool IpcBridge::loadRustLibrary()
         }
     }
 
-    m_drStartScan   = reinterpret_cast<FnStartScan>(m_rustLib->resolve("dr_start_scan"));
-    m_drGetProgress = reinterpret_cast<FnGetProgress>(m_rustLib->resolve("dr_get_progress"));
-    m_drGetResult   = reinterpret_cast<FnGetResult>(m_rustLib->resolve("dr_get_result"));
+    m_drStartScan       = reinterpret_cast<FnStartScan>(m_rustLib->resolve("dr_start_scan"));
+    m_drGetProgress     = reinterpret_cast<FnGetProgress>(m_rustLib->resolve("dr_get_progress"));
+    m_drGetResult       = reinterpret_cast<FnGetResult>(m_rustLib->resolve("dr_get_result"));
+    m_drFindDuplicates  = reinterpret_cast<FnFindDuplicates>(m_rustLib->resolve("dr_find_duplicates"));
     m_drGetChunk    = reinterpret_cast<FnGetChunk>(m_rustLib->resolve("dr_get_chunk"));
     m_drCancelScan  = reinterpret_cast<FnCancelScan>(m_rustLib->resolve("dr_cancel_scan"));
     m_drIsRunning   = reinterpret_cast<FnIsRunning>(m_rustLib->resolve("dr_is_running"));

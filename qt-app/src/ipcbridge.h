@@ -59,20 +59,22 @@ private:
     // ── Rust scanner cross‑platform via QLibrary ─────────────────
     QLibrary *m_rustLib = nullptr;
 
-    using FnStartScan   = char* (*)(const char* path);
-    using FnGetProgress = char* (*)();
-    using FnGetResult   = char* (*)();
-    using FnGetChunk    = char* (*)(uint32_t chunk_id);
-    using FnCancelScan  = bool   (*)();
-    using FnIsRunning   = bool   (*)();
-    using FnFreeString  = void   (*)(char* s);
+    using FnStartScan       = char* (*)(const char* path);
+    using FnGetProgress     = char* (*)();
+    using FnGetResult       = char* (*)();
+    using FnGetChunk        = char* (*)(uint32_t chunk_id);
+    using FnCancelScan      = bool   (*)();
+    using FnIsRunning       = bool   (*)();
+    using FnFreeString      = void   (*)(char* s);
+    using FnFindDuplicates  = char* (*)(const char* path);
 
-    FnStartScan   m_drStartScan   = nullptr;
-    FnGetProgress m_drGetProgress = nullptr;
-    FnGetResult   m_drGetResult   = nullptr;
-    FnGetChunk    m_drGetChunk    = nullptr;
-    FnCancelScan  m_drCancelScan  = nullptr;
-    FnIsRunning   m_drIsRunning   = nullptr;
+    FnStartScan       m_drStartScan       = nullptr;
+    FnGetProgress     m_drGetProgress     = nullptr;
+    FnGetResult       m_drGetResult       = nullptr;
+    FnGetChunk        m_drGetChunk        = nullptr;
+    FnCancelScan      m_drCancelScan      = nullptr;
+    FnIsRunning       m_drIsRunning       = nullptr;
+    FnFindDuplicates  m_drFindDuplicates  = nullptr;
     FnFreeString  m_drFreeString  = nullptr;
 
     bool loadRustLibrary();
