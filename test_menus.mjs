@@ -1,6 +1,6 @@
 /**
- * DiskRaptor Menu Test — tests all native menus via CDP.
- * Includes diagram themes (forest, desert, ice, fairy).
+ * DiskRaptor Menu Test — tests all native menus + diagram themes via CDP.
+ * Theme test verifies actual pixel color change on canvas.
  */
 import WebSocket from "ws";
 import { spawn, execSync } from "child_process";
@@ -50,6 +50,27 @@ async function jsExpr(cdp, expr) {
   const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true });
   return cdpVal(r);
 }
+/** Sample a pixel color from the diagram canvas */
+async function sampleCanvasColor(cdp) {
+  return await jsExpr(cdp, `(function(){
+    var cv = document.querySelector('#diagram-container canvas');
+    if (!cv) return null;
+    var ctx = cv.getContext('2d');
+    // Sample 5 regions to get a representative color
+    var w = cv.width, h = cv.height;
+    var samples = [];
+    for (var y = Math.floor(h*0.2); y < h; y += Math.max(20, Math.floor(h/5))) {
+      for (var x = Math.floor(w*0.1); x < w; x += Math.max(20, Math.floor(w/5))) {
+        var p = ctx.getImageData(x, y, 1, 1).data;
+        samples.push([p[0], p[1], p[2]]);
+      }
+    }
+    // Average RGB of all samples
+    var r=0,g=0,b=0;
+    for (var i=0; i<samples.length; i++) { r+=samples[i][0]; g+=samples[i][1]; b+=samples[i][2]; }
+    return [Math.round(r/samples.length), Math.round(g/samples.length), Math.round(b/samples.length)];
+  })()`);
+}
 
 async function main() {
   console.log("\n=== DiskRaptor Menu + Theme Test ===\n");
@@ -87,7 +108,7 @@ async function main() {
 
   let passed = 0, failed = 0;
 
-  // 1. View Menu
+  // 1. View Menu modes
   console.log("\n── View Menu ──");
   for (const mode of ["pie", "treemap", "bar"]) {
     try {
@@ -114,8 +135,17 @@ async function main() {
     await jsExpr(cdp, "document.body.classList.toggle('light-theme')");
   } catch (e) { console.log("  ✗ Theme failed:", e.message); failed++; }
 
-  // 3. Diagram color themes
+  // 3. Diagram color themes - verify actual pixel color change
   console.log("\n── Diagram Color Themes ──");
+  // First, scan raw dir to have data in the diagram
+  await jsExpr(cdp, `document.getElementById('scan-path').value = ${JSON.stringify(path.resolve("raw"))};`);
+  await jsExpr(cdp, `document.getElementById('btn-scan').click();`);
+  for (let i = 0; i < 120; i++) { await sleep(500); const ov = await jsExpr(cdp, `document.getElementById('progress-overlay')?.classList.contains('active')`); if (ov === false) break; }
+  
+  // Switch to pie chart
+  await jsExpr(cdp, `var btn=document.querySelector('.diagram-mode[data-mode="pie"]'); if(btn)btn.click();`);
+  await sleep(1000);
+
   const themes = [
     { id: "default", name: "Default" },
     { id: "forest",  name: "Forest" },
@@ -123,16 +153,35 @@ async function main() {
     { id: "ice",     name: "Ice" },
     { id: "fairy",   name: "Fairy" },
   ];
+  let prevColor = null;
   for (const th of themes) {
     try {
-      // Call setTheme via JS (same as native menu does)
+      // Set theme
       const ok = await jsExpr(cdp, `(function(){
-        if(!window.__diagram || typeof window.__diagram.setTheme !== 'function') return 'no diagram';
+        if(!window.__diagram) return 'no diagram';
         window.__diagram.setTheme('${th.id}');
-        return window.__diagram._theme === '${th.id}' ? 'ok' : 'wrong:'+window.__diagram._theme;
+        return window.__diagram._theme === '${th.id}' ? 'ok' : 'set failed';
       })()`);
-      if (ok === 'ok') { console.log(`  ✓ ${th.name} theme applied`); passed++; }
-      else { console.log(`  ✗ ${th.name}: ${ok}`); failed++; }
+      if (ok !== 'ok') { console.log(`  ✗ ${th.name}: ${ok}`); failed++; continue; }
+      await sleep(500);
+
+      // Sample canvas pixel color to verify visual change
+      const color = await sampleCanvasColor(cdp);
+      if (!color) { console.log(`  ✗ ${th.name}: could not sample canvas`); failed++; continue; }
+      
+      const colorStr = `rgb(${color[0]},${color[1]},${color[2]})`;
+      if (prevColor) {
+        // Check that colors differ from previous theme (real visual change)
+        const diff = Math.abs(color[0]-prevColor[0]) + Math.abs(color[1]-prevColor[1]) + Math.abs(color[2]-prevColor[2]);
+        if (diff < 5) {
+          console.log(`  ✗ ${th.name}: colors unchanged from previous (${colorStr})`);
+          failed++;
+          continue;
+        }
+      }
+      prevColor = color;
+      console.log(`  ✓ ${th.name} theme applied — sampled ${colorStr}`);
+      passed++;
     } catch (e) { console.log(`  ✗ ${th.name} failed:`, e.message); failed++; }
   }
 
@@ -167,10 +216,8 @@ async function main() {
   // 6. Language switcher
   console.log("\n── Language ──");
   try {
-    const langResult = await jsExpr(cdp,
-      `if(window.I18N){window.I18N.setLocale('de');'ok'}else{'no i18n'}`);
-    const deActive = await jsExpr(cdp,
-      `window.I18N?.getLocale?.()?.raw === 'de'`);
+    await jsExpr(cdp, `if(window.I18N){window.I18N.setLocale('de');'ok'}else{'no i18n'}`);
+    const deActive = await jsExpr(cdp, `window.I18N?.getLocale?.()?.raw === 'de'`);
     if (deActive) { console.log("  ✓ Language switched to DE"); passed++; }
     else { console.log("  ✗ Language switch failed"); failed++; }
     await jsExpr(cdp, `if(window.I18N)window.I18N.setLocale('auto')`);
