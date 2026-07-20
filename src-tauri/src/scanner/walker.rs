@@ -144,7 +144,6 @@ mod platform {
     use super::*;
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
-    use std::path::PathBuf;
     #[repr(C)]
     struct WIN32_FIND_DATAW {
         dwFileAttributes: u32,
@@ -171,15 +170,6 @@ mod platform {
         fn FindClose(hFindFile: HANDLE) -> i32;
     }
 
-    // ── Path helpers ──────────────────────────────────────
-    fn to_wide(s: &str) -> Vec<u16> {
-        use std::os::windows::ffi::OsStrExt;
-        std::ffi::OsStr::new(s)
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect()
-    }
-
     #[inline]
     fn cfilename_to_string(w: &[u16; 260]) -> String {
         // Find null terminator - most filenames are short, so linear scan is cheap
@@ -190,23 +180,6 @@ mod platform {
         OsString::from_wide(&w[..len])
             .to_string_lossy()
             .into_owned()
-    }
-
-    /// Build search pattern: path\* (normalizes / to \)
-    fn search_pattern(path: &str) -> Vec<u16> {
-        let mut p = String::with_capacity(path.len() + 4);
-        for ch in path.chars() {
-            if ch == '/' {
-                p.push('\\');
-            } else {
-                p.push(ch);
-            }
-        }
-        if !p.ends_with('\\') {
-            p.push('\\');
-        }
-        p.push('*');
-        to_wide(&p)
     }
 
     #[inline]
@@ -246,8 +219,9 @@ mod platform {
             depth: 0,
             chunk_id: 0,
         });
-        let mut ptix: HashMap<String, u32> = HashMap::new();
-        ptix.insert(root_path.into(), root_idx);
+        // ═══ Stack-based directory traversal ═══
+        // Uses a single reusable path buffer to avoid millions of String allocations.
+        // The parent node index is already known from the stack (no ptix HashMap needed).
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut last_progress = Instant::now();
         let errors = config.errors.clone();
@@ -258,12 +232,16 @@ mod platform {
         let mut dirs_found: u64 = 0;
         let mut bytes_found: u64 = 0;
 
-        // Use a stack of (path_string, parent_index) for directory traversal
+        // Reusable path buffer — one allocation, truncated between entries
+        let mut path_buf = String::with_capacity(4096);
+        // Reusable search pattern buffer
+        let mut pattern_buf = Vec::<u16>::with_capacity(4096);
+
         struct DirEntry {
             path: String,
             parent: u32,
         }
-        let mut stack: Vec<DirEntry> = Vec::with_capacity(1024);
+        let mut stack: Vec<DirEntry> = Vec::with_capacity(4096);
         stack.push(DirEntry {
             path: root_path.to_owned(),
             parent: root_idx,
@@ -273,13 +251,36 @@ mod platform {
             if arena.nodes.len() > 50_000_000 {
                 break;
             }
-            let pattern = search_pattern(&current.path);
-            let mut find_data: WIN32_FIND_DATAW = unsafe { std::mem::zeroed() };
 
-            let find_handle = unsafe { FindFirstFileW(pattern.as_ptr(), &mut find_data) };
-            if find_handle == INVALID_HANDLE_VALUE {
-                continue; // Can't open directory, skip
+            // Build search pattern in reusable buffer
+            let cur_path = &current.path;
+            pattern_buf.clear();
+            for ch in cur_path.chars() {
+                if ch == '/' {
+                    pattern_buf.push(b'\\' as u16);
+                } else {
+                    pattern_buf.push(ch as u16);
+                }
             }
+            pattern_buf.push(b'\\' as u16);
+            pattern_buf.push(b'*' as u16);
+            pattern_buf.push(0); // null terminator
+
+            let mut find_data: WIN32_FIND_DATAW = unsafe { std::mem::zeroed() };
+            let find_handle = unsafe { FindFirstFileW(pattern_buf.as_ptr(), &mut find_data) };
+            if find_handle == INVALID_HANDLE_VALUE {
+                continue;
+            }
+
+            // Set up reusable path_buf with the current directory path + backslash
+            path_buf.clear();
+            path_buf.push_str(cur_path);
+            if !path_buf.ends_with('\\') {
+                path_buf.push('\\');
+            }
+            let dir_path_len = path_buf.len(); // save for truncation
+
+            let parent_idx = current.parent;
 
             loop {
                 iter_count += 1;
@@ -302,101 +303,91 @@ mod platform {
                 }
 
                 let name = unsafe { cfilename_to_string(&find_data.cFileName) };
-
-                // Skip . and ..
                 if name == "." || name == ".." {
-                    // Get next file
                     if unsafe { FindNextFileW(find_handle, &mut find_data) } == 0 {
                         break;
                     }
                     continue;
                 }
 
+                // Append filename to reusable path buffer
+                path_buf.truncate(dir_path_len);
+                path_buf.push_str(&name);
+
                 let is_dir = is_directory(&find_data);
                 let sz = if is_dir { 0 } else { get_file_size(&find_data) };
 
-                // Build full path: pushd \ + name
-                let mut full = String::with_capacity(current.path.len() + 1 + name.len());
-                full.push_str(&current.path);
-                if !full.ends_with('\\') {
-                    full.push('\\');
-                }
-                full.push_str(&name);
-
                 if is_dir {
                     dirs_found += 1;
-                    if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
-                        // Get next
+                    if skip_dirs.iter().any(|sd| path_buf.contains(sd.as_str())) {
                         if unsafe { FindNextFileW(find_handle, &mut find_data) } == 0 {
                             break;
                         }
                         continue;
                     }
-                    let depth = if current.parent == root_idx {
+                    let depth = if parent_idx == root_idx {
                         1
                     } else {
-                        arena.nodes[current.parent as usize].depth + 1
+                        arena.nodes[parent_idx as usize].depth + 1
                     };
                     let ci = arena.alloc(TreeNode {
-                        name: name.clone(),
+                        name,
                         size: 0,
                         file_count: 0,
                         dir_count: 1,
                         node_type: NodeType::Directory,
-                        parent: current.parent,
+                        parent: parent_idx,
                         first_child: u32::MAX,
                         next_sibling: u32::MAX,
                         depth,
                         chunk_id: 0,
                     });
-                    match lc.get(&current.parent) {
+                    match lc.get(&parent_idx) {
                         Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                        None => arena.nodes[current.parent as usize].first_child = ci,
+                        None => arena.nodes[parent_idx as usize].first_child = ci,
                     }
-                    lc.insert(current.parent, ci);
-                    ptix.insert(full.clone(), ci);
-                    // Push onto stack for later traversal
+                    lc.insert(parent_idx, ci);
+                    // Clone full path for stack (one per directory, not per file)
                     stack.push(DirEntry {
-                        path: full.clone(),
+                        path: path_buf.clone(),
                         parent: ci,
                     });
                 } else {
                     files_found += 1;
                     bytes_found += sz;
-                    let depth = if current.parent == root_idx {
+                    let depth = if parent_idx == root_idx {
                         1
                     } else {
-                        arena.nodes[current.parent as usize].depth + 1
+                        arena.nodes[parent_idx as usize].depth + 1
                     };
                     let ci = arena.alloc(TreeNode {
-                        name: name.clone(),
+                        name,
                         size: sz,
                         file_count: 1,
                         dir_count: 0,
                         node_type: NodeType::File,
-                        parent: current.parent,
+                        parent: parent_idx,
                         first_child: u32::MAX,
                         next_sibling: u32::MAX,
                         depth,
                         chunk_id: 0,
                     });
-                    match lc.get(&current.parent) {
+                    match lc.get(&parent_idx) {
                         Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                        None => arena.nodes[current.parent as usize].first_child = ci,
+                        None => arena.nodes[parent_idx as usize].first_child = ci,
                     }
-                    lc.insert(current.parent, ci);
+                    lc.insert(parent_idx, ci);
                     if sz > 0 {
-                        top_files.insert(full.clone(), sz, top_count);
-                        file_types.add(&name, sz);
+                        // Clone only for top files (max 100)
+                        top_files.insert(path_buf.clone(), sz, top_count);
                     }
                 }
 
                 if last_progress.elapsed().as_millis() >= 100 {
-                    progress(files_found, dirs_found, bytes_found, &full);
+                    progress(files_found, dirs_found, bytes_found, &path_buf);
                     last_progress = Instant::now();
                 }
 
-                // Get next file in this directory
                 if unsafe { FindNextFileW(find_handle, &mut find_data) } == 0 {
                     break;
                 }
@@ -405,8 +396,6 @@ mod platform {
             unsafe {
                 FindClose(find_handle);
             }
-
-            // Check cancel after closing handle
             if let Some(ref cf) = cancel {
                 if cf.load(Ordering::Relaxed) {
                     break;
@@ -460,8 +449,6 @@ mod platform {
             depth: 0,
             chunk_id: 0,
         });
-        let mut ptix: HashMap<String, u32> = HashMap::new();
-        ptix.insert(root_path.into(), root_idx);
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut stack: Vec<DirCtx> = vec![DirCtx {
             path: root_path.into(),
@@ -473,6 +460,8 @@ mod platform {
         let mut dirs_found: u64 = 0;
         let mut bytes_found: u64 = 0;
         let mut iter_count = 0u64;
+        // Reusable path buffer
+        let mut path_buf = String::with_capacity(4096);
 
         while let Some(current) = stack.pop() {
             if arena.nodes.len() > 20_000_000 {
@@ -483,6 +472,15 @@ mod platform {
                 Ok(d) => d,
                 Err(_) => continue,
             };
+
+            // Set up reusable path_buf with current directory
+            path_buf.clear();
+            path_buf.push_str(&current.path);
+            if !path_buf.ends_with('/') {
+                path_buf.push('/');
+            }
+            let dir_path_len = path_buf.len();
+            let parent_idx = current.node_idx;
 
             for entry_res in dir {
                 let entry = match entry_res {
@@ -506,70 +504,67 @@ mod platform {
 
                 let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
 
-                // Build full path
-                let mut full = String::with_capacity(current.path.len() + 1 + name.len());
-                full.push_str(&current.path);
-                if !full.ends_with('/') {
-                    full.push('/');
-                }
-                full.push_str(&name);
+                // Append filename to reusable path buffer
+                path_buf.truncate(dir_path_len);
+                path_buf.push_str(&name);
 
                 if is_dir {
                     dirs_found += 1;
-                    let depth = arena.nodes[current.node_idx as usize].depth + 1;
+                    if skip_dirs.iter().any(|sd| path_buf.contains(sd.as_str())) {
+                        continue;
+                    }
+                    let depth = arena.nodes[parent_idx as usize].depth + 1;
                     let ci = arena.alloc(TreeNode {
                         name,
                         size: 0,
                         file_count: 0,
                         dir_count: 1,
                         node_type: NodeType::Directory,
-                        parent: current.node_idx,
+                        parent: parent_idx,
                         first_child: u32::MAX,
                         next_sibling: u32::MAX,
                         depth,
                         chunk_id: 0,
                     });
-                    match lc.get(&current.node_idx) {
+                    match lc.get(&parent_idx) {
                         Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                        None => arena.nodes[current.node_idx as usize].first_child = ci,
+                        None => arena.nodes[parent_idx as usize].first_child = ci,
                     }
-                    lc.insert(current.node_idx, ci);
-                    ptix.insert(full.clone(), ci);
+                    lc.insert(parent_idx, ci);
                     stack.push(DirCtx {
-                        path: full,
+                        path: path_buf.clone(),
                         node_idx: ci,
                     });
                 } else {
                     files_found += 1;
-                    // Only stat() for file size - macOS read_dir might not have d_type
                     let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
                     bytes_found += sz;
-                    let depth = arena.nodes[current.node_idx as usize].depth + 1;
+                    let depth = arena.nodes[parent_idx as usize].depth + 1;
                     let ci = arena.alloc(TreeNode {
                         name,
                         size: sz,
                         file_count: 1,
                         dir_count: 0,
                         node_type: NodeType::File,
-                        parent: current.node_idx,
+                        parent: parent_idx,
                         first_child: u32::MAX,
                         next_sibling: u32::MAX,
                         depth,
                         chunk_id: 0,
                     });
-                    match lc.get(&current.node_idx) {
+                    match lc.get(&parent_idx) {
                         Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                        None => arena.nodes[current.node_idx as usize].first_child = ci,
+                        None => arena.nodes[parent_idx as usize].first_child = ci,
                     }
-                    lc.insert(current.node_idx, ci);
+                    lc.insert(parent_idx, ci);
                     if sz > 0 {
-                        top_files.insert(full, sz, top_count);
+                        top_files.insert(path_buf.clone(), sz, top_count);
                         file_types.add(&name, sz);
                     }
                 }
 
                 if last_progress.elapsed().as_millis() >= 100 {
-                    progress(files_found, dirs_found, bytes_found, &full);
+                    progress(files_found, dirs_found, bytes_found, &path_buf);
                     last_progress = Instant::now();
                 }
             }
@@ -627,8 +622,6 @@ mod platform {
             depth: 0,
             chunk_id: 0,
         });
-        let mut ptix: HashMap<String, u32> = HashMap::new();
-        ptix.insert(root_path.into(), root_idx);
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut stack: Vec<DirCtx> = vec![DirCtx {
             path: root_path.into(),
@@ -640,6 +633,7 @@ mod platform {
         let mut dirs_found: u64 = 0;
         let mut bytes_found: u64 = 0;
         let mut iter_count = 0u64;
+        let mut path_buf = String::with_capacity(4096);
 
         while let Some(current) = stack.pop() {
             if arena.nodes.len() > 20_000_000 {
@@ -650,6 +644,14 @@ mod platform {
                 Ok(d) => d,
                 Err(_) => continue,
             };
+
+            path_buf.clear();
+            path_buf.push_str(&current.path);
+            if !path_buf.ends_with('/') {
+                path_buf.push('/');
+            }
+            let dir_path_len = path_buf.len();
+            let parent_idx = current.node_idx;
 
             for entry_res in dir {
                 let entry = match entry_res {
@@ -671,76 +673,68 @@ mod platform {
                     continue;
                 }
 
-                // Linux read_dir gives d_type via file_type() without extra stat
-                let ft = entry
-                    .file_type()
-                    .unwrap_or_else(|_| std::fs::FileType::new(false, false));
-                let is_dir = ft.is_dir();
+                let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
 
-                // Build full path
-                let mut full = String::with_capacity(current.path.len() + 1 + name.len());
-                full.push_str(&current.path);
-                if !full.ends_with('/') {
-                    full.push('/');
-                }
-                full.push_str(&name);
+                path_buf.truncate(dir_path_len);
+                path_buf.push_str(&name);
 
                 if is_dir {
                     dirs_found += 1;
-                    let depth = arena.nodes[current.node_idx as usize].depth + 1;
+                    if skip_dirs.iter().any(|sd| path_buf.contains(sd.as_str())) {
+                        continue;
+                    }
+                    let depth = arena.nodes[parent_idx as usize].depth + 1;
                     let ci = arena.alloc(TreeNode {
                         name,
                         size: 0,
                         file_count: 0,
                         dir_count: 1,
                         node_type: NodeType::Directory,
-                        parent: current.node_idx,
+                        parent: parent_idx,
                         first_child: u32::MAX,
                         next_sibling: u32::MAX,
                         depth,
                         chunk_id: 0,
                     });
-                    match lc.get(&current.node_idx) {
+                    match lc.get(&parent_idx) {
                         Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                        None => arena.nodes[current.node_idx as usize].first_child = ci,
+                        None => arena.nodes[parent_idx as usize].first_child = ci,
                     }
-                    lc.insert(current.node_idx, ci);
-                    ptix.insert(full.clone(), ci);
+                    lc.insert(parent_idx, ci);
                     stack.push(DirCtx {
-                        path: full,
+                        path: path_buf.clone(),
                         node_idx: ci,
                     });
                 } else {
                     files_found += 1;
-                    // stat() for file size - necessary on all platforms
                     let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
                     bytes_found += sz;
-                    let depth = arena.nodes[current.node_idx as usize].depth + 1;
+                    let depth = arena.nodes[parent_idx as usize].depth + 1;
                     let ci = arena.alloc(TreeNode {
                         name,
                         size: sz,
                         file_count: 1,
                         dir_count: 0,
                         node_type: NodeType::File,
-                        parent: current.node_idx,
+                        parent: parent_idx,
                         first_child: u32::MAX,
                         next_sibling: u32::MAX,
                         depth,
                         chunk_id: 0,
                     });
-                    match lc.get(&current.node_idx) {
+                    match lc.get(&parent_idx) {
                         Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                        None => arena.nodes[current.node_idx as usize].first_child = ci,
+                        None => arena.nodes[parent_idx as usize].first_child = ci,
                     }
-                    lc.insert(current.node_idx, ci);
+                    lc.insert(parent_idx, ci);
                     if sz > 0 {
-                        top_files.insert(full, sz, top_count);
+                        top_files.insert(path_buf.clone(), sz, top_count);
                         file_types.add(&name, sz);
                     }
                 }
 
                 if last_progress.elapsed().as_millis() >= 100 {
-                    progress(files_found, dirs_found, bytes_found, &full);
+                    progress(files_found, dirs_found, bytes_found, &path_buf);
                     last_progress = Instant::now();
                 }
             }
