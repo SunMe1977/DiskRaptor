@@ -286,6 +286,21 @@ getSetting("theme", "light").then(function(savedTheme) {
       });
     });
 
+    // Theme switcher
+    document.querySelectorAll(".theme-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var theme = this.dataset.theme;
+        if (window.diagram && typeof window.diagram.setTheme === "function") {
+          window.diagram.setTheme(theme);
+        }
+        // Highlight active theme
+        document.querySelectorAll(".theme-btn").forEach(function (b) {
+          b.style.borderColor = "transparent";
+        });
+        this.style.borderColor = "#fff";
+      });
+    });
+
     // About dialog
     aboutClose.addEventListener("click", function () {
       aboutOverlay.classList.remove("active");
