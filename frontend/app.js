@@ -941,24 +941,27 @@ clearTimeout(safetyTimer);
           document.querySelector(".status-bar").textContent =
             "Cancelled - " + files + " files, " + dirs + " dirs (partial)";
           topFiles.render(partial.stats ? partial.stats.top_files : [], true);
-          // Try to load tree chunks if any
+          // Try to load tree chunks BEFORE releasing the loader
           if (partial.root_info && partial.root_info.total_chunks > 0) {
             loader.totalNodes = partial.root_info.total_nodes;
             loader.totalChunks = partial.root_info.total_chunks;
             loader.allNodes = new Array(loader.totalNodes);
-            try { await loader.loadChunk(0); } catch(e) {}
+            loader.scanId = currentScanId;
+            try { await loader.loadChunk(0); } catch(e) { console.warn("cancel chunk 0:", e); }
             treeView.expanded.add(0);
-            try { await treeView.rebuild(); } catch(e) {}
+            try { await treeView.rebuild(); } catch(e) { console.warn("cancel rebuild:", e); }
           }
         } else {
           document.querySelector(".status-bar").textContent =
             "Scan cancelled - " + lastFilesFound.toLocaleString() + " files found";
         }
       } catch(e) {
+        console.warn("cancel partial error:", e);
         document.querySelector(".status-bar").textContent =
           "Scan cancelled - " + lastFilesFound.toLocaleString() + " files found";
       }
-      await loader.release();
+      // Release AFTER loading chunks
+      try { await loader.release(); } catch(e) {}
       isScanning = false;
       btnScan.disabled = false;
       btnBrowse.disabled = false;

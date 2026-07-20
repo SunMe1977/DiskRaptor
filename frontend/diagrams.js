@@ -672,22 +672,61 @@ class DiagramRenderer {
     }
 
     const gap = 1;
+    // Center for ripple
+    const centerX = w / 2, centerY = h / 2;
+
+    // ── Draft draw pass: compute hover offset transforms ──
     for (const r of rects) {
       const isHov = r.index === this._hoveredIndex;
       const color = colors[r.index % colors.length];
-      const rx = r.x + gap, ry = r.y + gap;
-      const rw = Math.max(2, r.w - gap * 2), rh = Math.max(2, r.h - gap * 2);
+      let rx = r.x + gap, ry = r.y + gap;
+      let rw = Math.max(2, r.w - gap * 2), rh = Math.max(2, r.h - gap * 2);
 
-      ctx.fillStyle = color;
+      // Hover offset: pull rectangle slightly toward center
+      if (isHov && this._mouseInside) {
+        const rectCx = rx + rw / 2;
+        const rectCy = ry + rh / 2;
+        const dx = centerX - rectCx;
+        const dy = centerY - rectCy;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const pull = 4;
+        rx += (dx / dist) * pull;
+        ry += (dy / dist) * pull;
+      }
+
+      // Selective glow for selected item
+      const isSel = r.index === this._selectedIndex;
+
+      // Premium gradient: radial from top-left for material feel
+      const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, Math.max(rw, rh) * 0.8);
+      grad.addColorStop(0, this._lightenColor(color, isHov ? 18 : 8));
+      grad.addColorStop(0.6, color);
+      grad.addColorStop(1, this._darkenColor(color, 12));
+      ctx.fillStyle = grad;
+
+      // Shadow for depth
+      if (isHov || isSel) {
+        ctx.shadowColor = "rgba(88,166,255," + (isHov ? "0.35" : "0.25") + ")";
+        ctx.shadowBlur = isHov ? 18 : 12;
+      } else {
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+      }
       ctx.fillRect(rx, ry, rw, rh);
+      ctx.shadowBlur = 0;
 
-      if (isHov) {
-        ctx.shadowColor = "rgba(88,166,255,0.3)";
-        ctx.shadowBlur = 12;
-        ctx.strokeStyle = "rgba(255,255,255,0.2)";
+      // Selection outline
+      if (isSel) {
+        ctx.strokeStyle = "rgba(88,166,255,0.6)";
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(rx, ry, rw, rh);
+      }
+
+      // Hover glow outline
+      if (isHov && this._mouseInside) {
+        ctx.strokeStyle = "rgba(255,255,255,0.15)";
         ctx.lineWidth = 1.5;
         ctx.strokeRect(rx, ry, rw, rh);
-        ctx.shadowBlur = 0;
       }
 
       this.hitRegions.push({
@@ -696,6 +735,7 @@ class DiagramRenderer {
         x: rx, y: ry, w: rw, h: rh,
       });
 
+      // Labels with fade-style rendering
       if (rw > 44 && rh > 16) {
         ctx.save();
         ctx.beginPath();
@@ -708,6 +748,7 @@ class DiagramRenderer {
         const maxNameChars = Math.max(6, Math.floor((rw - 8) / 5.5));
         const name = this._ellipsize(this._shortName(r.path), maxNameChars);
         ctx.fillText(name, rx + 3, ry + 3);
+
         if (rh > 28 && rw > 70) {
           ctx.fillStyle = "rgba(255,255,255,0.7)";
           ctx.font = "8px sans-serif";
@@ -715,6 +756,21 @@ class DiagramRenderer {
         }
         ctx.restore();
       }
+    }
+
+    // ── Center ripple effect (adapted for treemap) ──
+    const rippleElapsed = Date.now() - this._rippleTime;
+    if (rippleElapsed < 240 && this._mouseInside) {
+      const rippleProgress = rippleElapsed / 240;
+      const rippleRadius = Math.min(w, h) * 0.2 * rippleProgress;
+      const rippleAlpha = 0.04 * (1 - rippleProgress);
+      // Soft square-ish ripple
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY, rippleRadius * 1.2, rippleRadius * 0.8, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255," + rippleAlpha + ")";
+      ctx.fill();
+      ctx.restore();
     }
 
     ctx.fillStyle = "#8b949e";
