@@ -144,6 +144,9 @@
     let isScanning = false;
     let currentStats = null;
     let currentScanResult = null;
+    let currentScanId = 0;
+    let lastFilesFound = 0;
+    let lastDirsFound = 0;
 
     loader.onProgress = (loaded, total) => {
       const el = document.querySelector("#tree-panel .status-bar");
@@ -733,6 +736,7 @@
         }
         // Handle optional scan_id — bridge may or may not return one
         var scanId = (initScan && initScan.scan_id) || 1;
+        currentScanId = scanId;
 
         // Poll tracking
         var prevFilesFound = 0;
@@ -761,6 +765,8 @@
           var dirsFound = Number(p.dirs_found || p.dirsFound || 0);
           var bytesFound = Number(p.bytes_found || p.bytesFound || 0);
           var elapsedSecs = p.elapsed_secs || p.elapsedSecs || 0;
+          lastFilesFound = filesFound;
+          lastDirsFound = dirsFound;
 
           // Track consecutive zero counts
           if (filesFound === 0 && dirsFound === 0) {
@@ -924,7 +930,7 @@ clearTimeout(safetyTimer);
       await sleep(800);
       // 3. Try to get whatever we have so far
       try {
-        var partial = await window.__TAURI__.invoke("get_scan_result", { scanId: scanId });
+        var partial = await window.__TAURI__.invoke("get_scan_result", { scanId: currentScanId });
         if (partial && partial.stats && partial.stats.total_files > 0) {
           currentScanResult = partial;
           currentStats = partial.stats;
