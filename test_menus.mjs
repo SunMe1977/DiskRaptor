@@ -1,7 +1,6 @@
 /**
  * DiskRaptor Menu Test — tests all native menus via CDP.
- * Verifies View → Pie/Galaxy/Treemap, Theme toggle, About, Exit.
- * Usage: node test_menus.mjs
+ * Includes diagram themes (forest, desert, ice, fairy).
  */
 import WebSocket from "ws";
 import { spawn, execSync } from "child_process";
@@ -19,7 +18,6 @@ function cdpFetch(url) {
     http.get(url, res => { let d = ""; res.on("data", c => d += c); res.on("end", () => { try { resolve(JSON.parse(d)); } catch { reject(d); } }); }).on("error", reject);
   });
 }
-
 async function connectCDP(wsUrl) {
   const ws = new WebSocket(wsUrl);
   const pending = new Map();
@@ -27,10 +25,7 @@ async function connectCDP(wsUrl) {
   ws.on("message", raw => {
     try {
       const m = JSON.parse(raw.toString());
-      if (m.id !== undefined && pending.has(m.id)) {
-        pending.get(m.id).resolve(m);
-        pending.delete(m.id);
-      }
+      if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); }
     } catch {}
   });
   await new Promise((r, f) => { ws.on("open", r); ws.on("error", f); setTimeout(() => f(new Error("WS timeout")), 10000); });
@@ -57,12 +52,11 @@ async function jsExpr(cdp, expr) {
 }
 
 async function main() {
-  console.log("\n=== DiskRaptor Menu Test ===\n");
+  console.log("\n=== DiskRaptor Menu + Theme Test ===\n");
   killAll();
   await sleep(2000);
   if (!fs.existsSync(EXE_PATH)) throw new Error(`Missing: ${EXE_PATH}`);
 
-  // Launch with CDP on different port
   spawn(EXE_PATH, [], {
     cwd: DIST_DIR,
     env: { ...process.env, DISKraptor_CDP_PORT: String(CDP_PORT) },
@@ -70,16 +64,12 @@ async function main() {
     stdio: "ignore",
   }).unref();
 
-  // Wait for CDP
   let wsUrl = null;
   for (let i = 0; i < 60; i++) {
     await sleep(500);
     try {
       const pages = await cdpFetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
-      if (Array.isArray(pages) && pages.length > 0 && pages[0].webSocketDebuggerUrl) {
-        wsUrl = pages[0].webSocketDebuggerUrl;
-        break;
-      }
+      if (Array.isArray(pages) && pages.length > 0 && pages[0].webSocketDebuggerUrl) { wsUrl = pages[0].webSocketDebuggerUrl; break; }
     } catch {}
   }
   if (!wsUrl) throw new Error("CDP not available");
@@ -88,7 +78,6 @@ async function main() {
   await cdp.send("Runtime.enable");
   console.log("✓ App launched");
 
-  // Wait for bridge
   for (let i = 0; i < 30; i++) {
     const ok = await jsExpr(cdp, "!!(window.__TAURI__ && typeof window.__TAURI__.invoke === 'function')");
     if (ok) break;
@@ -98,31 +87,22 @@ async function main() {
 
   let passed = 0, failed = 0;
 
-  // 1. Test View → Pie Chart via runJS (C++ sends JS to webview)
+  // 1. View Menu
   console.log("\n── View Menu ──");
-  try {
-    await jsExpr(cdp, `document.querySelectorAll('.diagram-mode').forEach(b=>b.classList.remove('active'));
-      var btn=document.querySelector('.diagram-mode[data-mode="pie"]');
-      if(btn)btn.classList.add('active');
-      if(window.diagram)window.diagram.setMode('pie');`);
-    await sleep(300);
-    const pieActive = await jsExpr(cdp, `document.querySelector('.diagram-mode[data-mode="pie"]')?.classList.contains('active')`);
-    if (pieActive) { console.log("  ✓ Pie Chart mode activated"); passed++; }
-    else { console.log("  ✗ Pie Chart mode NOT active"); failed++; }
-  } catch (e) { console.log("  ✗ Pie Chart failed:", e.message); failed++; }
+  for (const mode of ["pie", "treemap", "bar"]) {
+    try {
+      await jsExpr(cdp, `document.querySelectorAll('.diagram-mode').forEach(b=>b.classList.remove('active'));
+        var btn=document.querySelector('.diagram-mode[data-mode="${mode}"]');
+        if(btn)btn.classList.add('active');
+        if(window.__diagram)window.__diagram.setMode('${mode}');`);
+      await sleep(300);
+      const active = await jsExpr(cdp, `document.querySelector('.diagram-mode[data-mode="${mode}"]')?.classList.contains('active')`);
+      if (active) { console.log(`  ✓ ${mode} mode activated`); passed++; }
+      else { console.log(`  ✗ ${mode} NOT active`); failed++; }
+    } catch (e) { console.log(`  ✗ ${mode} failed:`, e.message); failed++; }
+  }
 
-  try {
-    await jsExpr(cdp, `document.querySelectorAll('.diagram-mode').forEach(b=>b.classList.remove('active'));
-      var btn=document.querySelector('.diagram-mode[data-mode="treemap"]');
-      if(btn)btn.classList.add('active');
-      if(window.diagram)window.diagram.setMode('treemap');`);
-    await sleep(300);
-    const tmActive = await jsExpr(cdp, `document.querySelector('.diagram-mode[data-mode="treemap"]')?.classList.contains('active')`);
-    if (tmActive) { console.log("  ✓ Treemap mode activated"); passed++; }
-    else { console.log("  ✗ Treemap NOT active"); failed++; }
-  } catch (e) { console.log("  ✗ Treemap failed:", e.message); failed++; }
-
-  // 2. Theme toggle
+  // 2. Theme toggle (light/dark)
   console.log("\n── Theme ──");
   try {
     const before = await jsExpr(cdp, "document.body.classList.contains('light-theme')");
@@ -131,11 +111,32 @@ async function main() {
     const after = await jsExpr(cdp, "document.body.classList.contains('light-theme')");
     if (before !== after) { console.log("  ✓ Theme toggle works"); passed++; }
     else { console.log("  ✗ Theme did NOT toggle"); failed++; }
-    // Toggle back
     await jsExpr(cdp, "document.body.classList.toggle('light-theme')");
   } catch (e) { console.log("  ✗ Theme failed:", e.message); failed++; }
 
-  // 3. About dialog
+  // 3. Diagram color themes
+  console.log("\n── Diagram Color Themes ──");
+  const themes = [
+    { id: "default", name: "Default" },
+    { id: "forest",  name: "Forest" },
+    { id: "desert",  name: "Desert" },
+    { id: "ice",     name: "Ice" },
+    { id: "fairy",   name: "Fairy" },
+  ];
+  for (const th of themes) {
+    try {
+      // Call setTheme via JS (same as native menu does)
+      const ok = await jsExpr(cdp, `(function(){
+        if(!window.__diagram || typeof window.__diagram.setTheme !== 'function') return 'no diagram';
+        window.__diagram.setTheme('${th.id}');
+        return window.__diagram._theme === '${th.id}' ? 'ok' : 'wrong:'+window.__diagram._theme;
+      })()`);
+      if (ok === 'ok') { console.log(`  ✓ ${th.name} theme applied`); passed++; }
+      else { console.log(`  ✗ ${th.name}: ${ok}`); failed++; }
+    } catch (e) { console.log(`  ✗ ${th.name} failed:`, e.message); failed++; }
+  }
+
+  // 4. About dialog
   console.log("\n── About ──");
   try {
     await jsExpr(cdp, `var ov=document.getElementById('about-overlay'); if(ov)ov.classList.add('active');`);
@@ -143,11 +144,10 @@ async function main() {
     const aboutActive = await jsExpr(cdp, `document.getElementById('about-overlay')?.classList.contains('active')`);
     if (aboutActive) { console.log("  ✓ About dialog opened"); passed++; }
     else { console.log("  ✗ About NOT opened"); failed++; }
-    // Close about
     await jsExpr(cdp, `document.getElementById('about-overlay')?.classList.remove('active')`);
   } catch (e) { console.log("  ✗ About failed:", e.message); failed++; }
 
-  // 4. Bridge commands
+  // 5. Bridge commands
   console.log("\n── Bridge ──");
   const commands = [
     { name: "get_home_dir", cmd: "get_home_dir", args: {} },
@@ -164,7 +164,7 @@ async function main() {
     } catch (e) { console.log(`  ✗ ${c.name}: ${e.message}`); failed++; }
   }
 
-  // 5. Language switcher
+  // 6. Language switcher
   console.log("\n── Language ──");
   try {
     const langResult = await jsExpr(cdp,
@@ -173,12 +173,11 @@ async function main() {
       `window.I18N?.getLocale?.()?.raw === 'de'`);
     if (deActive) { console.log("  ✓ Language switched to DE"); passed++; }
     else { console.log("  ✗ Language switch failed"); failed++; }
-    // Reset to auto
     await jsExpr(cdp, `if(window.I18N)window.I18N.setLocale('auto')`);
     await sleep(100);
   } catch (e) { console.log("  ✗ Language switch:", e.message); failed++; }
 
-  // 6. Scan button
+  // 7. Scan path
   console.log("\n── Scan path ──");
   try {
     const home = await jsExpr(cdp,
@@ -190,12 +189,10 @@ async function main() {
     else { console.log(`  ✗ Scan path failed: ${home}`); failed++; }
   } catch (e) { console.log("  ✗ Scan path:", e.message); failed++; }
 
-  // Results
   console.log(`\n=== RESULTS ===`);
   const total = passed + failed;
   console.log(`  Passed: ${passed}/${total}`);
   console.log(`  Failed: ${failed}/${total}`);
-  if (failed > 0) console.log(`  Tests: ${failed > 0 ? '✗ FAILED' : '✓ PASSED'}`);
 
   cdp.close();
   killAll();
