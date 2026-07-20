@@ -225,8 +225,9 @@ getSetting("theme", "light").then(function(savedTheme) {
       for (var i = 0; i < scripts.length; i++) {
         var s = document.createElement("script");
         s.src = scripts[i];
+        s.async = false; // preserve execution order
         s.onload = onLoad;
-        s.onerror = onLoad; // Continue even if one fails
+        s.onerror = onLoad;
         document.head.appendChild(s);
       }
     }
@@ -258,6 +259,8 @@ getSetting("theme", "light").then(function(savedTheme) {
           if (diagramContainer) diagramContainer.style.display = "none";
           if (galaxyContainer) {
             galaxyContainer.style.display = "block";
+            // Force layout so clientWidth/Height are available
+            void galaxyContainer.offsetHeight;
             if (!galaxyView) {
               // Lazy-load galaxy scripts first time
               loadGalaxyScripts(function() {
@@ -268,11 +271,13 @@ getSetting("theme", "light").then(function(savedTheme) {
                   galaxyContainer.style.minHeight = "400px";
                   galaxyView = new GalaxyView.GalaxyView(galaxyContainer);
                   galaxyView.init();
+                  // Ensure canvas has proper size
                   galaxyView._resize();
-                  if (galaxyView) {
+                  setTimeout(function() {
+                    galaxyView._resize();
                     galaxyView.show();
                     _feedGalaxyView();
-                  }
+                  }, 50);
                 } catch (e) {
                   console.error("GalaxyView init failed:", e);
                   galaxyView = null;

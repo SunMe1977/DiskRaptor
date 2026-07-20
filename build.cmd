@@ -101,7 +101,8 @@ if exist qt-app\build\position    xcopy /e /i /y qt-app\build\position    dist\p
 if exist qt-app\build\generic     xcopy /e /i /y qt-app\build\generic     dist\generic     >nul
 
 REM WebEngine resources
-if exist qt-app\build\resources    xcopy /e /i /y qt-app\build\resources    dist\resources    >nul
+if exist qt-app\build\resources    xcopy /e /i /y qt-app\build\resources    dist\resources\    >nul
+if exist qt-app\build\resources\*.pak copy /y qt-app\build\resources\*.pak dist\resources\ >nul
 if exist qt-app\build\translations xcopy /e /i /y qt-app\build\translations dist\translations >nul
 
 REM Frontend

@@ -469,8 +469,8 @@ class DiagramRenderer {
       const midAngle = startAngle + sliceAngle / 2;
       const selOffset = isSel ? 8 : 0;
       // Scatter weight: hovered=1, adjacent=0.3, rest=0.05
-      // Only the hovered slice pulls out, nothing else moves
-      const scatterDist = isHov ? 10 * scatterStrength : 0;
+      // Only the hovered slice pulls out radially, nothing else moves
+      const scatterDist = isHov ? 14 * scatterStrength : 0;
       const sliceCx = cx + Math.cos(midAngle) * (scatterDist + (isSel ? 8 : 0));
       const sliceCy = cy + Math.sin(midAngle) * (scatterDist + (isSel ? 8 : 0));
 
@@ -829,8 +829,12 @@ class DiagramRenderer {
     if (hit) {
       if (this._hoveredIndex !== hit.index) {
         this._hoveredIndex = hit.index;
-        // Micro‑Scatter: animate to scattered state
+      }
+      // Micro‑Scatter: ensure scatter is active and slice is redrawn
+      if (this._scatterAmt !== 1) {
         this._startScatter(1);
+      } else {
+        this._draw(); // redraw every frame to keep slice offset visible
       }
       this.canvas.style.cursor = "pointer";
       this.tooltipEl.textContent = hit.path + "  [" + hit.size_human + "]";
