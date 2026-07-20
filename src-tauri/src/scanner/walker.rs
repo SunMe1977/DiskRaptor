@@ -136,61 +136,14 @@ struct FileEntry {
 }
 
 // ─── Windows Scanner (walkdir - single-threaded, fastest on NTFS) ──
-// ─── Windows Win32 Scanner (FindFirstFile/FindNextFile) ─────
-// Uses direct Win32 API for maximum speed. One syscall per entry
-// returns file type AND size simultaneously - vs walkdir which does two.
+// ─── Windows Scanner (walkdir + reusable path buffer) ──
+// walkdir on Windows internally uses FindFirstFileW, but handles
+// the UTF-16→String conversion more efficiently than raw FFI.
+// Combined with our reusable path buffer (String::truncate)
+// this gives the best speed on NTFS.
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use std::ffi::OsString;
-    use std::os::windows::ffi::OsStringExt;
-    #[repr(C)]
-    struct WIN32_FIND_DATAW {
-        dwFileAttributes: u32,
-        ftCreationTime: [u32; 2],
-        ftLastAccessTime: [u32; 2],
-        ftLastWriteTime: [u32; 2],
-        nFileSizeHigh: u32,
-        nFileSizeLow: u32,
-        dwReserved0: u32,
-        dwReserved1: u32,
-        cFileName: [u16; 260],
-        cAlternateFileName: [u16; 14],
-    }
-
-    #[repr(C)]
-    #[derive(PartialEq, Copy, Clone)]
-    struct HANDLE(isize);
-    const INVALID_HANDLE_VALUE: HANDLE = HANDLE(-1);
-    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
-
-    extern "system" {
-        fn FindFirstFileW(lpFileName: *const u16, lpFindFileData: *mut WIN32_FIND_DATAW) -> HANDLE;
-        fn FindNextFileW(hFindFile: HANDLE, lpFindFileData: *mut WIN32_FIND_DATAW) -> i32;
-        fn FindClose(hFindFile: HANDLE) -> i32;
-    }
-
-    #[inline]
-    fn cfilename_to_string(w: &[u16; 260]) -> String {
-        // Find null terminator - most filenames are short, so linear scan is cheap
-        let len = w.iter().position(|&c| c == 0).unwrap_or(260);
-        if len == 0 {
-            return String::new();
-        }
-        OsString::from_wide(&w[..len])
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    #[inline]
-    fn get_file_size(data: &WIN32_FIND_DATAW) -> u64 {
-        (data.nFileSizeHigh as u64) << 32 | data.nFileSizeLow as u64
-    }
-
-    #[inline]
-    fn is_directory(data: &WIN32_FIND_DATAW) -> bool {
-        (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0
-    }
 
     pub fn scan(
         config: &ScanConfig,
@@ -219,11 +172,12 @@ mod platform {
             depth: 0,
             chunk_id: 0,
         });
-        // ═══ Stack-based directory traversal ═══
-        // Uses a single reusable path buffer to avoid millions of String allocations.
-        // The parent node index is already known from the stack (no ptix HashMap needed).
+        use walkdir::WalkDir;
+        let mut ptix: HashMap<String, u32> = HashMap::new();
+        ptix.insert(root_path.into(), root_idx);
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut last_progress = Instant::now();
+        let follow = config.follow_symlinks;
         let errors = config.errors.clone();
         let timeout = config.scan_timeout_secs;
         let mut iter_count = 0u64;
@@ -231,178 +185,125 @@ mod platform {
         let mut files_found: u64 = 0;
         let mut dirs_found: u64 = 0;
         let mut bytes_found: u64 = 0;
-
-        // Reusable path buffer — one allocation, truncated between entries
+        // Reusable path buffer — truncated between entries, no new allocs
         let mut path_buf = String::with_capacity(4096);
-        // Reusable search pattern buffer
-        let mut pattern_buf = Vec::<u16>::with_capacity(4096);
 
-        struct DirEntry {
-            path: String,
-            parent: u32,
-        }
-        let mut stack: Vec<DirEntry> = Vec::with_capacity(4096);
-        stack.push(DirEntry {
-            path: root_path.to_owned(),
-            parent: root_idx,
-        });
-
-        while let Some(current) = stack.pop() {
+        for entry_result in WalkDir::new(root_path).follow_links(follow) {
             if arena.nodes.len() > 50_000_000 {
                 break;
             }
-
-            // Build search pattern in reusable buffer
-            let cur_path = &current.path;
-            pattern_buf.clear();
-            for ch in cur_path.chars() {
-                if ch == '/' {
-                    pattern_buf.push(b'\\' as u16);
-                } else {
-                    pattern_buf.push(ch as u16);
-                }
-            }
-            pattern_buf.push(b'\\' as u16);
-            pattern_buf.push(b'*' as u16);
-            pattern_buf.push(0); // null terminator
-
-            let mut find_data: WIN32_FIND_DATAW = unsafe { std::mem::zeroed() };
-            let find_handle = unsafe { FindFirstFileW(pattern_buf.as_ptr(), &mut find_data) };
-            if find_handle == INVALID_HANDLE_VALUE {
-                continue;
-            }
-
-            // Set up reusable path_buf with the current directory path + backslash
-            path_buf.clear();
-            path_buf.push_str(cur_path);
-            if !path_buf.ends_with('\\') {
-                path_buf.push('\\');
-            }
-            let dir_path_len = path_buf.len(); // save for truncation
-
-            let parent_idx = current.parent;
-
-            loop {
-                iter_count += 1;
-                if (iter_count & 0x3FF) == 0 {
-                    if let Some(ref cf) = cancel {
-                        if cf.load(Ordering::Relaxed) {
-                            break;
-                        }
-                    }
-                }
-                if timeout > 0
-                    && (iter_count & 0x1FFF) == 0
-                    && last_progress.elapsed().as_secs() > timeout
-                {
-                    let mut errs = errors.lock().unwrap();
-                    if errs.len() < 100 {
-                        errs.push(format!("TIMEOUT: No progress for {}s", timeout));
-                    }
-                    break;
-                }
-
-                let name = unsafe { cfilename_to_string(&find_data.cFileName) };
-                if name == "." || name == ".." {
-                    if unsafe { FindNextFileW(find_handle, &mut find_data) } == 0 {
+            iter_count += 1;
+            if (iter_count & 0x3FF) == 0 {
+                if let Some(ref cf) = cancel {
+                    if cf.load(Ordering::Relaxed) {
                         break;
+                    }
+                }
+            }
+            if timeout > 0
+                && (iter_count & 0x1FFF) == 0
+                && last_progress.elapsed().as_secs() > timeout
+            {
+                errors.lock().unwrap().push(format!(
+                    "TIMEOUT: No progress for {}s at {}",
+                    timeout, root_path
+                ));
+                break;
+            }
+            let entry = match entry_result {
+                Ok(e) => e,
+                Err(e) => {
+                    if let Some(path) = e.path() {
+                        let err_path = path.to_string_lossy().to_string();
+                        let mut errs = errors.lock().unwrap();
+                        if errs.len() < 100 {
+                            errs.push(format!("Access denied: {}", err_path));
+                        }
                     }
                     continue;
                 }
+            };
 
-                // Append filename to reusable path buffer
-                path_buf.truncate(dir_path_len);
-                path_buf.push_str(&name);
+            // Use reusable path buffer
+            let os_path = entry.path();
+            path_buf.clear();
+            path_buf.push_str(&os_path.to_string_lossy());
+            if path_buf == root_path {
+                continue;
+            }
 
-                let is_dir = is_directory(&find_data);
-                let sz = if is_dir { 0 } else { get_file_size(&find_data) };
+            let file_name = entry.file_name().to_string_lossy().into_owned();
+            let is_dir = entry.file_type().is_dir();
+            let parent = os_path
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| root_path.into());
+            let pi = *ptix.get(&parent).unwrap_or(&root_idx);
 
-                if is_dir {
-                    dirs_found += 1;
-                    if skip_dirs.iter().any(|sd| path_buf.contains(sd.as_str())) {
-                        if unsafe { FindNextFileW(find_handle, &mut find_data) } == 0 {
-                            break;
-                        }
-                        continue;
-                    }
-                    let depth = if parent_idx == root_idx {
-                        1
-                    } else {
-                        arena.nodes[parent_idx as usize].depth + 1
-                    };
-                    let ci = arena.alloc(TreeNode {
-                        name,
-                        size: 0,
-                        file_count: 0,
-                        dir_count: 1,
-                        node_type: NodeType::Directory,
-                        parent: parent_idx,
-                        first_child: u32::MAX,
-                        next_sibling: u32::MAX,
-                        depth,
-                        chunk_id: 0,
-                    });
-                    match lc.get(&parent_idx) {
-                        Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                        None => arena.nodes[parent_idx as usize].first_child = ci,
-                    }
-                    lc.insert(parent_idx, ci);
-                    // Clone full path for stack (one per directory, not per file)
-                    stack.push(DirEntry {
-                        path: path_buf.clone(),
-                        parent: ci,
-                    });
+            if is_dir {
+                dirs_found += 1;
+                if skip_dirs.iter().any(|sd| path_buf.contains(sd.as_str())) {
+                    continue;
+                }
+                let depth = if pi == root_idx {
+                    1
                 } else {
-                    files_found += 1;
-                    bytes_found += sz;
-                    let depth = if parent_idx == root_idx {
-                        1
-                    } else {
-                        arena.nodes[parent_idx as usize].depth + 1
-                    };
-                    let ci = arena.alloc(TreeNode {
-                        name,
-                        size: sz,
-                        file_count: 1,
-                        dir_count: 0,
-                        node_type: NodeType::File,
-                        parent: parent_idx,
-                        first_child: u32::MAX,
-                        next_sibling: u32::MAX,
-                        depth,
-                        chunk_id: 0,
-                    });
-                    match lc.get(&parent_idx) {
-                        Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                        None => arena.nodes[parent_idx as usize].first_child = ci,
-                    }
-                    lc.insert(parent_idx, ci);
-                    if sz > 0 {
-                        // Clone only for top files (max 100)
-                        top_files.insert(path_buf.clone(), sz, top_count);
-                    }
+                    arena.nodes[pi as usize].depth + 1
+                };
+                let ci = arena.alloc(TreeNode {
+                    name: file_name,
+                    size: 0,
+                    file_count: 0,
+                    dir_count: 1,
+                    node_type: NodeType::Directory,
+                    parent: pi,
+                    first_child: u32::MAX,
+                    next_sibling: u32::MAX,
+                    depth,
+                    chunk_id: 0,
+                });
+                match lc.get(&pi) {
+                    Some(&last) => arena.nodes[last as usize].next_sibling = ci,
+                    None => arena.nodes[pi as usize].first_child = ci,
                 }
-
-                if last_progress.elapsed().as_millis() >= 100 {
-                    progress(files_found, dirs_found, bytes_found, &path_buf);
-                    last_progress = Instant::now();
+                lc.insert(pi, ci);
+                ptix.insert(path_buf.clone(), ci);
+            } else {
+                files_found += 1;
+                let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                bytes_found += sz;
+                let depth = if pi == root_idx {
+                    1
+                } else {
+                    arena.nodes[pi as usize].depth + 1
+                };
+                let ci = arena.alloc(TreeNode {
+                    name: file_name,
+                    size: sz,
+                    file_count: 1,
+                    dir_count: 0,
+                    node_type: NodeType::File,
+                    parent: pi,
+                    first_child: u32::MAX,
+                    next_sibling: u32::MAX,
+                    depth,
+                    chunk_id: 0,
+                });
+                match lc.get(&pi) {
+                    Some(&last) => arena.nodes[last as usize].next_sibling = ci,
+                    None => arena.nodes[pi as usize].first_child = ci,
                 }
-
-                if unsafe { FindNextFileW(find_handle, &mut find_data) } == 0 {
-                    break;
+                lc.insert(pi, ci);
+                if sz > 0 {
+                    top_files.insert(path_buf.clone(), sz, top_count);
+                    file_types.add(&path_buf, sz);
                 }
             }
-
-            unsafe {
-                FindClose(find_handle);
-            }
-            if let Some(ref cf) = cancel {
-                if cf.load(Ordering::Relaxed) {
-                    break;
-                }
+            if last_progress.elapsed().as_millis() >= 100 {
+                progress(files_found, dirs_found, bytes_found, &path_buf);
+                last_progress = Instant::now();
             }
         }
-
         progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
         finish_scan(start, arena, top_files, file_types, progress)
     }
