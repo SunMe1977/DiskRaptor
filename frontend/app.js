@@ -918,6 +918,40 @@ clearTimeout(safetyTimer);
 
     // Cancel (toolbar + progress overlay)
     btnCancel.addEventListener("click", async function () {
+      // 1. Tell Rust to stop scanning
+      try { await window.__TAURI__.invoke("cancel_scan", {}); } catch(e) {}
+      // 2. Wait a moment for the scanner to flush partial results
+      await sleep(800);
+      // 3. Try to get whatever we have so far
+      try {
+        var partial = await window.__TAURI__.invoke("get_scan_result", { scanId: scanId });
+        if (partial && partial.stats && partial.stats.total_files > 0) {
+          currentScanResult = partial;
+          currentStats = partial.stats;
+          statsPanel.render(partial.stats);
+          diagram.setData(partial.stats);
+          var files = Number(partial.stats.total_files || 0).toLocaleString("en-US");
+          var dirs = Number(partial.stats.total_dirs || 0).toLocaleString("en-US");
+          document.querySelector(".status-bar").textContent =
+            "Cancelled - " + files + " files, " + dirs + " dirs (partial)";
+          topFiles.render(partial.stats ? partial.stats.top_files : [], true);
+          // Try to load tree chunks if any
+          if (partial.root_info && partial.root_info.total_chunks > 0) {
+            loader.totalNodes = partial.root_info.total_nodes;
+            loader.totalChunks = partial.root_info.total_chunks;
+            loader.allNodes = new Array(loader.totalNodes);
+            try { await loader.loadChunk(0); } catch(e) {}
+            treeView.expanded.add(0);
+            try { await treeView.rebuild(); } catch(e) {}
+          }
+        } else {
+          document.querySelector(".status-bar").textContent =
+            "Scan cancelled - " + lastFilesFound.toLocaleString() + " files found";
+        }
+      } catch(e) {
+        document.querySelector(".status-bar").textContent =
+          "Scan cancelled - " + lastFilesFound.toLocaleString() + " files found";
+      }
       await loader.release();
       isScanning = false;
       btnScan.disabled = false;
@@ -925,8 +959,6 @@ clearTimeout(safetyTimer);
       btnCancel.disabled = true;
       btnExport.disabled = false;
       progressOverlay.classList.remove("active");
-      document.querySelector(".status-bar").textContent =
-        "Scan cancelled - showing partial results";
     });
     var progressCancelBtn = document.getElementById("progress-cancel");
     if (progressCancelBtn) {

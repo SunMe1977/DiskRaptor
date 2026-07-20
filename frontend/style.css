@@ -1293,6 +1293,22 @@ body.light-theme .about-bg {
     font-size: 11px;
     margin: 0 0 10px;
 }
+.about-links {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 8px 0;
+}
+.about-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 12px;
+    transition: color 0.2s ease;
+}
+.about-link:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
 .about-desc {
     color: var(--text-secondary);
     font-size: 15px;
