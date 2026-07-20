@@ -2033,3 +2033,96 @@ body.light-theme .tree-row.selected {
   0%, 100% { box-shadow: inset 3px 0 0 var(--accent); }
   50% { box-shadow: inset 3px 0 0 var(--accent), 0 0 8px rgba(56,139,253,0.2); }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Welcome Placeholder
+   ═══════════════════════════════════════════════════════════════ */
+.welcome-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  z-index: 10;
+  transition: opacity 0.3s ease;
+}
+.welcome-placeholder.hidden {
+  display: none;
+}
+.welcome-content {
+  text-align: center;
+  max-width: 420px;
+  padding: 40px;
+}
+.welcome-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+  opacity: 0.8;
+}
+.welcome-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+.welcome-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 28px 0;
+}
+.welcome-scan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 32px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #238636, #2ea043);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(35,134,54,0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.welcome-scan-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(35,134,54,0.4);
+}
+.welcome-scan-btn:active {
+  transform: translateY(0);
+}
+.welcome-btn-icon {
+  font-size: 20px;
+}
+.welcome-browse-btn {
+  display: inline-block;
+  margin-top: 12px;
+  margin-left: 8px;
+  padding: 10px 20px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.welcome-browse-btn:hover {
+  background: var(--bg-hover);
+}
+.welcome-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.welcome-close:hover {
+  color: var(--text-primary);
+}
