@@ -279,6 +279,16 @@ class DiagramRenderer {
       const eased = ease(t);
       this._scatterAmt = fromAmt + (this._scatterTarget - fromAmt) * eased;
       this._draw();
+      // CSS transform for additional canvas-level pulse
+      if (this.canvas) {
+        if (target === 1) {
+          // Scattering: subtle scale-down + micro-rotation
+          this.canvas.style.transform = "scale(0.992) rotate(-0.3deg)";
+        } else {
+          // Reassembling: return to normal
+          this.canvas.style.transform = "scale(1) rotate(0deg)";
+        }
+      }
       if (t < 1) {
         this._scatterAnimId = requestAnimationFrame(animate);
       } else {
@@ -497,10 +507,11 @@ class DiagramRenderer {
       if (isHov) scatterWeight = 1.0;
       else if (this._hoveredIndex >= 0) {
         const dist = Math.abs(i - this._hoveredIndex);
-        if (dist === 1) scatterWeight = 0.35;
-        else if (dist === 2) scatterWeight = 0.15;
+        if (dist === 1) scatterWeight = 0.45;
+        else if (dist === 2) scatterWeight = 0.2;
+        else if (dist === 3) scatterWeight = 0.1;
       }
-      const scatterDist = 3.5 * scatterStrength * scatterWeight;
+      const scatterDist = 5 * scatterStrength * scatterWeight;
       const sliceCx = cx + Math.cos(midAngle) * (scatterDist + selOffset);
       const sliceCy = cy + Math.sin(midAngle) * (scatterDist + selOffset);
 
@@ -730,8 +741,9 @@ class DiagramRenderer {
       if (isHov) scatterWeight = 1.0;
       else if (this._hoveredIndex >= 0) {
         const dist = Math.abs(r.index - this._hoveredIndex);
-        if (dist === 1) scatterWeight = 0.35;
-        else if (dist === 2) scatterWeight = 0.15;
+        if (dist === 1) scatterWeight = 0.45;
+        else if (dist === 2) scatterWeight = 0.2;
+        else if (dist === 3) scatterWeight = 0.1;
       }
       if (scatterWeight > 0.05 || isHov) {
         const rectCx = rx + rw / 2;
@@ -739,7 +751,7 @@ class DiagramRenderer {
         const dx = centerX - rectCx;
         const dy = centerY - rectCy;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const pull = 4 * scatterStrength * scatterWeight;
+        const pull = 5 * scatterStrength * scatterWeight;
         rx += (dx / dist) * pull;
         ry += (dy / dist) * pull;
       }
