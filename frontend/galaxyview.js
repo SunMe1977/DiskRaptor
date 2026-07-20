@@ -519,6 +519,31 @@
         this.effects.updateAndRenderParticles(ctx, timestamp);
       }
 
+      // Hover ring — circle around the hovered object
+      if (this.hoveredObject && this.hoveredObject._screenX !== undefined) {
+        var hx = this.hoveredObject._screenX;
+        var hy = this.hoveredObject._screenY;
+        var hr = Math.max((this.hoveredObject.scale || 5) + 6, 22);
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,215,0,0.6)";
+        ctx.lineWidth = 2;
+        ctx.shadowColor = "rgba(255,215,0,0.4)";
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+        ctx.stroke();
+        // Dashed inner ring for extra visibility
+        ctx.strokeStyle = "rgba(255,255,255,0.2)";
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 0;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.arc(hx, hy, hr + 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
       // Hover label
       this._renderHoverLabel(ctx);
     }
@@ -649,7 +674,9 @@
     }
 
     _renderPlanet(ctx, screen, planet, state, time) {
-      const r = planet.scale * state.pulse;
+      // Minimum planet size so tiny planets are always clickable
+      var baseScale = Math.max(planet.scale || 1, 6);
+      const r = baseScale * state.pulse;
       const c = planet.color;
       const rotation = state.rotation || 0;
 
@@ -680,12 +707,26 @@
       ctx.arc(screen.x, screen.y, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Surface detail (crude band)
-      ctx.strokeStyle = `rgba(255,255,255,0.08)`;
-      ctx.lineWidth = Math.max(1, r * 0.2);
-      ctx.beginPath();
-      ctx.ellipse(screen.x, screen.y, r * 0.7, r * 0.15, rotation, 0, Math.PI * 2);
-      ctx.stroke();
+      // Saturn-like rings (only for larger planets)
+      if (r > 6) {
+        var ringInner = r * 1.4;
+        var ringOuter = r * 2.2;
+        // Semi-transparent ring behind planet
+        ctx.save();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},0.3)`;
+        ctx.lineWidth = Math.max(1.5, r * 0.35);
+        ctx.beginPath();
+        ctx.ellipse(screen.x, screen.y, (ringInner + ringOuter) / 2, (ringInner + ringOuter) / 6, rotation, 0, Math.PI * 2);
+        ctx.stroke();
+        // Outer thin ring
+        ctx.strokeStyle = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},0.15)`;
+        ctx.lineWidth = Math.max(0.5, r * 0.1);
+        ctx.beginPath();
+        ctx.ellipse(screen.x, screen.y, ringOuter * 1.1, ringOuter * 0.3, rotation, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       ctx.restore();
     }
@@ -1003,6 +1044,7 @@
     _handleHover(x, y) {
       const visible = this._getVisibleObjects();
       let nearest = null;
+      // Fixed larger hit radius: 30px regardless of object scale
       let nearestDist = 30;
 
       for (const obj of visible) {
@@ -1010,7 +1052,8 @@
         const dx = obj._screenX - x;
         const dy = obj._screenY - y;
         const dist = Math.sqrt(dx*dx + dy*dy);
-        const hitRadius = Math.max((obj.scale || 5) * 2, 8);
+        // Use a fixed, generous hit radius — makes tiny planets hoverable
+        const hitRadius = 30;
         if (dist < hitRadius && dist < nearestDist) {
           nearest = obj;
           nearestDist = dist;
@@ -1019,16 +1062,12 @@
 
       // Pause animation when hovering an object, resume when not
       if (nearest && !this.hoveredObject) {
-        // Just started hovering — pause animation
         if (this.animation) this.animation.paused = true;
       } else if (!nearest && this.hoveredObject) {
-        // Just stopped hovering — resume animation
         if (this.animation) this.animation.paused = false;
       }
 
       this.hoveredObject = nearest;
-
-      // Cursor change
       this.canvas.style.cursor = nearest ? "pointer" : "grab";
     }
 

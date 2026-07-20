@@ -49,30 +49,63 @@
     return FILE_TYPES[ext] || "other";
   }
 
-  function getFileTypeColor(type) {
-    const pal = CFG.palettes[CFG.accessibility.colorBlindPalette === "normal" ? "normal" : CFG.accessibility.colorBlindPalette] || CFG.palettes.normal;
-    switch (type) {
-      case "code": return pal.planetCode;
-      case "docs": return pal.planetDocs;
-      case "media": return pal.planetMedia;
-      case "archive": return pal.planetArchive;
-      default: return pal.planetOther;
+  /** HSL → hex color string */
+  function hslToHex(h, s, l) {
+    var r, g, b;
+    if (s === 0) { r = g = b = l; }
+    else {
+      var hue2rgb = function(p, q, t) {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      var p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
     }
+    var toHex = function(v) { return Math.round(v * 255).toString(16).padStart(2, '0'); };
+    return '#' + toHex(r) + toHex(g) + toHex(b);
   }
 
-  function getMoonColor(type) {
-    const pal = CFG.palettes.normal;
-    switch (type) {
-      case "executable": return pal.moonExecutable;
-      case "media":
-      case "image": return pal.moonImage;
-      case "video": return pal.moonVideo;
-      case "audio": return pal.moonAudio;
-      case "docs": return pal.moonDocument;
-      case "archive": return pal.moonArchive;
-      default: return pal.moonOther;
-    }
+  /** Generate a unique, saturated color per object index using golden ratio hue spread */
+  var _colorSeed = 0;
+  function getUniqueColor(index) {
+    // Golden ratio: 0.618... spreads hues evenly across the spectrum
+    var hue = ((index + 1) * 0.618033988749895) % 1.0;
+    // Vary saturation and lightness smoothly using sine waves
+    var sat = 0.55 + Math.sin(index * 0.7) * 0.3;
+    var lit = 0.45 + Math.sin(index * 1.3 + 1) * 0.2;
+    return hslToHex(hue, sat, lit);
   }
+
+  /** Planet color based on type and index — each planet gets a unique shade */
+  function getFileTypeColor(type, index) {
+    var hue = ((index + 1) * 0.618033988749895) % 1.0;
+    var sat = 0.65, lit = 0.5;
+    switch (type) {
+      case "code": sat = 0.7; lit = 0.55; break;
+      case "docs": sat = 0.5; lit = 0.6; break;
+      case "media": sat = 0.8; lit = 0.5; break;
+      case "archive": sat = 0.6; lit = 0.45; break;
+      default: sat = 0.4; lit = 0.5; break;
+    }
+    return hslToHex(hue, sat, lit);
+  }
+
+  /** Moon color based on type and index */
+  function getMoonColor(type, index) {
+    var hue = ((index + 1) * 0.618033988749895 + 0.3) % 1.0;
+    var sat = 0.4 + Math.sin(index * 0.5) * 0.2;
+    var lit = 0.5 + Math.sin(index * 0.7) * 0.15;
+    return hslToHex(hue, sat, lit);
+  }
+
+
 
   function parseDriveName(drivePath) {
     if (!drivePath) return "?";
@@ -273,7 +306,7 @@
               Math.sin(angle) * orbitRadius,
             ],
             scale: sizeToRadius(dirSize, CFG.galaxy.planetMinRadius, CFG.galaxy.planetMaxRadius),
-            color: parseColor(getFileTypeColor(isCode ? "code" : getFileType(dirName))),
+            color: parseColor(getFileTypeColor(isCode ? "code" : getFileType(dirName), idx)),
             glow: 0.3 + Math.random() * 0.4,
             alpha: 1,
             orbitRadius: orbitRadius,
@@ -343,7 +376,7 @@
             Math.sin(angle) * radius,
           ],
           scale: sizeToRadius(fileSize, 0.5, 8),
-          color: parseColor(getFileTypeColor(fileType)),
+          color: parseColor(getFileTypeColor(fileType, i)),
           glow: 0.3,
           alpha: 0.9,
           orbitRadius: radius,
@@ -419,7 +452,7 @@
         if (count > total * 0.1) {
           const angle = Math.random() * Math.PI * 2;
           const r = 150 + Math.random() * 100;
-          const colorStr = getFileTypeColor(type);
+          const colorStr = getFileTypeColor(type, nebIdx);
           const baseColor = parseColor(colorStr);
 
           this.nebulae.push({
@@ -599,7 +632,7 @@
           parentPlanet.position[2] + Math.sin(angle) * r,
         ],
         scale: sizeToRadius(fileSize, 0.1, 2),
-        color: parseColor(getMoonColor(fileType)),
+        color: parseColor(getMoonColor(fileType, Math.floor(Math.random() * 1000))),
         glow: 0.3,
         alpha: 0.9,
         sparkle: true,
