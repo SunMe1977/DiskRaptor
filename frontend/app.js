@@ -334,6 +334,30 @@ getSetting("theme", "light").then(function(savedTheme) {
       });
     });
 
+    // ── Duplicate Scanner ───────────────────────────────
+    var dupScanner = new DupScanner();
+
+    // Hidden button that C++ Tools→Find Duplicates menu clicks
+    var btnDup = document.createElement("button");
+    btnDup.id = "btn-duplicates";
+    btnDup.style.display = "none";
+    document.body.appendChild(btnDup);
+
+    btnDup.addEventListener("click", function() {
+      // Get current scan path or home dir
+      var path = currentStats ? (currentStats.scanPath || "") : "";
+      if (!path) {
+        window.__TAURI__.invoke("get_home_dir").then(function(home) {
+          var p = typeof home === "string" ? home : (home?.data || "");
+          if (p) dupScanner.start(p);
+        }).catch(function(){
+          dupScanner.start("C:/Users/");
+        });
+      } else {
+        dupScanner.start(path);
+      }
+    });
+
     // Theme switcher
     document.querySelectorAll(".theme-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {

@@ -289,6 +289,82 @@ fn make_json_error(msg: &str) -> *mut c_char {
         .unwrap()
         .into_raw()
 }
+/// Simple hash of first 4KB of a file (XXH3-like)
+fn quick_hash(path: &std::path::Path) -> u64 {
+    use std::io::Read;
+    if let Ok(mut f) = std::fs::File::open(path) {
+        let mut buf = [0u8; 4096];
+        let n = f.read(&mut buf).unwrap_or(0);
+        if n > 0 {
+            let mut h: u64 = (n as u64).wrapping_mul(0x9E3779B97F4A7C15);
+            for &b in &buf[..n] {
+                h = h.wrapping_add(b as u64);
+                h = h.wrapping_mul(0x9E3779B97F4A7C15);
+                h ^= h >> 31;
+            }
+            return h;
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn dr_find_duplicates(path: *const c_char) -> *mut c_char {
+    use std::collections::HashMap;
+    let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();
+
+    // Group files by (size, hash) using walkdir
+    let mut groups: HashMap<(u64, u64), Vec<String>> = HashMap::new();
+    let mut total_files: u64 = 0;
+
+    for entry in walkdir::WalkDir::new(&path_str).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            total_files += 1;
+            let full = entry.path().to_string_lossy().to_string();
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            // First pass: group by size only (fast)
+            // We'll hash in the second pass for size collisions
+            let key = (size, 0);
+            groups.entry(key).or_default().push(full);
+        }
+    }
+
+    // Second pass: hash files in groups with 2+ same-sized files
+    let mut dup_groups: Vec<serde_json::Value> = Vec::new();
+    for ((size, _), files) in groups.drain() {
+        if files.len() < 2 { continue; }
+        // Further group by hash
+        let mut hash_groups: HashMap<u64, Vec<String>> = HashMap::new();
+        for fp in &files {
+            let h = quick_hash(std::path::Path::new(fp));
+            hash_groups.entry(h).or_default().push(fp.clone());
+        }
+        for (_hash, dup_files) in hash_groups.drain() {
+            if dup_files.len() < 2 { continue; }
+            let wasted = size * (dup_files.len() as u64 - 1);
+            dup_groups.push(serde_json::json!({
+                "size": size,
+                "sizeHuman": format_size(size),
+                "count": dup_files.len(),
+                "wasted": wasted,
+                "wastedHuman": format_size(wasted),
+                "files": dup_files,
+            }));
+        }
+    }
+
+    let result = serde_json::json!({
+        "groups": dup_groups,
+        "totalFilesScanned": total_files,
+        "totalGroups": dup_groups.len(),
+        "totalDuplicates": dup_groups.iter().map(|g| g["count"].as_u64().unwrap_or(0) - 1).sum::<u64>(),
+        "wastedBytes": dup_groups.iter().map(|g| g["wasted"].as_u64().unwrap_or(0)).sum::<u64>(),
+        "wastedHuman": format_size(dup_groups.iter().map(|g| g["wasted"].as_u64().unwrap_or(0)).sum()),
+    });
+
+    CString::new(result.to_string()).unwrap().into_raw()
+}
+
 fn format_size(b: u64) -> String {
     const U: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB"];
     if b == 0 {
