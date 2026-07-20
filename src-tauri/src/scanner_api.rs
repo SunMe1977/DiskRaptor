@@ -17,6 +17,7 @@ struct ScanState {
     pub start_time: Mutex<Instant>,
     running: AtomicBool,
     cancelled: AtomicBool,
+    cancel_flag: Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
     scan_id: AtomicU64,
     pub errors: Mutex<Vec<String>>,
 }
@@ -39,6 +40,7 @@ static STATE: LazyLock<ScanState> = LazyLock::new(|| ScanState {
     start_time: Mutex::new(Instant::now()),
     running: AtomicBool::new(false),
     cancelled: AtomicBool::new(false),
+    cancel_flag: Mutex::new(None),
     scan_id: AtomicU64::new(0),
     errors: Mutex::new(Vec::new()),
 });
@@ -112,11 +114,14 @@ pub extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_char {
 
             let state = &*STATE;
             let errors = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            *state.cancel_flag.lock().unwrap() = Some(cancel_flag.clone());
             let config = walker::ScanConfig {
                 root_path: path_clone.clone(),
                 follow_symlinks,
                 scan_timeout_secs: timeout_secs,
                 errors: errors.clone(),
+                cancelled: Some(cancel_flag),
                 ..walker::ScanConfig::default()
             };
             let progress = Box::new(move |files: u64, dirs: u64, bytes: u64, msg: &str| {
@@ -243,6 +248,10 @@ pub extern "C" fn dr_cancel_scan() -> bool {
         return false;
     }
     s.cancelled.store(true, Ordering::Release);
+    // Also set the shared cancel flag that the walker checks
+    if let Some(ref cf) = *s.cancel_flag.lock().unwrap() {
+        cf.store(true, Ordering::Release);
+    }
     true
 }
 #[no_mangle]
