@@ -150,6 +150,7 @@ getSetting("theme", "light").then(function(savedTheme) {
     var welcomeClose = document.getElementById("welcome-close");
     var welcomeScanBtn = document.getElementById("welcome-scan-btn");
     var welcomeBrowseBtn = document.getElementById("welcome-browse-btn");
+    var welcomeAboutBtn = document.getElementById("welcome-about-btn");
 
     function hideWelcome() {
       if (welcomeEl) welcomeEl.classList.add("hidden");
@@ -181,6 +182,14 @@ getSetting("theme", "light").then(function(savedTheme) {
     if (welcomeBrowseBtn) {
       welcomeBrowseBtn.addEventListener("click", function() {
         if (btnBrowse) btnBrowse.click();
+      });
+    }
+
+    // Welcome About button
+    if (welcomeAboutBtn) {
+      welcomeAboutBtn.addEventListener("click", function() {
+        var ov = document.getElementById("about-overlay");
+        if (ov) ov.classList.add("active");
       });
     }
 
