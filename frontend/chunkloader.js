@@ -86,6 +86,9 @@ class ChunkLoader {
 
           if (self.totalChunks > 0) {
             await self.loadChunk(0);
+            // Pre-load all remaining chunks in parallel batches
+            // This avoids 1220 sequential IPC calls
+            self._preloadRemainingChunks();
           }
 
           if (self._scanResolve) {
@@ -259,6 +262,41 @@ class ChunkLoader {
 
     if (this.onProgress) {
       this.onProgress(this.loadedChunks.size, this.totalChunks);
+    }
+  }
+
+  /** Pre-load all remaining chunks in parallel batches of 20 */
+  _preloadRemainingChunks() {
+    var BATCH_SIZE = 20;
+    var start = 1; // chunk 0 already loaded
+    var self = this;
+
+    function loadBatch() {
+      var end = Math.min(start + BATCH_SIZE, self.totalChunks);
+      var promises = [];
+      for (var i = start; i < end; i++) {
+        if (!self.loadedChunks.has(i)) {
+          promises.push(self.loadChunk(i));
+        }
+      }
+      if (promises.length > 0) {
+        Promise.all(promises).then(function() {
+          start = end;
+          if (start < self.totalChunks) {
+            // Yield to event loop between batches
+            setTimeout(loadBatch, 5);
+          }
+        }).catch(function() {
+          start = end;
+          if (start < self.totalChunks) {
+            setTimeout(loadBatch, 5);
+          }
+        });
+      }
+    }
+    // Start loading batches asynchronously
+    if (start < this.totalChunks) {
+      setTimeout(loadBatch, 10);
     }
   }
 
