@@ -51,6 +51,12 @@ class DiagramRenderer {
     this._rippleTime = 0;
     this._mouseInside = false;
 
+    // Micro‑Scatter → Reassemble animation
+    this._scatterAmt = 0; // 0..1, 0=assembled, 1=fully scattered
+    this._scatterTarget = 0;
+    this._scatterAnimId = null;
+    this._scatterEaseStart = 0;
+
     this._init();
     this._initPremiumEffects();
   }
@@ -252,6 +258,37 @@ class DiagramRenderer {
     this._rippleTime = Date.now();
   }
 
+  // ── Micro‑Scatter → Reassemble animation ────────────
+
+  _startScatter(target) {
+    this._scatterTarget = target;
+    if (this._scatterAnimId) return; // already animating
+    this._scatterEaseStart = performance.now();
+    const fromAmt = this._scatterAmt;
+    const duration = 160; // ms
+    const ease = (t) => {
+      // cubic-bezier(0.16, 1, 0.3, 1)
+      return t < 0.5
+        ? 4 * t * t * t
+        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    };
+
+    const animate = (now) => {
+      let t = (now - this._scatterEaseStart) / duration;
+      if (t > 1) t = 1;
+      const eased = ease(t);
+      this._scatterAmt = fromAmt + (this._scatterTarget - fromAmt) * eased;
+      this._draw();
+      if (t < 1) {
+        this._scatterAnimId = requestAnimationFrame(animate);
+      } else {
+        this._scatterAmt = this._scatterTarget;
+        this._scatterAnimId = null;
+      }
+    };
+    this._scatterAnimId = requestAnimationFrame(animate);
+  }
+
   // ── Spring easing for numbers ───────────────────────
 
   _springEasing(t) {
@@ -424,14 +461,9 @@ class DiagramRenderer {
     const totalSize = this.files.reduce((s, f) => s + f.size, 1);
     const colors = this._colors();
 
-    // Magnetic hover: compute offset for hovered slice
-    let hoverOffset = 0;
-    if (this._hoveredIndex >= 0 && this._mouseInside) {
-      hoverOffset = 6; // pull-out distance
-    }
-
-    // Soft pressure: scale down hovered slice
-    const pressureScale = this._mouseInside && this._hoveredIndex >= 0 ? 0.985 : 1;
+    // ── Micro‑Scatter → Reassemble ───────────────────────
+    // All slices shift slightly on hover, adjacent slices react.
+    const scatterStrength = this._scatterAmt || 0; // 0..1
 
     let startAngle = -Math.PI / 2;
     const maxLabels = Math.min(this.files.length, 8);
@@ -451,16 +483,23 @@ class DiagramRenderer {
       const isHov = i === this._hoveredIndex;
       const isSel = i === this._selectedIndex;
 
-      // Soft pressure: scale down slightly when hovered
-      const r = radius * (isHov && this._mouseInside ? pressureScale : 1);
+      // Radius: slight pressure scale on hover
+      const r = radius * (isHov && this._mouseInside ? 0.985 : 1);
 
-      // Magnetic offset: slice pulls out slightly
+      // Micro‑Scatter offset: each slice moves radially by a weighted amount
       const midAngle = startAngle + sliceAngle / 2;
-      const magnetOffset = (isHov && this._mouseInside) ? hoverOffset : 0;
       const selOffset = isSel ? 8 : 0;
-      const offset = magnetOffset + selOffset;
-      const sliceCx = cx + Math.cos(midAngle) * offset;
-      const sliceCy = cy + Math.sin(midAngle) * offset;
+      // Scatter weight: hovered=1, adjacent=0.3, rest=0.05
+      let scatterWeight = 0.05;
+      if (isHov) scatterWeight = 1.0;
+      else if (this._hoveredIndex >= 0) {
+        const dist = Math.abs(i - this._hoveredIndex);
+        if (dist === 1) scatterWeight = 0.35;
+        else if (dist === 2) scatterWeight = 0.15;
+      }
+      const scatterDist = 3.5 * scatterStrength * scatterWeight;
+      const sliceCx = cx + Math.cos(midAngle) * (scatterDist + selOffset);
+      const sliceCy = cy + Math.sin(midAngle) * (scatterDist + selOffset);
 
       // Draw slice
       ctx.beginPath();
@@ -675,21 +714,29 @@ class DiagramRenderer {
     // Center for ripple
     const centerX = w / 2, centerY = h / 2;
 
-    // ── Draft draw pass: compute hover offset transforms ──
+    // ── Draw with Micro‑Scatter effect ──
     for (const r of rects) {
       const isHov = r.index === this._hoveredIndex;
       const color = colors[r.index % colors.length];
       let rx = r.x + gap, ry = r.y + gap;
       let rw = Math.max(2, r.w - gap * 2), rh = Math.max(2, r.h - gap * 2);
 
-      // Hover offset: pull rectangle slightly toward center
-      if (isHov && this._mouseInside) {
+      // Micro‑Scatter offset: hovered moves toward center, adjacent shift too
+      const scatterStrength = this._scatterAmt || 0;
+      let scatterWeight = 0.05;
+      if (isHov) scatterWeight = 1.0;
+      else if (this._hoveredIndex >= 0) {
+        const dist = Math.abs(r.index - this._hoveredIndex);
+        if (dist === 1) scatterWeight = 0.35;
+        else if (dist === 2) scatterWeight = 0.15;
+      }
+      if (scatterWeight > 0.05 || isHov) {
         const rectCx = rx + rw / 2;
         const rectCy = ry + rh / 2;
         const dx = centerX - rectCx;
         const dy = centerY - rectCy;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const pull = 4;
+        const pull = 4 * scatterStrength * scatterWeight;
         rx += (dx / dist) * pull;
         ry += (dy / dist) * pull;
       }
@@ -815,8 +862,8 @@ class DiagramRenderer {
     if (hit) {
       if (this._hoveredIndex !== hit.index) {
         this._hoveredIndex = hit.index;
-        // Magnetic adjacent slice: schedule re-draw
-        this._draw();
+        // Micro‑Scatter: animate to scattered state
+        this._startScatter(1);
       }
       this.canvas.style.cursor = "pointer";
       this.tooltipEl.textContent = hit.path + "  [" + hit.size_human + "]";
@@ -834,7 +881,8 @@ class DiagramRenderer {
   _hideTooltip() {
     if (this._hoveredIndex !== -1) {
       this._hoveredIndex = -1;
-      this._draw();
+      // Micro‑Reassemble: animate back to assembled state
+      this._startScatter(0);
     }
     this.tooltipEl.style.display = "none";
     this.canvas.style.cursor = "default";
