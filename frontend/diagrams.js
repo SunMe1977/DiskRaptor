@@ -493,18 +493,10 @@ class DiagramRenderer {
       const midAngle = startAngle + sliceAngle / 2;
       const selOffset = isSel ? 8 : 0;
       // Scatter weight: hovered=1, adjacent=0.3, rest=0.05
-      // Each slice scatters radially outward from center like explosion fragments
-      let scatterWeight = 0.08;
-      if (isHov) scatterWeight = 1.0;
-      else if (this._hoveredIndex >= 0) {
-        const dist = Math.abs(i - this._hoveredIndex);
-        if (dist === 1) scatterWeight = 0.55;
-        else if (dist === 2) scatterWeight = 0.3;
-        else if (dist === 3) scatterWeight = 0.18;
-      }
-      const scatterDist = 8 * scatterStrength * scatterWeight;
-      const sliceCx = cx + Math.cos(midAngle) * (scatterDist + selOffset);
-      const sliceCy = cy + Math.sin(midAngle) * (scatterDist + selOffset);
+      // Only the hovered slice pulls out, nothing else moves
+      const scatterDist = isHov ? 10 * scatterStrength : 0;
+      const sliceCx = cx + Math.cos(midAngle) * (scatterDist + (isSel ? 8 : 0));
+      const sliceCy = cy + Math.sin(midAngle) * (scatterDist + (isSel ? 8 : 0));
 
       // Draw slice
       ctx.beginPath();
@@ -728,21 +720,14 @@ class DiagramRenderer {
 
       // Micro‑Scatter offset: hovered moves toward center, adjacent shift too
       const scatterStrength = this._scatterAmt || 0;
-      let scatterWeight = 0.08;
-      if (isHov) scatterWeight = 1.0;
-      else if (this._hoveredIndex >= 0) {
-        const dist = Math.abs(r.index - this._hoveredIndex);
-        if (dist === 1) scatterWeight = 0.55;
-        else if (dist === 2) scatterWeight = 0.3;
-        else if (dist === 3) scatterWeight = 0.18;
-      }
-      if (scatterWeight > 0.05 || isHov) {
+      // Only the hovered rectangle pulls out toward center, nothing else moves
+      if (isHov) {
         const rectCx = rx + rw / 2;
         const rectCy = ry + rh / 2;
         const dx = centerX - rectCx;
         const dy = centerY - rectCy;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const pull = 8 * scatterStrength * scatterWeight;
+        const pull = 8 * scatterStrength;
         rx += (dx / dist) * pull;
         ry += (dy / dist) * pull;
       }
