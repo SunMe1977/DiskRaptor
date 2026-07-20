@@ -378,6 +378,18 @@
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, w, h);
 
+      // Welcome overlay
+      ctx.save();
+      ctx.fillStyle = "rgba(136,192,255,0.12)";
+      ctx.font = "20px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText("Galaxy View", w/2, 16);
+      ctx.fillStyle = "rgba(136,192,255,0.06)";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText("Scanner: " + (this.stats ? this.stats.total_files + " files" : "loading..."), w/2, 44);
+      ctx.restore();
+
       // Draw background stars
       this._renderBackgroundStars(ctx, time);
 
