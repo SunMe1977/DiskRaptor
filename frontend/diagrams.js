@@ -375,7 +375,7 @@ class DiagramRenderer {
   }
 
   setMode(mode) {
-    if (mode !== "pie" && mode !== "treemap") return;
+    if (["pie","treemap","bar"].indexOf(mode) < 0) return;
     this.mode = mode;
     this._entered = false;
     this._resize();
@@ -421,6 +421,8 @@ class DiagramRenderer {
 
     if (this.mode === "pie") {
       this._drawPie(this._baseW, this._baseH);
+    } else if (this.mode === "bar") {
+      this._drawBars(this._baseW, this._baseH);
     } else {
       this._drawTreemap(this._baseW, this._baseH);
     }
@@ -480,17 +482,25 @@ class DiagramRenderer {
       ctx.arc(sliceCx, sliceCy, r, startAngle, startAngle + sliceAngle);
       ctx.closePath();
 
-      // Specular-inspired coloring: slightly brighter at edges
+      // Solarize hover: use completely different highlight color
+      var sliceColor = (isHov || isSel) ? this._highlightColor() : color;
+      // For selected, blend a bit of the original for variety
+      if (isSel && !isHov) {
+        sliceColor = this._blendColors(color, this._highlightColor(), 0.5);
+      }
+
+      // Specular-inspired coloring
       const grad = ctx.createRadialGradient(sliceCx, sliceCy, 0, sliceCx, sliceCy, r);
-      grad.addColorStop(0, this._lightenColor(color, isHov ? 15 : 5));
-      grad.addColorStop(0.7, color);
-      grad.addColorStop(1, this._darkenColor(color, 10));
+      grad.addColorStop(0, this._lightenColor(sliceColor, isHov ? 20 : 5));
+      grad.addColorStop(0.7, sliceColor);
+      grad.addColorStop(1, this._darkenColor(sliceColor, 10));
       ctx.fillStyle = grad;
 
-      // Shadow for depth
+      // Shadow for depth - use highlight color glow for hovered
       if (isHov || isSel) {
-        ctx.shadowColor = "rgba(88,166,255," + (isHov ? "0.35" : "0.25") + ")";
-        ctx.shadowBlur = isHov ? 18 : 12;
+        var glowColor = isHov ? "rgba(255,215,0,0.5)" : "rgba(88,166,255,0.25)";
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = isHov ? 24 : 12;
       } else {
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
@@ -500,15 +510,15 @@ class DiagramRenderer {
 
       // Selection outline
       if (isSel) {
-        ctx.strokeStyle = "rgba(88,166,255,0.6)";
+        ctx.strokeStyle = "rgba(255,215,0,0.7)";
         ctx.lineWidth = 2.5;
         ctx.stroke();
       }
 
       // Hover glow outline
       if (isHov && this._mouseInside) {
-        ctx.strokeStyle = "rgba(255,255,255,0.15)";
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "rgba(255,215,0,0.4)";
+        ctx.lineWidth = 2;
         ctx.stroke();
       }
 
@@ -794,6 +804,90 @@ class DiagramRenderer {
     ctx.fillText("Top " + this.files.length + " Files by Size", w / 2, h - 2);
   }
 
+  // ── Bar Chart: Top 100 Files as % Bars ──────────────────
+  _drawBars(w, h) {
+    const ctx = this.ctx;
+    const colors = this._colors();
+    const totalSize = this.files.reduce((s, f) => s + f.size, 1);
+    const maxBars = Math.min(this.files.length, 100);
+    if (maxBars === 0) return;
+
+    const barArea = h - 20;
+    const barH = Math.max(6, Math.min(14, Math.floor(barArea / maxBars)));
+    const gap = Math.max(1, Math.floor(barH * 0.3));
+    const totalH = maxBars * (barH + gap);
+    const startY = Math.max(4, Math.floor((barArea - totalH) / 2));
+    const labelW = 120; // right side label area
+    const barMaxW = w - labelW - 16; // max bar width
+    const hlColor = this._highlightColor();
+
+    for (var i = 0; i < maxBars; i++) {
+      var file = this.files[i];
+      var pct = file.size / totalSize;
+      var barW = Math.max(2, Math.round(barMaxW * pct));
+      var y = startY + i * (barH + gap);
+      var color = colors[i % colors.length];
+      var isHov = i === this._hoveredIndex;
+      var isSel = i === this._selectedIndex;
+
+      // Background track (subtle)
+      ctx.fillStyle = "rgba(128,128,128,0.1)";
+      ctx.beginPath();
+      this._roundRect(ctx, 4, y, barMaxW, barH, 2);
+      ctx.fill();
+
+      // Bar fill
+      var fillColor = (isHov || isSel) ? hlColor : color;
+      ctx.fillStyle = fillColor;
+      ctx.beginPath();
+      this._roundRect(ctx, 4, y, barW, barH, 2);
+      ctx.fill();
+
+      // Glow on hover/select
+      if (isHov || isSel) {
+        ctx.shadowColor = "rgba(255,215,0,0.3)";
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        this._roundRect(ctx, 4, y, barW, barH, 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      // Label on the right
+      ctx.fillStyle = isHov ? "#ffd700" : "#e6edf3";
+      ctx.font = (barH > 10 ? "9px" : "7px") + " sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      var shortName = this._shortName(file.path);
+      var pctStr = (pct * 100).toFixed(1) + "%";
+      var label = this._ellipsize(shortName, Math.floor((labelW - 30) / 5)) + " " + pctStr;
+      ctx.fillText(label, barMaxW + 8, y + barH / 2);
+
+      // Hit region
+      this.hitRegions.push({
+        index: i,
+        path: file.path,
+        size: file.size,
+        size_human: file.size_human,
+        type: "bar",
+        x: 4, y: y, w: barMaxW, h: barH,
+      });
+    }
+  }
+
+  _roundRect(ctx, x, y, w, h, r) {
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
   // ── Hit Testing ────────────────────────────────────
   _hitTest(mx, my) {
     const mxT = (mx - this._panX) / this._zoom;
@@ -812,7 +906,7 @@ class DiagramRenderer {
         if (ea < 0) ea += Math.PI * 2;
         if (angle >= sa && angle <= ea) return r;
         if (ea < sa && (angle >= sa || angle <= ea)) return r;
-      } else if (r.type === "treemap") {
+      } else if (r.type === "treemap" || r.type === "bar") {
         if (mxT >= r.x && mxT <= r.x + r.w && myT >= r.y && myT <= r.y + r.h) return r;
       }
     }
@@ -952,15 +1046,72 @@ class DiagramRenderer {
   }
 
   _colors() {
-    const c = [
-      "#58a6ff", "#3fb950", "#d29922", "#f85149", "#bc8cff",
-      "#79c0ff", "#56d364", "#e3b341", "#ff7b72", "#d2a8ff",
-      "#8b949e", "#484f58", "#f0883e", "#7ee787", "#a5d6ff",
-      "#ffa657", "#ff7b72", "#c9d1d9", "#f778ba", "#db6d28",
-    ];
-    const res = [];
-    for (let i = 0; i < 50; i++) res.push(c[i % c.length]);
+    var theme = this._theme || "default";
+    var palettes = {
+      "default": [
+        "#58a6ff", "#3fb950", "#d29922", "#f85149", "#bc8cff",
+        "#79c0ff", "#56d364", "#e3b341", "#ff7b72", "#d2a8ff",
+        "#8b949e", "#484f58", "#f0883e", "#7ee787", "#a5d6ff",
+        "#ffa657", "#ff7b72", "#c9d1d9", "#f778ba", "#db6d28",
+      ],
+      "forest": [
+        "#2d6a4f", "#40916c", "#52b788", "#74c69d", "#95d5b2",
+        "#1b4332", "#2d6a4f", "#40916c", "#52b788", "#74c69d",
+        "#52796f", "#354f52", "#6b705c", "#a5a58d", "#b7b7a4",
+        "#cb997e", "#edd4b2", "#d4a373", "#bc6c25", "#936639",
+      ],
+      "desert": [
+        "#d4a373", "#faedcd", "#f8f0e3", "#e9c46a", "#f4a261",
+        "#e76f51", "#d62828", "#cc8b3c", "#b5835a", "#a67c52",
+        "#e3b341", "#f0883e", "#db6d28", "#ffa657", "#d29922",
+        "#f4d06f", "#e8d5b7", "#c9a96e", "#b68b5c", "#8b5e34",
+      ],
+      "ice": [
+        "#a8d8ea", "#aa96da", "#fcbad3", "#e0f7fa", "#80deea",
+        "#4dd0e1", "#26c6da", "#00bcd4", "#00acc1", "#0097a7",
+        "#b2ebf2", "#80deea", "#4dd0e1", "#26c6da", "#00bcd4",
+        "#84ffff", "#18ffff", "#00e5ff", "#00b8d4", "#0091ea",
+      ],
+      "fairy": [
+        "#f8bbd0", "#f48fb1", "#f06292", "#ec407a", "#e91e63",
+        "#ce93d8", "#ba68c8", "#ab47bc", "#9c27b0", "#8e24aa",
+        "#e1bee7", "#ce93d8", "#ba68c8", "#ab47bc", "#9c27b0",
+        "#f3e5f5", "#e1bee7", "#ce93d8", "#ba68c8", "#ab47bc",
+      ],
+    };
+    var p = palettes[theme] || palettes["default"];
+    var res = [];
+    for (var i = 0; i < 50; i++) res.push(p[i % p.length]);
     return res;
+  }
+
+  /** Get a bright highlight color for the current theme */
+  _highlightColor() {
+    var theme = this._theme || "default";
+    var highlights = {
+      "default": "#ffd700",
+      "forest": "#f8f9a0",
+      "desert": "#ff6b35",
+      "ice": "#ffffff",
+      "fairy": "#fff0f5",
+    };
+    return highlights[theme] || "#ffd700";
+  }
+
+  setTheme(theme) {
+    if (["default","forest","desert","ice","fairy"].indexOf(theme) < 0) return;
+    this._theme = theme;
+    this._draw();
+  }
+
+  _blendColors(c1, c2, t) {
+    // Blend two hex colors by factor t (0..1)
+    var r1 = parseInt(c1.slice(1,3), 16), g1 = parseInt(c1.slice(3,5), 16), b1 = parseInt(c1.slice(5,7), 16);
+    var r2 = parseInt(c2.slice(1,3), 16), g2 = parseInt(c2.slice(3,5), 16), b2 = parseInt(c2.slice(5,7), 16);
+    var r = Math.round(r1 + (r2 - r1) * t);
+    var g = Math.round(g1 + (g2 - g1) * t);
+    var b = Math.round(b1 + (b2 - b1) * t);
+    return "rgb(" + r + "," + g + "," + b + ")";
   }
 
   _formatSize(bytes) {
