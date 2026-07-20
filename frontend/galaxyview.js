@@ -137,6 +137,16 @@
     init() {
       console.log("[GalaxyView] Initializing...");
 
+      // Remove any existing galaxy canvases from container first
+      var oldCanvases = this.container.querySelectorAll('canvas.galaxy-canvas');
+      for (var ci = 0; ci < oldCanvases.length; ci++) {
+        oldCanvases[ci].parentNode.removeChild(oldCanvases[ci]);
+      }
+      var oldToolbars = this.container.querySelectorAll('.galaxy-toolbar');
+      for (var ti = 0; ti < oldToolbars.length; ti++) {
+        oldToolbars[ti].parentNode.removeChild(oldToolbars[ti]);
+      }
+
       // Build UI
       this._createCanvas();
       this._createUI();
@@ -194,8 +204,17 @@
 
     _resize() {
       if (!this.canvas || !this.container) return;
-      this.canvas.width = this.container.clientWidth;
-      this.canvas.height = this.container.clientHeight;
+      // Use window dimensions directly (avoid container client sizing bugs)
+      var w = window.innerWidth;
+      var h = window.innerHeight;
+      if (w <= 0 || h <= 0) {
+        w = this.container.clientWidth || 800;
+        h = this.container.clientHeight || 600;
+      }
+      this.canvas.width = w;
+      this.canvas.height = h;
+      this.canvas.style.width = w + 'px';
+      this.canvas.style.height = h + 'px';
       if (this.effects) this.effects.resize();
     }
 
@@ -288,6 +307,9 @@
         this.spatialIndex.insert(obj);
       }
 
+      // Auto-zoom camera to fit all objects
+      this._autoFitCamera();
+
       // Build LOD clusters
       this.lod.buildClusters(this.objects);
 
@@ -301,6 +323,33 @@
       this._startRenderLoop();
 
       console.log(`[GalaxyView] Galaxy created: ${this.objects.length} objects`);
+    }
+
+    /** Auto-zoom camera to fit all objects in view */
+    _autoFitCamera() {
+      if (!this.objects || this.objects.length === 0) return;
+      // Find bounding sphere centered on origin (where star is)
+      var maxDist = 10;
+      for (var di = 0; di < this.objects.length; di++) {
+        var pp = this.objects[di].position;
+        if (pp) {
+          var dx = pp[0], dy = pp[1], dz = pp[2];
+          var d = Math.sqrt(dx*dx + dy*dy + dz*dz) + (this.objects[di].scale || 5);
+          if (d > maxDist) maxDist = d;
+        }
+      }
+      // Position camera to fit the bounding sphere with some margin
+      var fovRad = CFG.camera.fov * Math.PI / 180;
+      if (fovRad <= 0) fovRad = 1;
+      var dist = maxDist / Math.sin(fovRad / 2) * 1.8;
+      dist = Math.max(dist, CFG.camera.minZoom);
+      dist = Math.min(dist, CFG.camera.maxZoom);
+      this.camera.position[0] = 0;
+      this.camera.position[1] = dist * 0.3;
+      this.camera.position[2] = dist;
+      this.camera.target[0] = 0;
+      this.camera.target[1] = 0;
+      this.camera.target[2] = 0;
     }
 
     /** Update data during live scan */
@@ -378,16 +427,16 @@
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, w, h);
 
-      // Welcome overlay
+      // Welcome overlay - brighter for visibility
       ctx.save();
-      ctx.fillStyle = "rgba(136,192,255,0.12)";
-      ctx.font = "20px system-ui, sans-serif";
+      ctx.fillStyle = "rgba(180,220,255,0.35)";
+      ctx.font = "bold 22px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillText("Galaxy View", w/2, 16);
-      ctx.fillStyle = "rgba(136,192,255,0.06)";
-      ctx.font = "12px system-ui, sans-serif";
-      ctx.fillText("Scanner: " + (this.stats ? this.stats.total_files + " files" : "loading..."), w/2, 44);
+      ctx.fillText("✦ DiskRaptor Galaxy ✦", w/2, 16);
+      ctx.fillStyle = "rgba(180,220,255,0.25)";
+      ctx.font = "14px system-ui, sans-serif";
+      ctx.fillText("Objects: " + (this.objects ? this.objects.length : 0) + " | " + (this.stats ? (this.stats.total_files || "") + " files, " + (this.stats.total_size ? this._fmtSize(this.stats.total_size) : "") : "loading..."), w/2, 48);
       ctx.restore();
 
       // Draw background stars
@@ -463,9 +512,10 @@
       }
       ctx.restore();
 
-      // Overlay effects (meteors, trails, particles)
+      // Overlay effects (meteors, trails, particles) - composited onto main canvas
       if (this.effects) {
         this.effects.renderOverlay(viewMatrix, { width: w, height: h }, time);
+        this.effects.compositeOverlay(ctx);
         this.effects.updateAndRenderParticles(ctx, timestamp);
       }
 
@@ -1049,17 +1099,20 @@
       this.active = true;
       this.container.style.display = "flex";
       this.container.style.position = "fixed";
-      this.container.style.inset = "0";
+      this.container.style.top = "0";
+      this.container.style.left = "0";
+      this.container.style.width = "100vw";
+      this.container.style.height = "100vh";
       this.container.style.zIndex = "9999";
+      this.container.style.background = "#112233";
       this._resize();
       if (this.objects.length > 0) {
         this._startRenderLoop();
       }
-      // Hide main layout elements
+      // Don't hide main-layout - galaxy overlays on top with z-index
+      // Just hide the toolbar for clean view
       var toolbar = document.getElementById("toolbar");
       if (toolbar) toolbar.style.display = "none";
-      var mainLayout = document.getElementById("main-layout");
-      if (mainLayout) mainLayout.style.display = "none";
       // Escape key to close
       this._escHandler = (e) => { if (e.key === "Escape") this.hide(); };
       document.addEventListener("keydown", this._escHandler);
@@ -1069,13 +1122,15 @@
       this.active = false;
       this.container.style.display = "none";
       this.container.style.position = "";
-      this.container.style.inset = "";
+      this.container.style.top = "";
+      this.container.style.left = "";
+      this.container.style.width = "";
+      this.container.style.height = "";
       this.container.style.zIndex = "";
-      // Restore main layout elements
+      this.container.style.background = "";
+      // Restore toolbar
       var toolbar = document.getElementById("toolbar");
       if (toolbar) toolbar.style.display = "";
-      var mainLayout = document.getElementById("main-layout");
-      if (mainLayout) mainLayout.style.display = "";
       // Remove Escape handler
       if (this._escHandler) {
         document.removeEventListener("keydown", this._escHandler);

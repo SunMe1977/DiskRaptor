@@ -14,11 +14,8 @@
       this.gl = gl;
       this.overlayCanvas = document.createElement("canvas");
       this.overlayCtx = this.overlayCanvas.getContext("2d");
-      this.overlayCanvas.style.position = "absolute";
-      this.overlayCanvas.style.top = "0";
-      this.overlayCanvas.style.left = "0";
-      this.overlayCanvas.style.pointerEvents = "none";
-      canvas.parentElement.appendChild(this.overlayCanvas);
+      // Overlay is kept offscreen (not appended to DOM) to avoid compositing issues in QtWebEngine.
+      // Its content is drawn onto the main canvas by compositeOverlay().
 
       this.bloomBuffer = null;
       this.particles = [];
@@ -67,6 +64,12 @@
       oc.filter = "none";
       oc.drawImage(this.bloomCanvas, 0, 0);
       oc.globalCompositeOperation = "source-over";
+    }
+
+    /** Composite the overlay canvas onto the main canvas context */
+    compositeOverlay(ctx) {
+      ctx.drawImage(this.overlayCanvas, 0, 0);
+      this.overlayCtx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
     }
 
     /** Add a meteor streak */
