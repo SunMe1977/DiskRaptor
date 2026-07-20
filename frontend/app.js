@@ -57,13 +57,12 @@
 
     // ── Theme toggle ───────────────────────────────────────
     var btnTheme = document.getElementById("btn-theme");
-    getSetting("theme", "auto").then(function(savedTheme) {
+getSetting("theme", "light").then(function(savedTheme) {
       var isLight = false;
-      if (savedTheme === "light") {
-        isLight = true;
-      } else if (savedTheme === "auto") {
-        // Follow system preference
+      if (savedTheme === "auto") {
         isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      } else if (savedTheme === "light" || savedTheme === undefined || savedTheme === null) {
+        isLight = true;
       } // else "dark" → isLight stays false
       if (isLight) {
         document.body.classList.add("light-theme");
