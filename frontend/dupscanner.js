@@ -131,53 +131,155 @@ class DupScanner {
 
     var groups = data.groups || [];
     if (groups.length === 0) {
-      list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No duplicate files found ✨</div>';
+      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">\u2728 No duplicate files found</div>';
       if (summary) summary.textContent = "0 groups";
       this.resultsPanel.style.display = "block";
       return;
     }
 
+    var totalWasted = data.wastedBytes || 0;
     if (summary) {
-      summary.textContent = groups.length + " groups · " + this._fmtSize(data.wastedBytes || 0) + " reclaimable";
+      summary.textContent = groups.length + " groups \u00B7 " + this._fmtSize(totalWasted) + " reclaimable";
+    }
+
+    // Add delete selected button
+    var toolbar = document.createElement("div");
+    toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);";
+    toolbar.innerHTML = `
+      <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete</span>
+      <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 Delete Selected</button>
+    `;
+    list.appendChild(toolbar);
+
+    var self = this;
+    var checkStates = {}; // groupIndex -> set of file indices to delete
+    var totalChecked = 0;
+
+    function updateSelectedCount() {
+      var el = document.getElementById("dup-selected-count");
+      if (el) el.textContent = totalChecked;
     }
 
     groups.forEach(function(g, gi) {
+      // Pre-select all except the first file (keep one copy)
+      var preSelected = [];
+      for (var fi = 1; fi < g.files.length; fi++) preSelected.push(fi);
+      checkStates[gi] = new Set(preSelected);
+      totalChecked += preSelected.length;
+
       var card = document.createElement("div");
-      card.style.cssText = "margin-bottom:8px;border:1px solid var(--border);border-radius:6px;overflow:hidden;";
+      card.style.cssText = "margin-bottom:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;opacity:0;transform:translateY(10px);transition:opacity 0.3s,transform 0.3s;";
 
       var header = document.createElement("div");
-      header.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-tertiary);cursor:pointer;";
+      header.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg-tertiary);cursor:pointer;user-select:none;";
       header.innerHTML = `
-        <span style="font-size:12px;color:var(--text-primary);font-weight:500;">${g.count} copies · ${g.sizeHuman || this._fmtSize(g.size)} each</span>
-        <span style="font-size:11px;color:var(--text-muted);">${g.wastedHuman || this._fmtSize(g.wasted)} reclaimable</span>
+        <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDCC1 ${g.count} copies \u00B7 ${g.sizeHuman || self._fmtSize(g.size)} each</span>
+        <span style="font-size:12px;color:var(--text-muted);">\u267B ${g.wastedHuman || self._fmtSize(g.wasted)} <span style="color:#f85149;">reclaimable</span></span>
       `;
       card.appendChild(header);
 
       var body = document.createElement("div");
-      body.style.cssText = "padding:4px 8px;";
+      body.style.cssText = "padding:4px 0;background:var(--bg-secondary);";
+
       (g.files || []).forEach(function(fp, fi) {
+        var checked = preSelected.indexOf(fi) >= 0;
         var row = document.createElement("div");
-        row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 4px;border-radius:3px;cursor:pointer;font-size:12px;color:var(--text-secondary);";
-        row.innerHTML = `<span style="color:var(--text-muted);">${fi + 1}.</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${fp}</span>`;
+        row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:0;font-size:12px;color:var(--text-secondary);transition:background 0.15s;";
+        row.innerHTML = `
+          <input type="checkbox" ${checked ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;accent-color:#f85149;flex-shrink:0;">
+          <span style="color:var(--text-muted);font-size:10px;width:20px;flex-shrink:0;">${fi === 0 ? '\uD83D\uDD19 keep' : '\uD83D\uDDD1'}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${fp}</span>
+          <span style="color:var(--text-muted);font-size:10px;">${self._fmtSize(g.size)}</span>
+        `;
+        
+        var cb = row.querySelector('input');
+        cb.onchange = function() {
+          if (cb.checked) {
+            checkStates[gi].add(fi);
+            totalChecked++;
+          } else {
+            checkStates[gi].delete(fi);
+            totalChecked--;
+          }
+          updateSelectedCount();
+        };
+
+        // Click on row (not checkbox) toggles checkbox
+        row.onclick = function(e) {
+          if (e.target !== cb) {
+            cb.checked = !cb.checked;
+            cb.onchange();
+          }
+        };
         row.onmouseenter = function() { this.style.background = "var(--bg-hover)"; };
         row.onmouseleave = function() { this.style.background = "transparent"; };
-        row.onclick = function() {
-          window.__TAURI__.invoke("open_explorer", { path: fp }).catch(function(){});
-        };
+
         body.appendChild(row);
       });
       card.appendChild(body);
 
-      // Toggle expand on header click
-      var expanded = false;
+      // Toggle expand
+      var expanded = true;
       header.onclick = function() {
         expanded = !expanded;
         body.style.display = expanded ? "block" : "none";
+        header.querySelector('span:first-child').textContent = (expanded ? '\u25BC' : '\u25B6') + ' ' + g.count + ' copies';
       };
-      body.style.display = "none";
 
       list.appendChild(card);
+
+      // Animate cards appearing one by one
+      (function(cardEl, delay) {
+        setTimeout(function() {
+          cardEl.style.opacity = "1";
+          cardEl.style.transform = "translateY(0)";
+        }, delay);
+      })(card, gi * 120);
     });
+
+    updateSelectedCount();
+
+    // Delete button handler
+    var self2 = this;
+    document.getElementById("dup-delete-btn").onclick = function() {
+      var toDelete = [];
+      groups.forEach(function(g, gi) {
+        var selected = checkStates[gi];
+        if (!selected) return;
+        selected.forEach(function(fi) {
+          if (g.files[fi]) toDelete.push(g.files[fi]);
+        });
+      });
+
+      if (toDelete.length === 0) {
+        alert("No files selected to delete.");
+        return;
+      }
+
+      if (!confirm("Delete " + toDelete.length + " duplicate files?\nThis cannot be undone.")) return;
+
+      // Delete one by one with status updates
+      var delBtn = document.getElementById("dup-delete-btn");
+      delBtn.disabled = true;
+      delBtn.textContent = "Deleting...";
+
+      (function deleteNext(idx) {
+        if (idx >= toDelete.length) {
+          delBtn.textContent = "\u2705 Deleted " + toDelete.length + " files";
+          delBtn.style.background = "#238636";
+          return;
+        }
+        window.__TAURI__.invoke("delete_path", { path: toDelete[idx] })
+          .then(function() {
+            delBtn.textContent = "Deleting " + (idx + 1) + "/" + toDelete.length + "...";
+            setTimeout(function() { deleteNext(idx + 1); }, 200);
+          })
+          .catch(function(err) {
+            alert("Failed to delete: " + toDelete[idx] + "\n" + err);
+            setTimeout(function() { deleteNext(idx + 1); }, 200);
+          });
+      })(0);
+    };
 
     this.resultsPanel.style.display = "block";
   }
