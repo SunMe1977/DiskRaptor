@@ -74,6 +74,14 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "load_settings") return loadSettings();
     if (command == "get_memory_info") return getMemoryInfo();
     if (command == "get_process_memory") return getProcessMemory();
+    if (command == "cancel_scan") {
+        if (m_drCancelScan) {
+            m_drCancelScan();
+            return resultToJson(true, QVariantMap{{"status", "cancelled"}});
+        }
+        cppCancelScan();
+        return resultToJson(true, QVariantMap{{"status", "cancelled"}});
+    }
 
     if (command == "get_chunk") {
         uint32_t chunkIndex = static_cast<uint32_t>(args.value("chunkIndex", 0).toUInt());
