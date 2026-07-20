@@ -133,7 +133,7 @@ void MainWindow::setupMenuBar()
         auto *act = themeMenu->addAction(th.label);
         act->setData(th.id);
         connect(act, &QAction::triggered, this, [this, id = th.id]() {
-            runJS(QString("if(window.diagram&&window.diagram.setTheme)window.diagram.setTheme('%1');")
+            runJS(QString("if(window.__diagram&&window.__diagram.setTheme)window.__diagram.setTheme('%1');")
                       .arg(id));
         });
     }

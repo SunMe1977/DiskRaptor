@@ -290,8 +290,8 @@ getSetting("theme", "light").then(function(savedTheme) {
     document.querySelectorAll(".theme-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var theme = this.dataset.theme;
-        if (window.diagram && typeof window.diagram.setTheme === "function") {
-          window.diagram.setTheme(theme);
+        if (window.__diagram && typeof window.__diagram.setTheme === "function") {
+          window.__diagram.setTheme(theme);
         }
         // Highlight active theme
         document.querySelectorAll(".theme-btn").forEach(function (b) {
