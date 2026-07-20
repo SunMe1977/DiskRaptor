@@ -67,6 +67,23 @@
 
         <div id="main-layout">
             <div id="left-column">
+                <!-- Welcome placeholder (shown before first scan) -->
+                <div id="welcome-placeholder" class="welcome-placeholder">
+                    <div class="welcome-content">
+                        <div class="welcome-icon">🔍</div>
+                        <h2 class="welcome-title" data-i18n="welcome.title">Ready when you are</h2>
+                        <p class="welcome-subtitle" data-i18n="welcome.subtitle">Scan your Home folder to begin</p>
+                        <button id="welcome-scan-btn" class="welcome-scan-btn">
+                            <span class="welcome-btn-icon">⚡</span>
+                            <span class="welcome-btn-text" data-i18n="welcome.start">Start Scan</span>
+                        </button>
+                        <button id="welcome-browse-btn" class="welcome-browse-btn" data-i18n="welcome.browse">
+                            📂 Browse Folder
+                        </button>
+                        <button class="welcome-close" id="welcome-close" title="Close">✖</button>
+                    </div>
+                </div>
+
                 <!-- Tree on top -->
                 <section id="tree-panel">
                     <div class="panel-header">

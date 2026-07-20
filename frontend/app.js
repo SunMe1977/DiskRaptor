@@ -145,6 +145,45 @@ getSetting("theme", "light").then(function(savedTheme) {
       });
     });
 
+    // ── Welcome placeholder ──────────────────────────────
+    var welcomeEl = document.getElementById("welcome-placeholder");
+    var welcomeClose = document.getElementById("welcome-close");
+    var welcomeScanBtn = document.getElementById("welcome-scan-btn");
+    var welcomeBrowseBtn = document.getElementById("welcome-browse-btn");
+
+    function hideWelcome() {
+      if (welcomeEl) welcomeEl.classList.add("hidden");
+    }
+    function showWelcome() {
+      if (welcomeEl) welcomeEl.classList.remove("hidden");
+    }
+
+    if (welcomeClose) {
+      welcomeClose.addEventListener("click", hideWelcome);
+    }
+
+    // Welcome Start Scan button — scans home directory
+    if (welcomeScanBtn) {
+      welcomeScanBtn.addEventListener("click", function() {
+        window.__TAURI__.invoke("get_home_dir").then(function(home) {
+          var path = typeof home === "string" ? home : (home?.data || "");
+          if (path && scanPath) {
+            scanPath.value = path;
+          }
+          if (btnScan) btnScan.click();
+        }).catch(function() {
+          if (btnScan) btnScan.click();
+        });
+      });
+    }
+
+    // Welcome Browse button
+    if (welcomeBrowseBtn) {
+      welcomeBrowseBtn.addEventListener("click", function() {
+        if (btnBrowse) btnBrowse.click();
+      });
+    }
+
     let isScanning = false;
     let currentStats = null;
     let currentScanResult = null;
@@ -870,6 +909,7 @@ getSetting("theme", "light").then(function(savedTheme) {
         }
 clearTimeout(safetyTimer);
         progressOverlay.classList.remove("active");
+        hideWelcome();
 
         if (result && result.stats && result.stats.total_files > 0) {
           currentScanResult = result;
