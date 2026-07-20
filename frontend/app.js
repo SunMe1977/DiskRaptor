@@ -61,13 +61,18 @@
       var isLight = false;
       if (savedTheme === "light") {
         isLight = true;
-      } else if (savedTheme === "auto" || savedTheme === "dark") {
+      } else if (savedTheme === "auto") {
+        // Follow system preference
         isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-      }
+      } // else "dark" → isLight stays false
       if (isLight) {
         document.body.classList.add("light-theme");
         btnTheme.textContent = "\u2600";
         btnTheme.title = "Switch to dark mode";
+      } else {
+        document.body.classList.remove("light-theme");
+        btnTheme.textContent = "\u263E";
+        btnTheme.title = "Switch to light mode";
       }
     });
     getSetting("language", "auto").then(function(savedLang) {
@@ -926,8 +931,14 @@ clearTimeout(safetyTimer);
     btnCancel.addEventListener("click", async function () {
       // 1. Tell Rust to stop scanning
       try { await window.__TAURI__.invoke("cancel_scan", {}); } catch(e) {}
-      // 2. Wait a moment for the scanner to flush partial results
-      await sleep(800);
+      // 2. Poll until scan is no longer running (max 5s)
+      for (var ci = 0; ci < 25; ci++) {
+        await sleep(200);
+        try {
+          var sp = await window.__TAURI__.invoke("get_scan_progress", { scanId: currentScanId });
+          if (!sp.is_running) break;
+        } catch(e) { break; }
+      }
       // 3. Try to get whatever we have so far
       try {
         var partial = await window.__TAURI__.invoke("get_scan_result", { scanId: currentScanId });
