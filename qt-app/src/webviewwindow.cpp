@@ -118,6 +118,26 @@ void MainWindow::setupMenuBar()
     themeSystem->setCheckable(true);
     connect(themeSystem, &QAction::triggered, this, [this]() { onThemeChanged("auto"); });
 
+    themeMenu->addSeparator();
+
+    // Diagram color themes (chart/treemap/bar palettes)
+    struct ThemeEntry { QString id; QString label; };
+    QList<ThemeEntry> diagramThemes = {
+        {"default", QString::fromUtf8("🔵 Default — Ocean Depths")},
+        {"forest",  QString::fromUtf8("🌲 Forest — Deep Woods")},
+        {"desert",  QString::fromUtf8("🏜️ Desert — Golden Sands")},
+        {"ice",     QString::fromUtf8("❄️ Ice — Frozen Tundra")},
+        {"fairy",   QString::fromUtf8("🧚 Fairy — Enchanted Garden")},
+    };
+    for (const auto &th : diagramThemes) {
+        auto *act = themeMenu->addAction(th.label);
+        act->setData(th.id);
+        connect(act, &QAction::triggered, this, [this, id = th.id]() {
+            runJS(QString("if(window.diagram&&window.diagram.setTheme)window.diagram.setTheme('%1');")
+                      .arg(id));
+        });
+    }
+
     // ── Tools Menu ─────────────────────────────────────
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     auto *findDupes = toolsMenu->addAction(tr("Find Duplicate Files…"));
