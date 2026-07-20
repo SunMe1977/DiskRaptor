@@ -366,11 +366,14 @@ class DiagramRenderer {
       return;
     }
 
-    const scaleX = viewW / contentW;
-    const scaleY = viewH / contentH;
-    this._zoom = Math.min(scaleX, scaleY) * 0.95;
+    const scaleX = viewW / (contentW + 20);
+    const scaleY = viewH / (contentH + 20);
+    this._zoom = Math.min(scaleX, scaleY) * 0.92;
+    // Center with extra padding for legend text
     this._panX = (viewW - contentW * this._zoom) / 2;
     this._panY = (viewH - contentH * this._zoom) / 2;
+    this._fitPanX = this._panX;
+    this._fitPanY = this._panY;
     this._updateZoomUI();
     this._draw();
   }
