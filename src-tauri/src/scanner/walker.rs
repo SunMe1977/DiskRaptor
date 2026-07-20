@@ -3,6 +3,7 @@ use anyhow::Result;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -17,6 +18,8 @@ pub struct ScanConfig {
     pub scan_timeout_secs: u64,
     /// Shared error list — scanner pushes inaccessible paths here
     pub errors: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// When set to true, scanner should stop as soon as possible
+    pub cancelled: Option<std::sync::Arc<AtomicBool>>,
 }
 
 impl Default for ScanConfig {
@@ -38,6 +41,7 @@ impl Default for ScanConfig {
             follow_symlinks: false,
             scan_timeout_secs: 0,
             errors: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            cancelled: None,
         }
     }
 }
@@ -212,11 +216,20 @@ mod platform {
         let errors = config.errors.clone();
         let timeout = config.scan_timeout_secs;
         let mut iter_count = 0u64;
+        let cancel = config.cancelled.clone();
         for entry_result in WalkDir::new(root_path).follow_links(follow) {
             if arena.nodes.len() > 50_000_000 {
                 break;
             }
+            // Check cancel flag throttled to every 1000 iterations
             iter_count += 1;
+            if (iter_count & 0x3FF) == 0 {
+                if let Some(ref cf) = cancel {
+                    if cf.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
+            }
             // Timeout check throttled to every 5000 iterations
             if timeout > 0
                 && (iter_count & 0x1FFF) == 0
