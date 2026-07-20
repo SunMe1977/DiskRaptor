@@ -197,39 +197,25 @@ getSetting("theme", "light").then(function(savedTheme) {
     var diagramContainer = document.getElementById("diagram-container");
     var isGalaxyMode = false;
 
-    // Lazy-load galaxy scripts only when galaxy mode is first activated
+    // Galaxy scripts are pre-loaded in index.html, so just check and callback
     function loadGalaxyScripts(callback) {
       if (window.GalaxyView && window.GalaxyView.GalaxyView) {
         callback();
         return;
       }
-      var scripts = [
-        "galaxyview/config.js",
-        "galaxyview/spatial-index.js",
-        "galaxyview/data-mapper.js",
-        "galaxyview/animation.js",
-        "galaxyview/effects.js",
-        "galaxyview/interaction.js",
-        "galaxyview/lod.js",
-        "galaxyview/timeline.js",
-        "galaxyview/live-scan.js",
-        "galaxyview/insights.js",
-        "galaxyview/plugin-api.js",
-        "galaxyview.js",
-      ];
-      var loaded = 0;
-      function onLoad() {
-        loaded++;
-        if (loaded === scripts.length) callback();
+      // Scripts should already be loaded from index.html tags, but wait briefly
+      var checkCount = 0;
+      function check() {
+        checkCount++;
+        if (window.GalaxyView && window.GalaxyView.GalaxyView) {
+          callback();
+        } else if (checkCount < 200) {
+          setTimeout(check, 50);
+        } else {
+          console.error("Galaxy scripts not loaded after 10s");
+        }
       }
-      for (var i = 0; i < scripts.length; i++) {
-        var s = document.createElement("script");
-        s.src = scripts[i];
-        s.async = false; // preserve execution order
-        s.onload = onLoad;
-        s.onerror = onLoad;
-        document.head.appendChild(s);
-      }
+      check();
     }
 
     function _feedGalaxyView() {

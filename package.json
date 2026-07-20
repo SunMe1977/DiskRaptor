@@ -6,7 +6,9 @@
   "scripts": {
     "test:home": "node test_scan.mjs",
     "test:c": "node test_scan_c.mjs",
-    "test:galaxy": "node test_galaxy_windows_playwright.mjs"
+    "test:galaxy": "node test_galaxy_windows_playwright.mjs",
+    "test:galaxy-pixel": "node test_galaxy_pixel.mjs",
+    "test:menus": "node test_menus.mjs",
   },
   "dependencies": {
     "playwright": "^1.61.1",
