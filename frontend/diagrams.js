@@ -258,35 +258,11 @@ class DiagramRenderer {
     this._rippleTime = Date.now();
   }
 
-  // ── Micro‑Scatter → Reassemble animation ────────────
+  // ── Scatter snap (instant, no animation loop to avoid flicker) ──
 
   _startScatter(target) {
-    this._scatterTarget = target;
-    if (this._scatterAnimId) return; // already animating
-    this._scatterEaseStart = performance.now();
-    const fromAmt = this._scatterAmt;
-    const duration = 160; // ms
-    const ease = (t) => {
-      // cubic-bezier(0.16, 1, 0.3, 1)
-      return t < 0.5
-        ? 4 * t * t * t
-        : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    };
-
-    const animate = (now) => {
-      let t = (now - this._scatterEaseStart) / duration;
-      if (t > 1) t = 1;
-      const eased = ease(t);
-      this._scatterAmt = fromAmt + (this._scatterTarget - fromAmt) * eased;
-      this._draw();
-      if (t < 1) {
-        this._scatterAnimId = requestAnimationFrame(animate);
-      } else {
-        this._scatterAmt = this._scatterTarget;
-        this._scatterAnimId = null;
-      }
-    };
-    this._scatterAnimId = requestAnimationFrame(animate);
+    this._scatterAmt = target;
+    this._draw();
   }
 
   // ── Spring easing for numbers ───────────────────────
