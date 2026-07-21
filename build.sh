@@ -209,14 +209,20 @@ case "$PLATFORM" in
 </plist>
 EOF
 
-    # Codesign ??? auto-detect Developer ID certificate (do this early for macdeployqt)
+    # Codesign — detect Developer ID certificate
     APPLE_ID="${APPLE_DEVELOPER_ID:-}"
     if [ -z "$APPLE_ID" ]; then
-      APPLE_ID="$(security find-identity -v -p basic 2>/dev/null | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+      echo "  Looking for Developer ID certificate in keychain..."
+      security find-identity -v -p basic 2>&1 | grep -i "developer" || true
+      APPLE_ID="$(security find-identity -v -p basic 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+      if [ -z "$APPLE_ID" ]; then
+        APPLE_ID="$(security find-identity -v 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+      fi
     fi
     if [ -n "$APPLE_ID" ]; then
-      echo ""
       echo "  Developer ID: $APPLE_ID"
+    else
+      echo "  No Developer ID certificate found — will not codesign"
     fi
 
     # Deploy Qt frameworks using macdeployqt (handles rpath, plugins, WebEngine)
