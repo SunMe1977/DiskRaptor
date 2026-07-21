@@ -31,14 +31,9 @@ $zip = "dist/DiskRaptor-$VERSION-win64.zip"
 if (Test-Path $zip) { $ASSETS += $zip }
 Get-ChildItem "dist/DiskRaptor_*_Setup.exe" -ErrorAction SilentlyContinue | ForEach-Object { $ASSETS += $_.FullName }
 
-# ── Delete old release ──
+# ── Ensure release exists (create if missing) ──
 Write-Host ""
-Write-Host "  Deleting old release $TAG (if any)..."
-gh release delete $TAG --yes 2>$null | Out-Null
-
-# ── Create fresh release (auto-creates tag) ──
-Write-Host ""
-Write-Host "  Creating release $TAG..."
+Write-Host "  Ensuring release $TAG exists..."
 gh release create $TAG --title "DiskRaptor v$VERSION" --notes "" 2>$null | Out-Null
 
 # ── Get upload URL ──

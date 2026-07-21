@@ -38,14 +38,9 @@ if not errorlevel 1 (
 )
 echo   Assets: !ASSETS!
 
-REM -- Delete old release --
+REM -- Ensure release exists (create if missing) --
 echo.
-echo   Deleting old release %TAG% - if any...
-gh release delete %TAG% --yes >nul 2>nul
-
-REM -- Create fresh release --
-echo.
-echo   Creating release %TAG%...
+echo   Ensuring release %TAG% exists...
 gh release create %TAG% --title "DiskRaptor v%VERSION%" --notes "" >nul 2>nul
 
 REM -- Get upload URL --
