@@ -1,8 +1,8 @@
 #!/bin/bash
-# DiskRaptor Build Script — auto-detects platform
+# DiskRaptor Build Script ??? auto-detects platform
 set -euo pipefail
 
-# ── Detect OS ────────────────────────────────
+# ?????? Detect OS ????????????????????????????????????????????????????????????????????????????????????????????????
 OS="$(uname -s)"
 case "$OS" in
   Darwin*)  PLATFORM="macos" ;;
@@ -26,7 +26,7 @@ if ! command -v cargo &>/dev/null && [ -d "$HOME/.cargo/bin" ]; then
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
-# ── Quick tool checks (fast, no brew) ─────────
+# ?????? Quick tool checks (fast, no brew) ???????????????????????????
 echo "[1] Checking tools..."
 for cmd in cmake ninja node rustc cargo git; do
   LOC=""
@@ -46,7 +46,7 @@ for cmd in cmake ninja node rustc cargo git; do
 done
 echo "  All tools present"
 
-# ── Platform-specific deps ────────────────────
+# ?????? Platform-specific deps ????????????????????????????????????????????????????????????
 case "$PLATFORM" in
   macos)
     QT_PREFIX=""
@@ -81,7 +81,7 @@ case "$PLATFORM" in
     ;;
 esac
 
-# ── Build ─────────────────────────────────────
+# ?????? Build ???????????????????????????????????????????????????????????????????????????????????????????????????????????????
 echo ""
 echo "[2] Building..."
 echo "  Rust scanner..."
@@ -102,7 +102,7 @@ cmake .. -G Ninja \
 cmake --build . --config Release
 cd ../..
 
-# ── Package ────────────────────────────────────
+# ?????? Package ????????????????????????????????????????????????????????????????????????????????????????????????????????????
 echo ""
 echo "[3] Packaging..."
 rm -rf dist
@@ -134,7 +134,7 @@ case "$PLATFORM" in
       cp "src-tauri/target/release/libdiskraptor_scanner.dylib" "$APP/Contents/MacOS/"
     fi
 
-    # Icon — generate .icns from PNG if missing
+    # Icon ??? generate .icns from PNG if missing
     if [ ! -f "images/icon.icns" ] && [ -f "images/logo6_original.png" ]; then
       echo "  Generating icon.icns from logo6_original.png..."
       mkdir -p icon_tmp/diskraptor.iconset
@@ -181,7 +181,7 @@ case "$PLATFORM" in
       cp "images/icon.icns" "$APP/Contents/Resources/"
       echo "  icon.icns copied"
     else
-      echo "  WARNING: icon.icns not found — app icon will be missing"
+      echo "  WARNING: icon.icns not found ??? app icon will be missing"
     fi
 
     # Info.plist
@@ -209,56 +209,52 @@ case "$PLATFORM" in
 </plist>
 EOF
 
+    # Codesign ??? auto-detect Developer ID certificate (do this early for macdeployqt)
+    APPLE_ID="${APPLE_DEVELOPER_ID:-}"
+    if [ -z "$APPLE_ID" ]; then
+      APPLE_ID="$(security find-identity -v -p basic 2>/dev/null | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+    fi
+    if [ -n "$APPLE_ID" ]; then
+      echo ""
+      echo "  Developer ID: $APPLE_ID"
+    fi
+
     # Deploy Qt frameworks using macdeployqt (handles rpath, plugins, WebEngine)
     MACDEPLOYQT=""
     for p in "$QT_PREFIX/bin/macdeployqt" "/usr/local/opt/qt@6/bin/macdeployqt" "/opt/homebrew/opt/qt@6/bin/macdeployqt" "$(which macdeployqt 2>/dev/null || true)"; do
       [ -x "$p" ] && MACDEPLOYQT="$p" && break
     done
     if [ -n "$MACDEPLOYQT" ]; then
-      echo ""
       echo "  Deploying Qt frameworks with macdeployqt..."
-      "$MACDEPLOYQT" "$APP" -verbose=1 2>&1 || true
+      "$MACDEPLOYQT" "$APP" -verbose=1 -no-strip 2>&1 || true
       echo "  macdeployqt done"
     else
-      echo ""
-      echo "  WARNING: macdeployqt not found"
-      echo "  App may not run without Qt frameworks deployed"
-      echo "  Install: brew install qt@6 (or run macdeployqt from Qt SDK)"
+      echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
     fi
 
-    # Codesign — auto-detect Developer ID certificate
-    APPLE_ID="${APPLE_DEVELOPER_ID:-}"
-    if [ -z "$APPLE_ID" ]; then
-      # Try to find any Developer ID Application certificate
-      APPLE_ID="$(security find-identity -v -p basic 2>/dev/null | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')"
-    fi
+    # Also do a deep codesign after macdeployqt to catch any unsigned dylibs
     if [ -n "$APPLE_ID" ]; then
       echo ""
-      echo "  Code signing with: $APPLE_ID..."
+      echo "  Final code signing..."
       codesign --deep --force --verify --verbose --sign "$APPLE_ID" "$APP" 2>&1 || true
       echo "  Verifying signature..."
       codesign --verify --verbose=4 "$APP" 2>&1 || true
       spctl --assess --verbose=4 --type execute "$APP" 2>&1 || true
     else
-      echo ""
-      echo "  SKIP codesign — no Developer ID certificate found"
-      echo "  To sign, either:"
-      echo "    export APPLE_DEVELOPER_ID=\"Developer ID Application: Your Name\""
-      echo "  Or install an Apple Developer ID certificate in your keychain"
+      echo "  SKIP codesign ??? no Developer ID certificate found"
       echo "  Without signing, macOS will warn: app is from an unidentified developer"
-      echo "  Workaround: Right-click > Open, or run:"
-      echo "    xattr -rd com.apple.quarantine $APP"
+      echo "  Workaround: Right-click > Open, or run: xattr -rd com.apple.quarantine $APP"
     fi
 
     # Create DMG
     echo ""
     echo "  Creating DMG..."
     if [ ! -d "$APP" ]; then
-      echo "  ERROR: .app bundle not found at $APP — build may have failed"
+      echo "  ERROR: .app bundle not found at $APP ??? build may have failed"
       exit 1
     fi
     if ! hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" -quiet 2>&1; then
-      echo "  ERROR: hdiutil failed — see above"
+      echo "  ERROR: hdiutil failed ??? see above"
       exit 1
     fi
     echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
@@ -278,7 +274,7 @@ EOF
 
     if [ -z "$APPLE_ID" ]; then
       echo ""
-      echo "  ⚠ To remove macOS gatekeeper warnings on this build:"
+      echo "  ??? To remove macOS gatekeeper warnings on this build:"
       echo "    xattr -rd com.apple.quarantine dist/DiskRaptor.app"
       echo "    xattr -rd com.apple.quarantine dist/DiskRaptor-$VERSION-macos.dmg"
     fi
@@ -443,3 +439,4 @@ echo "=========================================="
 echo "  BUILD COMPLETE"
 echo "=========================================="
 echo ""
+
