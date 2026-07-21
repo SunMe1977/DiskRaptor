@@ -212,17 +212,25 @@ EOF
       done
     done
 
-    # Codesign (if APPLE_DEVELOPER_ID is set)
-    if [ -n "${APPLE_DEVELOPER_ID:-}" ]; then
+    # Codesign — auto-detect Developer ID certificate
+    APPLE_ID="${APPLE_DEVELOPER_ID:-}"
+    if [ -z "$APPLE_ID" ]; then
+      # Try to find any Developer ID Application certificate
+      APPLE_ID="$(security find-identity -v -p basic 2>/dev/null | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+    fi
+    if [ -n "$APPLE_ID" ]; then
       echo ""
-      echo "  Code signing with Developer ID: $APPLE_DEVELOPER_ID..."
-      codesign --deep --force --verify --verbose --sign "$APPLE_DEVELOPER_ID" "$APP" 2>&1 || true
+      echo "  Code signing with: $APPLE_ID..."
+      codesign --deep --force --verify --verbose --sign "$APPLE_ID" "$APP" 2>&1 || true
       echo "  Verifying signature..."
       codesign --verify --verbose=4 "$APP" 2>&1 || true
       spctl --assess --verbose=4 --type execute "$APP" 2>&1 || true
     else
       echo ""
-      echo "  SKIP codesign — set APPLE_DEVELOPER_ID env var to sign"
+      echo "  SKIP codesign — no Developer ID certificate found"
+      echo "  To sign, either:"
+      echo "    export APPLE_DEVELOPER_ID=\"Developer ID Application: Your Name\""
+      echo "  Or install an Apple Developer ID certificate in your keychain"
       echo "  Without signing, macOS will warn: app is from an unidentified developer"
       echo "  Workaround: Right-click > Open, or run:"
       echo "    xattr -rd com.apple.quarantine $APP"
@@ -234,9 +242,9 @@ EOF
     hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" 2>/dev/null || true
     echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
 
-    # Sign DMG too (if developer ID available)
-    if [ -n "${APPLE_DEVELOPER_ID:-}" ]; then
-      codesign --verify --verbose --sign "$APPLE_DEVELOPER_ID" "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1 || true
+    # Sign DMG too
+    if [ -n "$APPLE_ID" ]; then
+      codesign --verify --verbose --sign "$APPLE_ID" "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1 || true
       echo "  DMG signed"
     fi
 
@@ -244,7 +252,7 @@ EOF
     zip -r "dist/DiskRaptor-$VERSION-macos.zip" "dist/DiskRaptor.app" 2>/dev/null || true
     echo "  ZIP: dist/DiskRaptor-$VERSION-macos.zip"
 
-    if [ -z "${APPLE_DEVELOPER_ID:-}" ]; then
+    if [ -z "$APPLE_ID" ]; then
       echo ""
       echo "  ⚠ To remove macOS gatekeeper warnings on this build:"
       echo "    xattr -rd com.apple.quarantine dist/DiskRaptor.app"
