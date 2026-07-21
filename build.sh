@@ -226,11 +226,7 @@ EOF
     done
     if [ -n "$MACDEPLOYQT" ]; then
       echo "  Deploying Qt frameworks with macdeployqt..."
-      if [ -n "$APPLE_ID" ]; then
-        "$MACDEPLOYQT" "$APP" -verbose=1 -codesign="$APPLE_ID" 2>&1 || true
-      else
-        "$MACDEPLOYQT" "$APP" -verbose=1 2>&1 || true
-      fi
+      "$MACDEPLOYQT" "$APP" -verbose=1 -no-strip 2>&1 || true
       echo "  macdeployqt done"
     else
       echo "  WARNING: macdeployqt not found — Qt frameworks may be missing"
