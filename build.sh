@@ -209,45 +209,45 @@ case "$PLATFORM" in
 </plist>
 EOF
 
+    # Codesign — auto-detect Developer ID certificate (do this early for macdeployqt)
+    APPLE_ID="${APPLE_DEVELOPER_ID:-}"
+    if [ -z "$APPLE_ID" ]; then
+      APPLE_ID="$(security find-identity -v -p basic 2>/dev/null | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+    fi
+    if [ -n "$APPLE_ID" ]; then
+      echo ""
+      echo "  Developer ID: $APPLE_ID"
+    fi
+
     # Deploy Qt frameworks using macdeployqt (handles rpath, plugins, WebEngine)
     MACDEPLOYQT=""
     for p in "$QT_PREFIX/bin/macdeployqt" "/usr/local/opt/qt@6/bin/macdeployqt" "/opt/homebrew/opt/qt@6/bin/macdeployqt" "$(which macdeployqt 2>/dev/null || true)"; do
       [ -x "$p" ] && MACDEPLOYQT="$p" && break
     done
     if [ -n "$MACDEPLOYQT" ]; then
-      echo ""
       echo "  Deploying Qt frameworks with macdeployqt..."
-      "$MACDEPLOYQT" "$APP" -verbose=1 2>&1 || true
+      if [ -n "$APPLE_ID" ]; then
+        "$MACDEPLOYQT" "$APP" -verbose=1 -codesign="$APPLE_ID" 2>&1 || true
+      else
+        "$MACDEPLOYQT" "$APP" -verbose=1 2>&1 || true
+      fi
       echo "  macdeployqt done"
     else
-      echo ""
-      echo "  WARNING: macdeployqt not found"
-      echo "  App may not run without Qt frameworks deployed"
-      echo "  Install: brew install qt@6 (or run macdeployqt from Qt SDK)"
+      echo "  WARNING: macdeployqt not found — Qt frameworks may be missing"
     fi
 
-    # Codesign — auto-detect Developer ID certificate
-    APPLE_ID="${APPLE_DEVELOPER_ID:-}"
-    if [ -z "$APPLE_ID" ]; then
-      # Try to find any Developer ID Application certificate
-      APPLE_ID="$(security find-identity -v -p basic 2>/dev/null | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')"
-    fi
+    # Also do a deep codesign after macdeployqt to catch any unsigned dylibs
     if [ -n "$APPLE_ID" ]; then
       echo ""
-      echo "  Code signing with: $APPLE_ID..."
+      echo "  Final code signing..."
       codesign --deep --force --verify --verbose --sign "$APPLE_ID" "$APP" 2>&1 || true
       echo "  Verifying signature..."
       codesign --verify --verbose=4 "$APP" 2>&1 || true
       spctl --assess --verbose=4 --type execute "$APP" 2>&1 || true
     else
-      echo ""
       echo "  SKIP codesign — no Developer ID certificate found"
-      echo "  To sign, either:"
-      echo "    export APPLE_DEVELOPER_ID=\"Developer ID Application: Your Name\""
-      echo "  Or install an Apple Developer ID certificate in your keychain"
       echo "  Without signing, macOS will warn: app is from an unidentified developer"
-      echo "  Workaround: Right-click > Open, or run:"
-      echo "    xattr -rd com.apple.quarantine $APP"
+      echo "  Workaround: Right-click > Open, or run: xattr -rd com.apple.quarantine $APP"
     fi
 
     # Create DMG
