@@ -10,6 +10,11 @@
   <img src="images/demo.gif" alt="DiskRaptor Demo" style="width:100%;max-width:800px">
 </p>
 
+<p align="center">
+  <img src="images/2026-07-21%2017-56-24.gif" alt="Scan in action" width="49%">
+  <img src="images/2026-07-21%2017-58-25.gif" alt="Diagrams and navigation" width="49%">
+</p>
+
 DiskRaptor scans directories using a **parallel Win32 traversal engine** (Windows) or **walkdir** (macOS/Linux) and renders results in a **virtual tree view** capable of handling **20+ million files** without UI lag.
 
 ---
