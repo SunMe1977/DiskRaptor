@@ -41,7 +41,7 @@ void MainWindow::setupUI()
     mainLayout->setSpacing(0);
 
     // WebView fills the entire window (frontend handles its own toolbar)
-    m_webView = new QWebEngineView();
+    m_webView = new WebView();
     m_webView->setMinimumSize(800, 400);
     mainLayout->addWidget(m_webView, 1);
 

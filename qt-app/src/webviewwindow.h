@@ -18,8 +18,28 @@
 #include <QUrl>
 #include <QDir>
 #include <QDebug>
+#include <QTimer>
+#include <QDesktopServices>
 
 #include "ipcbridge.h"
+
+// WebView that opens target=_blank and new-window links in the system browser
+class WebView : public QWebEngineView
+{
+    Q_OBJECT
+public:
+    using QWebEngineView::QWebEngineView;
+protected:
+    QWebEngineView *createWindow(QWebEnginePage::WebWindowType type) override
+    {
+        auto *dummy = new QWebEngineView();
+        connect(dummy, &QWebEngineView::urlChanged, this, [](const QUrl &url) {
+            QDesktopServices::openUrl(url);
+        });
+        QTimer::singleShot(0, dummy, &QObject::deleteLater);
+        return dummy;
+    }
+};
 
 class MainWindow : public QMainWindow
 {
@@ -54,7 +74,7 @@ private:
     void setupTrayIcon();
 
     // UI elements
-    QWebEngineView *m_webView = nullptr;
+    WebView *m_webView = nullptr;
     QWebChannel *m_webChannel = nullptr;
     IpcBridge *m_ipcBridge = nullptr;
 
