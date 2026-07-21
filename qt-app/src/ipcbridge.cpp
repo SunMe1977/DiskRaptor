@@ -537,8 +537,14 @@ QString IpcBridge::listDrives()
 {
     QJsonArray drives;
     for (const auto &storage : QStorageInfo::mountedVolumes()) {
-        if (!storage.isValid() || storage.isReadOnly()) continue;
+        if (!storage.isValid()) continue;
+        // Skip ephemeral/synthetic volumes but keep root and system data volumes
         QString path = storage.rootPath();
+#ifdef Q_OS_MACOS
+        if (storage.isReadOnly() && path != "/" && !path.startsWith("/System/Volumes/Data")) continue;
+#else
+        if (storage.isReadOnly()) continue;
+#endif
         // Determine drive type for icon
         QString driveType = "local";
         if (path.startsWith("A:") || path.startsWith("B:")) driveType = "floppy";
@@ -623,8 +629,13 @@ bool IpcBridge::loadRustLibrary()
                 << QCoreApplication::applicationDirPath() + "/.."
                 << QCoreApplication::applicationDirPath() + "/../.."
                 << QCoreApplication::applicationDirPath() + "/../../src-tauri/target/release"
+                << QCoreApplication::applicationDirPath() + "/../../../src-tauri/target/release"
                 << QDir::currentPath() + "/src-tauri/target/release"
-                << QDir::currentPath() + "/../src-tauri/target/release";
+                << QDir::currentPath() + "/../src-tauri/target/release"
+                << QDir::currentPath() + "/../../src-tauri/target/release"
+                // qt-app/build/ or qt-app/build/Release when running from Qt Creator
+                << QCoreApplication::applicationDirPath() + "/../../src-tauri/target/release"
+                << QDir::currentPath() + "/../../../src-tauri/target/release";
 
     // Different names on different platforms
     QStringList libNames;
