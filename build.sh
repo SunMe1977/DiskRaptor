@@ -10,7 +10,7 @@ case "$OS" in
   CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
   *)        echo "Unknown OS: $OS"; exit 1 ;;
 esac
-VERSION="0.0.1"
+VERSION="0.0.2"
 echo "=========================================="
 echo "  DiskRaptor $VERSION - $PLATFORM Build"
 echo "=========================================="
@@ -44,7 +44,6 @@ for cmd in cmake ninja node rustc cargo git; do
     exit 1
   fi
 done
-echo "  All tools present"
 echo "  All tools present"
 
 # ── Platform-specific deps ────────────────────
@@ -189,8 +188,8 @@ case "$PLATFORM" in
     <key>CFBundleExecutable</key><string>DiskRaptor</string>
     <key>CFBundleIdentifier</key><string>com.diskraptor.app</string>
     <key>CFBundleName</key><string>DiskRaptor</string>
-    <key>CFBundleVersion</key><string>0.0.1</string>
-    <key>CFBundleShortVersionString</key><string>0.0.1</string>
+    <key>CFBundleVersion</key><string>0.0.2</string>
+    <key>CFBundleShortVersionString</key><string>0.0.2</string>
     <key>CFBundleIconFile</key><string>icon.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -294,7 +293,7 @@ SCRIPT
     # Control file
     cat > "$DEB_DIR/DEBIAN/control" << 'CONTROL'
 Package: diskraptor
-Version: 0.0.1
+Version: 0.0.2
 Section: utils
 Priority: optional
 Architecture: amd64
