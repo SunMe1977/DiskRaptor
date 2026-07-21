@@ -56,14 +56,9 @@ case "$PLATFORM" in
     ;;
 esac
 
-# ── Delete old release ───────────────────────
+# ── Ensure release exists (create if missing) ──
 echo ""
-echo "  Deleting old release $TAG (if any)..."
-"$GH" release delete "$TAG" --yes 2>/dev/null || true
-
-# ── Create fresh release (auto-creates tag) ──
-echo ""
-echo "  Creating release $TAG..."
+echo "  Ensuring release $TAG exists..."
 "$GH" release create "$TAG" --title "DiskRaptor v$VERSION" --notes "" 2>/dev/null || true
 
 # ── Get upload URL from gh ────────────────────
