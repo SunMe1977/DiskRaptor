@@ -65,7 +65,7 @@ fn main() {
         let remaining = count - total;
         file_count_in_dir = files_per_dir.min(remaining);
 
-        for fi in 0..file_count_in_dir {
+        for _fi in 0..file_count_in_dir {
             let file_path = dirs[di].join(format!("f_{}.dat", total));
             let _ = fs::File::create(&file_path);
             total += 1;
