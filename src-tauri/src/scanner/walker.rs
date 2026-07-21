@@ -124,17 +124,6 @@ pub struct ScanResult {
     pub stats: ScanStats,
 }
 
-/// A single file entry collected during parallel scanning.
-#[cfg(windows)]
-#[derive(Debug, Clone)]
-struct FileEntry {
-    full_path: String,
-    name: String,
-    parent_path: String,
-    size: u64,
-    is_dir: bool,
-}
-
 // ─── Windows Scanner (walkdir - single-threaded, fastest on NTFS) ──
 // ─── Windows Scanner (walkdir + reusable path buffer) ──
 // walkdir on Windows internally uses FindFirstFileW, but handles
