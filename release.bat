@@ -14,29 +14,33 @@ echo.
 
 REM -- Check gh CLI --
 where gh >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: GitHub CLI (gh) not found.
-    echo   Install: winget install GitHub.cli ^&^& gh auth login
-    exit /b 1
-)
+if not errorlevel 1 goto gh_ok
+echo ERROR: GitHub CLI - gh not found.
+echo   Install: winget install GitHub.cli
+echo   Then: gh auth login
+exit /b 1
+:gh_ok
 echo   gh: found
 
 gh auth status 2>&1 | findstr /i "active account" >nul
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: Not authenticated. Run: gh auth login
-    exit /b 1
-)
+if not errorlevel 1 goto auth_ok
+echo ERROR: Not authenticated - run: gh auth login
+exit /b 1
+:auth_ok
 echo   Yes, gh CLI authenticated
 
 REM -- Find assets --
 set ASSETS=
-if exist dist\DiskRaptor-%VERSION%-win64.zip set ASSETS=dist\DiskRaptor-%VERSION%-win64.zip
-for %%f in (dist\DiskRaptor_*_Setup.exe) do if exist %%f set ASSETS=!ASSETS! %%f
+if exist "dist\DiskRaptor-%VERSION%-win64.zip" set ASSETS=dist\DiskRaptor-%VERSION%-win64.zip
+dir /b "dist\DiskRaptor_*_Setup.exe" >nul 2>nul
+if not errorlevel 1 (
+    for /f "delims=" %%f in ('dir /b "dist\DiskRaptor_*_Setup.exe"') do set ASSETS=!ASSETS! dist\%%f
+)
 echo   Assets: !ASSETS!
 
 REM -- Delete old release --
 echo.
-echo   Deleting old release %TAG% (if any)...
+echo   Deleting old release %TAG% - if any...
 gh release delete %TAG% --yes >nul 2>nul
 
 REM -- Create fresh release --
@@ -53,7 +57,6 @@ if "!UPLOAD_URL!"=="" (
     echo   ERROR: Could not get upload URL for release %TAG%
     exit /b 1
 )
-REM Remove {?name,label} suffix
 set UPLOAD_URL=!UPLOAD_URL:{?name,label}=!
 echo   Upload URL: !UPLOAD_URL!
 
@@ -64,8 +67,8 @@ if "!TOKEN!"=="" (
     for /f "delims=" %%t in ('gh auth token 2^>nul') do set TOKEN=%%t
 )
 if "!TOKEN!"=="" (
-    echo   WARNING: No token found. Set GH_TOKEN or GITHUB_TOKEN.
-    echo   Will try gh CLI for upload (may hang)...
+    echo   WARNING: No token found - set GH_TOKEN or GITHUB_TOKEN env var.
+    echo   Will try gh CLI for upload - may hang...
 )
 
 REM -- Upload assets --
@@ -73,38 +76,35 @@ echo.
 echo   Uploading artifacts...
 set COUNT=0
 for %%f in (!ASSETS!) do (
-    if exist %%f (
+    if exist "%%f" (
         set /a COUNT+=1
         set NAME=%%~nxf
-        for %%s in (%%f) do set SIZE=%%~zs
+        set SIZE=%%~zf
         set /a SIZE_MB=!SIZE! / 1048576
-        echo     Uploading: !NAME! (!SIZE_MB! MB)...
+        echo     Uploading: !NAME! - !SIZE_MB! MB...
         if not "!TOKEN!"=="" (
-            echo     (using curl)
-            curl -L -X POST "!UPLOAD_URL!?name=!NAME!" ^
-                -H "Authorization: token !TOKEN!" ^
-                -H "Content-Type: application/octet-stream" ^
-                --data-binary "@%%f" --connect-timeout 30 --max-time 600 >nul 2>&1
-            if !ERRORLEVEL! equ 0 (
-                echo       Done
-            ) else (
+            echo     using curl
+            curl -L -X POST "!UPLOAD_URL!?name=!NAME!" -H "Authorization: token !TOKEN!" -H "Content-Type: application/octet-stream" --data-binary @"%%f" --connect-timeout 30 --max-time 600 >nul 2>&1
+            if errorlevel 1 (
                 echo       curl upload failed
+            ) else (
+                echo       Done
             )
         ) else (
-            echo     (using gh)
+            echo     using gh
             gh release upload %TAG% "%%f" --clobber >nul 2>&1
-            if !ERRORLEVEL! equ 0 (
-                echo       Done
-            ) else (
+            if errorlevel 1 (
                 echo       gh upload failed
+            ) else (
+                echo       Done
             )
         )
     ) else (
-        echo     SKIP (not found): %%f
+        echo     SKIP - not found: %%f
     )
 )
 
-if %COUNT% equ 0 (
+if "%COUNT%"=="0" (
     echo   No files found in dist/.
     echo   Make sure you ran: build.cmd
 )
