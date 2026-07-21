@@ -9,6 +9,8 @@ echo.
 
 setlocal
 
+set VERSION=0.0.2
+
 REM -- Find tool paths ----------------------------
 set MSVC_ROOT=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207
 set WIN10_KIT=C:\Program Files (x86)\Windows Kits\10
