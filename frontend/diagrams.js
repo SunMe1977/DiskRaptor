@@ -347,7 +347,9 @@ class DiagramRenderer {
 
     const scaleX = viewW / (contentW + 20);
     const scaleY = viewH / (contentH + 20);
-    this._zoom = Math.min(scaleX, scaleY) * 0.92;
+    // Bar mode fills full width; pie/treemap keep slight padding
+    const padFactor = this.mode === "bar" ? 1.0 : 0.92;
+    this._zoom = Math.min(scaleX, scaleY) * padFactor;
     // Center with extra padding for legend text
     this._panX = (viewW - contentW * this._zoom) / 2;
     this._panY = (viewH - contentH * this._zoom) / 2;
@@ -395,10 +397,14 @@ class DiagramRenderer {
     }));
     this.files.sort((a, b) => b.size - a.size);
     this._entered = false;
-    this._resize();
+    // Delay resize+fit so container has final layout dimensions
+    requestAnimationFrame(() => {
+      this._resize();
+      requestAnimationFrame(() => this._resize());
+    });
     // Play entrance and bloom for new data
-    setTimeout(() => this._playEntrance(), 50);
-    setTimeout(() => this._playBloom(), 550);
+    setTimeout(() => this._playEntrance(), 100);
+    setTimeout(() => this._playBloom(), 600);
   }
 
   _draw() {
@@ -975,8 +981,15 @@ class DiagramRenderer {
 
   _showContextMenu(x, y, hit) {
     this.contextMenu.style.display = "block";
-    this.contextMenu.style.left = x + "px";
-    this.contextMenu.style.top = y + "px";
+    const rect = this.contextMenu.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = x;
+    let top = y;
+    if (left + rect.width > vw - 8) left = vw - rect.width - 8;
+    if (top + rect.height > vh - 8) top = vh - rect.height - 8;
+    this.contextMenu.style.left = Math.max(0, left) + "px";
+    this.contextMenu.style.top = Math.max(0, top) + "px";
     this._contextHit = hit;
   }
 
