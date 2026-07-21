@@ -232,40 +232,28 @@ EOF
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
     fi
 
-    # Also do a deep codesign after macdeployqt to catch any unsigned dylibs
+    echo "  DEBUG: after macdeployqt block, APPLE_ID is '${APPLE_ID:-}'"
+
     if [ -n "$APPLE_ID" ]; then
-      echo ""
-      echo "  Final code signing..."
-      codesign --deep --force --verify --verbose --sign "$APPLE_ID" "$APP" 2>&1 || true
-      echo "  Verifying signature..."
-      codesign --verify --verbose=4 "$APP" 2>&1 || true
-      spctl --assess --verbose=4 --type execute "$APP" 2>&1 || true
-    else
-      echo "  SKIP codesign ??? no Developer ID certificate found"
-      echo "  Without signing, macOS will warn: app is from an unidentified developer"
-      echo "  Workaround: Right-click > Open, or run: xattr -rd com.apple.quarantine $APP"
+      echo "  Codesigning (deep)..."
+      codesign --deep --force --sign "$APPLE_ID" "$APP" 2>&1 || true
     fi
 
-    # Create DMG
+    echo "  DEBUG: Creating DMG step..."
     echo ""
     echo "  Creating DMG..."
     if [ ! -d "$APP" ]; then
-      echo "  ERROR: .app bundle not found at $APP ??? build may have failed"
+      echo "  ERROR: .app bundle not found at $APP"
       exit 1
     fi
     if ! hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" -quiet 2>&1; then
-      echo "  ERROR: hdiutil failed ??? see above"
+      echo "  ERROR: hdiutil failed"
       exit 1
     fi
     echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
+    echo "  DEBUG: DMG created, continuing..."
 
-    # Sign DMG too
-    if [ -n "$APPLE_ID" ]; then
-      codesign --verify --verbose --sign "$APPLE_ID" "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1 || true
-      echo "  DMG signed"
-    fi
-
-    # Create ZIP
+    echo "  DEBUG: Creating ZIP step..."
     if ! zip -r "dist/DiskRaptor-$VERSION-macos.zip" "dist/DiskRaptor.app" 2>&1; then
       echo "  ERROR: zip creation failed"
       exit 1
