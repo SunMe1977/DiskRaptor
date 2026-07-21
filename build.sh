@@ -110,6 +110,7 @@ mkdir -p dist
 
 case "$PLATFORM" in
   macos)
+    set -x
     echo "  Creating DiskRaptor.app bundle..."
     APP="dist/DiskRaptor.app"
     mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -280,6 +281,7 @@ EOF
     fi
     echo ""
     echo "  Run: open dist/DiskRaptor.app"
+    set +x
     ;;
 
   linux)
