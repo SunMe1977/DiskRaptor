@@ -441,6 +441,11 @@ mod platform {
                     let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
                     bytes_found += sz;
                     let depth = arena.nodes[parent_idx as usize].depth + 1;
+                    // Use name before it's moved into TreeNode
+                    if sz > 0 {
+                        top_files.insert(path_buf.clone(), sz, top_count);
+                        file_types.add(&name, sz);
+                    }
                     let ci = arena.alloc(TreeNode {
                         name,
                         size: sz,
@@ -458,10 +463,6 @@ mod platform {
                         None => arena.nodes[parent_idx as usize].first_child = ci,
                     }
                     lc.insert(parent_idx, ci);
-                    if sz > 0 {
-                        top_files.insert(path_buf.clone(), sz, top_count);
-                        file_types.add(&name, sz);
-                    }
                 }
 
                 if last_progress.elapsed().as_millis() >= 100 {
