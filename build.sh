@@ -119,6 +119,10 @@ case "$PLATFORM" in
       cp "qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor" "$APP/Contents/MacOS/"
     elif [ -f "qt-app/build/DiskRaptor" ]; then
       cp "qt-app/build/DiskRaptor" "$APP/Contents/MacOS/"
+    else
+      echo "  ERROR: DiskRaptor binary not found in qt-app/build/"
+      echo "  Qt build may have failed. Check output above."
+      exit 1
     fi
 
     # Resources
@@ -206,8 +210,14 @@ case "$PLATFORM" in
 EOF
 
     # Copy Qt libraries
+    QTLIB="$QT_PREFIX/lib"
+    if [ ! -d "$QTLIB" ]; then
+      echo "  ERROR: Qt lib dir not found at $QTLIB"
+      echo "  Check Qt installation"
+      exit 1
+    fi
     for lib in Qt6Core Qt6Gui Qt6Widgets Qt6Network Qt6OpenGL Qt6Positioning Qt6PrintSupport Qt6Qml Qt6Quick Qt6Svg Qt6WebChannel Qt6WebEngineCore Qt6WebEngineWidgets; do
-      for f in "$QT_PREFIX/../lib/${lib}."*.dylib; do
+      for f in "$QTLIB/${lib}."*.dylib; do
         [ -f "$f" ] && cp -n "$f" "$APP/Contents/MacOS/" 2>/dev/null || true
       done
     done
@@ -239,7 +249,14 @@ EOF
     # Create DMG
     echo ""
     echo "  Creating DMG..."
-    hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" 2>/dev/null || true
+    if [ ! -d "$APP" ]; then
+      echo "  ERROR: .app bundle not found at $APP — build may have failed"
+      exit 1
+    fi
+    if ! hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" -quiet 2>&1; then
+      echo "  ERROR: hdiutil failed — see above"
+      exit 1
+    fi
     echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
 
     # Sign DMG too
@@ -249,7 +266,10 @@ EOF
     fi
 
     # Create ZIP
-    zip -r "dist/DiskRaptor-$VERSION-macos.zip" "dist/DiskRaptor.app" 2>/dev/null || true
+    if ! zip -r "dist/DiskRaptor-$VERSION-macos.zip" "dist/DiskRaptor.app" 2>&1; then
+      echo "  ERROR: zip creation failed"
+      exit 1
+    fi
     echo "  ZIP: dist/DiskRaptor-$VERSION-macos.zip"
 
     if [ -z "$APPLE_ID" ]; then
