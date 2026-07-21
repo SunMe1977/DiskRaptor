@@ -1,6 +1,6 @@
 {
   "name": "diskraptor",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Ultra-fast disk space analyzer",
   "scripts": {
@@ -9,9 +9,10 @@
     "test:galaxy": "node test_galaxy_windows_playwright.mjs",
     "test:galaxy-pixel": "node test_galaxy_pixel.mjs",
     "test:menus": "node test_menus.mjs",
+    "test:themes": "node test_themes.mjs",
+    "test:galaxy-windows": "node test_galaxy_windows_playwright.mjs",
+    "test:resize": "node test_diagram_resize.mjs"
   },
-  "dependencies": {
-    "playwright": "^1.61.1",
-    "ws": "^8.21.1"
-  }
+  "dependencies": {},
+  "devDependencies": {}
 }

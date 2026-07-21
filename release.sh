@@ -6,7 +6,7 @@
 # Run AFTER build.sh completes successfully.
 set -euo pipefail
 
-VERSION="0.0.1"
+VERSION="0.0.2"
 TAG="v$VERSION"
 GH_REPO="SunMe1977/DiskRaptor"
 
