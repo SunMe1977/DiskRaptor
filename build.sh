@@ -218,9 +218,22 @@ EOF
       exit 1
     fi
     for lib in Qt6Core Qt6Gui Qt6Widgets Qt6Network Qt6OpenGL Qt6Positioning Qt6PrintSupport Qt6Qml Qt6Quick Qt6Svg Qt6WebChannel Qt6WebEngineCore Qt6WebEngineWidgets; do
-      for f in "$QTLIB/${lib}."*.dylib; do
+      for f in "$QTLIB/lib${lib}"*.dylib "$QTLIB/${lib}"*.dylib; do
         [ -f "$f" ] && cp -n "$f" "$APP/Contents/MacOS/" 2>/dev/null || true
       done
+      # Also copy framework bundles (Qt on macOS is often frameworks)
+      for f in "$QTLIB/${lib}.framework"; do
+        if [ -d "$f" ]; then
+          cp -R "$f" "$APP/Contents/MacOS/" 2>/dev/null || true
+        fi
+      done
+    done
+    # Copy QtWebEngineProcess and resources (needed for WebEngine)
+    for f in "$QT_PREFIX/libexec/QtWebEngineProcess" "$QT_PREFIX/libexec/QtWebEngineProcess.app"; do
+      [ -e "$f" ] && cp -R "$f" "$APP/Contents/MacOS/" 2>/dev/null || true
+    done
+    for d in "$QT_PREFIX/lib/QtWebEngineCore.framework/Resources" "$QT_PREFIX/share/qt6/translations" "$QT_PREFIX/share/qt6/resources"; do
+      [ -d "$d" ] && cp -R "$d" "$APP/Contents/Resources/" 2>/dev/null || true
     done
 
     # Codesign — auto-detect Developer ID certificate
