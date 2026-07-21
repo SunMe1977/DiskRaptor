@@ -110,7 +110,6 @@ mkdir -p dist
 
 case "$PLATFORM" in
   macos)
-    set -x
     echo "  Creating DiskRaptor.app bundle..."
     APP="dist/DiskRaptor.app"
     mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -210,31 +209,22 @@ case "$PLATFORM" in
 </plist>
 EOF
 
-    # Copy Qt libraries
-    QTLIB="$QT_PREFIX/lib"
-    if [ ! -d "$QTLIB" ]; then
-      echo "  ERROR: Qt lib dir not found at $QTLIB"
-      echo "  Check Qt installation"
-      exit 1
+    # Deploy Qt frameworks using macdeployqt (handles rpath, plugins, WebEngine)
+    MACDEPLOYQT=""
+    for p in "$QT_PREFIX/bin/macdeployqt" "/usr/local/opt/qt@6/bin/macdeployqt" "/opt/homebrew/opt/qt@6/bin/macdeployqt" "$(which macdeployqt 2>/dev/null || true)"; do
+      [ -x "$p" ] && MACDEPLOYQT="$p" && break
+    done
+    if [ -n "$MACDEPLOYQT" ]; then
+      echo ""
+      echo "  Deploying Qt frameworks with macdeployqt..."
+      "$MACDEPLOYQT" "$APP" -verbose=1 2>&1 || true
+      echo "  macdeployqt done"
+    else
+      echo ""
+      echo "  WARNING: macdeployqt not found"
+      echo "  App may not run without Qt frameworks deployed"
+      echo "  Install: brew install qt@6 (or run macdeployqt from Qt SDK)"
     fi
-    for lib in Qt6Core Qt6Gui Qt6Widgets Qt6Network Qt6OpenGL Qt6Positioning Qt6PrintSupport Qt6Qml Qt6Quick Qt6Svg Qt6WebChannel Qt6WebEngineCore Qt6WebEngineWidgets; do
-      for f in "$QTLIB/lib${lib}"*.dylib "$QTLIB/${lib}"*.dylib; do
-        [ -f "$f" ] && cp -n "$f" "$APP/Contents/MacOS/" 2>/dev/null || true
-      done
-      # Also copy framework bundles (Qt on macOS is often frameworks)
-      for f in "$QTLIB/${lib}.framework"; do
-        if [ -d "$f" ]; then
-          cp -R "$f" "$APP/Contents/MacOS/" 2>/dev/null || true
-        fi
-      done
-    done
-    # Copy QtWebEngineProcess and resources (needed for WebEngine)
-    for f in "$QT_PREFIX/libexec/QtWebEngineProcess" "$QT_PREFIX/libexec/QtWebEngineProcess.app"; do
-      [ -e "$f" ] && cp -R "$f" "$APP/Contents/MacOS/" 2>/dev/null || true
-    done
-    for d in "$QT_PREFIX/lib/QtWebEngineCore.framework/Resources" "$QT_PREFIX/share/qt6/translations" "$QT_PREFIX/share/qt6/resources"; do
-      [ -d "$d" ] && cp -R "$d" "$APP/Contents/Resources/" 2>/dev/null || true
-    done
 
     # Codesign — auto-detect Developer ID certificate
     APPLE_ID="${APPLE_DEVELOPER_ID:-}"
@@ -294,7 +284,6 @@ EOF
     fi
     echo ""
     echo "  Run: open dist/DiskRaptor.app"
-    set +x
     ;;
 
   linux)
