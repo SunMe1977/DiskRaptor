@@ -31,10 +31,21 @@ $zip = "dist/DiskRaptor-$VERSION-win64.zip"
 if (Test-Path $zip) { $ASSETS += $zip }
 Get-ChildItem "dist/DiskRaptor_*_Setup.exe" -ErrorAction SilentlyContinue | ForEach-Object { $ASSETS += $_.FullName }
 
-# ── Ensure release exists ──
+# ── Delete old release ──
 Write-Host ""
-Write-Host "  Ensuring release $TAG exists..."
+Write-Host "  Deleting old release $TAG..."
+gh release delete $TAG --yes 2>$null | Out-Null
+git push --delete origin $TAG 2>$null | Out-Null
+
+# ── Delete local tag & re-tag ──
+git tag -d $TAG 2>$null | Out-Null
+git tag $TAG
+
+# ── Create fresh release ──
+Write-Host ""
+Write-Host "  Creating release $TAG..."
 gh release create $TAG --title "DiskRaptor v$VERSION" --notes "" 2>$null | Out-Null
+git push origin $TAG 2>$null | Out-Null
 
 # ── Upload assets ──
 Write-Host ""
@@ -53,8 +64,26 @@ foreach ($FILE in $ASSETS) {
     if ($LASTEXITCODE -eq 0) {
         Write-Host "      `u{2713} Done"
     } else {
-        Write-Host "      `u{26A0} Upload failed (exit code: $LASTEXITCODE)"
-        Write-Host "      Try manual: gh release upload $TAG `"$FILE`" --clobber"
+        Write-Host "      `u{26A0} gh upload failed (exit code: $LASTEXITCODE)"
+        Write-Host "      Trying curl fallback..."
+        $token = $env:GITHUB_TOKEN
+        if (-not $token) { $token = $env:GH_TOKEN }
+        if ($token) {
+            $uploadUrl = gh release view $TAG --json "uploadUrl" --jq ".uploadUrl"
+            $uploadUrl = $uploadUrl -replace '\{.*', ''
+            curl.exe -L -X POST "${uploadUrl}?name=$NAME" `
+                -H "Authorization: token $token" `
+                -H "Content-Type: application/octet-stream" `
+                --data-binary "@`"$FILE`"" | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "      `u{2713} Done (curl)"
+            } else {
+                Write-Host "      `u{26A0} curl upload failed too"
+            }
+        } else {
+            Write-Host "      Set GITHUB_TOKEN or GH_TOKEN env var for curl fallback"
+            Write-Host "      Or retry: gh release upload $TAG `"$FILE`" --clobber"
+        }
     }
 }
 
