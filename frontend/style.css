@@ -590,6 +590,8 @@ button.icon-btn {
     flex-shrink: 0;
     display: flex;
     gap: 4px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 .diagram-mode {
     padding: 4px 12px;
