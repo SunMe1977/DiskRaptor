@@ -730,17 +730,21 @@ class DiagramRenderer {
       // Selective glow for selected item
       const isSel = r.index === this._selectedIndex;
 
-      // Premium gradient: radial from top-left for material feel
+      // Premium gradient: solarize hover/select with highlight color
+      var treemapColor = (isHov || isSel) ? this._highlightColor() : color;
+      if (isSel && !isHov) {
+        treemapColor = this._blendColors(color, this._highlightColor(), 0.5);
+      }
       const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, Math.max(rw, rh) * 0.8);
-      grad.addColorStop(0, this._lightenColor(color, isHov ? 18 : 8));
-      grad.addColorStop(0.6, color);
-      grad.addColorStop(1, this._darkenColor(color, 12));
+      grad.addColorStop(0, this._lightenColor(treemapColor, isHov ? 18 : 8));
+      grad.addColorStop(0.6, treemapColor);
+      grad.addColorStop(1, this._darkenColor(treemapColor, 12));
       ctx.fillStyle = grad;
 
-      // Shadow for depth
+      // Shadow for depth - golden glow on hover/select
       if (isHov || isSel) {
-        ctx.shadowColor = "rgba(88,166,255," + (isHov ? "0.35" : "0.25") + ")";
-        ctx.shadowBlur = isHov ? 18 : 12;
+        ctx.shadowColor = isHov ? "rgba(255,215,0,0.5)" : "rgba(255,215,0,0.25)";
+        ctx.shadowBlur = isHov ? 24 : 12;
       } else {
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
@@ -748,17 +752,17 @@ class DiagramRenderer {
       ctx.fillRect(rx, ry, rw, rh);
       ctx.shadowBlur = 0;
 
-      // Selection outline
+      // Selection outline - golden
       if (isSel) {
-        ctx.strokeStyle = "rgba(88,166,255,0.6)";
+        ctx.strokeStyle = "rgba(255,215,0,0.7)";
         ctx.lineWidth = 2.5;
         ctx.strokeRect(rx, ry, rw, rh);
       }
 
-      // Hover glow outline
+      // Hover glow outline - golden
       if (isHov && this._mouseInside) {
-        ctx.strokeStyle = "rgba(255,255,255,0.15)";
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "rgba(255,215,0,0.4)";
+        ctx.lineWidth = 2;
         ctx.strokeRect(rx, ry, rw, rh);
       }
 
