@@ -212,14 +212,44 @@ EOF
       done
     done
 
+    # Codesign (if APPLE_DEVELOPER_ID is set)
+    if [ -n "${APPLE_DEVELOPER_ID:-}" ]; then
+      echo ""
+      echo "  Code signing with Developer ID: $APPLE_DEVELOPER_ID..."
+      codesign --deep --force --verify --verbose --sign "$APPLE_DEVELOPER_ID" "$APP" 2>&1 || true
+      echo "  Verifying signature..."
+      codesign --verify --verbose=4 "$APP" 2>&1 || true
+      spctl --assess --verbose=4 --type execute "$APP" 2>&1 || true
+    else
+      echo ""
+      echo "  SKIP codesign — set APPLE_DEVELOPER_ID env var to sign"
+      echo "  Without signing, macOS will warn: app is from an unidentified developer"
+      echo "  Workaround: Right-click > Open, or run:"
+      echo "    xattr -rd com.apple.quarantine $APP"
+    fi
+
     # Create DMG
+    echo ""
     echo "  Creating DMG..."
     hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" 2>/dev/null || true
     echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
 
+    # Sign DMG too (if developer ID available)
+    if [ -n "${APPLE_DEVELOPER_ID:-}" ]; then
+      codesign --verify --verbose --sign "$APPLE_DEVELOPER_ID" "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1 || true
+      echo "  DMG signed"
+    fi
+
     # Create ZIP
     zip -r "dist/DiskRaptor-$VERSION-macos.zip" "dist/DiskRaptor.app" 2>/dev/null || true
     echo "  ZIP: dist/DiskRaptor-$VERSION-macos.zip"
+
+    if [ -z "${APPLE_DEVELOPER_ID:-}" ]; then
+      echo ""
+      echo "  ⚠ To remove macOS gatekeeper warnings on this build:"
+      echo "    xattr -rd com.apple.quarantine dist/DiskRaptor.app"
+      echo "    xattr -rd com.apple.quarantine dist/DiskRaptor-$VERSION-macos.dmg"
+    fi
     echo ""
     echo "  Run: open dist/DiskRaptor.app"
     ;;
