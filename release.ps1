@@ -33,19 +33,34 @@ Get-ChildItem "dist/DiskRaptor_*_Setup.exe" -ErrorAction SilentlyContinue | ForE
 
 # ── Delete old release ──
 Write-Host ""
-Write-Host "  Deleting old release $TAG..."
+Write-Host "  Deleting old release $TAG (if any)..."
 gh release delete $TAG --yes 2>$null | Out-Null
-git push --delete origin $TAG 2>$null | Out-Null
 
-# ── Delete local tag & re-tag ──
-git tag -d $TAG 2>$null | Out-Null
-git tag $TAG
-
-# ── Create fresh release ──
+# ── Create fresh release (auto-creates tag) ──
 Write-Host ""
 Write-Host "  Creating release $TAG..."
 gh release create $TAG --title "DiskRaptor v$VERSION" --notes "" 2>$null | Out-Null
-git push origin $TAG 2>$null | Out-Null
+
+# ── Get upload URL ──
+Write-Host ""
+Write-Host "  Getting upload URL..."
+$uploadUrl = gh release view $TAG --json "uploadUrl" --jq ".uploadUrl"
+$uploadUrl = $uploadUrl -replace '\{.*', ''
+if (-not $uploadUrl) {
+    Write-Host "  ERROR: Could not get upload URL for release $TAG"
+    exit 1
+}
+
+# ── Get token ──
+$token = $env:GH_TOKEN
+if (-not $token) { $token = $env:GITHUB_TOKEN }
+if (-not $token) {
+    $token = gh auth token 2>$null
+}
+if (-not $token) {
+    Write-Host "  WARNING: No token found. Set GH_TOKEN or GITHUB_TOKEN env var."
+    Write-Host "  Will try gh CLI for upload (may hang)..."
+}
 
 # ── Upload assets ──
 Write-Host ""
@@ -60,29 +75,24 @@ foreach ($FILE in $ASSETS) {
     $NAME = Split-Path $FILE -Leaf
     $SIZE = (Get-Item $FILE).Length / 1MB
     Write-Host "    Uploading: $NAME ($([math]::Round($SIZE, 1)) MB)..."
-    $result = gh release upload $TAG "`"$FILE`"" --clobber 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "      `u{2713} Done"
-    } else {
-        Write-Host "      `u{26A0} gh upload failed (exit code: $LASTEXITCODE)"
-        Write-Host "      Trying curl fallback..."
-        $token = $env:GITHUB_TOKEN
-        if (-not $token) { $token = $env:GH_TOKEN }
-        if ($token) {
-            $uploadUrl = gh release view $TAG --json "uploadUrl" --jq ".uploadUrl"
-            $uploadUrl = $uploadUrl -replace '\{.*', ''
-            curl.exe -L -X POST "${uploadUrl}?name=$NAME" `
-                -H "Authorization: token $token" `
-                -H "Content-Type: application/octet-stream" `
-                --data-binary "@`"$FILE`"" | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "      `u{2713} Done (curl)"
-            } else {
-                Write-Host "      `u{26A0} curl upload failed too"
-            }
+    if ($token) {
+        Write-Host "    (using curl)"
+        $result = curl.exe -L -X POST "${uploadUrl}?name=$NAME" `
+            -H "Authorization: token $token" `
+            -H "Content-Type: application/octet-stream" `
+            --data-binary "@`"$FILE`"" --connect-timeout 30 --max-time 600 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "      `u{2713} Done"
         } else {
-            Write-Host "      Set GITHUB_TOKEN or GH_TOKEN env var for curl fallback"
-            Write-Host "      Or retry: gh release upload $TAG `"$FILE`" --clobber"
+            Write-Host "      `u{26A0} curl upload failed"
+        }
+    } else {
+        Write-Host "    (using gh — set GH_TOKEN for curl instead)"
+        $result = gh release upload $TAG "`"$FILE`"" --clobber 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "      `u{2713} Done"
+        } else {
+            Write-Host "      `u{26A0} gh upload failed"
         }
     }
 }

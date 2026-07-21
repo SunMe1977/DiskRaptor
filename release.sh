@@ -58,22 +58,41 @@ esac
 
 # ── Delete old release ───────────────────────
 echo ""
-echo "  Deleting old release $TAG..."
+echo "  Deleting old release $TAG (if any)..."
 "$GH" release delete "$TAG" --yes 2>/dev/null || true
-# Also delete remote tag so recreate works cleanly
-git push --delete origin "$TAG" 2>/dev/null || true
 
-# ── Delete local tag & re-tag ─────────────────
-git tag -d "$TAG" 2>/dev/null || true
-git tag "$TAG"
-
-# ── Create fresh release ─────────────────────
+# ── Create fresh release (auto-creates tag) ──
 echo ""
 echo "  Creating release $TAG..."
 "$GH" release create "$TAG" --title "DiskRaptor v$VERSION" --notes "" 2>/dev/null || true
-git push origin "$TAG" 2>/dev/null || true
 
-# ── Upload assets ─────────────────────────────
+# ── Get upload URL from gh ────────────────────
+echo ""
+echo "  Getting upload URL..."
+UPLOAD_URL="$("$GH" release view "$TAG" --json "uploadUrl" --jq ".uploadUrl" 2>/dev/null | sed 's/{?name,label}//')"
+if [ -z "$UPLOAD_URL" ]; then
+  echo "  ERROR: Could not get upload URL for release $TAG"
+  exit 1
+fi
+echo "  Upload URL: $UPLOAD_URL"
+
+# ── Get token ─────────────────────────────────
+TOKEN=""
+if [ -n "${GH_TOKEN:-}" ]; then
+  TOKEN="$GH_TOKEN"
+elif [ -n "${GITHUB_TOKEN:-}" ]; then
+  TOKEN="$GITHUB_TOKEN"
+else
+  # Try to get token from gh auth
+  TOKEN="$("$GH" auth token 2>/dev/null || true)"
+fi
+
+if [ -z "$TOKEN" ]; then
+  echo "  WARNING: No token found. Set GH_TOKEN or GITHUB_TOKEN env var."
+  echo "  Will try gh CLI for upload (may hang)..."
+fi
+
+# ── Upload assets via curl ────────────────────
 echo ""
 echo "  Uploading artifacts..."
 COUNT=0
@@ -86,29 +105,28 @@ for FILE in $ASSETS; do
   NAME=$(basename "$FILE")
   SIZE=$(du -h "$FILE" | cut -f1)
   echo "    Uploading: $NAME ($SIZE)..."
-  echo "    (this may take a while for large files)"
-  TIMEOUT_CMD=""
-  if command -v timeout &>/dev/null; then
-    TIMEOUT_CMD="timeout 600"
-  elif command -v gtimeout &>/dev/null; then
-    TIMEOUT_CMD="gtimeout 600"
-  fi
-  if $TIMEOUT_CMD "$GH" release upload "$TAG" "$FILE" --clobber 2>&1; then
-    echo "      ✓ Done"
-  else
-    EXIT_CODE=$?
-    echo "      ⚠ Upload failed (exit code: $EXIT_CODE)"
-    echo "      Trying curl fallback..."
-    if [ -n "${GITHUB_TOKEN:-}" ] || [ -n "${GH_TOKEN:-}" ]; then
-      TOKEN="${GITHUB_TOKEN:-${GH_TOKEN}}"
-      UPLOAD_URL="$("$GH" release view "$TAG" --json "uploadUrl" --jq ".uploadUrl" 2>/dev/null | sed 's/{?name,label}//')"
-      curl -L -X POST "$UPLOAD_URL?name=$NAME" \
-        -H "Authorization: token $TOKEN" \
-        -H "Content-Type: application/octet-stream" \
-        --data-binary "@$FILE" && echo "      ✓ Done (curl)" || echo "      ⚠ curl upload failed too"
+  if [ -n "$TOKEN" ]; then
+    echo "    (using curl)"
+    if curl -L -X POST "$UPLOAD_URL?name=$NAME" \
+      -H "Authorization: token $TOKEN" \
+      -H "Content-Type: application/octet-stream" \
+      --data-binary "@$FILE" --connect-timeout 30 --max-time 600; then
+      echo "      ✓ Done"
     else
-      echo "      Set GITHUB_TOKEN or GH_TOKEN for curl fallback"
-      echo "      Or retry manually: gh release upload $TAG $FILE --clobber"
+      echo "      ⚠ curl upload failed"
+    fi
+  else
+    echo "    (using gh with 10min timeout — set GH_TOKEN to use curl)"
+    TIMEOUT_CMD=""
+    if command -v timeout &>/dev/null; then
+      TIMEOUT_CMD="timeout 600"
+    elif command -v gtimeout &>/dev/null; then
+      TIMEOUT_CMD="gtimeout 600"
+    fi
+    if $TIMEOUT_CMD "$GH" release upload "$TAG" "$FILE" --clobber 2>&1; then
+      echo "      ✓ Done"
+    else
+      echo "      ⚠ gh upload failed"
     fi
   fi
 done
