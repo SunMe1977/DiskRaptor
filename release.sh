@@ -1,9 +1,7 @@
 #!/bin/bash
 # DiskRaptor Release Upload Script
-# Uploads current platform's build artifacts to the GitHub release.
-# Does NOT delete existing assets — run on each platform to accumulate files.
-# Uses gh CLI (authenticate once with: gh auth login).
-# Run AFTER build.sh completes successfully.
+# Deletes old release, recreates it, and uploads only this platform's build.
+# Run AFTER build.sh completes successfully on each OS.
 set -euo pipefail
 
 VERSION="0.0.2"
@@ -15,7 +13,6 @@ echo "  DiskRaptor Release Upload v$VERSION"
 echo "=========================================="
 echo ""
 echo "  Note: Large files (DMG, ZIP, DEB) may take several minutes to upload."
-echo "  A 10-minute timeout is set per file."
 echo ""
 
 # ── Find gh CLI ──────────────────────────────
@@ -59,10 +56,22 @@ case "$PLATFORM" in
     ;;
 esac
 
-# ── Ensure release exists ─────────────────────
+# ── Delete old release ───────────────────────
 echo ""
-echo "  Ensuring release $TAG exists..."
+echo "  Deleting old release $TAG..."
+"$GH" release delete "$TAG" --yes 2>/dev/null || true
+# Also delete remote tag so recreate works cleanly
+git push --delete origin "$TAG" 2>/dev/null || true
+
+# ── Delete local tag & re-tag ─────────────────
+git tag -d "$TAG" 2>/dev/null || true
+git tag "$TAG"
+
+# ── Create fresh release ─────────────────────
+echo ""
+echo "  Creating release $TAG..."
 "$GH" release create "$TAG" --title "DiskRaptor v$VERSION" --notes "" 2>/dev/null || true
+git push origin "$TAG" 2>/dev/null || true
 
 # ── Upload assets ─────────────────────────────
 echo ""
@@ -78,7 +87,6 @@ for FILE in $ASSETS; do
   SIZE=$(du -h "$FILE" | cut -f1)
   echo "    Uploading: $NAME ($SIZE)..."
   echo "    (this may take a while for large files)"
-  # Use timeout if available (Linux), otherwise run directly
   TIMEOUT_CMD=""
   if command -v timeout &>/dev/null; then
     TIMEOUT_CMD="timeout 600"
@@ -90,7 +98,18 @@ for FILE in $ASSETS; do
   else
     EXIT_CODE=$?
     echo "      ⚠ Upload failed (exit code: $EXIT_CODE)"
-    echo "      Try manual upload: gh release upload $TAG $FILE --clobber"
+    echo "      Trying curl fallback..."
+    if [ -n "${GITHUB_TOKEN:-}" ] || [ -n "${GH_TOKEN:-}" ]; then
+      TOKEN="${GITHUB_TOKEN:-${GH_TOKEN}}"
+      UPLOAD_URL="$("$GH" release view "$TAG" --json "uploadUrl" --jq ".uploadUrl" 2>/dev/null | sed 's/{?name,label}//')"
+      curl -L -X POST "$UPLOAD_URL?name=$NAME" \
+        -H "Authorization: token $TOKEN" \
+        -H "Content-Type: application/octet-stream" \
+        --data-binary "@$FILE" && echo "      ✓ Done (curl)" || echo "      ⚠ curl upload failed too"
+    else
+      echo "      Set GITHUB_TOKEN or GH_TOKEN for curl fallback"
+      echo "      Or retry manually: gh release upload $TAG $FILE --clobber"
+    fi
   fi
 done
 
@@ -109,4 +128,4 @@ echo "  UPLOAD COMPLETE"
 echo "=========================================="
 echo ""
 echo "  View: https://github.com/$GH_REPO/releases/tag/$TAG"
-echo "  Run on each platform (macOS, Linux, Windows) to add all assets."
+echo "  Run on each platform to accumulate all assets."
