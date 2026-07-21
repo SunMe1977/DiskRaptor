@@ -1,20 +1,25 @@
+Diskraptor helps you analyze and manage your disk space with an intuitive,-- Found WrapOpenGL: TRUE
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Found Cups: /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib/libcups.tbd (found version "2.3.4")
+-- Rust scanner library will be deployed: /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/../src-tauri/target/release/libdiskraptor_scanner.dylib
+-- DiskRaptor 0.0.2 â€” Qt 6.11.1
+-- Configuring done (2.8s)
+-- Generating done (0.2s)
+-- Build files have been written to: /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build
+[10/10] Linking CXX executable DiskRaptor.app/Contents/MacO... into app bundle...; Copying libdiskraptor_scanner.dylib..
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtWebEngineWidgets.framework/Versions/A/QtWebEngineWidgets) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtWebChannel.framework/Versions/A/QtWebChannel) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtPositioning.framework/Versions/A/QtPositioning) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtPrintSupport.framework/Versions/A/QtPrintSupport) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtWebEngineCore.framework/Versions/A/QtWebEngineCore) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtWidgets.framework/Versions/A/QtWidgets) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtQuick.framework/Versions/A/QtQuick) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtOpenGL.framework/Versions/A/QtOpenGL) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtGui.framework/Versions/A/QtGui) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtQml.framework/Versions/A/QtQml) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtNetwork.framework/Versions/A/QtNetwork) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtCore.framework/Versions/A/QtCore) was built for newer macOS version (14.0) than being linked (13.3)
 
-[3] Building...
-  Qt6_DIR: /usr/local/opt/qt@6/lib/cmake/Qt6
-  Rust scanner...
-   Compiling diskraptor v0.6.1 (/Users/hjh/Documents/GitHub/DiskRaptor/src-tauri)
-error[E0425]: cannot find value `sz` in this scope
-   --> src/scanner/walker.rs:341:28
-    |
-341 |             bytes_found += sz;
-    |                            ^^
-    |
-help: the binding `sz` is available in a different scope in the same function
-   --> src/scanner/walker.rs:324:21
-    |
-324 |                 let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
-    |                     ^^
-
-For more information about this error, try `rustc --explain E0425`.
-error: could not compile `diskraptor` (lib) due to 1 previous error
-hjh@Hansjoergs-Mac DiskRaptor % 
+[3] Packaging...
+  Creating DiskRaptor.app bundle...
