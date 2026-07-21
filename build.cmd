@@ -138,5 +138,16 @@ if %ERRORLEVEL% equ 0 (
     echo  NSIS not found - skipping installer creation
     echo  Install NSIS from https://nsis.sourceforge.io to create setup.exe
 )
+
+REM -- Create zip package --
+echo.
+echo [EXTRA] Creating zip package...
+if exist "dist\DiskRaptor-%VERSION%-win64.zip" del "dist\DiskRaptor-%VERSION%-win64.zip"
+powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath 'dist\DiskRaptor-%VERSION%-win64.zip' -CompressionLevel Optimal"
+if %ERRORLEVEL% equ 0 (
+    echo  OK - dist\DiskRaptor-%VERSION%-win64.zip
+) else (
+    echo  WARNING: zip creation failed
+)
 echo.
 pause
