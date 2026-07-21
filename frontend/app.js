@@ -57,7 +57,7 @@
 
     // ── Theme toggle ───────────────────────────────────────
     var btnTheme = document.getElementById("btn-theme");
-getSetting("theme", "light").then(function(savedTheme) {
+getSetting("theme", "auto").then(function(savedTheme) {
       var isLight = false;
       if (savedTheme === "auto") {
         isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
