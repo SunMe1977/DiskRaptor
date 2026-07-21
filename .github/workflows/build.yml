@@ -194,7 +194,7 @@ jobs:
           mkdir -p deb/DEBIAN
           cat > deb/DEBIAN/control << 'CONTROL'
           Package: diskraptor
-          Version: 0.0.1
+          Version: 0.0.2
           Section: utils
           Priority: optional
           Architecture: amd64
@@ -252,7 +252,7 @@ jobs:
           mkdir -p deb/DEBIAN
           cat > deb/DEBIAN/control << 'CONTROL'
           Package: diskraptor
-          Version: 0.0.1
+          Version: 0.0.2
           Section: utils
           Priority: optional
           Architecture: arm64
