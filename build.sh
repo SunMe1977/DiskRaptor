@@ -149,7 +149,8 @@ case "$PLATFORM" in
       # Create @2x variants (retina) from the larger sizes
       # 16x16@2x = 32, 32x32@2x = 64, 128x128@2x = 256, 256x256@2x = 512, 512x512@2x = 1024
       for pair in "16 32" "32 64" "128 256" "256 512" "512 1024"; do
-        read -r base retina <<< "$pair"
+        base="${pair% *}"
+        retina="${pair#* }"
         src="icon_tmp/diskraptor.iconset/icon_${retina}x${retina}.png"
         dst="icon_tmp/diskraptor.iconset/icon_${base}x${base}@2x.png"
         [ -f "$src" ] && cp "$src" "$dst" 2>/dev/null || true
