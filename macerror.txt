@@ -1,3 +1,5 @@
+v  icon.icns copied
+
   Deploying Qt frameworks with macdeployqt...
 ERROR: Cannot resolve rpath "@rpath/QtSvg.framework/Versions/A/QtSvg"
 ERROR:  using QList("/usr/local/opt/qtwebengine/lib", "/usr/local/opt/qtwebchannel/lib", "/usr/local/opt/qtpositioning/lib", "/usr/local/opt/qtbase/lib", "/usr/local/opt/qtdeclarative/lib", "/usr/local/opt/md4c/lib", "/usr/local/opt/brotli/lib", "/usr/local/opt/zstd/lib", "/usr/local/Cellar/dbus/1.16.2_1/lib", "/usr/local/opt/graphite2/lib", "/Users/hjh/Documents/GitHub/DiskRaptor/dist/lib")
@@ -23,3 +25,4 @@ ERROR: codesign verification error:
 ERROR: "dist/DiskRaptor.app: code object is not signed at all\nIn architecture: x86_64\n"
   macdeployqt done
 hjh@Hansjoergs-Mac DiskRaptor % 
+  [Restored 21 Jul 2026 at 08:41:05]
