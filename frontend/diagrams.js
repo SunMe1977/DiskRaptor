@@ -328,6 +328,9 @@ class DiagramRenderer {
       const pieArea = (this._baseW || viewW) - legendW - margin * 3;
       contentW = pieArea + legendW + margin * 3;
       contentH = (this._baseH || viewH || 200);
+    } else if (this.mode === "bar") {
+      contentW = this._baseW || viewW || 1200;
+      contentH = Math.max(this.files.length * 14 + 40, this._baseH || viewH || 400);
     } else {
       contentW = this._baseW || viewW;
       contentH = this._baseH || viewH || 200;
@@ -812,13 +815,14 @@ class DiagramRenderer {
     const maxBars = Math.min(this.files.length, 100);
     if (maxBars === 0) return;
 
-    const barArea = h - 20;
+    // Use full width — labels overlaid on bars
+    const padding = 8;
+    const barMaxW = w - padding * 2;
+    const barArea = h - 24;
     const barH = Math.max(6, Math.min(14, Math.floor(barArea / maxBars)));
-    const gap = Math.max(1, Math.floor(barH * 0.3));
+    const gap = Math.max(1, Math.floor(barH * 0.25));
     const totalH = maxBars * (barH + gap);
     const startY = Math.max(4, Math.floor((barArea - totalH) / 2));
-    const labelW = 120; // right side label area
-    const barMaxW = w - labelW - 16; // max bar width
     const hlColor = this._highlightColor();
 
     for (var i = 0; i < maxBars; i++) {
@@ -833,14 +837,14 @@ class DiagramRenderer {
       // Background track (subtle)
       ctx.fillStyle = "rgba(128,128,128,0.1)";
       ctx.beginPath();
-      this._roundRect(ctx, 4, y, barMaxW, barH, 2);
+      this._roundRect(ctx, padding, y, barMaxW, barH, 2);
       ctx.fill();
 
       // Bar fill
       var fillColor = (isHov || isSel) ? hlColor : color;
       ctx.fillStyle = fillColor;
       ctx.beginPath();
-      this._roundRect(ctx, 4, y, barW, barH, 2);
+      this._roundRect(ctx, padding, y, barW, barH, 2);
       ctx.fill();
 
       // Glow on hover/select
@@ -848,20 +852,24 @@ class DiagramRenderer {
         ctx.shadowColor = "rgba(255,215,0,0.3)";
         ctx.shadowBlur = 8;
         ctx.beginPath();
-        this._roundRect(ctx, 4, y, barW, barH, 2);
+        this._roundRect(ctx, padding, y, barW, barH, 2);
         ctx.fill();
         ctx.shadowBlur = 0;
       }
 
-      // Label on the right
-      ctx.fillStyle = isHov ? "#ffd700" : "#e6edf3";
-      ctx.font = (barH > 10 ? "9px" : "7px") + " sans-serif";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
+      // Label — overlay on bar or to the right if bar is short
       var shortName = this._shortName(file.path);
       var pctStr = (pct * 100).toFixed(1) + "%";
-      var label = this._ellipsize(shortName, Math.floor((labelW - 30) / 5)) + " " + pctStr;
-      ctx.fillText(label, barMaxW + 8, y + barH / 2);
+      var label = this._ellipsize(shortName, 28) + "  " + pctStr;
+      var labelX = padding + Math.min(barW + 6, barMaxW - ctx.measureText(label).width - 8);
+      ctx.fillStyle = isHov ? "#ffd700" : "#e6edf3";
+      ctx.font = (barH > 10 ? "9px bold" : "7px bold") + " sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = 2;
+      ctx.fillText(label, Math.max(padding + 4, labelX), y + barH / 2);
+      ctx.shadowBlur = 0;
 
       // Hit region
       this.hitRegions.push({
