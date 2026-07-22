@@ -253,18 +253,24 @@ EOF
     echo "  Creating DMG..."
     if [ ! -d "$APP" ]; then
       echo "  ERROR: .app bundle not found at $APP"
+      ls -la dist/
       exit 1
     fi
-    if ! hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" -quiet 2>&1; then
+    echo "  DEBUG: Running hdiutil..."
+    if ! hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" -verbose 2>&1; then
       echo "  ERROR: hdiutil failed"
+      echo "  DEBUG: dist/ contents:" && ls -la dist/
       exit 1
     fi
     echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
     echo "  DEBUG: DMG created, continuing..."
 
     echo "  DEBUG: Creating ZIP step..."
+    echo "  DEBUG: Running zip from $(pwd)..."
+    ls -la dist/DiskRaptor.app || true
     if ! zip -r "dist/DiskRaptor-$VERSION-macos.zip" "dist/DiskRaptor.app" 2>&1; then
-      echo "  ERROR: zip creation failed"
+      echo "  ERROR: zip creation failed (exit code $?)"
+      echo "  DEBUG: dist/ contents:" && ls -la dist/
       exit 1
     fi
     echo "  ZIP: dist/DiskRaptor-$VERSION-macos.zip"
