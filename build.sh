@@ -440,7 +440,11 @@ LAUNCHER
     chmod 755 "$DEB_DIR/usr/bin/DiskRaptor.sh"
 
     if command -v dpkg-deb &>/dev/null; then
-      dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-$VERSION-amd64.deb"
+      if command -v fakeroot &>/dev/null; then
+        fakeroot dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-$VERSION-amd64.deb"
+      else
+        dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-$VERSION-amd64.deb"
+      fi
       echo "  DEB: dist/DiskRaptor-$VERSION-amd64.deb"
     else
       echo "  SKIP DEB: 'dpkg-deb' not installed"

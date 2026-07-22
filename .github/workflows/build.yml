@@ -225,7 +225,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev cmake ninja-build pkg-config g++ zip libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf-2.0-dev libgtk-3-dev
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev cmake ninja-build pkg-config g++ zip fakeroot libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf-2.0-dev libgtk-3-dev
       - run: rustup set profile minimal && rustup toolchain install stable && rustup default stable
       - run: cargo build --release
         working-directory: src-tauri
@@ -270,7 +270,7 @@ jobs:
           # Bundle Qt libs into DEB for self-contained package
           mkdir -p deb/usr/lib/diskraptor
           [ -d dist/lib ] && cp -r dist/lib/*.so* deb/usr/lib/diskraptor/ 2>/dev/null || true
-          dpkg-deb --build deb "DiskRaptor_${VERSION}_amd64.deb"
+          fakeroot dpkg-deb --build deb "DiskRaptor_${VERSION}_amd64.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-linux-x64
@@ -283,7 +283,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev cmake ninja-build pkg-config g++ zip libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf-2.0-dev libgtk-3-dev
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev cmake ninja-build pkg-config g++ zip fakeroot libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf-2.0-dev libgtk-3-dev
       - run: rustup set profile minimal && rustup toolchain install stable && rustup default stable
       - run: cargo build --release
         working-directory: src-tauri
@@ -328,7 +328,7 @@ jobs:
           # Bundle Qt libs into DEB for self-contained package
           mkdir -p deb/usr/lib/diskraptor
           [ -d dist/lib ] && cp -r dist/lib/*.so* deb/usr/lib/diskraptor/ 2>/dev/null || true
-          dpkg-deb --build deb "DiskRaptor_${VERSION}_arm64.deb"
+          fakeroot dpkg-deb --build deb "DiskRaptor_${VERSION}_arm64.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-linux-arm64
