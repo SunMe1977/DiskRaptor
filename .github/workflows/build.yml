@@ -1,6 +1,7 @@
 name: Build DiskRaptor
 
 on:
+  workflow_dispatch:
   push:
     tags: ['v*']
 
