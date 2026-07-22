@@ -100,8 +100,25 @@ jobs:
   macos-x64:
     name: macOS Intel
     runs-on: macos-13
+    env:
+      APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - name: Import signing certificate
+        if: env.APPLE_CERT_BASE64 != ''
+        run: |
+          echo "$APPLE_CERT_BASE64" | base64 -d > /tmp/cert.p12
+          security create-keychain -p temp temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p temp temp.keychain
+          security import /tmp/cert.p12 -k temp.keychain -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temp temp.keychain
+          rm -f /tmp/cert.p12
       - run: brew install qt@6 cmake ninja
       - run: rustup set profile minimal && rustup toolchain install stable && rustup target add x86_64-apple-darwin
       - run: cd src-tauri && cargo build --release --target x86_64-apple-darwin
@@ -119,9 +136,21 @@ jobs:
           QT_BIN="$(brew --prefix qt@6)/bin"
           if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" "$APP" -verbose=1; fi
           cp src-tauri/target/x86_64-apple-darwin/release/libdiskraptor_scanner.dylib "$APP/Contents/MacOS/"
-          codesign --force --deep --sign - "$APP"
-          cd dist && zip -r ../DiskRaptor-macos-x64.zip DiskRaptor.app && cd ..
-          hdiutil create -volname DiskRaptor -srcfolder "$APP" -ov -format UDZO DiskRaptor-macos-x64.dmg
+          CODESIGN_ID="${APPLE_DEVELOPER_ID:--}"
+          echo "Codesign identity: $CODESIGN_ID"
+          codesign --deep --force --options=runtime --entitlements installer/DiskRaptor.entitlements --sign "$CODESIGN_ID" "$APP"
+          if [ "$CODESIGN_ID" != "-" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+            hdiutil create -volname DiskRaptor -srcfolder "$APP" -ov -format UDZO "$GITHUB_WORKSPACE/DiskRaptor-macos-x64.dmg"
+            codesign --force --sign "$CODESIGN_ID" "$GITHUB_WORKSPACE/DiskRaptor-macos-x64.dmg"
+            xcrun notarytool submit "$GITHUB_WORKSPACE/DiskRaptor-macos-x64.dmg" \
+              --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" --wait || true
+            xcrun stapler staple "$GITHUB_WORKSPACE/DiskRaptor-macos-x64.dmg" || true
+          else
+            hdiutil create -volname DiskRaptor -srcfolder "$APP" -ov -format UDZO "$GITHUB_WORKSPACE/DiskRaptor-macos-x64.dmg"
+          fi
+          cd dist && zip -r "$GITHUB_WORKSPACE/DiskRaptor-macos-x64.zip" DiskRaptor.app && cd ..
+          echo "=== Workspace contents ===" && ls -la "$GITHUB_WORKSPACE/" && echo "=== dist contents ===" && ls -la dist/
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-macos-x64
@@ -132,8 +161,25 @@ jobs:
   macos-arm64:
     name: macOS ARM64
     runs-on: macos-14
+    env:
+      APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - name: Import signing certificate
+        if: env.APPLE_CERT_BASE64 != ''
+        run: |
+          echo "$APPLE_CERT_BASE64" | base64 -d > /tmp/cert.p12
+          security create-keychain -p temp temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p temp temp.keychain
+          security import /tmp/cert.p12 -k temp.keychain -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temp temp.keychain
+          rm -f /tmp/cert.p12
       - run: brew install qt@6 cmake ninja
       - run: rustup set profile minimal && rustup toolchain install stable && rustup target add aarch64-apple-darwin
       - run: cd src-tauri && cargo build --release --target aarch64-apple-darwin
@@ -151,9 +197,21 @@ jobs:
           QT_BIN="$(brew --prefix qt@6)/bin"
           if [ -f "$QT_BIN/macdeployqt" ]; then "$QT_BIN/macdeployqt" "$APP" -verbose=1; fi
           cp src-tauri/target/aarch64-apple-darwin/release/libdiskraptor_scanner.dylib "$APP/Contents/MacOS/"
-          codesign --force --deep --sign - "$APP"
-          cd dist && zip -r ../DiskRaptor-macos-arm64.zip DiskRaptor.app && cd ..
-          hdiutil create -volname DiskRaptor -srcfolder "$APP" -ov -format UDZO DiskRaptor-macos-arm64.dmg
+          CODESIGN_ID="${APPLE_DEVELOPER_ID:--}"
+          echo "Codesign identity: $CODESIGN_ID"
+          codesign --deep --force --options=runtime --entitlements installer/DiskRaptor.entitlements --sign "$CODESIGN_ID" "$APP"
+          if [ "$CODESIGN_ID" != "-" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+            hdiutil create -volname DiskRaptor -srcfolder "$APP" -ov -format UDZO "$GITHUB_WORKSPACE/DiskRaptor-macos-arm64.dmg"
+            codesign --force --sign "$CODESIGN_ID" "$GITHUB_WORKSPACE/DiskRaptor-macos-arm64.dmg"
+            xcrun notarytool submit "$GITHUB_WORKSPACE/DiskRaptor-macos-arm64.dmg" \
+              --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" --wait || true
+            xcrun stapler staple "$GITHUB_WORKSPACE/DiskRaptor-macos-arm64.dmg" || true
+          else
+            hdiutil create -volname DiskRaptor -srcfolder "$APP" -ov -format UDZO "$GITHUB_WORKSPACE/DiskRaptor-macos-arm64.dmg"
+          fi
+          cd dist && zip -r "$GITHUB_WORKSPACE/DiskRaptor-macos-arm64.zip" DiskRaptor.app && cd ..
+          echo "=== Workspace contents ===" && ls -la "$GITHUB_WORKSPACE/" && echo "=== dist contents ===" && ls -la dist/
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-macos-arm64
