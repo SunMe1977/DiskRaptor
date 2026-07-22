@@ -124,11 +124,14 @@ echo  EXE: dist\DiskRaptor.exe
 echo.
 
 REM -- Create NSIS installer if makensis is available
-where makensis >nul 2>nul
-if %ERRORLEVEL% equ 0 (
+set MAKENSIS=
+if not exist "%MAKENSIS%" set MAKENSIS=%ProgramFiles%\NSIS\makensis.exe
+if not exist "%MAKENSIS%" set MAKENSIS=%ProgramFiles(x86)%\NSIS\makensis.exe
+if not exist "%MAKENSIS%" for /f "delims=" %%i in ('where makensis 2^>nul') do set MAKENSIS=%%i
+if exist "%MAKENSIS%" (
     echo [EXTRA] Creating NSIS installer...
     cd /d "%~dp0installer\nsis"
-    makensis DiskRaptor.nsi
+    "%MAKENSIS%" DiskRaptor.nsi
     if %ERRORLEVEL% equ 0 (
         copy DiskRaptor_*.exe "%~dp0dist\" >nul
         echo  OK - NSIS installer created
