@@ -2,6 +2,7 @@
 target/
 qt-app/build*/
 dist/
+dist-mas/
 release/
 *.msi
 *.exe
@@ -51,6 +52,13 @@ modulesPro/*.lib
 modulesPro/*.exp
 modulesPro/*/build/
 modulesPro/build/
+
+# ── Secrets (NEVER commit) ──────────
+.env
+.env.*
+apple_private.key
+developer.key
+*.certSigningRequest
 
 # ── Generated / sensitive ───────────
 raw/

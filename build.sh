@@ -5,6 +5,13 @@ if [ -n "${BASH_VERSION:-}" ]; then
   set -o pipefail
 fi
 
+# Load environment variables from .env file (secrets for signing/notarization)
+if [ -f ".env" ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 # ?????? Detect OS ????????????????????????????????????????????????????????????????????????????????????????????????
 OS="$(uname -s)"
 case "$OS" in
@@ -218,23 +225,22 @@ EOF
     # Codesign — detect Developer ID certificate
     CODESIGN_IDENTITY="${APPLE_DEVELOPER_ID:-}"
     if [ -z "$CODESIGN_IDENTITY" ]; then
-      echo "  Looking for codesign certificate in keychain..."
-      security find-identity -v -p basic 2>&1 | grep -i "developer" || true
-      # Try Developer ID first (for distribution)
-      CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
+      # Try Developer ID or Apple Distribution first (for distribution)
+      CODESIGN_IDENTITY="$(security find-identity -p basic 2>/dev/null | grep -iE "Developer ID|Apple Distribution" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
       if [ -z "$CODESIGN_IDENTITY" ]; then
         # Fall back to Apple Development
-        CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep -i "Apple Development" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
+        CODESIGN_IDENTITY="$(security find-identity -p basic 2>/dev/null | grep -i "Apple Development" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
       fi
       if [ -z "$CODESIGN_IDENTITY" ]; then
         # Fall back to any identity (last resort)
-        CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep "^1)" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
+        CODESIGN_IDENTITY="$(security find-identity -p basic 2>/dev/null | grep "^1)" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
       fi
     fi
     if [ -n "$CODESIGN_IDENTITY" ]; then
       echo "  Codesign identity: $CODESIGN_IDENTITY"
     else
-      echo "  No codesign certificate found — will not codesign"
+      echo "  No codesign certificate found — will use ad-hoc signing"
+      CODESIGN_IDENTITY="-"
     fi
 
     # Deploy Qt frameworks using macdeployqt (handles rpath, plugins, WebEngine)
@@ -244,18 +250,45 @@ EOF
     done
     if [ -n "$MACDEPLOYQT" ]; then
       echo "  Deploying Qt frameworks with macdeployqt..."
-      "$MACDEPLOYQT" "$APP" -verbose=1 -no-strip 2>&1 || true
+      "$MACDEPLOYQT" "$APP" -verbose=1 -no-strip -no-codesign 2>&1 || true
       echo "  macdeployqt done"
     else
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
     fi
 
-    if [ -n "$CODESIGN_IDENTITY" ]; then
-      echo "  Codesigning with hardened runtime..."
-      codesign --deep --force --options=runtime \
-        --entitlements "$ENTITLEMENTS" \
-        --sign "$CODESIGN_IDENTITY" "$APP" 2>&1 || true
+    # ── Create temp signing keychain to avoid GUI password prompts ──
+    security unlock-keychain -p "${KEYCHAIN_PASSWORD:-}" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+    SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
+    SIGN_KEYCHAIN_PASS="diskraptor"
+    trap 'rm -f "$SIGN_KEYCHAIN"; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
+    security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
+    security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
+    security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null
+    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
+    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "" -o /tmp/cert_export.p12 2>/dev/null
+    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null
+    rm -f /tmp/cert_export.p12
+    security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null
+
+    # Sign with developer certificate if available, fall back to ad-hoc
+    if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
+      ID_ACCESSIBLE=true
+      security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$CODESIGN_IDENTITY" || ID_ACCESSIBLE=false
+      if [ "$ID_ACCESSIBLE" = true ]; then
+        echo "  Signing with: $CODESIGN_IDENTITY"
+        codesign --deep --force --options=runtime \
+          --entitlements "$ENTITLEMENTS" \
+          --sign "$CODESIGN_IDENTITY" "$APP" 2>&1 || true
+      else
+        echo "  Signing cert not accessible — ad-hoc signing"
+      fi
+    else
+      echo "  No developer cert found — ad-hoc signing"
     fi
+    # Always ensure the app is at least ad-hoc signed
+    codesign --deep --force --options=runtime \
+      --entitlements "$ENTITLEMENTS" \
+      --sign - "$APP" 2>/dev/null || true
 
     echo "  DEBUG: Creating DMG step..."
     echo ""
