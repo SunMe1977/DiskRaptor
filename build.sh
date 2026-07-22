@@ -72,6 +72,16 @@ case "$PLATFORM" in
     fi
     QT_CMAKE_DIR="$QT_PREFIX/lib/cmake/Qt6"
     echo "  Qt6_DIR: $QT_CMAKE_DIR"
+    # Try to detect QML directory (qmake is the most reliable source)
+    QML_DIR=""
+    if command -v qmake &>/dev/null; then
+      QML_DIR=$(qmake -query QT_INSTALL_QML 2>/dev/null || true)
+    fi
+    # Fallback common locations
+    for d in "$QT_PREFIX/qml" "$QT_PREFIX/lib/qml" "$QT_PREFIX/Resources/qml" "/usr/local/opt/qt@6/qml" "/opt/homebrew/opt/qt@6/qml"; do
+      [ -d "$d" ] && QML_DIR="$d" && break
+    done
+    echo "  QML_DIR: ${QML_DIR:-<not found>}"
     ;;
   linux)
     QT_CMAKE_DIR=""
@@ -250,8 +260,13 @@ EOF
     done
     if [ -n "$MACDEPLOYQT" ]; then
       echo "  Deploying Qt frameworks with macdeployqt..."
-      # Provide explicit QML dir and higher verbosity so macdeployqt can resolve @rpath frameworks
-      "$MACDEPLOYQT" "$APP" -verbose=3 -qmldir "$QT_PREFIX/qml" -no-strip -no-codesign 2>&1 || true
+      # Provide explicit QML dir (if detected) and higher verbosity so macdeployqt can resolve @rpath frameworks
+      if [ -n "${QML_DIR:-}" ] && [ -d "$QML_DIR" ]; then
+        "$MACDEPLOYQT" "$APP" -verbose=3 -qmldir "$QML_DIR" -no-strip -no-codesign 2>&1 || true
+      else
+        echo "  WARNING: QML dir not found — macdeployqt may fail to resolve some frameworks"
+        "$MACDEPLOYQT" "$APP" -verbose=3 -no-strip -no-codesign 2>&1 || true
+      fi
       echo "  macdeployqt done"
     else
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
