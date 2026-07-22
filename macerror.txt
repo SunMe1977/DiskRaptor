@@ -1,118 +1,15 @@
-ninja: build stopped: subcommand failed.
-hjh@Hansjoergs-Mac DiskRaptor % sh build.sh 
-==========================================
-  DiskRaptor 0.0.2 - macos Build
-==========================================
+[10/10] Linking CXX executable DiskRaptor.app/Contents/MacOS...s into app bundle...; Copying libdiskraptor_scanner.dylib..
 
-[1] Checking tools...
-  All tools present
-  Qt6_DIR: /usr/local/opt/qt@6/lib/cmake/Qt6
-
-[2] Building...
-  Rust scanner...
-    Finished `release` profile [optimized] target(s) in 0.63s
-warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
-note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-  Qt app...
--- The CXX compiler identification is AppleClang 16.0.0.16000026
--- Detecting CXX compiler ABI info
--- Detecting CXX compiler ABI info - done
--- Check for working CXX compiler: /usr/bin/c++ - skipped
--- Detecting CXX compile features
--- Detecting CXX compile features - done
--- Performing Test CMAKE_HAVE_LIBC_PTHREAD
--- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
--- Found Threads: TRUE
--- Performing Test HAVE_STDATOMIC
--- Performing Test HAVE_STDATOMIC - Failed
--- Performing Test HAVE_STDATOMIC_WITH_LIB
--- Performing Test HAVE_STDATOMIC_WITH_LIB - Failed
--- Found WrapAtomic: TRUE
--- Found OpenGL: /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/OpenGL.framework
--- Found WrapOpenGL: TRUE
--- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
--- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
--- Found Cups: /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib/libcups.tbd (found version "2.3.4")
--- Rust scanner library will be deployed: /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/../src-tauri/target/release/libdiskraptor_scanner.dylib
--- DiskRaptor 0.0.2 â€” Qt 6.11.1
--- Configuring done (7.1s)
--- Generating done (0.3s)
--- Build files have been written to: /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build
-[3/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/platform_utils.cpp.o
-FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/platform_utils.cpp.o 
-/usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src -isystem /usr/local/opt/qt@6/lib/QtCore.framework/Headers -iframework /usr/local/opt/qt@6/lib -isystem /usr/local/opt/qt@6/share/qt/mkspecs/macx-clang -isystem /usr/local/opt/qt@6/include -isystem /usr/local/opt/qt@6/lib/QtGui.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineCore.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtNetwork.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQuick.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQml.framework/Headers -isystem /usr/local/opt/qt@6/include/QtQmlIntegration -isystem /usr/local/opt/qt@6/lib/QtOpenGL.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebChannel.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPositioning.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPrintSupport.framework/Headers -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/src/platform_utils.cpp.o -MF CMakeFiles/DiskRaptor.dir/src/platform_utils.cpp.o.d -o CMakeFiles/DiskRaptor.dir/src/platform_utils.cpp.o -c /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/platform_utils.cpp
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/platform_utils.cpp:2:
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/platform_utils.h:5:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/QString:1:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qstring.h:15:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qchar.h:8:
-/usr/local/opt/qt@6/lib/QtCore.framework/Headers/qglobal.h:14:12: fatal error: 'type_traits' file not found
-   14 | #  include <type_traits>
-      |            ^~~~~~~~~~~~~
-1 error generated.
-[4/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/modules/module_loader.cpp.o
-FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/modules/module_loader.cpp.o 
-/usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src -isystem /usr/local/opt/qt@6/lib/QtCore.framework/Headers -iframework /usr/local/opt/qt@6/lib -isystem /usr/local/opt/qt@6/share/qt/mkspecs/macx-clang -isystem /usr/local/opt/qt@6/include -isystem /usr/local/opt/qt@6/lib/QtGui.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineCore.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtNetwork.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQuick.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQml.framework/Headers -isystem /usr/local/opt/qt@6/include/QtQmlIntegration -isystem /usr/local/opt/qt@6/lib/QtOpenGL.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebChannel.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPositioning.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPrintSupport.framework/Headers -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/src/modules/module_loader.cpp.o -MF CMakeFiles/DiskRaptor.dir/src/modules/module_loader.cpp.o.d -o CMakeFiles/DiskRaptor.dir/src/modules/module_loader.cpp.o -c /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/modules/module_loader.cpp
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/modules/module_loader.cpp:2:
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/modules/module_loader.h:5:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/QObject:1:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qobject.h:11:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qobjectdefs.h:13:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qnamespace.h:13:
-/usr/local/opt/qt@6/lib/QtCore.framework/Headers/qglobal.h:14:12: fatal error: 'type_traits' file not found
-   14 | #  include <type_traits>
-      |            ^~~~~~~~~~~~~
-1 error generated.
-[6/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/webviewwindow.cpp.o
-FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/webviewwindow.cpp.o 
-/usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src -isystem /usr/local/opt/qt@6/lib/QtCore.framework/Headers -iframework /usr/local/opt/qt@6/lib -isystem /usr/local/opt/qt@6/share/qt/mkspecs/macx-clang -isystem /usr/local/opt/qt@6/include -isystem /usr/local/opt/qt@6/lib/QtGui.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineCore.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtNetwork.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQuick.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQml.framework/Headers -isystem /usr/local/opt/qt@6/include/QtQmlIntegration -isystem /usr/local/opt/qt@6/lib/QtOpenGL.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebChannel.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPositioning.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPrintSupport.framework/Headers -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/src/webviewwindow.cpp.o -MF CMakeFiles/DiskRaptor.dir/src/webviewwindow.cpp.o.d -o CMakeFiles/DiskRaptor.dir/src/webviewwindow.cpp.o -c /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/webviewwindow.cpp
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/webviewwindow.cpp:3:
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/webviewwindow.h:5:
-In file included from /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers/QMainWindow:1:
-In file included from /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers/qmainwindow.h:8:
-In file included from /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers/qtwidgetsglobal.h:8:
-In file included from /usr/local/opt/qt@6/lib/QtGui.framework/Headers/qtguiglobal.h:7:
-/usr/local/opt/qt@6/lib/QtCore.framework/Headers/qglobal.h:14:12: fatal error: 'type_traits' file not found
-   14 | #  include <type_traits>
-      |            ^~~~~~~~~~~~~
-1 error generated.
-[7/10] Building CXX object CMakeFiles/DiskRaptor.dir/DiskRaptor_autogen/mocs_compilation.cpp.o
-FAILED: [code=1] CMakeFiles/DiskRaptor.dir/DiskRaptor_autogen/mocs_compilation.cpp.o 
-/usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src -isystem /usr/local/opt/qt@6/lib/QtCore.framework/Headers -iframework /usr/local/opt/qt@6/lib -isystem /usr/local/opt/qt@6/share/qt/mkspecs/macx-clang -isystem /usr/local/opt/qt@6/include -isystem /usr/local/opt/qt@6/lib/QtGui.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineCore.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtNetwork.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQuick.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQml.framework/Headers -isystem /usr/local/opt/qt@6/include/QtQmlIntegration -isystem /usr/local/opt/qt@6/lib/QtOpenGL.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebChannel.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPositioning.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPrintSupport.framework/Headers -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/DiskRaptor_autogen/mocs_compilation.cpp.o -MF CMakeFiles/DiskRaptor.dir/DiskRaptor_autogen/mocs_compilation.cpp.o.d -o CMakeFiles/DiskRaptor.dir/DiskRaptor_autogen/mocs_compilation.cpp.o -c /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/mocs_compilation.cpp
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/mocs_compilation.cpp:2:
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/UVLADIE3JM/moc_ipcbridge.cpp:9:
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/UVLADIE3JM/../../../src/ipcbridge.h:6:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/QObject:1:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qobject.h:11:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qobjectdefs.h:13:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qnamespace.h:13:
-/usr/local/opt/qt@6/lib/QtCore.framework/Headers/qglobal.h:14:12: fatal error: 'type_traits' file not found
-   14 | #  include <type_traits>
-      |            ^~~~~~~~~~~~~
-1 error generated.
-[8/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/main.cpp.o
-FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/main.cpp.o 
-/usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src -isystem /usr/local/opt/qt@6/lib/QtCore.framework/Headers -iframework /usr/local/opt/qt@6/lib -isystem /usr/local/opt/qt@6/share/qt/mkspecs/macx-clang -isystem /usr/local/opt/qt@6/include -isystem /usr/local/opt/qt@6/lib/QtGui.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineCore.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtNetwork.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQuick.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQml.framework/Headers -isystem /usr/local/opt/qt@6/include/QtQmlIntegration -isystem /usr/local/opt/qt@6/lib/QtOpenGL.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebChannel.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPositioning.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPrintSupport.framework/Headers -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/src/main.cpp.o -MF CMakeFiles/DiskRaptor.dir/src/main.cpp.o.d -o CMakeFiles/DiskRaptor.dir/src/main.cpp.o -c /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/main.cpp
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/main.cpp:4:
-In file included from /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers/QApplication:1:
-In file included from /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers/qapplication.h:8:
-In file included from /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers/qtwidgetsglobal.h:8:
-In file included from /usr/local/opt/qt@6/lib/QtGui.framework/Headers/qtguiglobal.h:7:
-/usr/local/opt/qt@6/lib/QtCore.framework/Headers/qglobal.h:14:12: fatal error: 'type_traits' file not found
-   14 | #  include <type_traits>
-      |            ^~~~~~~~~~~~~
-1 error generated.
-[9/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o
-FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o 
-/usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src -isystem /usr/local/opt/qt@6/lib/QtCore.framework/Headers -iframework /usr/local/opt/qt@6/lib -isystem /usr/local/opt/qt@6/share/qt/mkspecs/macx-clang -isystem /usr/local/opt/qt@6/include -isystem /usr/local/opt/qt@6/lib/QtGui.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineWidgets.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebEngineCore.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtNetwork.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQuick.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtQml.framework/Headers -isystem /usr/local/opt/qt@6/include/QtQmlIntegration -isystem /usr/local/opt/qt@6/lib/QtOpenGL.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtWebChannel.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPositioning.framework/Headers -isystem /usr/local/opt/qt@6/lib/QtPrintSupport.framework/Headers -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o -MF CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o.d -o CMakeFiles/DiskRaptor.dir/src/ipcbridge.cpp.o -c /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.cpp:4:
-In file included from /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/src/ipcbridge.h:6:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/QObject:1:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qobject.h:11:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qobjectdefs.h:13:
-In file included from /usr/local/opt/qt@6/lib/QtCore.framework/Headers/qnamespace.h:13:
-/usr/local/opt/qt@6/lib/QtCore.framework/Headers/qglobal.h:14:12: fatal error: 'type_traits' file not found
-   14 | #  include <type_traits>
-      |            ^~~~~~~~~~~~~
-1 error generated.
-ninja: build stopped: subcommand failed.
+[3] Packaging...
+  Creating DiskRaptor.app bundle...
+  icon.icns copied
+  Codesign identity: Apple Distribution: Hansjoerg Hofer (7TK444BCPC)
+  Deploying Qt frameworks with macdeployqt...
+ERROR: Cannot resolve rpath "@rpath/QtSvg.framework/Versions/A/QtSvg"
+ERROR:  using QList("/usr/local/opt/qtwebengine/lib", "/usr/local/opt/qtwebchannel/lib", "/usr/local/opt/qtpositioning/lib", "/usr/local/opt/qtbase/lib", "/usr/local/opt/qtdeclarative/lib", "/usr/local/opt/md4c/lib", "/usr/local/opt/brotli/lib", "/usr/local/opt/zstd/lib", "/usr/local/Cellar/dbus/1.16.2_1/lib", "/usr/local/opt/graphite2/lib", "/Users/hjh/Documents/GitHub/DiskRaptor/dist/lib")
+ERROR: Cannot resolve rpath "@rpath/QtVirtualKeyboardQml.framework/Versions/A/QtVirtualKeyboardQml"
+ERROR:  using QList("/usr/local/opt/qtwebengine/lib", "/usr/local/opt/qtwebchannel/lib", "/usr/local/opt/qtpositioning/lib", "/usr/local/opt/qtbase/lib", "/usr/local/opt/qtdeclarative/lib", "/usr/local/opt/md4c/lib", "/usr/local/opt/brotli/lib", "/usr/local/opt/zstd/lib", "/usr/local/Cellar/dbus/1.16.2_1/lib", "/usr/local/opt/graphite2/lib", "/Users/hjh/Documents/GitHub/DiskRaptor/dist/lib")
+ERROR: Cannot resolve rpath "@rpath/QtVirtualKeyboard.framework/Versions/A/QtVirtualKeyboard"
+ERROR:  using QList("/usr/local/opt/qtwebengine/lib", "/usr/local/opt/qtwebchannel/lib", "/usr/local/opt/qtpositioning/lib", "/usr/local/opt/qtbase/lib", "/usr/local/opt/qtdeclarative/lib", "/usr/local/opt/md4c/lib", "/usr/local/opt/brotli/lib", "/usr/local/opt/zstd/lib", "/usr/local/Cellar/dbus/1.16.2_1/lib", "/usr/local/opt/graphite2/lib", "/Users/hjh/Documents/GitHub/DiskRaptor/dist/lib")
+  macdeployqt done
+hjh@Hansjoergs-Mac DiskRaptor % 
