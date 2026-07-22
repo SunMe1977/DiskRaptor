@@ -209,18 +209,21 @@ case "$PLATFORM" in
 </plist>
 EOF
 
+    # Entitlements (used for hardened runtime)
+    ENTITLEMENTS="installer/DiskRaptor.entitlements"
+
     # Codesign — detect Developer ID certificate
-    APPLE_ID="${APPLE_DEVELOPER_ID:-}"
-    if [ -z "$APPLE_ID" ]; then
+    CODESIGN_IDENTITY="${APPLE_DEVELOPER_ID:-}"
+    if [ -z "$CODESIGN_IDENTITY" ]; then
       echo "  Looking for Developer ID certificate in keychain..."
       security find-identity -v -p basic 2>&1 | grep -i "developer" || true
-      APPLE_ID="$(security find-identity -v -p basic 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/')"
-      if [ -z "$APPLE_ID" ]; then
-        APPLE_ID="$(security find-identity -v 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+      CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+      if [ -z "$CODESIGN_IDENTITY" ]; then
+        CODESIGN_IDENTITY="$(security find-identity -v 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/')"
       fi
     fi
-    if [ -n "$APPLE_ID" ]; then
-      echo "  Developer ID: $APPLE_ID"
+    if [ -n "$CODESIGN_IDENTITY" ]; then
+      echo "  Developer ID: $CODESIGN_IDENTITY"
     else
       echo "  No Developer ID certificate found — will not codesign"
     fi
@@ -238,11 +241,11 @@ EOF
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
     fi
 
-    echo "  DEBUG: after macdeployqt block, APPLE_ID is '${APPLE_ID:-}'"
-
-    if [ -n "$APPLE_ID" ]; then
-      echo "  Codesigning (deep)..."
-      codesign --deep --force --sign "$APPLE_ID" "$APP" 2>&1 || true
+    if [ -n "$CODESIGN_IDENTITY" ]; then
+      echo "  Codesigning with hardened runtime..."
+      codesign --deep --force --options=runtime \
+        --entitlements "$ENTITLEMENTS" \
+        --sign "$CODESIGN_IDENTITY" "$APP" 2>&1 || true
     fi
 
     echo "  DEBUG: Creating DMG step..."
@@ -266,7 +269,23 @@ EOF
     fi
     echo "  ZIP: dist/DiskRaptor-$VERSION-macos.zip"
 
-    if [ -z "$APPLE_ID" ]; then
+    # Notarization (requires Apple ID email, team ID, and app-specific password)
+    if [ -n "$CODESIGN_IDENTITY" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
+        echo "  Notarizing DMG..."
+        # Submit for notarization
+        xcrun notarytool submit "dist/DiskRaptor-$VERSION-macos.dmg" \
+          --apple-id "$APPLE_ID" \
+          --team-id "$APPLE_TEAM_ID" \
+          --password "$APPLE_APP_PASSWORD" \
+          --wait 2>&1 || true
+        # Staple the ticket
+        xcrun stapler staple "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1 || true
+        xcrun stapler staple "$APP" 2>&1 || true
+    elif [ -n "$CODESIGN_IDENTITY" ] && [ -n "${APPLE_NOTARIZE:-}" ]; then
+        echo "  Notarization requested but APPLE_ID, APPLE_TEAM_ID, or APPLE_APP_PASSWORD not set — skipping"
+    fi
+
+    if [ -z "$CODESIGN_IDENTITY" ]; then
       echo ""
       echo "  ??? To remove macOS gatekeeper warnings on this build:"
       echo "    xattr -rd com.apple.quarantine dist/DiskRaptor.app"
