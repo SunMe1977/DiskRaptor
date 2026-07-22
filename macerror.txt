@@ -1,28 +1,24 @@
-v  icon.icns copied
+-- Rust scanner library will be deployed: /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/../src-tauri/target/release/libdiskraptor_scanner.dylib
+-- DiskRaptor 0.0.2 â€” Qt 6.11.1
+-- Configuring done (2.8s)
+-- Generating done (0.2s)
+-- Build files have been written to: /Users/hjh/Documents/GitHub/DiskRaptor/qt-app/build
+[10/10] Linking CXX executable DiskRaptor.app/Contents/MacO... into app bundle...; Copying libdiskraptor_scanner.dylib..
+ld: warning: ld: warning: dylib (/usr/local/opt/qt@6/lib/QtWebChannel.framework/Versions/A/QtWebChannel) was built for newer macOS version (14.0) than being linked (13.3)
+dylib (/usr/local/opt/qt@6/lib/QtWebEngineCore.framework/Versions/A/QtWebEngineCore) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtPositioning.framework/Versions/A/QtPositioning) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtWebEngineWidgets.framework/Versions/A/QtWebEngineWidgets) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtPrintSupport.framework/Versions/A/QtPrintSupport) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtWidgets.framework/Versions/A/QtWidgets) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtQuick.framework/Versions/A/QtQuick) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtOpenGL.framework/Versions/A/QtOpenGL) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtGui.framework/Versions/A/QtGui) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtQml.framework/Versions/A/QtQml) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtNetwork.framework/Versions/A/QtNetwork) was built for newer macOS version (14.0) than being linked (13.3)
+ld: warning: dylib (/usr/local/opt/qt@6/lib/QtCore.framework/Versions/A/QtCore) was built for newer macOS version (14.0) than being linked (13.3)
 
-  Deploying Qt frameworks with macdeployqt...
-ERROR: Cannot resolve rpath "@rpath/QtSvg.framework/Versions/A/QtSvg"
-ERROR:  using QList("/usr/local/opt/qtwebengine/lib", "/usr/local/opt/qtwebchannel/lib", "/usr/local/opt/qtpositioning/lib", "/usr/local/opt/qtbase/lib", "/usr/local/opt/qtdeclarative/lib", "/usr/local/opt/md4c/lib", "/usr/local/opt/brotli/lib", "/usr/local/opt/zstd/lib", "/usr/local/Cellar/dbus/1.16.2_1/lib", "/usr/local/opt/graphite2/lib", "/Users/hjh/Documents/GitHub/DiskRaptor/dist/lib")
-ERROR: Cannot resolve rpath "@rpath/QtVirtualKeyboardQml.framework/Versions/A/QtVirtualKeyboardQml"
-ERROR:  using QList("/usr/local/opt/qtwebengine/lib", "/usr/local/opt/qtwebchannel/lib", "/usr/local/opt/qtpositioning/lib", "/usr/local/opt/qtbase/lib", "/usr/local/opt/qtdeclarative/lib", "/usr/local/opt/md4c/lib", "/usr/local/opt/brotli/lib", "/usr/local/opt/zstd/lib", "/usr/local/Cellar/dbus/1.16.2_1/lib", "/usr/local/opt/graphite2/lib", "/Users/hjh/Documents/GitHub/DiskRaptor/dist/lib")
-ERROR: Cannot resolve rpath "@rpath/QtVirtualKeyboard.framework/Versions/A/QtVirtualKeyboard"
-ERROR:  using QList("/usr/local/opt/qtwebengine/lib", "/usr/local/opt/qtwebchannel/lib", "/usr/local/opt/qtpositioning/lib", "/usr/local/opt/qtbase/lib", "/usr/local/opt/qtdeclarative/lib", "/usr/local/opt/md4c/lib", "/usr/local/opt/brotli/lib", "/usr/local/opt/zstd/lib", "/usr/local/Cellar/dbus/1.16.2_1/lib", "/usr/local/opt/graphite2/lib", "/Users/hjh/Documents/GitHub/DiskRaptor/dist/lib")
-ERROR: Cannot resolve rpath "@rpath/libbrotlicommon.1.dylib"
-ERROR:  using QList("/Users/hjh/Documents/GitHub/DiskRaptor/dist/DiskRaptor.app/Contents/lib", "/usr/local/opt/qt@6/lib")
-ERROR: Cannot resolve rpath "@rpath/libsharpyuv.0.dylib"
-ERROR:  using QList("/Users/hjh/Documents/GitHub/DiskRaptor/dist/DiskRaptor.app/Contents/lib", "/usr/local/opt/qt@6/lib")
-ERROR: Cannot resolve rpath "@rpath/libwebp.7.dylib"
-ERROR:  using QList("/Users/hjh/Documents/GitHub/DiskRaptor/dist/DiskRaptor.app/Contents/lib", "/usr/local/opt/qt@6/lib")
-ERROR: Cannot resolve rpath "@rpath/libsharpyuv.0.dylib"
-ERROR:  using QList("/Users/hjh/Documents/GitHub/DiskRaptor/dist/DiskRaptor.app/Contents/lib", "/usr/local/opt/qt@6/lib")
-ERROR: Cannot resolve rpath "@rpath/libwebp.7.dylib"
-ERROR:  using QList("/Users/hjh/Documents/GitHub/DiskRaptor/dist/DiskRaptor.app/Contents/lib", "/usr/local/opt/qt@6/lib")
-ERROR: Cannot resolve rpath "@rpath/libsharpyuv.0.dylib"
-ERROR:  using QList("/Users/hjh/Documents/GitHub/DiskRaptor/dist/DiskRaptor.app/Contents/lib", "/usr/local/opt/qt@6/lib")
-ERROR: Codesign signing error:
-ERROR: "/Users/hjh/Documents/GitHub/DiskRaptor/dist/DiskRaptor.app/Contents/MacOS/DiskRaptor: code object is not signed at all\nIn subcomponent: /Users/hjh/Documents/GitHub/DiskRaptor/dist/DiskRaptor.app/Contents/Frameworks/libbrotlicommon.1.dylib\n"
-ERROR: codesign verification error:
-ERROR: "dist/DiskRaptor.app: code object is not signed at all\nIn architecture: x86_64\n"
-  macdeployqt done
+[3] Packaging...
+  Creating DiskRaptor.app bundle...
+  icon.icns copied
+  Looking for Developer ID certificate in keychain...
 hjh@Hansjoergs-Mac DiskRaptor % 
-  [Restored 21 Jul 2026 at 08:41:05]
