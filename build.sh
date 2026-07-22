@@ -1,6 +1,7 @@
 #!/bin/bash
 # DiskRaptor Build Script ??? auto-detects platform
 set -euo pipefail
+trap 'echo "[FATAL] Script failed at line $LINENO — exit code $?" >&2' ERR
 
 # ?????? Detect OS ????????????????????????????????????????????????????????????????????????????????????????????????
 OS="$(uname -s)"
@@ -217,9 +218,9 @@ EOF
     if [ -z "$CODESIGN_IDENTITY" ]; then
       echo "  Looking for Developer ID certificate in keychain..."
       security find-identity -v -p basic 2>&1 | grep -i "developer" || true
-      CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+      CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
       if [ -z "$CODESIGN_IDENTITY" ]; then
-        CODESIGN_IDENTITY="$(security find-identity -v 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+        CODESIGN_IDENTITY="$(security find-identity -v 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
       fi
     fi
     if [ -n "$CODESIGN_IDENTITY" ]; then
