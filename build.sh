@@ -587,6 +587,31 @@ SCRIPT
     else
       echo "  SKIP ZIP: 'zip' not installed (sudo apt install zip)"
     fi
+    # Create a .deb package if dpkg-deb is available
+    if command -v dpkg-deb &>/dev/null; then
+      echo "  Creating .deb package..."
+      PKGDIR="dist/deb"
+      mkdir -p "$PKGDIR/DEBIAN"
+      mkdir -p "$PKGDIR/usr/bin"
+      # Minimal control file
+      cat > "$PKGDIR/DEBIAN/control" <<EOF
+Package: diskraptor
+Version: $VERSION
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: DiskRaptor <noreply@example.com>
+Description: DiskRaptor - disk space analyzer
+EOF
+      # Install binary
+      cp dist/DiskRaptor "$PKGDIR/usr/bin/DiskRaptor" 2>/dev/null || true
+      chmod 0755 "$PKGDIR/usr/bin/DiskRaptor" 2>/dev/null || true
+      dpkg-deb --build "$PKGDIR" "dist/DiskRaptor-$VERSION-linux-amd64.deb" 2>/dev/null || true
+      echo "  DEB: dist/DiskRaptor-$VERSION-linux-amd64.deb"
+      rm -rf "$PKGDIR"
+    else
+      echo "  SKIP DEB: 'dpkg-deb' not found"
+    fi
 
     # Create DEB package
     echo "  Creating DEB package..."
