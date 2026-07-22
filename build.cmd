@@ -113,7 +113,22 @@ xcopy /e /i /y frontend dist\frontend\ >nul
 REM Images
 if exist images xcopy /e /i /y images dist\images\ >nul
 
-echo OK - dist\DiskRaptor.exe
+echo  OK - dist\DiskRaptor.exe
+
+REM -- Code Signing (optional) -------------------
+echo.
+echo [SIGN] Signing executables...
+set SIGNTOOL=
+if exist "%WIN10_KIT%\bin\10.0.26100.0\x64\signtool.exe" set SIGNTOOL=%WIN10_KIT%\bin\10.0.26100.0\x64\signtool.exe
+if not defined SIGNTOOL for /f "delims=" %%i in ('where signtool 2^>nul') do set SIGNTOOL=%%i
+if defined SIGNTOOL (
+    "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\DiskRaptor.exe"
+    "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\QtWebEngineProcess.exe"
+    "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\diskraptor_scanner.dll"
+    echo  OK - Files signed
+) else (
+    echo  WARNING: signtool not found - skipping code signing
+)
 
 echo.
 echo ==========================================
@@ -135,6 +150,11 @@ if exist "%MAKENSIS%" (
     if %ERRORLEVEL% equ 0 (
         copy DiskRaptor_*.exe "%~dp0dist\" >nul
         echo  OK - NSIS installer created
+        if defined SIGNTOOL (
+            echo  [SIGN] Signing installer...
+            "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\DiskRaptor_*.exe"
+            echo  OK - Installer signed
+        )
     ) else (
         echo  WARNING: NSIS installer creation failed
     )
