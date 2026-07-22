@@ -511,6 +511,18 @@ EOF
       echo "    xattr -rd com.apple.quarantine dist/DiskRaptor.app"
       echo "    xattr -rd com.apple.quarantine dist/DiskRaptor-$VERSION-macos.dmg"
     fi
+    # Also create a signed PKG for distribution (not MAS). Look for Installer signing identity.
+    INSTALLER_CERT=""
+    INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i "Installer\|Developer ID Installer\|Mac Developer Installer" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+    PKG_OUT="dist/DiskRaptor-$VERSION-macos.pkg"
+    if [ -n "$INSTALLER_CERT" ]; then
+      echo "  Creating signed PKG: $PKG_OUT (signed with $INSTALLER_CERT)"
+      productbuild --component "$APP" /Applications --sign "$INSTALLER_CERT" --identifier "com.diskraptor.app" --version "$VERSION" "$PKG_OUT" 2>&1 || true
+    else
+      echo "  Creating unsigned PKG: $PKG_OUT (no installer cert found)"
+      productbuild --component "$APP" /Applications --identifier "com.diskraptor.app" --version "$VERSION" "$PKG_OUT" 2>&1 || true
+    fi
+    echo "  PKG: $PKG_OUT"
     echo ""
     echo "  Run: open dist/DiskRaptor.app"
 

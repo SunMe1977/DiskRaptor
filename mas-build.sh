@@ -59,7 +59,16 @@ if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
   security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
 fi
 SIGN_KEYCHAIN="/tmp/diskraptor-signing-$$.keychain"
-SIGN_KEYCHAIN_PASS="diskraptor"
+# Keychain password: prefer explicit env var, otherwise generate a random one at runtime
+if [ -n "${SIGN_KEYCHAIN_PASS:-}" ]; then
+  : # keep provided value
+else
+  if command -v openssl >/dev/null 2>&1; then
+    SIGN_KEYCHAIN_PASS="$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | cut -c1-24)"
+  else
+    SIGN_KEYCHAIN_PASS="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || echo diskraptor)"
+  fi
+fi
 trap 'rm -f "$SIGN_KEYCHAIN"; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
 
 security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
