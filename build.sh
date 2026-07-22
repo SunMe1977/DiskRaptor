@@ -66,6 +66,17 @@ case "$PLATFORM" in
     if [ -z "$QT_PREFIX" ]; then
       QT_PREFIX="$(brew --prefix qt@6 2>/dev/null || true)"
     fi
+    # Optionally auto-install Qt and modules when QT not found
+    if [ ! -d "$QT_PREFIX/lib/cmake/Qt6" ] && [ "${AUTO_INSTALL_QT:-0}" = "1" ]; then
+      echo "  QT not found — AUTO_INSTALL_QT=1 set. Installing Qt and common modules via Homebrew..."
+      if ! command -v brew &>/dev/null; then
+        echo "  ERROR: Homebrew not found. Install Homebrew or unset AUTO_INSTALL_QT.";
+        exit 1
+      fi
+      brew update || true
+      brew install qt@6 qtsvg qtvirtualkeyboard qtwebengine qtwebchannel qtpositioning || true
+      QT_PREFIX="$(brew --prefix qt@6 2>/dev/null || true)"
+    fi
     # Allow overriding QT_PREFIX from the environment if Homebrew prefix differs
     if [ -n "${QT_PREFIX_OVERRIDE:-}" ]; then
       QT_PREFIX="$QT_PREFIX_OVERRIDE"
