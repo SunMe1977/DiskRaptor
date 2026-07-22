@@ -12,6 +12,9 @@ jobs:
   windows-x64:
     name: Windows x64
     runs-on: windows-latest
+    env:
+      WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,7 +25,39 @@ jobs:
       - run: cargo build --release
         working-directory: src-tauri
       - run: $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath; Push-Location "$vs\VC\Auxiliary\Build"; cmd /c "vcvars64.bat>nul&&set" | ForEach-Object { if ($_ -match "^(.*?)=(.*)") { Set-Item -Path "env:$($matches[1])" -Value $matches[2] } }; Pop-Location; $env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;$env:PATH"; cd qt-app; Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force -Path build | Out-Null; cd build; cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=C:\Qt\6.10.3\msvc2022_64\lib\cmake\Qt6"; cmake --build . --config Release
-      - run: New-Item -ItemType Directory -Force -Path dist | Out-Null; Copy-Item qt-app\build\DiskRaptor.exe dist\; Copy-Item src-tauri\target\release\diskraptor_scanner.dll dist\; Copy-Item qt-app\build\*.dll dist\; Copy-Item -Recurse frontend dist\frontend\; if (Test-Path images) { Copy-Item -Recurse images dist\images\ }; @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations") | ForEach-Object { $src = "qt-app\build\$_"; if (Test-Path $src) { Copy-Item -Recurse $src "dist\$_\"; } }; Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue; Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows-x64.zip -Force
+      - name: Package dist
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item qt-app\build\DiskRaptor.exe dist\
+          Copy-Item src-tauri\target\release\diskraptor_scanner.dll dist\
+          Copy-Item qt-app\build\*.dll dist\
+          Copy-Item -Recurse frontend dist\frontend\
+          if (Test-Path images) { Copy-Item -Recurse images dist\images\ }
+          @("platforms","styles","imageformats","tls","iconengines","generic","networkinformation","position","resources","translations") | ForEach-Object {
+            $src = "qt-app\build\$_"
+            if (Test-Path $src) { Copy-Item -Recurse $src "dist\$_\"; }
+          }
+          Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue
+      - name: Sign binaries
+        if: env.WINDOWS_CERT_BASE64 != ''
+        shell: powershell
+        run: |
+          $certB64 = "$env:WINDOWS_CERT_BASE64"
+          $certPath = "$env:RUNNER_TEMP\cert.pfx"
+          $certPass = ConvertTo-SecureString "$env:WINDOWS_CERT_PASSWORD" -AsPlainText -Force
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($certB64))
+          Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $certPass | Out-Null
+          Remove-Item $certPath -Force
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { $signtool = Get-ChildItem "C:\Program Files\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1 -ExpandProperty FullName }
+          Write-Host "Using signtool: $signtool"
+          & $signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "$pwd\dist\DiskRaptor.exe"
+          & $signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "$pwd\dist\QtWebEngineProcess.exe"
+          & $signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "$pwd\dist\diskraptor_scanner.dll"
+      - name: Create zip
+        shell: powershell
+        run: Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows-x64.zip -Force
       - name: Build NSIS Installer
         shell: powershell
         run: |
@@ -42,6 +77,15 @@ jobs:
           }
           Write-Host "Using makensis: $makensis"
           & $makensis installer\nsis\DiskRaptor.nsi
+      - name: Sign installer
+        if: env.WINDOWS_CERT_BASE64 != ''
+        shell: powershell
+        run: |
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { $signtool = Get-ChildItem "C:\Program Files\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1 -ExpandProperty FullName }
+          Get-ChildItem installer\nsis\DiskRaptor_*.exe | ForEach-Object {
+            & $signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "$($_.FullName)"
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-windows-x64
