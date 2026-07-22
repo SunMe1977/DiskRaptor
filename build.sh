@@ -66,15 +66,20 @@ case "$PLATFORM" in
     if [ -z "$QT_PREFIX" ]; then
       QT_PREFIX="$(brew --prefix qt@6 2>/dev/null || true)"
     fi
+    # Allow overriding QT_PREFIX from the environment if Homebrew prefix differs
+    if [ -n "${QT_PREFIX_OVERRIDE:-}" ]; then
+      QT_PREFIX="$QT_PREFIX_OVERRIDE"
+    fi
     if [ ! -d "$QT_PREFIX/lib/cmake/Qt6" ]; then
       echo "  Qt6 not found at $QT_PREFIX. Install with: brew install qt@6"
       exit 1
     fi
     QT_CMAKE_DIR="$QT_PREFIX/lib/cmake/Qt6"
     echo "  Qt6_DIR: $QT_CMAKE_DIR"
-    # Try to detect QML directory (qmake is the most reliable source)
-    QML_DIR=""
-    if command -v qmake &>/dev/null; then
+    # Respect explicit override for QML dir
+    QML_DIR="${QT_QML_DIR:-}"
+    # Try to detect QML directory (qmake is the next reliable source)
+    if [ -z "$QML_DIR" ] && command -v qmake &>/dev/null; then
       QML_DIR=$(qmake -query QT_INSTALL_QML 2>/dev/null || true)
     fi
     # Fallback common locations
