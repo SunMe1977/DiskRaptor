@@ -278,7 +278,7 @@ EOF
       echo "  Deploying Qt frameworks with macdeployqt..."
       # Provide explicit QML dir (if detected) and higher verbosity so macdeployqt can resolve @rpath frameworks
       if [ -n "${QML_DIR:-}" ] && [ -d "$QML_DIR" ]; then
-        "$MACDEPLOYQT" "$APP" -verbose=3 -qmldir "$QML_DIR" -no-strip -no-codesign 2>&1 || true
+        "$MACDEPLOYQT" "$APP" -verbose=3 -qmldir="$QML_DIR" -no-strip -no-codesign 2>&1 || true
       else
         echo "  WARNING: QML dir not found — macdeployqt may fail to resolve some frameworks"
         "$MACDEPLOYQT" "$APP" -verbose=3 -no-strip -no-codesign 2>&1 || true
