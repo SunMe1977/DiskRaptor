@@ -12,6 +12,21 @@ if [ -f ".env" ]; then
   set +a
 fi
 
+# ── Argument parsing ──────────────────────────────────────────────
+UPLOAD_MAS=false
+NO_MAS=false
+for arg in "$@"; do
+  case "$arg" in
+    --no-mas) NO_MAS=true ;;
+    --upload) UPLOAD_MAS=true ;;
+    --help|-h)
+      echo "Usage: $0 [--no-mas] [--upload]"
+      echo "  --no-mas   Skip Mac App Store .pkg build"
+      echo "  --upload   Upload the MAS .pkg via Transporter"
+      exit 0 ;;
+  esac
+done
+
 # ?????? Detect OS ????????????????????????????????????????????????????????????????????????????????????????????????
 OS="$(uname -s)"
 case "$OS" in
@@ -25,6 +40,119 @@ echo "=========================================="
 echo "  DiskRaptor $VERSION - $PLATFORM Build"
 echo "=========================================="
 echo ""
+
+# ── MAS (Mac App Store) build function ────────────────────────────
+build_mas_pkg() {
+  local APP_SRC="dist/DiskRaptor.app"
+  local MAS_DIR="dist-mas"
+  local APP_DST="$MAS_DIR/DiskRaptor.app"
+  local IDENTIFIER="com.diskraptor.app"
+  local DIST_CERT="${APPLE_DIST_CERT:-Apple Distribution: Hansjoerg Hofer (7TK444BCPC)}"
+  local ENTITLEMENTS="installer/DiskRaptor-MAS.entitlements"
+
+  echo ""
+  echo "--- MAS Build ---"
+  echo "[MAS] Preparing .app bundle..."
+  rm -rf "$MAS_DIR"
+  mkdir -p "$MAS_DIR"
+
+  if [ ! -d "$APP_SRC" ]; then
+    echo "  ERROR: $APP_SRC not found. Main build must succeed first."
+    return 1
+  fi
+
+  cp -R "$APP_SRC" "$APP_DST"
+  plutil -replace CFBundleIdentifier -string "$IDENTIFIER" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundleVersion -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
+  echo "  Bundle ID: $IDENTIFIER"
+
+  # Temp keychain for signing
+  # Unlock keychain if password is set (suppresses GUI prompts)
+  if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
+    security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+  fi
+
+  # Sign the .app with Apple Distribution cert
+  echo "[MAS] Signing .app with Apple Distribution..."
+  local DIST_ACCESSIBLE=true
+  security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$DIST_CERT" || DIST_ACCESSIBLE=false
+
+  # Detect installer signing identity (separate from app signing)
+  local INSTALLER_CERT=""
+  INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i "Installer.*$TEAM_ID" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+  if [ -z "$INSTALLER_CERT" ]; then
+    INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i "Mac Developer Installer\|Developer ID Installer" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+  fi
+
+  if [ "$DIST_ACCESSIBLE" = true ]; then
+    echo "  Signing with: $DIST_CERT"
+    codesign --deep --force --options=runtime \
+      --entitlements "$ENTITLEMENTS" \
+      --sign "$DIST_CERT" \
+      "$APP_DST" 2>&1 || true
+    codesign -dvvv "$APP_DST" 2>&1 | head -5 || true
+  else
+    echo "  WARNING: Distribution cert not accessible ($DIST_CERT)"
+    echo "  Falling back to ad-hoc signing (invalid for MAS)."
+    codesign --deep --force --options=runtime \
+      --entitlements "$ENTITLEMENTS" \
+      --sign - \
+      "$APP_DST" 2>/dev/null || true
+  fi
+
+  # Create .pkg
+  echo "[MAS] Creating .pkg..."
+  local PKG_PATH="$MAS_DIR/DiskRaptor-$VERSION-mas.pkg"
+  if [ -n "$INSTALLER_CERT" ]; then
+    echo "  Signing PKG with: $INSTALLER_CERT"
+    productbuild \
+      --component "$APP_DST" /Applications \
+      --sign "$INSTALLER_CERT" \
+      --identifier "$IDENTIFIER" \
+      --version "$VERSION" \
+      "$PKG_PATH" 2>&1 || true
+  else
+    echo "  WARNING: No installer cert found — creating unsigned PKG"
+    productbuild \
+      --component "$APP_DST" /Applications \
+      --identifier "$IDENTIFIER" \
+      --version "$VERSION" \
+      "$PKG_PATH" 2>&1 || true
+  fi
+
+  if [ -f "$PKG_PATH" ]; then
+    echo "  PKG: $PKG_PATH"
+    ls -lh "$PKG_PATH"
+  else
+    echo "  ERROR: PKG was not created at $PKG_PATH"
+  fi
+
+  # Upload via Transporter
+  if [ "$UPLOAD_MAS" = true ] && [ "$DIST_ACCESSIBLE" = true ]; then
+    echo "[MAS] Uploading to App Store Connect..."
+    if command -v iTMSTransporter &>/dev/null; then
+      iTMSTransporter -m upload -f "$PKG_PATH" \
+        -u "${APPLE_ID:?APPLE_ID not set}" \
+        -vp "${APPLE_APP_PASSWORD:?APPLE_APP_PASSWORD not set}"
+    else
+      xcrun transporter \
+        --source "$PKG_PATH" \
+        --type package \
+        --apple-id "${APPLE_ID:-}" \
+        --team-id "${APPLE_TEAM_ID:-7TK444BCPC}" \
+        --password "${APPLE_APP_PASSWORD:-}" \
+        --verbose 2>&1
+    fi
+    echo "  Upload complete."
+  elif [ "$UPLOAD_MAS" = true ]; then
+    echo "  SKIP upload: Distribution cert not accessible."
+  fi
+
+  echo "--- MAS Build Complete ---"
+  echo "  .app: $APP_DST"
+  echo "  .pkg: $PKG_PATH"
+}
 
 # Source cargo env
 if [ -f "$HOME/.cargo/env" ]; then
@@ -284,25 +412,33 @@ EOF
         "$MACDEPLOYQT" "$APP" -verbose=1 -no-strip -no-codesign 2>&1 || true
       fi
       echo "  macdeployqt done"
+
+      # ── Fix QtWebEngineProcess rpath ──
+      # QtWebEngineProcess loads QtWebEngineCore which references frameworks
+      # via @executable_path/../Frameworks/ — this path resolves to the
+      # sub-process bundle, not the main app. Fix by symlinking the needed
+      # frameworks inside the helper app bundle so @executable_path works.
+      WEP_DIR="$APP/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
+      WEP_FW="$WEP_DIR/Contents/Frameworks"
+      if [ -d "$WEP_DIR" ] && [ -d "$APP/Contents/Frameworks" ]; then
+        mkdir -p "$WEP_FW"
+        for fw in QtWebChannel QtQuick QtGui QtOpenGL QtQml QtNetwork QtCore QtPositioning; do
+          src="$APP/Contents/Frameworks/${fw}.framework"
+          dst="$WEP_FW/${fw}.framework"
+          if [ -d "$src" ] && [ ! -e "$dst" ]; then
+            cp -R "$src" "$dst" 2>/dev/null || true
+          fi
+        done
+      fi
     else
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
     fi
 
-    # ── Create temp signing keychain to avoid GUI password prompts ──
+    # ── Sign with developer certificate, fall back to ad-hoc ──
+    # Unlock keychain if password is set (suppresses GUI prompts)
     if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
       security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
     fi
-    SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
-    SIGN_KEYCHAIN_PASS="diskraptor"
-    trap 'rm -f "$SIGN_KEYCHAIN"; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
-    security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
-    security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
-    security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null
-    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
-    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "" -o /tmp/cert_export.p12 2>/dev/null
-    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null
-    rm -f /tmp/cert_export.p12
-    security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null
 
     # Sign with developer certificate if available, fall back to ad-hoc
     if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
@@ -313,7 +449,6 @@ EOF
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$CODESIGN_IDENTITY" \
-          --keychain "$SIGN_KEYCHAIN" \
           "$APP" 2>&1 || true
       else
         echo "  Signing cert not accessible — ad-hoc signing"
@@ -325,7 +460,6 @@ EOF
     codesign --deep --force --options=runtime \
       --entitlements "$ENTITLEMENTS" \
       --sign - \
-      --keychain "$SIGN_KEYCHAIN" \
       "$APP" 2>/dev/null || true
 
     echo "  DEBUG: Creating DMG step..."
@@ -379,6 +513,11 @@ EOF
     fi
     echo ""
     echo "  Run: open dist/DiskRaptor.app"
+
+    # ── MAS (Mac App Store) PKG build (default, skip with --no-mas) ──
+    if [ "$NO_MAS" = false ]; then
+      build_mas_pkg
+    fi
     ;;
 
   linux)
@@ -541,5 +680,8 @@ echo ""
 echo "=========================================="
 echo "  BUILD COMPLETE"
 echo "=========================================="
+if [ "$NO_MAS" = false ] && [ "$PLATFORM" = "macos" ]; then
+  echo "  MAS PKG: dist-mas/DiskRaptor-$VERSION-mas.pkg"
+fi
 echo ""
 

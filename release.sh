@@ -1,7 +1,5 @@
 #!/bin/bash
 # DiskRaptor Release Upload Script
-# Deletes old release, recreates it, and uploads only this platform's build.
-# Run AFTER build.sh completes successfully on each OS.
 set -euo pipefail
 
 VERSION="0.0.2"
@@ -11,8 +9,6 @@ GH_REPO="SunMe1977/DiskRaptor"
 echo "=========================================="
 echo "  DiskRaptor Release Upload v$VERSION"
 echo "=========================================="
-echo ""
-echo "  Note: Large files (DMG, ZIP, DEB) may take several minutes to upload."
 echo ""
 
 # ── Find gh CLI ──────────────────────────────
@@ -56,12 +52,12 @@ case "$PLATFORM" in
     ;;
 esac
 
-# ── Ensure release exists (create if missing) ──
+# ── Ensure release exists ────────────────────
 echo ""
 echo "  Ensuring release $TAG exists..."
 "$GH" release create "$TAG" --title "DiskRaptor v$VERSION" --notes "" 2>/dev/null || true
 
-# ── Get upload URL from gh ────────────────────
+# ── Get upload URL and token ──────────────────
 echo ""
 echo "  Getting upload URL..."
 UPLOAD_URL="$("$GH" release view "$TAG" --json "uploadUrl" --jq ".uploadUrl" 2>/dev/null | sed 's/{?name,label}//')"
@@ -71,20 +67,49 @@ if [ -z "$UPLOAD_URL" ]; then
 fi
 echo "  Upload URL: $UPLOAD_URL"
 
-# ── Detect timeout command ────────────────────
-TIMEOUT_CMD=""
-for cmd in timeout gtimeout; do
-  if command -v "$cmd" &>/dev/null; then
-    TIMEOUT_CMD="$cmd"
-    break
+TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+if [ -z "$TOKEN" ]; then
+  TOKEN=$("$GH" auth token 2>/dev/null || true)
+fi
+if [ -z "$TOKEN" ]; then
+  echo "ERROR: No token found. Set GH_TOKEN or use gh auth login."
+  exit 1
+fi
+
+# ── Delete stale assets ──────────────────────
+echo ""
+echo "  Cleaning stale assets..."
+for FILE in $ASSETS; do
+  NAME=$(basename "$FILE")
+  ASSET_ID=$("$GH" release view "$TAG" --json assets --jq '.assets[] | select(.name == "'"$NAME"'") | .id' 2>/dev/null || true)
+  if [ -n "$ASSET_ID" ]; then
+    echo "    Removing stale: $NAME"
+    "$GH" api -X DELETE "repos/$GH_REPO/releases/assets/$ASSET_ID" --silent 2>/dev/null || true
+    sleep 2
   fi
 done
 
-# ── Upload assets via gh --clobber ────────────
+# ── Measure upload speed ─────────────────────
+echo ""
+echo "  Measuring upload speed..."
+SPEED=$(dd if=/dev/zero bs=1M count=5 2>/dev/null | curl -s -o /dev/null -w "%{speed_upload}" \
+  -X POST "${UPLOAD_URL}?name=.speedtest" \
+  -H "Authorization: token $TOKEN" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @- \
+  --connect-timeout 10 --max-time 60 2>/dev/null || echo "50000")
+SPEED=${SPEED%.*}
+[ "$SPEED" -lt 1 ] && SPEED=50000
+echo "  Upload speed: $(echo "scale=1; $SPEED/1024" | bc) KB/s"
+
+# ── Upload assets in parallel ────────────────
 echo ""
 echo "  Uploading artifacts..."
-echo "  Note: Large files may take several minutes."
 COUNT=0
+PID_LIST=""
+LOG_DIR=$(mktemp -d)
+trap "rm -rf '$LOG_DIR'" EXIT
+
 for FILE in $ASSETS; do
   if [ ! -f "$FILE" ]; then
     echo "    SKIP (not found): $FILE"
@@ -92,30 +117,56 @@ for FILE in $ASSETS; do
   fi
   COUNT=$((COUNT+1))
   NAME=$(basename "$FILE")
-  SIZE=$(du -h "$FILE" | cut -f1)
-  echo "    Uploading: $NAME ($SIZE)..."
-  set +e
-  if [ -n "$TIMEOUT_CMD" ]; then
-    $TIMEOUT_CMD 600 "$GH" release upload "$TAG" "$FILE" --clobber 2>&1
-    RC=$?
-  else
-    "$GH" release upload "$TAG" "$FILE" --clobber 2>&1
-    RC=$?
-  fi
-  set -e
-  if [ "$RC" -eq 0 ]; then
-    echo "      ✓ Done"
-  elif [ "$RC" -eq 124 ]; then
-    echo "      ⚠ timed out after 10 minutes"
-  else
-    echo "      ⚠ upload failed (exit $RC)"
-  fi
+  SIZE=$(stat -f%z "$FILE")
+  EST_SEC=$(( SIZE / SPEED ))
+  EST_MIN=$(( EST_SEC / 60 ))
+  EST_REM=$(( EST_SEC % 60 ))
+  echo "    Uploading: $NAME ($(du -h "$FILE" | cut -f1)) — est. ${EST_MIN}m${EST_REM}s at ${SPEED} B/s"
+
+  LOG="$LOG_DIR/${NAME//\//_}"
+  (
+    curl -s -X POST "${UPLOAD_URL}?name=$NAME" \
+      -H "Authorization: token $TOKEN" \
+      -H "Content-Type: application/octet-stream" \
+      --data-binary "@$FILE" \
+      --connect-timeout 30 --max-time 10800 > "${LOG}.result" 2>&1 || true
+
+    if grep -q '"message"' "${LOG}.result" 2>/dev/null; then
+      echo "      ✗ Failed: $NAME — $(grep -o '"message":"[^"]*"' "${LOG}.result" | head -1)" > "${LOG}.status"
+    else
+      echo "      ✓ Done: $NAME" > "${LOG}.status"
+    fi
+  ) &
+  PID_LIST="$PID_LIST $!"
 done
 
+# ── Wait for all uploads ─────────────────────
+if [ "$COUNT" -gt 0 ]; then
+  echo ""
+  echo "  Waiting for uploads to complete..."
+  TICK=0
+  RUNNING="$COUNT"
+  while [ "$RUNNING" -gt 0 ]; do
+    RUNNING=0
+    for PID in $PID_LIST; do
+      kill -0 "$PID" 2>/dev/null && RUNNING=$((RUNNING+1))
+    done
+    for f in "$LOG_DIR"/*.status; do
+      [ -f "$f" ] && cat "$f" && rm -f "$f"
+    done
+    TICK=$((TICK+1))
+    if [ "$RUNNING" -gt 0 ] && [ $((TICK % 12)) -eq 0 ]; then
+      echo "    → $RUNNING file(s) still uploading ($((TICK*5))s elapsed)..."
+    fi
+    sleep 5
+  done
+  wait || true
+fi
+
+# ── Summary ──────────────────────────────────
 if [ "$COUNT" -eq 0 ]; then
   echo "  No files found in dist/ for platform '$PLATFORM'."
   echo "  Make sure you ran: ./build.sh"
-  echo "  Expected files:"
   for FILE in $ASSETS; do
     echo "    - $FILE"
   done
