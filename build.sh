@@ -250,7 +250,8 @@ EOF
     done
     if [ -n "$MACDEPLOYQT" ]; then
       echo "  Deploying Qt frameworks with macdeployqt..."
-      "$MACDEPLOYQT" "$APP" -verbose=1 -no-strip -no-codesign 2>&1 || true
+      # Provide explicit QML dir and higher verbosity so macdeployqt can resolve @rpath frameworks
+      "$MACDEPLOYQT" "$APP" -verbose=3 -qmldir "$QT_PREFIX/qml" -no-strip -no-codesign 2>&1 || true
       echo "  macdeployqt done"
     else
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
