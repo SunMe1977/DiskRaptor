@@ -71,25 +71,19 @@ if [ -z "$UPLOAD_URL" ]; then
 fi
 echo "  Upload URL: $UPLOAD_URL"
 
-# ── Get token ─────────────────────────────────
-TOKEN=""
-if [ -n "${GH_TOKEN:-}" ]; then
-  TOKEN="$GH_TOKEN"
-elif [ -n "${GITHUB_TOKEN:-}" ]; then
-  TOKEN="$GITHUB_TOKEN"
-else
-  # Try to get token from gh auth
-  TOKEN="$("$GH" auth token 2>/dev/null || true)"
-fi
+# ── Detect timeout command ────────────────────
+TIMEOUT_CMD=""
+for cmd in timeout gtimeout; do
+  if command -v "$cmd" &>/dev/null; then
+    TIMEOUT_CMD="$cmd"
+    break
+  fi
+done
 
-if [ -z "$TOKEN" ]; then
-  echo "  WARNING: No token found. Set GH_TOKEN or GITHUB_TOKEN env var."
-  echo "  Will try gh CLI for upload (may hang)..."
-fi
-
-# ── Upload assets via curl ────────────────────
+# ── Upload assets via gh --clobber ────────────
 echo ""
 echo "  Uploading artifacts..."
+echo "  Note: Large files may take several minutes."
 COUNT=0
 for FILE in $ASSETS; do
   if [ ! -f "$FILE" ]; then
@@ -100,29 +94,21 @@ for FILE in $ASSETS; do
   NAME=$(basename "$FILE")
   SIZE=$(du -h "$FILE" | cut -f1)
   echo "    Uploading: $NAME ($SIZE)..."
-  if [ -n "$TOKEN" ]; then
-    echo "    (using curl)"
-    if curl -L -X POST "$UPLOAD_URL?name=$NAME" \
-      -H "Authorization: token $TOKEN" \
-      -H "Content-Type: application/octet-stream" \
-      --data-binary "@$FILE" --connect-timeout 30 --max-time 600; then
-      echo "      ✓ Done"
-    else
-      echo "      ⚠ curl upload failed"
-    fi
+  set +e
+  if [ -n "$TIMEOUT_CMD" ]; then
+    $TIMEOUT_CMD 600 "$GH" release upload "$TAG" "$FILE" --clobber 2>&1
+    RC=$?
   else
-    echo "    (using gh with 10min timeout — set GH_TOKEN to use curl)"
-    TIMEOUT_CMD=""
-    if command -v timeout &>/dev/null; then
-      TIMEOUT_CMD="timeout 600"
-    elif command -v gtimeout &>/dev/null; then
-      TIMEOUT_CMD="gtimeout 600"
-    fi
-    if $TIMEOUT_CMD "$GH" release upload "$TAG" "$FILE" --clobber 2>&1; then
-      echo "      ✓ Done"
-    else
-      echo "      ⚠ gh upload failed"
-    fi
+    "$GH" release upload "$TAG" "$FILE" --clobber 2>&1
+    RC=$?
+  fi
+  set -e
+  if [ "$RC" -eq 0 ]; then
+    echo "      ✓ Done"
+  elif [ "$RC" -eq 124 ]; then
+    echo "      ⚠ timed out after 10 minutes"
+  else
+    echo "      ⚠ upload failed (exit $RC)"
   fi
 done
 
