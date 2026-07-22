@@ -218,17 +218,23 @@ EOF
     # Codesign — detect Developer ID certificate
     CODESIGN_IDENTITY="${APPLE_DEVELOPER_ID:-}"
     if [ -z "$CODESIGN_IDENTITY" ]; then
-      echo "  Looking for Developer ID certificate in keychain..."
+      echo "  Looking for codesign certificate in keychain..."
       security find-identity -v -p basic 2>&1 | grep -i "developer" || true
+      # Try Developer ID first (for distribution)
       CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
       if [ -z "$CODESIGN_IDENTITY" ]; then
-        CODESIGN_IDENTITY="$(security find-identity -v 2>/dev/null | grep -i "Developer ID" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
+        # Fall back to Apple Development
+        CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep -i "Apple Development" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
+      fi
+      if [ -z "$CODESIGN_IDENTITY" ]; then
+        # Fall back to any identity (last resort)
+        CODESIGN_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep "^1)" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
       fi
     fi
     if [ -n "$CODESIGN_IDENTITY" ]; then
-      echo "  Developer ID: $CODESIGN_IDENTITY"
+      echo "  Codesign identity: $CODESIGN_IDENTITY"
     else
-      echo "  No Developer ID certificate found — will not codesign"
+      echo "  No codesign certificate found — will not codesign"
     fi
 
     # Deploy Qt frameworks using macdeployqt (handles rpath, plugins, WebEngine)
