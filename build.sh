@@ -1,7 +1,7 @@
 #!/bin/bash
 # DiskRaptor Build Script ??? auto-detects platform
 set -eu
-if [ -n "$BASH_VERSION" ]; then
+if [ -n "${BASH_VERSION:-}" ]; then
   set -o pipefail
 fi
 
