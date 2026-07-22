@@ -55,7 +55,9 @@ echo "[3] Signing with Apple Distribution..."
 ENTITLEMENTS="$(pwd)/installer/DiskRaptor-MAS.entitlements"
 
 # Create a dedicated signing keychain to avoid GUI password prompts on macOS 26+
-security unlock-keychain -p "${KEYCHAIN_PASSWORD:-}" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
+  security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+fi
 SIGN_KEYCHAIN="/tmp/diskraptor-signing-$$.keychain"
 SIGN_KEYCHAIN_PASS="diskraptor"
 trap 'rm -f "$SIGN_KEYCHAIN"; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
@@ -79,18 +81,21 @@ security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$DIST_CERT" |
 
 if [ "$DIST_ACCESSIBLE" = true ]; then
   echo "  Signing with: $DIST_CERT"
-  codesign --deep --force --options=runtime \
-    --entitlements "$ENTITLEMENTS" \
-    --sign "$DIST_CERT" \
+  codesign --deep --force --options=runtime \\
+    --entitlements "$ENTITLEMENTS" \\
+    --sign "$DIST_CERT" \\
+    --keychain "$SIGN_KEYCHAIN" \\
     "$APP_DST" 2>&1
   echo "  Verification:"
   codesign -dvvv "$APP_DST" 2>&1 | head -5
 else
   echo "  WARNING: Distribution cert not accessible."
   echo "  The .app will be ad-hoc signed (not valid for MAS)."
-  codesign --deep --force --options=runtime \
-    --entitlements "$ENTITLEMENTS" \
-    --sign - "$APP_DST" 2>/dev/null || true
+  codesign --deep --force --options=runtime \\
+    --entitlements "$ENTITLEMENTS" \\
+    --sign - \\
+    --keychain "$SIGN_KEYCHAIN" \\
+    "$APP_DST" 2>/dev/null || true
 fi
 echo ""
 

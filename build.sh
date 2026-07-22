@@ -257,7 +257,9 @@ EOF
     fi
 
     # ── Create temp signing keychain to avoid GUI password prompts ──
-    security unlock-keychain -p "${KEYCHAIN_PASSWORD:-}" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+    if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
+      security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+    fi
     SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
     SIGN_KEYCHAIN_PASS="diskraptor"
     trap 'rm -f "$SIGN_KEYCHAIN"; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
@@ -278,7 +280,9 @@ EOF
         echo "  Signing with: $CODESIGN_IDENTITY"
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
-          --sign "$CODESIGN_IDENTITY" "$APP" 2>&1 || true
+          --sign "$CODESIGN_IDENTITY" \
+          --keychain "$SIGN_KEYCHAIN" \
+          "$APP" 2>&1 || true
       else
         echo "  Signing cert not accessible — ad-hoc signing"
       fi
@@ -288,7 +292,9 @@ EOF
     # Always ensure the app is at least ad-hoc signed
     codesign --deep --force --options=runtime \
       --entitlements "$ENTITLEMENTS" \
-      --sign - "$APP" 2>/dev/null || true
+      --sign - \
+      --keychain "$SIGN_KEYCHAIN" \
+      "$APP" 2>/dev/null || true
 
     echo "  DEBUG: Creating DMG step..."
     echo ""
