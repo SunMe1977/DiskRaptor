@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QApplication>
+#include <QSettings>
 
 MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     : QMainWindow(parent), m_frontendPath(frontendPath)
@@ -146,8 +147,13 @@ void MainWindow::setupMenuBar()
 
     // ── Help Menu ──────────────────────────────────────
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
-    auto *checkUpdates = helpMenu->addAction(tr("Check for Updates…"));
-    connect(checkUpdates, &QAction::triggered, this, &MainWindow::onCheckUpdates);
+    // Skip update check if installed from Mac App Store (set by build script)
+    bool fromMacAppStore = QSettings(QCoreApplication::applicationDirPath() + "/../Info.plist",
+      QSettings::NativeFormat).value("DiskRaptorDisableUpdates", false).toBool();
+    if (!fromMacAppStore) {
+      auto *checkUpdates = helpMenu->addAction(tr("Check for Updates…"));
+      connect(checkUpdates, &QAction::triggered, this, &MainWindow::onCheckUpdates);
+    }
 
     helpMenu->addSeparator();
 

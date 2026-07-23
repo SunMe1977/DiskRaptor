@@ -165,6 +165,7 @@ class DiagramRenderer {
       this._panX = mx - scale * (mx - this._panX);
       this._panY = my - scale * (my - this._panY);
       this._zoom = newZoom;
+      this._userZoom = true;
       this._updateZoomUI();
       this._draw();
     }, { passive: false });
@@ -296,12 +297,14 @@ class DiagramRenderer {
 
   setZoom(level) {
     if (level === "fit") {
+      this._userZoom = false;
       this._fitToView();
       return;
     }
     this._zoom = Math.max(0.05, Math.min(10, Number(level) || 1));
     this._panX = 0;
     this._panY = 0;
+    this._userZoom = true;
     this._updateZoomUI();
     this._draw();
   }
@@ -376,13 +379,18 @@ class DiagramRenderer {
     this._baseW = rect.width;
     this._baseH = rect.height;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this._fitToView();
+    if (!this._userZoom) {
+      this._fitToView();
+    } else {
+      this._draw();
+    }
   }
 
   setMode(mode) {
     if (["pie","treemap","bar"].indexOf(mode) < 0) return;
     this.mode = mode;
     this._entered = false;
+    this._userZoom = false;
     this._resize();
   }
 
@@ -397,6 +405,7 @@ class DiagramRenderer {
     }));
     this.files.sort((a, b) => b.size - a.size);
     this._entered = false;
+    this._userZoom = false;
     // Delay resize+fit so container has final layout dimensions
     requestAnimationFrame(() => {
       this._resize();

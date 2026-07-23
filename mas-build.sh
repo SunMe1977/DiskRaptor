@@ -12,7 +12,7 @@ if [ -f ".env" ]; then
 fi
 
 VERSION="0.0.2"
-IDENTIFIER="com.diskraptor.app"
+IDENTIFIER="diskraptor"
 APP_NAME="DiskRaptor"
 TEAM_ID="7TK444BCPC"
 DIST_CERT="Apple Distribution: Hansjoerg Hofer (${TEAM_ID})"

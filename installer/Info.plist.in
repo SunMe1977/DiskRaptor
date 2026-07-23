@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>DiskRaptor</string>
-    <key>CFBundleIdentifier</key><string>com.diskraptor.app</string>
+    <key>CFBundleIdentifier</key><string>diskraptor</string>
     <key>CFBundleName</key><string>DiskRaptor</string>
     <key>CFBundleVersion</key><string>VERSION_PLACEHOLDER</string>
     <key>CFBundleShortVersionString</key><string>VERSION_PLACEHOLDER</string>

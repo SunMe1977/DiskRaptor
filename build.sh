@@ -46,7 +46,7 @@ build_mas_pkg() {
   local APP_SRC="dist/DiskRaptor.app"
   local MAS_DIR="dist-mas"
   local APP_DST="$MAS_DIR/DiskRaptor.app"
-  local IDENTIFIER="com.diskraptor.app"
+  local IDENTIFIER="diskraptor"
   local DIST_CERT="${APPLE_DIST_CERT:-Apple Distribution: Hansjoerg Hofer (7TK444BCPC)}"
   local ENTITLEMENTS="installer/DiskRaptor-MAS.entitlements"
 
@@ -63,6 +63,7 @@ build_mas_pkg() {
 
   cp -R "$APP_SRC" "$APP_DST"
   plutil -replace CFBundleIdentifier -string "$IDENTIFIER" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
+  plutil -replace DiskRaptorDisableUpdates -bool YES "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   plutil -replace CFBundleVersion -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   echo "  Bundle ID: $IDENTIFIER"
@@ -82,7 +83,7 @@ build_mas_pkg() {
   local INSTALLER_CERT=""
   INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i "Installer.*$TEAM_ID" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
   if [ -z "$INSTALLER_CERT" ]; then
-    INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i "Mac Developer Installer\|Developer ID Installer" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+    INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i "Mac Developer Installer\|Developer ID Installer\|3rd Party Mac" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
   fi
 
   if [ "$DIST_ACCESSIBLE" = true ]; then
@@ -113,7 +114,9 @@ build_mas_pkg() {
       --version "$VERSION" \
       "$PKG_PATH" 2>&1 || true
   else
-    echo "  WARNING: No installer cert found — creating unsigned PKG"
+    echo "  WARNING: No '3rd Party Mac Developer Installer' certificate found."
+    echo "           The PKG must be signed for App Store submission."
+    echo "           Get the cert at: https://developer.apple.com/account/resources/certificates"
     productbuild \
       --component "$APP_DST" /Applications \
       --identifier "$IDENTIFIER" \
@@ -355,13 +358,14 @@ case "$PLATFORM" in
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>DiskRaptor</string>
-    <key>CFBundleIdentifier</key><string>com.diskraptor.app</string>
+    <key>CFBundleIdentifier</key><string>diskraptor</string>
     <key>CFBundleName</key><string>DiskRaptor</string>
     <key>CFBundleVersion</key><string>0.0.2</string>
     <key>CFBundleShortVersionString</key><string>0.0.2</string>
     <key>CFBundleIconFile</key><string>icon.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSDesktopFolderUsageDescription</key><string>DiskRaptor needs access to your Desktop to scan files.</string>
     <key>NSDocumentsFolderUsageDescription</key><string>DiskRaptor needs access to your Documents to scan files.</string>
@@ -404,29 +408,191 @@ EOF
     done
     if [ -n "$MACDEPLOYQT" ]; then
       echo "  Deploying Qt frameworks with macdeployqt..."
-      # Provide explicit QML dir (if detected) and higher verbosity so macdeployqt can resolve @rpath frameworks
       if [ -n "${QML_DIR:-}" ] && [ -d "$QML_DIR" ]; then
         "$MACDEPLOYQT" "$APP" -verbose=1 -qmldir="$QML_DIR" -no-strip -no-codesign 2>&1 || true
       else
-        echo "  WARNING: QML dir not found — macdeployqt may fail to resolve some frameworks"
         "$MACDEPLOYQT" "$APP" -verbose=1 -no-strip -no-codesign 2>&1 || true
       fi
       echo "  macdeployqt done"
 
-      # ── Fix QtWebEngineProcess rpath ──
-      # QtWebEngineProcess loads QtWebEngineCore which references frameworks
-      # via @executable_path/../Frameworks/ — this path resolves to the
-      # sub-process bundle, not the main app. Fix by symlinking the needed
-      # frameworks inside the helper app bundle so @executable_path works.
-      WEP_DIR="$APP/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
-      WEP_FW="$WEP_DIR/Contents/Frameworks"
-      if [ -d "$WEP_DIR" ] && [ -d "$APP/Contents/Frameworks" ]; then
+      # ── Bundle QtSvg (needed by imageformat/iconengine plugins, not auto-deployed by macdeployqt) ──
+      for fw in QtSvg QtSvgWidgets; do
+        SRC_FW=""
+        for p in /usr/local/opt/qtsvg/lib/${fw}.framework /opt/homebrew/opt/qtsvg/lib/${fw}.framework /usr/local/Cellar/qtsvg/*/lib/${fw}.framework /opt/homebrew/Cellar/qtsvg/*/lib/${fw}.framework; do
+          [ -d "$p" ] && SRC_FW="$p" && break
+        done
+        if [ -d "$SRC_FW" ] && [ ! -d "$APP/Contents/Frameworks/${fw}.framework" ]; then
+          echo "  Copying ${fw}.framework..."
+          ditto "$SRC_FW" "$APP/Contents/Frameworks/${fw}.framework"
+        fi
+      done
+
+      # ── Bundle missing Qt frameworks not deployed by macdeployqt ──
+      QT_BASE_LIB="${QT_PREFIX}/lib"
+      for fw in QtDBus QtQmlMeta QtQmlModels QtQmlWorkerScript QtQuickWidgets; do
+        SRC_FW="$QT_BASE_LIB/${fw}.framework"
+        if [ -d "$SRC_FW" ] && [ ! -d "$APP/Contents/Frameworks/${fw}.framework" ]; then
+          echo "  Copying ${fw}.framework..."
+          ditto "$SRC_FW" "$APP/Contents/Frameworks/${fw}.framework"
+        fi
+      done
+
+      # ── Fix shorthand framework references ──
+      # QtWebEngineCore and some other frameworks reference other Qt frameworks
+      # as "@executable_path/../Frameworks/Name" without ".framework/Versions/A/Name".
+      # macOS dyld should expand this automatically, but in practice it doesn't
+      # always work. Fix by expanding to full framework paths.
+      fix_shorthand_refs() {
+        local fw_dir="$APP/Contents/Frameworks"
+        find "$fw_dir" \( -name "*.dylib" -o -name "Qt*" -path "*/Versions/A/*" \) -type f 2>/dev/null | while IFS= read -r dylib; do
+          file "$dylib" 2>/dev/null | grep -q "Mach-O" || continue
+          otool -L "$dylib" 2>/dev/null | tail -n +2 | while IFS= read -r line; do
+            dep=$(echo "$line" | awk '{print $1}')
+            case "$dep" in
+              @executable_path/../Frameworks/*)
+                if ! echo "$dep" | grep -q "\.framework"; then
+                  dep_name=$(basename "$dep")
+                  if [ -d "$fw_dir/${dep_name}.framework" ]; then
+                    install_name_tool -change "$dep" \
+                      "@executable_path/../Frameworks/${dep_name}.framework/Versions/A/${dep_name}" \
+                      "$dylib" 2>/dev/null || true
+                  fi
+                fi
+                ;;
+            esac
+          done
+        done
+      }
+      fix_shorthand_refs
+
+      # ── Fix QtWebEngineProcess.app: symlink frameworks/dylibs into its Frameworks dir ──
+      # QtWebEngineProcess is a helper app inside QtWebEngineCore.framework. When it
+      # loads Qt frameworks, @executable_path resolves to the helper app's own MacOS/
+      # directory, not the main app's. We need to symlink all needed files into the
+      # helper app's Frameworks directory.
+      fix_webengine_process() {
+        local WEP_DIR="$APP/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
+        local WEP_FW="$WEP_DIR/Contents/Frameworks"
+        local WEP_EXEC="$WEP_DIR/Contents/MacOS/QtWebEngineProcess"
+        if [ ! -d "$WEP_DIR" ]; then return; fi
         mkdir -p "$WEP_FW"
-        for fw in QtWebChannel QtQuick QtGui QtOpenGL QtQml QtNetwork QtCore QtPositioning; do
-          src="$APP/Contents/Frameworks/${fw}.framework"
-          dst="$WEP_FW/${fw}.framework"
-          if [ -d "$src" ] && [ ! -e "$dst" ]; then
-            cp -R "$src" "$dst" 2>/dev/null || true
+        # Symlink dylibs from main app Frameworks (excluding QtWebEngineCore to avoid recursion)
+        for dylib in "$APP/Contents/Frameworks/"*.dylib; do
+          name=$(basename "$dylib")
+          [ ! -e "$WEP_FW/$name" ] && ln -sf "../../../../../../../$name" "$WEP_FW/$name" 2>/dev/null || true
+        done
+        # Symlink Qt frameworks (excluding QtWebEngineCore to avoid infinite recursion)
+        for fw_dir in "$APP/Contents/Frameworks/"Qt*.framework; do
+          [ -d "$fw_dir" ] || continue
+          name=$(basename "$fw_dir")
+          [ "$name" = "QtWebEngineCore.framework" ] && continue
+          [ ! -e "$WEP_FW/$name" ] && ln -sf "../../../../../../../$name" "$WEP_FW/$name" 2>/dev/null || true
+        done
+        # Change WEP references from @executable_path/../Frameworks/ to @rpath/
+        # with the rpath pointing to main app's Frameworks via @loader_path
+        if [ -f "$WEP_EXEC" ]; then
+          otool -L "$WEP_EXEC" 2>/dev/null | tail -n +2 | while IFS= read -r line; do
+            dep=$(echo "$line" | awk '{print $1}')
+            case "$dep" in
+              @executable_path/../Frameworks/*.framework/*)
+                new_dep="@rpath/$(basename "$dep").framework/Versions/A/$(basename "$dep")"
+                install_name_tool -change "$dep" "$new_dep" "$WEP_EXEC" 2>/dev/null || true
+                ;;
+              @executable_path/../Frameworks/*)
+                dep_name=$(basename "$dep")
+                if [ -d "$APP/Contents/Frameworks/${dep_name}.framework" ]; then
+                  new_dep="@rpath/${dep_name}.framework/Versions/A/${dep_name}"
+                  install_name_tool -change "$dep" "$new_dep" "$WEP_EXEC" 2>/dev/null || true
+                fi
+                ;;
+              /usr/local/opt/*/lib/*.framework/Versions/A/*)
+                # macdeployqt sets absolute Homebrew paths in WEP; fix to @rpath
+                fw_name=$(echo "$dep" | sed 's|.*/\(Qt[^/]*\)\.framework/.*|\1|')
+                new_dep="@rpath/${fw_name}.framework/Versions/A/${fw_name}"
+                install_name_tool -change "$dep" "$new_dep" "$WEP_EXEC" 2>/dev/null || true
+                ;;
+            esac
+          done
+        fi
+      }
+      fix_webengine_process
+
+      # ── Remove Homebrew @rpath from main binary ──
+      # Prevents duplicate class loading from both bundled and system Qt
+      MAIN_BIN="$APP/Contents/MacOS/DiskRaptor"
+      if [ -f "$MAIN_BIN" ]; then
+        otool -l "$MAIN_BIN" 2>/dev/null | grep -A2 "LC_RPATH" | grep "path" | while IFS= read -r line; do
+          rpath=$(echo "$line" | sed -n 's/.*path //p')
+          if echo "$rpath" | grep -qE "/usr/local/opt/qt|/opt/homebrew/opt/qt"; then
+            install_name_tool -delete_rpath "$rpath" "$MAIN_BIN" 2>/dev/null || true
+            echo "  Removed Homebrew rpath: $rpath"
+          fi
+        done
+      fi
+
+      # ── Fix all absolute Homebrew references to use bundled paths ──
+      # macdeployqt and the copied frameworks may still reference Homebrew
+      # absolute paths. Fix them all to use @executable_path/../Frameworks/.
+      fix_absolute_refs() {
+        local fw_dir="$APP/Contents/Frameworks"
+        # Fix dylib files
+        find "$fw_dir" -name "*.dylib" -type f | while IFS= read -r dylib; do
+          file "$dylib" 2>/dev/null | grep -q "Mach-O" || continue
+          otool -L "$dylib" 2>/dev/null | tail -n +2 | while IFS= read -r line; do
+            dep=$(echo "$line" | awk '{print $1}')
+            dep_name=$(basename "$dep")
+            case "$dep" in
+              @loader_path/../lib*)
+                [ -f "$fw_dir/$dep_name" ] && install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$dylib" 2>/dev/null || true
+                ;;
+              /usr/local/opt/*/lib/*.framework/Versions/A/*)
+                fw=$(echo "$dep_name" | sed 's/\.framework.*//')
+                [ -d "$fw_dir/${fw}.framework" ] && install_name_tool -change "$dep" "@executable_path/../Frameworks/${fw}.framework/Versions/A/${fw}" "$dylib" 2>/dev/null || true
+                ;;
+              /usr/local/opt/*)
+                if [ -f "$fw_dir/$dep_name" ]; then
+                  install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$dylib" 2>/dev/null || true
+                elif [ -d "$fw_dir/${dep_name%.dylib}.framework" ]; then
+                  fw="${dep_name%.dylib}"
+                  install_name_tool -change "$dep" "@executable_path/../Frameworks/${fw}.framework/Versions/A/${fw}" "$dylib" 2>/dev/null || true
+                fi
+                ;;
+            esac
+          done
+        done
+        # Fix Qt framework binaries too
+        find "$fw_dir" -name "Qt*" -path "*/Versions/A/*" -type f 2>/dev/null | while IFS= read -r dylib; do
+          file "$dylib" 2>/dev/null | grep -q "Mach-O" || continue
+          otool -L "$dylib" 2>/dev/null | tail -n +2 | while IFS= read -r line; do
+            dep=$(echo "$line" | awk '{print $1}')
+            case "$dep" in
+              /usr/local/opt/*/lib/*.framework/Versions/A/*)
+                fw_name=$(echo "$dep" | sed 's|.*/\(Qt[^/]*\)\.framework/.*|\1|')
+                new_ref="@executable_path/../Frameworks/${fw_name}.framework/Versions/A/${fw_name}"
+                install_name_tool -change "$dep" "$new_ref" "$dylib" 2>/dev/null || true
+                ;;
+            esac
+          done
+        done
+      }
+      fix_absolute_refs
+
+      # ── Remove unused plugin dirs that pull in missing frameworks ──
+      for dir in platforminputcontexts; do
+        if [ -d "$APP/Contents/PlugIns/$dir" ]; then
+          echo "  Removing unused plugins: $dir"
+          rm -rf "$APP/Contents/PlugIns/$dir"
+        fi
+      done
+
+      # ── Remove unnecessary QML modules that cause missing-framework errors ──
+      QML_DEPLOY_DIR="$APP/Contents/Resources/qml"
+      if [ -d "$QML_DEPLOY_DIR" ]; then
+        for mod in QtLocation QtMultimedia QtStateMachine Qt3D QtQuick3D QtQuickTimeline QtVirtualKeyboard QtSpatialAudio; do
+          mod_path="$QML_DEPLOY_DIR/$mod"
+          if [ -d "$mod_path" ]; then
+            echo "  Removing unused QML module: $mod"
+            rm -rf "$mod_path"
           fi
         done
       fi
@@ -435,10 +601,21 @@ EOF
     fi
 
     # ── Sign with developer certificate, fall back to ad-hoc ──
-    # Unlock keychain if password is set (suppresses GUI prompts)
+    # Create temp signing keychain to avoid GUI password prompts
     if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
       security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
     fi
+    SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
+    SIGN_KEYCHAIN_PASS="diskraptor"
+    trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
+    security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+    security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+    security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
+    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "" -o /tmp/cert_export.p12 2>/dev/null || true
+    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
+    rm -f /tmp/cert_export.p12 2>/dev/null || true
+    security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
 
     # Sign with developer certificate if available, fall back to ad-hoc
     if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
@@ -449,6 +626,7 @@ EOF
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$CODESIGN_IDENTITY" \
+          --keychain "$SIGN_KEYCHAIN" \
           "$APP" 2>&1 || true
       else
         echo "  Signing cert not accessible — ad-hoc signing"
@@ -517,10 +695,10 @@ EOF
     PKG_OUT="dist/DiskRaptor-$VERSION-macos.pkg"
     if [ -n "$INSTALLER_CERT" ]; then
       echo "  Creating signed PKG: $PKG_OUT (signed with $INSTALLER_CERT)"
-      productbuild --component "$APP" /Applications --sign "$INSTALLER_CERT" --identifier "com.diskraptor.app" --version "$VERSION" "$PKG_OUT" 2>&1 || true
+      productbuild --component "$APP" /Applications --sign "$INSTALLER_CERT" --identifier "diskraptor" --version "$VERSION" "$PKG_OUT" 2>&1 || true
     else
       echo "  Creating unsigned PKG: $PKG_OUT (no installer cert found)"
-      productbuild --component "$APP" /Applications --identifier "com.diskraptor.app" --version "$VERSION" "$PKG_OUT" 2>&1 || true
+      productbuild --component "$APP" /Applications --identifier "diskraptor" --version "$VERSION" "$PKG_OUT" 2>&1 || true
     fi
     echo "  PKG: $PKG_OUT"
     echo ""
