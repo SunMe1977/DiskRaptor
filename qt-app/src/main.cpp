@@ -74,6 +74,11 @@ int main(int argc, char *argv[])
         qputenv("QTWEBENGINE_REMOTE_DEBUGGING", cdpPort);
     }
 
+    // macOS 26+ workaround: disable MachPortRendezvous which crashes in Chromium
+#ifdef Q_OS_MACOS
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-features=UseMachPortRendezvous");
+#endif
+
     QApplication app(argc, argv);
 
     // Set up runtime environment — needs QApplication initialized

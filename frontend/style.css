@@ -1706,6 +1706,40 @@ body.light-theme #about-overlay {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   RESPONSIVE — Medium Screens (1024px and below)
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 1120px) {
+  .toolbar-center #scan-path {
+    width: 200px;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+}
+@media (max-width: 1024px) {
+  #detail-panel {
+    width: 300px;
+    min-width: 200px;
+  }
+  .toolbar-center #scan-path {
+    width: 140px;
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+  .toolbar-center button {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+  .toolbar-left .logo {
+    font-size: 14px;
+  }
+  .toolbar-right button.icon-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    RESPONSIVE — Small Screens (macBooks, < 900px)
    ═══════════════════════════════════════════════════════════ */
 @media (max-width: 900px) {

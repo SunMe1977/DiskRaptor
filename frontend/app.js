@@ -58,10 +58,11 @@
     // ── Theme toggle ───────────────────────────────────────
     var btnTheme = document.getElementById("btn-theme");
 getSetting("theme", "auto").then(function(savedTheme) {
+      if (savedTheme === undefined || savedTheme === null) savedTheme = "auto";
       var isLight = false;
       if (savedTheme === "auto") {
         isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-      } else if (savedTheme === "light" || savedTheme === undefined || savedTheme === null) {
+      } else if (savedTheme === "light") {
         isLight = true;
       } // else "dark" → isLight stays false
       if (isLight) {
