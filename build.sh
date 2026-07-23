@@ -64,6 +64,34 @@ build_mas_pkg() {
   cp -R "$APP_SRC" "$APP_DST"
   plutil -replace CFBundleIdentifier -string "$IDENTIFIER" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   plutil -replace DiskRaptorDisableUpdates -bool YES "$APP_DST/Contents/Info.plist" 2>/dev/null || true
+
+  # Embed provisioning profile (required for TestFlight & App Store)
+  local PROFILE_SRC=""
+  for f in ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision; do
+    [ -f "$f" ] || continue
+    if security cms -D -i "$f" 2>/dev/null | grep -q "MAC_APP_STORE"; then
+      PROFILE_SRC="$f"
+      break
+    fi
+  done
+  if [ -z "$PROFILE_SRC" ]; then
+    # Fallback: try the first Mac provisioning profile
+    for f in ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision; do
+      [ -f "$f" ] || continue
+      if security cms -D -i "$f" 2>/dev/null | grep -q "Mac App Store\|MacAppStore\|macappstore"; then
+        PROFILE_SRC="$f"
+        break
+      fi
+    done
+  fi
+  if [ -n "$PROFILE_SRC" ]; then
+    cp "$PROFILE_SRC" "$APP_DST/Contents/embedded.provisionprofile"
+    echo "  Provisioning profile embedded: $(basename "$PROFILE_SRC")"
+  else
+    echo "  WARNING: No Mac App Store provisioning profile found."
+    echo "           TestFlight will reject this build."
+    echo "           Create one at: https://developer.apple.com/account/resources/profiles"
+  fi
   plutil -replace CFBundleVersion -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   echo "  Bundle ID: $IDENTIFIER"
@@ -251,9 +279,34 @@ esac
 # ?????? Build ???????????????????????????????????????????????????????????????????????????????????????????????????????????????
 echo ""
 echo "[2] Building..."
+
+# Detect architectures for universal binary
+ARCHS="x86_64"
+if [ "$PLATFORM" = "macos" ]; then
+  # Check if Qt supports arm64 (universal Qt from qt.io)
+  QT_ARCHS=$(lipo -info "$QT_PREFIX/lib/QtCore.framework/Versions/A/QtCore" 2>/dev/null | grep "Architectures" | sed 's/.*are: //')
+  if echo "$QT_ARCHS" | grep -q "arm64"; then
+    ARCHS="x86_64 arm64"
+    echo "  Detected universal Qt ($QT_ARCHS) — building universal binary"
+  else
+    echo "  Warning: Qt is x86_64 only. For arm64 support, install universal Qt from qt.io"
+  fi
+fi
+
 echo "  Rust scanner..."
 cd src-tauri
-cargo build --release
+if echo "$ARCHS" | grep -q "arm64"; then
+  rustup target add aarch64-apple-darwin 2>/dev/null || true
+  cargo build --release --target x86_64-apple-darwin
+  cargo build --release --target aarch64-apple-darwin
+  mkdir -p target/universal
+  lipo -create -output target/universal/libdiskraptor_scanner.dylib \
+    target/x86_64-apple-darwin/release/libdiskraptor_scanner.dylib \
+    target/aarch64-apple-darwin/release/libdiskraptor_scanner.dylib
+  cp target/universal/libdiskraptor_scanner.dylib target/release/
+else
+  cargo build --release
+fi
 cd ..
 
 echo "  Qt app..."
@@ -261,11 +314,16 @@ cd qt-app
 rm -rf build
 mkdir build
 cd build
+ARCH_FLAGS=""
+if echo "$ARCHS" | grep -q "arm64"; then
+  ARCH_FLAGS="-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
+fi
 cmake .. -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DQt6_DIR="$QT_CMAKE_DIR" \
   -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
-  -DCMAKE_INSTALL_RPATH="\$ORIGIN"
+  -DCMAKE_INSTALL_RPATH="\$ORIGIN" \
+  $ARCH_FLAGS
 cmake --build . --config Release
 cd ../..
 
