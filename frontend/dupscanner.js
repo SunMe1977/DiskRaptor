@@ -65,7 +65,20 @@ class DupScanner {
     this._running = true;
     this._groups = [];
 
-    // Poll for progress (module sends status via callback → bridge → JS)
+    try {
+      var resp = await window.__TAURI__.invoke("find_duplicates", { path: path });
+      if (!resp || !resp.success) {
+        this._running = false;
+        this.overlay.style.display = "none";
+        return;
+      }
+    } catch(e) {
+      this._running = false;
+      this.overlay.style.display = "none";
+      console.error("Failed to start duplicate scan:", e);
+      return;
+    }
+
     var self = this;
     var poll = setInterval(async function() {
       if (!self._running) { clearInterval(poll); return; }
@@ -73,26 +86,25 @@ class DupScanner {
         var stats = await window.__TAURI__.invoke("get_dup_stats", {});
         if (stats) {
           self._updateProgress(stats);
+          if (stats.phase === 3) {
+            clearInterval(poll);
+            self.overlay.style.display = "none";
+            try {
+              var result = await window.__TAURI__.invoke("get_dup_result", {});
+              if (result && result.success && result.data) {
+                var data = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
+                self._showResults(data);
+              }
+            } catch(e) {
+              console.error("Failed to get dup result:", e);
+            }
+          } else if (stats.phase === 0) {
+            clearInterval(poll);
+            self.overlay.style.display = "none";
+          }
         }
       } catch(e) {}
     }, 200);
-
-    try {
-      var result = await window.__TAURI__.invoke("find_duplicates", { path: path });
-      this._running = false;
-      clearInterval(poll);
-      this.overlay.style.display = "none";
-
-      if (result && result.success && result.data) {
-        var data = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
-        this._showResults(data);
-      }
-    } catch(e) {
-      this._running = false;
-      clearInterval(poll);
-      this.overlay.style.display = "none";
-      console.error("Duplicate scan failed:", e);
-    }
   }
 
   cancel() {

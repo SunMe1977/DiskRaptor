@@ -4,6 +4,7 @@
 #include "ipcbridge.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -51,6 +52,8 @@ IpcBridge::IpcBridge(QObject *parent)
 
 IpcBridge::~IpcBridge()
 {
+    cppCancelDupScan();
+    cppCancelScan();
     unloadRustLibrary();
 }
 
@@ -68,6 +71,9 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "list_drives") return listDrives();
     if (command == "check_for_updates") return checkForUpdates();
     if (command == "find_duplicates") return findDuplicates(args.value("path").toString());
+    if (command == "get_dup_stats") return getDupStats();
+    if (command == "get_dup_result") return getDupResult();
+    if (command == "cancel_dup_scan") { cppCancelDupScan(); return resultToJson(true, QVariantMap{{"status", "cancelled"}}); }
     if (command == "check_admin_needed") return checkAdminNeeded(args.value("path").toString());
     if (command == "restart_as_admin") return restartAsAdmin();
     if (command == "save_settings") return saveSettings(args);
@@ -580,17 +586,174 @@ QString IpcBridge::checkForUpdates()
 
 QString IpcBridge::findDuplicates(const QString &path)
 {
-    if (!m_drFindDuplicates) {
-        return resultToJson(true, "{}");
+    if (m_dupRunning) {
+        return resultToJson(false, QVariant(), "Duplicate scan already running");
     }
-    QByteArray pathUtf8 = path.toUtf8();
-    char* result = m_drFindDuplicates(pathUtf8.constData());
-    if (!result) {
-        return resultToJson(true, "{}");
+    cppStartDupScan(path);
+    return resultToJson(true, QVariantMap{{"status", "started"}});
+}
+
+QString IpcBridge::getDupStats()
+{
+    return cppGetDupStatsJson();
+}
+
+QString IpcBridge::getDupResult()
+{
+    QMutexLocker lock(&m_dupMutex);
+    if (m_dupRunning) {
+        return resultToJson(false, QVariant(), "Scan still in progress");
     }
-    QString json = QString::fromUtf8(result);
-    if (m_drFreeString) m_drFreeString(result);
-    return json;
+    if (m_dupResultJson.isEmpty()) {
+        return resultToJson(false, QVariant(), "No result available");
+    }
+    return resultToJson(true, m_dupResultJson);
+}
+
+QString IpcBridge::cppGetDupStatsJson()
+{
+    QMutexLocker lock(&m_dupMutex);
+    QJsonObject obj;
+    obj["filesScanned"] = static_cast<qint64>(m_dupFilesScanned);
+    obj["groups"] = static_cast<qint64>(m_dupGroups);
+    obj["wastedBytes"] = static_cast<qint64>(m_dupWastedBytes);
+    obj["currentFile"] = m_dupCurrentFile;
+    obj["phase"] = m_dupRunning ? 1 : (m_dupPhase);
+    return resultToJson(true, obj);
+}
+
+void IpcBridge::cppStartDupScan(const QString &path)
+{
+    cppCancelDupScan();
+    int scanId;
+    {
+        QMutexLocker lock(&m_dupMutex);
+        scanId = ++m_dupScanId;
+        m_dupRunning = true;
+        m_dupCancelled = false;
+        m_dupFilesScanned = 0;
+        m_dupGroups = 0;
+        m_dupWastedBytes = 0;
+        m_dupCurrentFile.clear();
+        m_dupPhase = 1;
+        m_dupResultJson.clear();
+    }
+
+    m_dupThread = QThread::create([this, path, scanId]() {
+        quint64 total = 0;
+
+        // Phase 1: walk files, group by size
+        QHash<quint64, QVector<QString>> sizeGroups;
+        QDirIterator it(path, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            if (m_dupCancelled) break;
+            QString fp = it.next();
+            QFileInfo fi = it.fileInfo();
+            quint64 sz = static_cast<quint64>(fi.size());
+            total++;
+            {
+                QMutexLocker lock(&m_dupMutex);
+                m_dupFilesScanned = total;
+                m_dupCurrentFile = fp;
+            }
+            sizeGroups[sz].append(fp);
+        }
+
+        if (m_dupCancelled) {
+            QMutexLocker lock(&m_dupMutex);
+            if (m_dupScanId == scanId) {
+                m_dupPhase = 0;
+                m_dupRunning = false;
+            }
+            return;
+        }
+
+        // Phase 2: hash same-size groups
+        {
+            QMutexLocker lock(&m_dupMutex);
+            if (m_dupScanId == scanId) m_dupPhase = 2;
+        }
+        QJsonArray dupGroups;
+        quint64 wastedTotal = 0;
+        for (auto it = sizeGroups.begin(); it != sizeGroups.end(); ++it) {
+            if (m_dupCancelled) break;
+            auto &files = it.value();
+            quint64 size = it.key();
+            if (files.size() < 2) continue;
+
+            QHash<quint64, QVector<QString>> hashGroups;
+            for (const auto &fp : files) {
+                if (m_dupCancelled) break;
+                {
+                    QMutexLocker lock(&m_dupMutex);
+                    m_dupCurrentFile = fp;
+                }
+                quint64 h = quickHashFile(fp);
+                hashGroups[h].append(fp);
+            }
+
+            for (auto hit = hashGroups.begin(); hit != hashGroups.end(); ++hit) {
+                if (hit.value().size() < 2) continue;
+                quint64 wasted = size * (static_cast<quint64>(hit.value().size()) - 1);
+                wastedTotal += wasted;
+                QJsonArray filesArr;
+                for (const auto &fp : hit.value()) {
+                    filesArr.append(fp);
+                }
+                QJsonObject g;
+                g["size"] = static_cast<qint64>(size);
+                g["sizeHuman"] = formatSize(size);
+                g["count"] = static_cast<int>(hit.value().size());
+                g["wasted"] = static_cast<qint64>(wasted);
+                g["wastedHuman"] = formatSize(wasted);
+                g["files"] = filesArr;
+                dupGroups.append(g);
+            }
+
+            {
+                QMutexLocker lock(&m_dupMutex);
+                if (m_dupScanId == scanId) {
+                    m_dupGroups = static_cast<quint64>(dupGroups.size());
+                    m_dupWastedBytes = wastedTotal;
+                }
+            }
+        }
+
+        QJsonObject result;
+        result["groups"] = dupGroups;
+        result["totalFilesScanned"] = static_cast<qint64>(total);
+        result["totalGroups"] = static_cast<int>(dupGroups.size());
+        result["totalDuplicates"] = static_cast<qint64>(dupGroups.size());
+        result["wastedBytes"] = static_cast<qint64>(wastedTotal);
+        result["wastedHuman"] = formatSize(wastedTotal);
+
+        {
+            QMutexLocker lock(&m_dupMutex);
+            if (m_dupScanId == scanId) {
+                m_dupResultJson = QString::fromUtf8(QJsonDocument(result).toJson(QJsonDocument::Compact));
+                m_dupPhase = 3;
+                m_dupRunning = false;
+            }
+        }
+    });
+    connect(m_dupThread, &QThread::finished, m_dupThread, &QObject::deleteLater);
+    m_dupThread->start();
+}
+
+void IpcBridge::cppCancelDupScan()
+{
+    m_dupCancelled = true;
+    if (m_dupThread) {
+        m_dupThread->disconnect();
+        m_dupThread->wait(500);
+        if (m_dupThread->isFinished()) delete m_dupThread;
+    }
+    m_dupThread = nullptr;
+    {
+        QMutexLocker lock(&m_dupMutex);
+        m_dupPhase = 0;
+        m_dupRunning = false;
+    }
 }
 
 QString IpcBridge::checkAdminNeeded(const QString &path)
@@ -922,6 +1085,35 @@ QString IpcBridge::loadSettings()
         all[key] = ini.value(key);
     }
     return resultToJson(true, all);
+}
+
+static QString formatSize(quint64 b)
+{
+    const char *units[] = {"B", "KB", "MB", "GB", "TB", "PB"};
+    if (b == 0) return "0 B";
+    int i = 0;
+    quint64 v = b;
+    while (v >= 1024 && i < 5) { v /= 1024; i++; }
+    double d = static_cast<double>(b);
+    for (int j = 0; j < i; j++) d /= 1024.0;
+    return (i == 0 ? QString::number(b) : QString::number(d, 'f', 1)) + " " + units[i];
+}
+
+static quint64 quickHashFile(const QString &path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return 0;
+    quint64 h = 0;
+    char buf[8192];
+    qint64 n;
+    while ((n = f.read(buf, sizeof(buf))) > 0) {
+        for (qint64 i = 0; i < n; i++) {
+            h += static_cast<unsigned char>(buf[i]);
+            h *= 0x9E3779B97F4A7C15ULL;
+            h ^= h >> 31;
+        }
+    }
+    return h;
 }
 
 QString IpcBridge::resultToJson(bool success, const QVariant &data, const QString &error)
