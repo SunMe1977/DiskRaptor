@@ -62,11 +62,13 @@ class TreeView {
         return;
       }
       var root = scanPath.value.replace(/[\\/]+$/, "");
-      if (fullPath.indexOf(root) !== 0) {
+      var fullNorm = fullPath.replace(/\//g, "\\");
+      var rootNorm = root.replace(/\//g, "\\");
+      if (fullNorm.toUpperCase().indexOf(rootNorm.toUpperCase()) !== 0) {
         console.warn("Jump: path mismatch", fullPath, "vs", root);
         return;
       }
-      var rel = fullPath.substring(root.length).replace(/^[\\/]/, "");
+      var rel = fullNorm.substring(rootNorm.length).replace(/^[\\/]/, "");
       if (!rel) return; // clicking root
       var parts = rel.split(/[\\/]+/);
       // Remove the last part (the file name) — only navigate to the parent dir
@@ -192,10 +194,8 @@ class TreeView {
         var row = e.target.closest(".tree-row");
         if (!row) return;
         e.preventDefault();
-        var idx = parseInt(row.dataset.index);
-        if (isNaN(idx)) return;
-        var arenaIdx = self.visibleNodes[idx];
-        if (arenaIdx === undefined) return;
+        var arenaIdx = parseInt(row.dataset.index);
+        if (isNaN(arenaIdx)) return;
         self._ctxMenu._arenaIdx = arenaIdx;
         self._ctxMenu.style.display = "block";
         self._placeContextMenu(e.clientX, e.clientY);
@@ -236,16 +236,54 @@ class TreeView {
     const path = this._buildPath(arenaIdx);
     if (!path) return;
     const name = node.name || "?";
-    const confirmMsg =
-      "Delete " + (node.is_file() ? "file" : "folder") + "?\n" + path;
+    const isDir = node.node_type === "Directory" || node.node_type === 0;
+    const confirmMsg = "Delete " + (isDir ? "folder" : "file") + "?\n" + path;
     if (!confirm(confirmMsg)) return;
     try {
-      await window.__TAURI__.invoke("delete_path", { path: path });
+      var res = await window.__TAURI__.invoke("delete_path", { path: path });
+      if (res && res.success === false) {
+        alert("Delete failed: " + (res.error || "unknown error"));
+        return;
+      }
       document.querySelector(".status-bar").textContent = "Deleted: " + name;
-      this.expanded.delete(arenaIdx);
+      this._removeNodeFromTree(arenaIdx);
       await this.rebuild();
     } catch (e) {
       alert("Delete failed: " + e);
+    }
+  }
+
+  _removeNodeFromTree(arenaIdx) {
+    var node = this.loader.getNode(arenaIdx);
+    if (!node) return;
+    var parent = node.parent;
+
+    var toRemove = [arenaIdx];
+    var i = 0;
+    while (i < toRemove.length) {
+      var children = this.loader.getChildrenIndices(toRemove[i]);
+      for (var ci = 0; ci < children.length; ci++) {
+        toRemove.push(children[ci]);
+      }
+      i++;
+    }
+
+    for (var ri = 0; ri < toRemove.length; ri++) {
+      var idx = toRemove[ri];
+      this.loader.allNodes[idx] = null;
+      this.expanded.delete(idx);
+      this.loader.parentMap.delete(idx);
+    }
+
+    if (parent !== 4294967295) {
+      var siblings = this.loader.parentMap.get(parent);
+      if (siblings) {
+        var filtered = [];
+        for (var si = 0; si < siblings.length; si++) {
+          if (toRemove.indexOf(siblings[si]) === -1) filtered.push(siblings[si]);
+        }
+        this.loader.parentMap.set(parent, filtered);
+      }
     }
   }
 
