@@ -38,6 +38,8 @@ public:
     Q_INVOKABLE QString listDrives();
     Q_INVOKABLE QString checkForUpdates();
     Q_INVOKABLE QString findDuplicates(const QString &path);
+    Q_INVOKABLE QString getDupStats();
+    Q_INVOKABLE QString getDupResult();
     Q_INVOKABLE QString checkAdminNeeded(const QString &path);
     Q_INVOKABLE QString restartAsAdmin();
     Q_INVOKABLE QString saveSettings(const QVariantMap &settings);
@@ -99,4 +101,21 @@ private:
     void cppCancelScan();
     QString cppGetProgressJson();
     QString cppGetResultJson();
+
+    // ── C++ duplicate scanner (background thread) ──────────────
+    QThread *m_dupThread = nullptr;
+    QMutex m_dupMutex;
+    bool m_dupRunning = false;
+    bool m_dupCancelled = false;
+    int m_dupScanId = 0;
+    quint64 m_dupFilesScanned = 0;
+    quint64 m_dupGroups = 0;
+    quint64 m_dupWastedBytes = 0;
+    QString m_dupCurrentFile;
+    int m_dupPhase = 0; // 0=idle, 1=hashing, 2=processing, 3=done
+    QString m_dupResultJson;
+
+    void cppStartDupScan(const QString &path);
+    void cppCancelDupScan();
+    QString cppGetDupStatsJson();
 };
