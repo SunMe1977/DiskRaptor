@@ -997,12 +997,23 @@ class DiagramRenderer {
     const rect = this.contextMenu.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
+    const mw = rect.width;
+    const mh = rect.height;
+
     let left = x;
-    let top = y;
-    if (left + rect.width > vw - 8) left = vw - rect.width - 8;
-    if (top + rect.height > vh - 8) top = vh - rect.height - 8;
+    if (left + mw > vw - 8) left = vw - mw - 8;
+
+    let top;
+    if (y + mh + 8 <= vh) {
+      top = y;
+    } else {
+      top = y - mh - 8;
+      if (top < 0) top = Math.max(0, vh - mh - 8);
+    }
+
     this.contextMenu.style.left = Math.max(0, left) + "px";
     this.contextMenu.style.top = Math.max(0, top) + "px";
+    this.contextMenu.style.maxHeight = Math.min(70 * vh / 100, vh - top - 8) + "px";
     this._contextHit = hit;
   }
 
@@ -1034,8 +1045,9 @@ class DiagramRenderer {
         });
         break;
       case "delete":
+        if (!filePath) break;
         this._invoke("delete_path", { path: filePath }).then((ok) => {
-          if (ok) {
+          if (ok && ok.success !== false) {
             this.files = this.files.filter((f) => f.path !== filePath);
             this._draw();
             if (sb) sb.textContent = "Deleted: " + filePath;
