@@ -35,7 +35,7 @@ case "$OS" in
   CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
   *)        echo "Unknown OS: $OS"; exit 1 ;;
 esac
-VERSION="0.0.5"
+VERSION="0.0.6"
 echo "=========================================="
 echo "  DiskRaptor $VERSION - $PLATFORM Build"
 echo "=========================================="
@@ -432,8 +432,8 @@ case "$PLATFORM" in
     <key>CFBundleExecutable</key><string>DiskRaptor</string>
     <key>CFBundleIdentifier</key><string>diskraptor</string>
     <key>CFBundleName</key><string>DiskRaptor</string>
-    <key>CFBundleVersion</key><string>0.0.5</string>
-    <key>CFBundleShortVersionString</key><string>0.0.5</string>
+    <key>CFBundleVersion</key><string>0.0.6</string>
+    <key>CFBundleShortVersionString</key><string>0.0.6</string>
     <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>CFBundleIconFile</key><string>icon.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
