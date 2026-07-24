@@ -622,6 +622,9 @@ QString IpcBridge::cppGetDupStatsJson()
     return resultToJson(true, obj);
 }
 
+static QString formatSize(quint64 b);
+static quint64 quickHashFile(const QString &path);
+
 void IpcBridge::cppStartDupScan(const QString &path)
 {
     cppCancelDupScan();
