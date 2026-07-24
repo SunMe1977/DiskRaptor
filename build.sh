@@ -122,6 +122,7 @@ build_mas_pkg() {
     codesign --deep --force --options=runtime \
       --entitlements "$ENTITLEMENTS" \
       --sign "$DIST_CERT" \
+      --keychain ~/Library/Keychains/login.keychain-db \
       "$APP_DST" 2>&1 || true
     # Re-sign QtWebEngineProcess after --deep (--deep re-signs nested .apps but can strip entitlements)
     local WEP="$APP_DST/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
@@ -130,6 +131,7 @@ build_mas_pkg() {
       codesign --force --options=runtime \
         --entitlements "$ENTITLEMENTS" \
         --sign "$DIST_CERT" \
+        --keychain ~/Library/Keychains/login.keychain-db \
         "$WEP" 2>&1 || true
     fi
     codesign -dvvv "$APP_DST" 2>&1 | head -5 || true
@@ -139,6 +141,7 @@ build_mas_pkg() {
     codesign --deep --force --options=runtime \
       --entitlements "$ENTITLEMENTS" \
       --sign - \
+      --keychain ~/Library/Keychains/login.keychain-db \
       "$APP_DST" 2>/dev/null || true
   fi
 
@@ -688,6 +691,7 @@ EOF
         codesign --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$SIGN_ID" \
+          --keychain ~/Library/Keychains/login.keychain-db \
           "$WEP" 2>&1 || true
       fi
     }
@@ -702,6 +706,7 @@ EOF
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$CODESIGN_IDENTITY" \
+          --keychain ~/Library/Keychains/login.keychain-db \
           "$APP" 2>&1 || true
       else
         echo "  Signing cert not accessible — ad-hoc signing"
@@ -709,6 +714,7 @@ EOF
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign - \
+          --keychain ~/Library/Keychains/login.keychain-db \
           "$APP" 2>/dev/null || true
       fi
     else
@@ -717,6 +723,7 @@ EOF
       codesign --deep --force --options=runtime \
         --entitlements "$ENTITLEMENTS" \
         --sign - \
+        --keychain ~/Library/Keychains/login.keychain-db \
         "$APP" 2>/dev/null || true
     fi
 
