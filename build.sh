@@ -682,14 +682,25 @@ EOF
     SIGN_KEYCHAIN_PASS="$KEYCHAIN_PASSWORD"
     trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
 
+    # Unlock login keychain first so export works
+    security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+
     security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
     security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
     security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
     security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
 
-    # Export and import certs to temp keychain (using login keychain password for export)
+    # Export certs from login keychain and import to temp keychain
+    echo "  Exporting signing certs to temp keychain..."
     security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$KEYCHAIN_PASSWORD" -o /tmp/cert_export.p12 2>/dev/null || true
-    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "$KEYCHAIN_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
+    if [ -f /tmp/cert_export.p12 ] && [ -s /tmp/cert_export.p12 ]; then
+      security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "$KEYCHAIN_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
+      echo "  Certs imported to temp keychain"
+    else
+      echo "  WARNING: Cert export failed - falling back to login keychain"
+      SIGN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+    fi
     rm -f /tmp/cert_export.p12 2>/dev/null || true
     security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
 
