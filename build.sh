@@ -96,6 +96,14 @@ build_mas_pkg() {
   plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   echo "  Bundle ID: $IDENTIFIER"
 
+  # Unlock keychain to avoid GUI password prompts
+  if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
+    echo "  WARNING: KEYCHAIN_PASSWORD not set - codesign may prompt for password"
+  else
+    security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+    security set-keychain-settings -t 14400 ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+  fi
+
   # Sign the .app with Apple Distribution cert
   echo "[MAS] Signing .app with Apple Distribution..."
   local DIST_ACCESSIBLE=true
@@ -660,7 +668,13 @@ EOF
     else
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
     fi
-
+    # ── Unlock keychain to avoid GUI password prompts ──
+    if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
+      echo "  WARNING: KEYCHAIN_PASSWORD not set - codesign may prompt for password"
+    else
+      security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+      security set-keychain-settings -t 14400 ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+    fi
     # ── Sign with developer certificate, fall back to ad-hoc ──
 
     # Helper: sign QtWebEngineProcess.app explicitly (--deep misses nested .app bundles)

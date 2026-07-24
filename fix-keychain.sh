@@ -4,6 +4,13 @@
 
 set -euo pipefail
 
+# Load environment variables from .env file
+if [ -f ".env" ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 echo "=== DiskRaptor Keychain Fix ==="
