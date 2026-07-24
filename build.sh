@@ -672,14 +672,28 @@ EOF
     else
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
     fi
-    # ── Unlock keychain to avoid GUI password prompts ──
+
+    # ── Create temporary signing keychain to avoid GUI password prompts ──
+    SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
     if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
       echo "  WARNING: KEYCHAIN_PASSWORD not set - codesign may prompt for password"
+      SIGN_KEYCHAIN_PASS="diskraptor"
     else
-      security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-      security set-keychain-settings -t 14400 ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-      security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+      SIGN_KEYCHAIN_PASS="$KEYCHAIN_PASSWORD"
     fi
+    trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
+
+    security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+    security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+    security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
+    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+
+    # Export and import certs to temp keychain
+    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$SIGN_KEYCHAIN_PASS" -o /tmp/cert_export.p12 2>/dev/null || true
+    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "$SIGN_KEYCHAIN_PASS" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
+    rm -f /tmp/cert_export.p12 2>/dev/null || true
+    security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
+
     # ── Sign with developer certificate, fall back to ad-hoc ──
 
     # Helper: sign QtWebEngineProcess.app explicitly (--deep misses nested .app bundles)
@@ -691,7 +705,7 @@ EOF
         codesign --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$SIGN_ID" \
-          --keychain ~/Library/Keychains/login.keychain-db \
+          --keychain "$SIGN_KEYCHAIN" \
           "$WEP" 2>&1 || true
       fi
     }
@@ -706,7 +720,7 @@ EOF
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$CODESIGN_IDENTITY" \
-          --keychain ~/Library/Keychains/login.keychain-db \
+          --keychain "$SIGN_KEYCHAIN" \
           "$APP" 2>&1 || true
       else
         echo "  Signing cert not accessible — ad-hoc signing"
@@ -714,7 +728,7 @@ EOF
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign - \
-          --keychain ~/Library/Keychains/login.keychain-db \
+          --keychain "$SIGN_KEYCHAIN" \
           "$APP" 2>/dev/null || true
       fi
     else
@@ -723,7 +737,7 @@ EOF
       codesign --deep --force --options=runtime \
         --entitlements "$ENTITLEMENTS" \
         --sign - \
-        --keychain ~/Library/Keychains/login.keychain-db \
+        --keychain "$SIGN_KEYCHAIN" \
         "$APP" 2>/dev/null || true
     fi
 
