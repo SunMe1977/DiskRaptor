@@ -54,6 +54,14 @@ echo ""
 echo "[3] Signing with Apple Distribution..."
 ENTITLEMENTS="$(pwd)/installer/DiskRaptor-MAS.entitlements"
 
+# Unlock keychain to avoid GUI password prompts
+if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
+  echo "  WARNING: KEYCHAIN_PASSWORD not set - codesign may prompt for password"
+else
+  security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+  security set-keychain-settings -t 14400 ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+fi
+
 # Check if Distribution cert is accessible
 DIST_ACCESSIBLE=true
 security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$DIST_CERT" || DIST_ACCESSIBLE=false
