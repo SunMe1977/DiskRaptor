@@ -54,6 +54,30 @@ echo ""
 echo "[3] Signing with Apple Distribution..."
 ENTITLEMENTS="$(pwd)/installer/DiskRaptor-MAS.entitlements"
 
+# Create dedicated signing keychain to avoid GUI prompts (macOS 26+ requirement)
+if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
+  echo "  ERROR: KEYCHAIN_PASSWORD not set - cannot create signing keychain"
+  exit 1
+fi
+
+SIGN_KEYCHAIN="/tmp/diskraptor-signing-$$.keychain"
+SIGN_KEYCHAIN_PASS="$KEYCHAIN_PASSWORD"
+trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
+
+# Create and configure temp keychain
+security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
+security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+
+# Copy distribution cert from login keychain into the temp keychain
+security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$SIGN_KEYCHAIN_PASS" -o /tmp/dist_export.p12 2>/dev/null || true
+security import /tmp/dist_export.p12 -k "$SIGN_KEYCHAIN" -P "$SIGN_KEYCHAIN_PASS" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
+rm -f /tmp/dist_export.p12
+
+# Add temp keychain to search list
+security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
+
 # Unlock keychain to avoid GUI password prompts
 if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
   echo "  WARNING: KEYCHAIN_PASSWORD not set - codesign may prompt for password"
@@ -72,7 +96,7 @@ if [ "$DIST_ACCESSIBLE" = true ]; then
   codesign --deep --force --options=runtime \
     --entitlements "$ENTITLEMENTS" \
     --sign "$DIST_CERT" \
-    --keychain ~/Library/Keychains/login.keychain-db \
+    --keychain "$SIGN_KEYCHAIN" \
     "$APP_DST" 2>&1
   echo "  Verification:"
   codesign -dvvv "$APP_DST" 2>&1 | head -5
@@ -82,7 +106,7 @@ else
   codesign --deep --force --options=runtime \
     --entitlements "$ENTITLEMENTS" \
     --sign - \
-    --keychain ~/Library/Keychains/login.keychain-db \
+    --keychain "$SIGN_KEYCHAIN" \
     "$APP_DST" 2>/dev/null || true
 fi
 echo ""
