@@ -9,14 +9,13 @@ KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 echo "=== DiskRaptor Keychain Fix ==="
 echo ""
 
-# Get password from env or prompt
-if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
-  echo "  Using KEYCHAIN_PASSWORD from environment"
-else
-  echo -n "Keychain password: "
-  read -s KEYCHAIN_PASSWORD
-  echo ""
+# Get password from env - required, no prompting
+if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
+  echo "ERROR: KEYCHAIN_PASSWORD environment variable not set"
+  echo "Set it in .env or export it before running this script"
+  exit 1
 fi
+echo "  Using KEYCHAIN_PASSWORD from environment"
 
 # Unlock
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
