@@ -70,22 +70,13 @@ security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null |
 security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
 security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
 
-# Copy distribution cert from login keychain into the temp keychain
-security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$SIGN_KEYCHAIN_PASS" -o /tmp/dist_export.p12 2>/dev/null || true
-security import /tmp/dist_export.p12 -k "$SIGN_KEYCHAIN" -P "$SIGN_KEYCHAIN_PASS" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
+# Copy distribution cert from login keychain into the temp keychain (using login keychain password)
+security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$KEYCHAIN_PASSWORD" -o /tmp/dist_export.p12 2>/dev/null || true
+security import /tmp/dist_export.p12 -k "$SIGN_KEYCHAIN" -P "$KEYCHAIN_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
 rm -f /tmp/dist_export.p12
 
 # Add temp keychain to search list
 security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
-
-# Unlock keychain to avoid GUI password prompts
-if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
-  echo "  WARNING: KEYCHAIN_PASSWORD not set - codesign may prompt for password"
-else
-  security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-  security set-keychain-settings -t 14400 ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-  security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-fi
 
 # Check if Distribution cert is accessible
 DIST_ACCESSIBLE=true

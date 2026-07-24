@@ -676,11 +676,10 @@ EOF
     # ── Create temporary signing keychain to avoid GUI password prompts ──
     SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
     if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
-      echo "  WARNING: KEYCHAIN_PASSWORD not set - codesign may prompt for password"
-      SIGN_KEYCHAIN_PASS="diskraptor"
-    else
-      SIGN_KEYCHAIN_PASS="$KEYCHAIN_PASSWORD"
+      echo "  ERROR: KEYCHAIN_PASSWORD not set - cannot sign"
+      exit 1
     fi
+    SIGN_KEYCHAIN_PASS="$KEYCHAIN_PASSWORD"
     trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
 
     security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
@@ -688,9 +687,9 @@ EOF
     security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
     security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
 
-    # Export and import certs to temp keychain
-    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$SIGN_KEYCHAIN_PASS" -o /tmp/cert_export.p12 2>/dev/null || true
-    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "$SIGN_KEYCHAIN_PASS" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
+    # Export and import certs to temp keychain (using login keychain password for export)
+    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$KEYCHAIN_PASSWORD" -o /tmp/cert_export.p12 2>/dev/null || true
+    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "$KEYCHAIN_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
     rm -f /tmp/cert_export.p12 2>/dev/null || true
     security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
 
