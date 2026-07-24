@@ -72,6 +72,7 @@ if [ "$DIST_ACCESSIBLE" = true ]; then
   codesign --deep --force --options=runtime \
     --entitlements "$ENTITLEMENTS" \
     --sign "$DIST_CERT" \
+    --keychain ~/Library/Keychains/login.keychain-db \
     "$APP_DST" 2>&1
   echo "  Verification:"
   codesign -dvvv "$APP_DST" 2>&1 | head -5
@@ -81,6 +82,7 @@ else
   codesign --deep --force --options=runtime \
     --entitlements "$ENTITLEMENTS" \
     --sign - \
+    --keychain ~/Library/Keychains/login.keychain-db \
     "$APP_DST" 2>/dev/null || true
 fi
 echo ""
