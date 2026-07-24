@@ -35,7 +35,7 @@ case "$OS" in
   CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
   *)        echo "Unknown OS: $OS"; exit 1 ;;
 esac
-VERSION="0.0.2"
+VERSION="0.0.5"
 echo "=========================================="
 echo "  DiskRaptor $VERSION - $PLATFORM Build"
 echo "=========================================="
@@ -96,12 +96,6 @@ build_mas_pkg() {
   plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   echo "  Bundle ID: $IDENTIFIER"
 
-  # Temp keychain for signing
-  # Unlock keychain if password is set (suppresses GUI prompts)
-  if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
-    security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-  fi
-
   # Sign the .app with Apple Distribution cert
   echo "[MAS] Signing .app with Apple Distribution..."
   local DIST_ACCESSIBLE=true
@@ -120,6 +114,15 @@ build_mas_pkg() {
       --entitlements "$ENTITLEMENTS" \
       --sign "$DIST_CERT" \
       "$APP_DST" 2>&1 || true
+    # Re-sign QtWebEngineProcess after --deep (--deep re-signs nested .apps but can strip entitlements)
+    local WEP="$APP_DST/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
+    if [ -d "$WEP" ]; then
+      echo "  Re-signing QtWebEngineProcess.app (ensuring sandbox entitlement)..."
+      codesign --force --options=runtime \
+        --entitlements "$ENTITLEMENTS" \
+        --sign "$DIST_CERT" \
+        "$WEP" 2>&1 || true
+    fi
     codesign -dvvv "$APP_DST" 2>&1 | head -5 || true
   else
     echo "  WARNING: Distribution cert not accessible ($DIST_CERT)"
@@ -284,7 +287,7 @@ echo "[2] Building..."
 ARCHS="x86_64"
 if [ "$PLATFORM" = "macos" ]; then
   # Check if Qt supports arm64 (universal Qt from qt.io)
-  QT_ARCHS=$(lipo -info "$QT_PREFIX/lib/QtCore.framework/Versions/A/QtCore" 2>/dev/null | grep "Architectures" | sed 's/.*are: //')
+  QT_ARCHS=$(lipo -info "$QT_PREFIX/lib/QtCore.framework/Versions/A/QtCore" 2>/dev/null | grep -i "architecture" | sed 's/.*are: //;s/.*is architecture: //')
   if echo "$QT_ARCHS" | grep -q "arm64"; then
     ARCHS="x86_64 arm64"
     echo "  Detected universal Qt ($QT_ARCHS) — building universal binary"
@@ -311,8 +314,7 @@ cd ..
 
 echo "  Qt app..."
 cd qt-app
-rm -rf build
-mkdir build
+mkdir -p build
 cd build
 ARCH_FLAGS=""
 if echo "$ARCHS" | grep -q "arm64"; then
@@ -323,8 +325,8 @@ cmake .. -G Ninja \
   -DQt6_DIR="$QT_CMAKE_DIR" \
   -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
   -DCMAKE_INSTALL_RPATH="\$ORIGIN" \
-  $ARCH_FLAGS
-cmake --build . --config Release
+  $ARCH_FLAGS 2>&1
+cmake --build . --config Release 2>&1
 cd ../..
 
 # ?????? Package ????????????????????????????????????????????????????????????????????????????????????????????????????????????
@@ -418,8 +420,9 @@ case "$PLATFORM" in
     <key>CFBundleExecutable</key><string>DiskRaptor</string>
     <key>CFBundleIdentifier</key><string>diskraptor</string>
     <key>CFBundleName</key><string>DiskRaptor</string>
-    <key>CFBundleVersion</key><string>0.0.2</string>
-    <key>CFBundleShortVersionString</key><string>0.0.2</string>
+    <key>CFBundleVersion</key><string>0.0.5</string>
+    <key>CFBundleShortVersionString</key><string>0.0.5</string>
+    <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>CFBundleIconFile</key><string>icon.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -461,7 +464,7 @@ EOF
 
     # Deploy Qt frameworks using macdeployqt (handles rpath, plugins, WebEngine)
     MACDEPLOYQT=""
-    for p in "$QT_PREFIX/bin/macdeployqt" "/usr/local/opt/qt@6/bin/macdeployqt" "/opt/homebrew/opt/qt@6/bin/macdeployqt" "$(which macdeployqt 2>/dev/null || true)"; do
+    for p in "$QT_PREFIX/bin/macdeployqt" "/Users/hjh/Qt/6.12.0/macos/bin/macdeployqt" "/usr/local/opt/qt@6/bin/macdeployqt" "/opt/homebrew/opt/qt@6/bin/macdeployqt" "$(which macdeployqt 2>/dev/null || true)"; do
       [ -x "$p" ] && MACDEPLOYQT="$p" && break
     done
     if [ -n "$MACDEPLOYQT" ]; then
@@ -659,21 +662,19 @@ EOF
     fi
 
     # ── Sign with developer certificate, fall back to ad-hoc ──
-    # Create temp signing keychain to avoid GUI password prompts
-    if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
-      security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-    fi
-    SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
-    SIGN_KEYCHAIN_PASS="diskraptor"
-    trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
-    security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "" -o /tmp/cert_export.p12 2>/dev/null || true
-    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
-    rm -f /tmp/cert_export.p12 2>/dev/null || true
-    security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
+
+    # Helper: sign QtWebEngineProcess.app explicitly (--deep misses nested .app bundles)
+    sign_webengine_helper() {
+      local SIGN_ID="$1"
+      local WEP="$APP/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
+      if [ -d "$WEP" ]; then
+        echo "  Signing QtWebEngineProcess.app..."
+        codesign --force --options=runtime \
+          --entitlements "$ENTITLEMENTS" \
+          --sign "$SIGN_ID" \
+          "$WEP" 2>&1 || true
+      fi
+    }
 
     # Sign with developer certificate if available, fall back to ad-hoc
     if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
@@ -681,22 +682,27 @@ EOF
       security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$CODESIGN_IDENTITY" || ID_ACCESSIBLE=false
       if [ "$ID_ACCESSIBLE" = true ]; then
         echo "  Signing with: $CODESIGN_IDENTITY"
+        sign_webengine_helper "$CODESIGN_IDENTITY"
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$CODESIGN_IDENTITY" \
-          --keychain "$SIGN_KEYCHAIN" \
           "$APP" 2>&1 || true
       else
         echo "  Signing cert not accessible — ad-hoc signing"
+        sign_webengine_helper "-"
+        codesign --deep --force --options=runtime \
+          --entitlements "$ENTITLEMENTS" \
+          --sign - \
+          "$APP" 2>/dev/null || true
       fi
     else
       echo "  No developer cert found — ad-hoc signing"
+      sign_webengine_helper "-"
+      codesign --deep --force --options=runtime \
+        --entitlements "$ENTITLEMENTS" \
+        --sign - \
+        "$APP" 2>/dev/null || true
     fi
-    # Always ensure the app is at least ad-hoc signed
-    codesign --deep --force --options=runtime \
-      --entitlements "$ENTITLEMENTS" \
-      --sign - \
-      "$APP" 2>/dev/null || true
 
     echo "  DEBUG: Creating DMG step..."
     echo ""
@@ -863,7 +869,7 @@ EOF
     # Control file
     cat > "$DEB_DIR/DEBIAN/control" << 'CONTROL'
 Package: diskraptor
-Version: 0.0.2
+Version: 0.0.4
 Section: utils
 Priority: optional
 Architecture: amd64
