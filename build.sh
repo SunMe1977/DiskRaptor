@@ -102,6 +102,7 @@ build_mas_pkg() {
   else
     security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
     security set-keychain-settings -t 14400 ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
   fi
 
   # Sign the .app with Apple Distribution cert
@@ -674,6 +675,7 @@ EOF
     else
       security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
       security set-keychain-settings -t 14400 ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+      security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
     fi
     # ── Sign with developer certificate, fall back to ad-hoc ──
 
