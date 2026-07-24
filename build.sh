@@ -96,12 +96,6 @@ build_mas_pkg() {
   plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   echo "  Bundle ID: $IDENTIFIER"
 
-  # Temp keychain for signing
-  # Unlock keychain if password is set (suppresses GUI prompts)
-  if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
-    security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-  fi
-
   # Sign the .app with Apple Distribution cert
   echo "[MAS] Signing .app with Apple Distribution..."
   local DIST_ACCESSIBLE=true
@@ -668,32 +662,16 @@ EOF
     fi
 
     # ── Sign with developer certificate, fall back to ad-hoc ──
-    # Create temp signing keychain to avoid GUI password prompts
-    if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
-      security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-    fi
-    SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
-    SIGN_KEYCHAIN_PASS="diskraptor"
-    trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
-    security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "" -o /tmp/cert_export.p12 2>/dev/null || true
-    security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
-    rm -f /tmp/cert_export.p12 2>/dev/null || true
-    security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
 
     # Helper: sign QtWebEngineProcess.app explicitly (--deep misses nested .app bundles)
     sign_webengine_helper() {
       local SIGN_ID="$1"
-      local KEYCHAIN_ARG="${2:-}"
       local WEP="$APP/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
       if [ -d "$WEP" ]; then
         echo "  Signing QtWebEngineProcess.app..."
         codesign --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
-          --sign "$SIGN_ID" $KEYCHAIN_ARG \
+          --sign "$SIGN_ID" \
           "$WEP" 2>&1 || true
       fi
     }
@@ -704,11 +682,10 @@ EOF
       security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$CODESIGN_IDENTITY" || ID_ACCESSIBLE=false
       if [ "$ID_ACCESSIBLE" = true ]; then
         echo "  Signing with: $CODESIGN_IDENTITY"
-        sign_webengine_helper "$CODESIGN_IDENTITY" "--keychain $SIGN_KEYCHAIN"
+        sign_webengine_helper "$CODESIGN_IDENTITY"
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$CODESIGN_IDENTITY" \
-          --keychain "$SIGN_KEYCHAIN" \
           "$APP" 2>&1 || true
       else
         echo "  Signing cert not accessible — ad-hoc signing"

@@ -54,56 +54,24 @@ echo ""
 echo "[3] Signing with Apple Distribution..."
 ENTITLEMENTS="$(pwd)/installer/DiskRaptor-MAS.entitlements"
 
-# Create a dedicated signing keychain to avoid GUI password prompts on macOS 26+
-if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
-  security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-fi
-SIGN_KEYCHAIN="/tmp/diskraptor-signing-$$.keychain"
-# Keychain password: prefer explicit env var, otherwise generate a random one at runtime
-if [ -n "${SIGN_KEYCHAIN_PASS:-}" ]; then
-  : # keep provided value
-else
-  if command -v openssl >/dev/null 2>&1; then
-    SIGN_KEYCHAIN_PASS="$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | cut -c1-24)"
-  else
-    SIGN_KEYCHAIN_PASS="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || echo diskraptor)"
-  fi
-fi
-trap 'rm -f "$SIGN_KEYCHAIN"; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
-
-security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
-security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
-security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null
-security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null
-
-# Copy distribution cert from login keychain into the temp keychain
-security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "" -o /tmp/dist_export.p12 2>/dev/null
-security import /tmp/dist_export.p12 -k "$SIGN_KEYCHAIN" -P "" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null
-rm -f /tmp/dist_export.p12
-
-# Add temp keychain to search list (first = default)
-security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null
-
-# Check if Distribution cert is accessible before running codesign
+# Check if Distribution cert is accessible
 DIST_ACCESSIBLE=true
 security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$DIST_CERT" || DIST_ACCESSIBLE=false
 
 if [ "$DIST_ACCESSIBLE" = true ]; then
   echo "  Signing with: $DIST_CERT"
-  codesign --deep --force --options=runtime \\
-    --entitlements "$ENTITLEMENTS" \\
-    --sign "$DIST_CERT" \\
-    --keychain "$SIGN_KEYCHAIN" \\
+  codesign --deep --force --options=runtime \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$DIST_CERT" \
     "$APP_DST" 2>&1
   echo "  Verification:"
   codesign -dvvv "$APP_DST" 2>&1 | head -5
 else
   echo "  WARNING: Distribution cert not accessible."
   echo "  The .app will be ad-hoc signed (not valid for MAS)."
-  codesign --deep --force --options=runtime \\
-    --entitlements "$ENTITLEMENTS" \\
-    --sign - \\
-    --keychain "$SIGN_KEYCHAIN" \\
+  codesign --deep --force --options=runtime \
+    --entitlements "$ENTITLEMENTS" \
+    --sign - \
     "$APP_DST" 2>/dev/null || true
 fi
 echo ""
