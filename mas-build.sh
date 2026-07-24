@@ -60,6 +60,7 @@ if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
 else
   security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
   security set-keychain-settings -t 14400 ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+  security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
 fi
 
 # Check if Distribution cert is accessible
