@@ -66,12 +66,7 @@ class DupScanner {
     this._groups = [];
 
     try {
-      var resp = await window.__TAURI__.invoke("find_duplicates", { path: path });
-      if (!resp || !resp.success) {
-        this._running = false;
-        this.overlay.style.display = "none";
-        return;
-      }
+      await window.__TAURI__.invoke("find_duplicates", { path: path });
     } catch(e) {
       this._running = false;
       this.overlay.style.display = "none";
@@ -90,9 +85,8 @@ class DupScanner {
             clearInterval(poll);
             self.overlay.style.display = "none";
             try {
-              var result = await window.__TAURI__.invoke("get_dup_result", {});
-              if (result && result.success && result.data) {
-                var data = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
+              var data = await window.__TAURI__.invoke("get_dup_result", {});
+              if (data && data.groups) {
                 self._showResults(data);
               }
             } catch(e) {

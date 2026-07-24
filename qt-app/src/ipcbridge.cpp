@@ -607,7 +607,11 @@ QString IpcBridge::getDupResult()
     if (m_dupResultJson.isEmpty()) {
         return resultToJson(false, QVariant(), "No result available");
     }
-    return resultToJson(true, m_dupResultJson);
+    QJsonDocument rd = QJsonDocument::fromJson(m_dupResultJson.toUtf8());
+    if (!rd.isNull() && rd.isObject()) {
+        return resultToJson(true, rd.object());
+    }
+    return resultToJson(true, QJsonObject());
 }
 
 QString IpcBridge::cppGetDupStatsJson()
@@ -620,6 +624,35 @@ QString IpcBridge::cppGetDupStatsJson()
     obj["currentFile"] = m_dupCurrentFile;
     obj["phase"] = m_dupRunning ? 1 : (m_dupPhase);
     return resultToJson(true, obj);
+}
+
+static QString formatSize(quint64 b)
+{
+    const char *units[] = {"B", "KB", "MB", "GB", "TB", "PB"};
+    if (b == 0) return "0 B";
+    int i = 0;
+    quint64 v = b;
+    while (v >= 1024 && i < 5) { v /= 1024; i++; }
+    double d = static_cast<double>(b);
+    for (int j = 0; j < i; j++) d /= 1024.0;
+    return (i == 0 ? QString::number(b) : QString::number(d, 'f', 1)) + " " + units[i];
+}
+
+static quint64 quickHashFile(const QString &path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return 0;
+    quint64 h = 0;
+    char buf[8192];
+    qint64 n;
+    while ((n = f.read(buf, sizeof(buf))) > 0) {
+        for (qint64 i = 0; i < n; i++) {
+            h += static_cast<unsigned char>(buf[i]);
+            h *= 0x9E3779B97F4A7C15ULL;
+            h ^= h >> 31;
+        }
+    }
+    return h;
 }
 
 void IpcBridge::cppStartDupScan(const QString &path)
@@ -1085,35 +1118,6 @@ QString IpcBridge::loadSettings()
         all[key] = ini.value(key);
     }
     return resultToJson(true, all);
-}
-
-static QString formatSize(quint64 b)
-{
-    const char *units[] = {"B", "KB", "MB", "GB", "TB", "PB"};
-    if (b == 0) return "0 B";
-    int i = 0;
-    quint64 v = b;
-    while (v >= 1024 && i < 5) { v /= 1024; i++; }
-    double d = static_cast<double>(b);
-    for (int j = 0; j < i; j++) d /= 1024.0;
-    return (i == 0 ? QString::number(b) : QString::number(d, 'f', 1)) + " " + units[i];
-}
-
-static quint64 quickHashFile(const QString &path)
-{
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly)) return 0;
-    quint64 h = 0;
-    char buf[8192];
-    qint64 n;
-    while ((n = f.read(buf, sizeof(buf))) > 0) {
-        for (qint64 i = 0; i < n; i++) {
-            h += static_cast<unsigned char>(buf[i]);
-            h *= 0x9E3779B97F4A7C15ULL;
-            h ^= h >> 31;
-        }
-    }
-    return h;
 }
 
 QString IpcBridge::resultToJson(bool success, const QVariant &data, const QString &error)
