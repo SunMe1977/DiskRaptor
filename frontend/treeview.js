@@ -71,8 +71,6 @@ class TreeView {
       var rel = fullNorm.substring(rootNorm.length).replace(/^[\\/]/, "");
       if (!rel) return; // clicking root
       var parts = rel.split(/[\\/]+/);
-      // Remove the last part (the file name) — only navigate to the parent dir
-      parts.pop();
       if (parts.length === 0) return;
 
       var currentIdx = 0;

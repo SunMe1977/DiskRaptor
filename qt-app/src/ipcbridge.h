@@ -102,6 +102,8 @@ private:
     QString cppGetProgressJson();
     QString cppGetResultJson();
 
+    QString requestPermissions();
+
     // ── C++ duplicate scanner (background thread) ──────────────
     QThread *m_dupThread = nullptr;
     QMutex m_dupMutex;
