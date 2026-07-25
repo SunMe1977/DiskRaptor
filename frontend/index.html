@@ -44,7 +44,12 @@
                 <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
-                <button id="btn-trash" class="icon-btn" title="Empty Trash">🗑️</button>
+                <div class="tools-dropdown-wrap">
+                    <button id="btn-tools" class="icon-btn" title="Tools">🔧</button>
+                    <div id="tools-menu" class="tools-dropdown">
+                        <div class="tools-item" data-action="trash">🗑️ Empty Trash</div>
+                    </div>
+                </div>
                 <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
                 <div class="lang-dropdown-wrap">
                     <button id="btn-lang" class="icon-btn" title="Language">🌐</button>
