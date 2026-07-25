@@ -122,7 +122,7 @@ class DiagramRenderer {
       '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
       '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
       '<div class="diag-ctx-sep"></div>' +
-      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (this._isMac ? "Move to Trash" : "Delete") + '</div>';
+      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F Move to Trash</div>';
     document.body.appendChild(this.contextMenu);
 
     // Context menu styles
@@ -1066,11 +1066,12 @@ class DiagramRenderer {
         break;
       case "delete":
         if (!filePath) break;
+        if (!confirm("Move to Trash?\n" + filePath)) break;
         this._invoke("delete_path", { path: filePath }).then((ok) => {
           if (ok && ok.success !== false) {
             this.files = this.files.filter((f) => f.path !== filePath);
             this._draw();
-            if (sb) sb.textContent = "Deleted: " + filePath;
+            if (sb) sb.textContent = "Moved to Trash: " + filePath;
           }
         });
         break;

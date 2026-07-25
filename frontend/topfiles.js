@@ -94,7 +94,7 @@ class TopFilesPanel {
       '<div class="tfctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
       '<div class="tfctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
       '<div class="tfctx-sep"></div>' +
-      '<div class="tfctx-item tfctx-del" data-action="delete">\u{1F5D1}\uFE0F Delete</div>';
+      '<div class="tfctx-item tfctx-del" data-action="delete">\u{1F5D1}\uFE0F Move to Trash</div>';
     document.body.appendChild(this._ctxMenu);
 
     const style = document.createElement("style");
@@ -136,14 +136,14 @@ class TopFilesPanel {
           })
           .catch(function () {});
       } else if (action === "delete") {
-        if (confirm("Delete file?\n" + path)) {
+        if (confirm("Move to Trash?\n" + path)) {
           this._exec("delete_path", { path: path })
             .then(function () {
               var sb = document.querySelector(".status-bar");
-              if (sb) sb.textContent = "Deleted: " + path;
+              if (sb) sb.textContent = "Moved to Trash: " + path;
             })
             .catch(function (err) {
-              alert("Delete failed: " + err);
+              alert("Failed: " + err);
             });
         }
       }
@@ -260,10 +260,12 @@ class TopFilesPanel {
         delBtn.textContent = "\uD83D\uDDD1";
         delBtn.style.cssText =
           "padding:1px 6px;font-size:12px;background:transparent;border:1px solid var(--border);border-radius:3px;cursor:pointer";
-        delBtn.title = "Delete " + (entry.path || "");
+        delBtn.title = "Move to Trash: " + (entry.path || "");
         delBtn.onclick = function (p) {
           return function () {
-            this._exec("delete_path", { path: p });
+            if (confirm("Move to Trash?\n" + p)) {
+              this._exec("delete_path", { path: p });
+            }
           }.bind(this);
         }.bind(this)(entry.path);
         delTd.appendChild(delBtn);

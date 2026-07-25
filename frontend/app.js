@@ -186,34 +186,7 @@ getSetting("theme", "auto").then(function(savedTheme) {
       });
     }
 
-    // Welcome Grant Permissions button (macOS TCC pre-flight)
-    var welcomePermitBtn = document.getElementById("welcome-permit-btn");
-    if (welcomePermitBtn) {
-      if (navigator.platform === "MacIntel" || navigator.platform === "MacARM") {
-        welcomePermitBtn.style.display = "";
-      }
-      welcomePermitBtn.addEventListener("click", async function() {
-        welcomePermitBtn.textContent = "⏳ Requesting...";
-        welcomePermitBtn.disabled = true;
-        try {
-          var r = await window.__TAURI__.invoke("request_permissions", {});
-          if (r && r.permissions) {
-            var ps = r.permissions.split(",");
-            var granted = ps.filter(function(p) { return p === "granted"; }).length;
-            welcomePermitBtn.textContent = "✅ " + granted + "/" + ps.length + " Permissions OK";
-          } else {
-            welcomePermitBtn.textContent = "✅ Permissions Granted";
-          }
-        } catch(e) {
-          welcomePermitBtn.textContent = "⚠️ Permission Error";
-          console.warn("Permissions request:", e);
-        }
-        setTimeout(function() {
-          welcomePermitBtn.textContent = "🔑 Grant Permissions";
-          welcomePermitBtn.disabled = false;
-        }, 5000);
-      });
-    }
+
 
     // Welcome About button
     if (welcomeAboutBtn) {
@@ -720,6 +693,8 @@ getSetting("theme", "auto").then(function(savedTheme) {
       btnBrowse.disabled = true;
       btnCancel.disabled = false;
       btnExport.disabled = true;
+      // Fire-and-forget TCC permission pre-flight (silent on non-macOS)
+      window.__TAURI__.invoke("request_permissions", {}).catch(function(){});
       var followLinks = chkFollow.querySelector("input").checked;
 
       var safetyTimer = setTimeout(function () {
@@ -1146,6 +1121,27 @@ clearTimeout(safetyTimer);
         alert("Export failed: " + err);
       }
     });
+
+    // ── Empty Trash button ────────────────────────────────
+    var btnTrash = document.getElementById("btn-trash");
+    if (btnTrash) {
+      btnTrash.addEventListener("click", async function() {
+        if (!confirm("Empty Trash? This permanently deletes all trashed files.")) return;
+        try {
+          btnTrash.textContent = "⏳";
+          if (navigator.platform === "MacIntel" || navigator.platform === "MacARM") {
+            await window.__TAURI__.invoke("empty_trash", {});
+          } else {
+            await window.__TAURI__.invoke("empty_trash", {});
+          }
+          document.querySelector(".status-bar").textContent = "Trash emptied";
+        } catch(e) {
+          console.warn("Empty trash:", e);
+          alert("Failed to empty trash: " + e);
+        }
+        setTimeout(function() { btnTrash.textContent = "🗑️"; }, 3000);
+      });
+    }
 
     scanPath.addEventListener("keydown", function (e) {
       if (e.key === "Enter") btnScan.click();

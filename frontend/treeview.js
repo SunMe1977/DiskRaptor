@@ -181,7 +181,7 @@ class TreeView {
       '<div class="tctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
       '<div class="tctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
       '<div class="tctx-sep"></div>' +
-      '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F Delete</div>';
+      '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F Move to Trash</div>';
     document.body.appendChild(this._ctxMenu);
 
     // Show context menu on right-click
@@ -235,19 +235,18 @@ class TreeView {
     if (!path) return;
     const name = node.name || "?";
     const isDir = node.node_type === "Directory" || node.node_type === 0;
-    const confirmMsg = "Delete " + (isDir ? "folder" : "file") + "?\n" + path;
-    if (!confirm(confirmMsg)) return;
+    if (!confirm("Move to Trash: " + (isDir ? "folder" : "file") + "?\n" + path)) return;
     try {
       var res = await window.__TAURI__.invoke("delete_path", { path: path });
       if (res && res.success === false) {
-        alert("Delete failed: " + (res.error || "unknown error"));
+        alert("Failed: " + (res.error || "unknown error"));
         return;
       }
-      document.querySelector(".status-bar").textContent = "Deleted: " + name;
+      document.querySelector(".status-bar").textContent = "Moved to Trash: " + name;
       this._removeNodeFromTree(arenaIdx);
       await this.rebuild();
     } catch (e) {
-      alert("Delete failed: " + e);
+      alert("Failed: " + e);
     }
   }
 

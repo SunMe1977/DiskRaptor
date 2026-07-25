@@ -103,6 +103,7 @@ private:
     QString cppGetResultJson();
 
     QString requestPermissions();
+    QString emptyTrash();
 
     // ── C++ duplicate scanner (background thread) ──────────────
     QThread *m_dupThread = nullptr;
