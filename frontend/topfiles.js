@@ -136,7 +136,8 @@ class TopFilesPanel {
           })
           .catch(function () {});
       } else if (action === "delete") {
-        if (confirm("Move to Trash?\n" + path)) {
+        var t = window.__ || function(s){return s;};
+        if (confirm(t("confirm.move_trash_file") + path)) {
           this._exec("delete_path", { path: path })
             .then(function () {
               var sb = document.querySelector(".status-bar");
@@ -263,7 +264,8 @@ class TopFilesPanel {
         delBtn.title = "Move to Trash: " + (entry.path || "");
         delBtn.onclick = function (p) {
           return function () {
-            if (confirm("Move to Trash?\n" + p)) {
+            var t = window.__ || function(s){return s;};
+            if (confirm(t("confirm.move_trash_file") + p)) {
               this._exec("delete_path", { path: p });
             }
           }.bind(this);
