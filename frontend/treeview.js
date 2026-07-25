@@ -691,7 +691,7 @@ class TreeView {
     iconEl.className = "icon";
     iconEl.style.cssText =
       "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;";
-    iconEl.textContent = isDir ? "📁" : "📄";
+    iconEl.textContent = isDir ? "📁" : this._fileIcon(node.name || "");
     el.appendChild(iconEl);
     if (window.__ICON_CACHE__) {
       var iconKey = isDir ? "__folder__" : node.name || "file";
@@ -810,6 +810,23 @@ class TreeView {
         else if (action === "delete" || action === "trash") self._handleDelete(idx);
       };
     });
+  }
+
+  _fileIcon(name) {
+    var ext = name.lastIndexOf(".") >= 0 ? name.substring(name.lastIndexOf(".")).toLowerCase() : "";
+    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg|ico|heic|avif)$/i.test(ext)) return "🖼️";
+    if (/\.(mp4|mov|avi|mkv|wmv|flv|webm|m4v)$/i.test(ext)) return "🎬";
+    if (/\.(mp3|wav|flac|ogg|aac|m4a|wma)$/i.test(ext)) return "🎵";
+    if (/\.(zip|tar|gz|bz2|7z|rar|dmg|iso)$/i.test(ext)) return "🗜️";
+    if (/\.(pdf)$/i.test(ext)) return "📕";
+    if (/\.(doc|docx|xls|xlsx|ppt|pptx|pages|numbers|key)$/i.test(ext)) return "📄";
+    if (/\.(exe|msi|dll|app|dmg|pkg)$/i.test(ext)) return "⚙️";
+    if (/\.(deb|rpm|apk)$/i.test(ext)) return "📦";
+    if (/\.(txt|md|rtf|csv|log|json|xml|yml|yaml|toml)$/i.test(ext)) return "📝";
+    if (/\.(js|ts|py|rs|cpp|c|h|hpp|java|go|rb|php|swift|kt)$/i.test(ext)) return "💻";
+    if (/\.(html|css|scss|less)$/i.test(ext)) return "🌐";
+    if (/\.(ttf|otf|woff|woff2)$/i.test(ext)) return "🔤";
+    return "📄";
   }
 
   _formatSize(bytes) {

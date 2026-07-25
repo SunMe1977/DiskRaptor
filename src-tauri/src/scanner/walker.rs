@@ -144,7 +144,7 @@ mod platform {
         let top_files = Arc::new(TopFilesAccum::default());
         let file_types = Arc::new(FileTypeAccum::default());
         let top_count = config.top_files_count;
-        let mut arena = TreeNodeArena::with_capacity(16_000_000);
+        let mut arena = TreeNodeArena::with_capacity(4_000_000);
         let root_name = Path::new(root_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())

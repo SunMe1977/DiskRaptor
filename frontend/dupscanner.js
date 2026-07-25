@@ -194,10 +194,37 @@ class DupScanner {
       var header = document.createElement("div");
       header.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg-tertiary);cursor:pointer;user-select:none;";
       header.innerHTML = `
-        <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDCC1 ${g.count} copies \u00B7 ${g.sizeHuman || self._fmtSize(g.size)} each</span>
+        <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-primary);font-weight:500;"><input type="checkbox" id="selall-${gi}" style="width:14px;height:14px;cursor:pointer;accent-color:#f85149;"> \uD83D\uDCC1 ${g.count} copies \u00B7 ${g.sizeHuman || self._fmtSize(g.size)} each</span>
         <span style="font-size:12px;color:var(--text-muted);">\u267B ${g.wastedHuman || self._fmtSize(g.wasted)} <span style="color:#f85149;">reclaimable</span></span>
       `;
       card.appendChild(header);
+      // Select-all checkbox in header
+      var selAll = header.querySelector("input");
+      selAll.checked = true; // all except first are selected by default
+      selAll.onclick = function(e) {
+        e.stopPropagation();
+        var checked = selAll.checked;
+        checkStates[gi] = new Set();
+        totalChecked = 0;
+        // Recalculate total and update checkboxes
+        g.files.forEach(function(fp, fi) {
+          var cb = body.querySelectorAll('input[type="checkbox"]')[fi];
+          if (cb) {
+            if (checked && fi > 0) { // don't select first (keep one)
+              cb.checked = true;
+              checkStates[gi].add(fi);
+            } else {
+              cb.checked = fi === 0; // always keep first checked (but excluded)
+            }
+          }
+        });
+        if (checked) {
+          for (var fi = 1; fi < g.files.length; fi++) checkStates[gi].add(fi);
+        }
+        totalChecked = 0;
+        for (var sg in checkStates) totalChecked += checkStates[sg].size;
+        updateSelectedCount();
+      };
 
       var body = document.createElement("div");
       body.style.cssText = "padding:4px 0;background:var(--bg-secondary);";
