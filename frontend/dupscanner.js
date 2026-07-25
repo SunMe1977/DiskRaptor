@@ -18,7 +18,7 @@ class DupScanner {
       <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:32px 40px;max-width:480px;width:90%;text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.4);">
         <div style="font-size:40px;margin-bottom:12px;">🔍</div>
         <h3 style="margin:0 0 6px 0;font-size:16px;color:var(--text-primary);">Scanning for Duplicates</h3>
-        <p id="dup-progress-status" style="margin:0 0 20px 0;font-size:13px;color:var(--text-secondary);">Scanning files...</p>
+        <p id="dup-progress-status" style="margin:0 0 20px 0;font-size:13px;color:var(--text-secondary);" data-i18n="dup.scanning">Scanning files...</p>
         <div style="display:flex;gap:20px;justify-content:center;margin-bottom:16px;">
           <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-files">0</div><div style="font-size:11px;color:var(--text-muted);">Files</div></div>
           <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-groups">0</div><div style="font-size:11px;color:var(--text-muted);">Groups</div></div>
@@ -128,9 +128,10 @@ class DupScanner {
     if (wasted) wasted.textContent = this._fmtSize(stats.wastedBytes || 0);
     if (file) file.textContent = stats.currentFile || "";
     if (status) {
-      if (stats.phase === 3) status.textContent = "Processing results...";
-      else if (stats.phase === 2) status.textContent = "Hashing duplicates...";
-      else status.textContent = "Scanning files...";
+      var t = window.__ || function(s){return s;};
+      if (stats.phase === 3) status.textContent = t("dup.processing");
+      else if (stats.phase === 2) status.textContent = t("dup.hashing");
+      else status.textContent = t("dup.scanning");
     }
     // Animated bar (indeterminate progress)
     if (bar) {
@@ -145,15 +146,16 @@ class DupScanner {
     list.innerHTML = "";
 
     var groups = data.groups || [];
+    var t = window.__ || function(s){return s;};
     var headerText = groups.length + " groups \u00B7 " + this._fmtSize(data.wastedBytes || 0) + " reclaimable";
     if (cancelled && groups.length > 0) {
-      headerText = "⚠ Cancelled \u2014 " + headerText + " (partial)";
+      headerText = "⚠ " + t("dup.cancelled") + " \u2014 " + headerText + " (partial)";
     } else if (cancelled) {
-      headerText = "Cancelled \u2014 no duplicates found";
+      headerText = t("dup.cancelled") + " \u2014 " + t("dup.no_duplicates");
     }
 
     if (groups.length === 0) {
-      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">\u2728 ' + (cancelled ? "Cancelled" : "No duplicate files found") + '</div>';
+      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">\u2728 ' + (cancelled ? t("dup.cancelled") : t("dup.no_duplicates")) + '</div>';
       if (summary) summary.textContent = headerText;
       this.resultsPanel.style.display = "block";
       return;
@@ -166,7 +168,7 @@ class DupScanner {
     toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);";
     toolbar.innerHTML = `
       <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete</span>
-      <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 Move Selected to Trash</button>
+      <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 <span data-i18n="action.move_selected_to_trash">Move Selected to Trash</span></button>
     `;
     list.appendChild(toolbar);
 
