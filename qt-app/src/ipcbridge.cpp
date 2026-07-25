@@ -63,6 +63,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
 {
     if (command == "get_home_dir") return getHomeDir();
     if (command == "pick_directory") return pickDirectory();
+    if (command == "get_volume_stats") return getVolumeStats();
     if (command == "open_url") {
         QString url = args.value("url").toString();
         if (!url.isEmpty()) QDesktopServices::openUrl(QUrl(url));
@@ -669,6 +670,43 @@ QString IpcBridge::listDrives()
         drives.append(drive);
     }
     return resultToJson(true, QJsonDocument(drives).toJson(QJsonDocument::Compact));
+}
+
+QString IpcBridge::getVolumeStats()
+{
+    QJsonArray volumes;
+    for (const auto &storage : QStorageInfo::mountedVolumes()) {
+        if (!storage.isValid()) continue;
+        QString path = storage.rootPath();
+#ifdef Q_OS_MACOS
+        if (storage.isReadOnly() && path != "/" && !path.startsWith("/System/Volumes/Data")) continue;
+#else
+        if (storage.isReadOnly()) continue;
+#endif
+        QJsonObject vol;
+        vol["path"] = path;
+        vol["name"] = storage.displayName();
+        vol["total_bytes"] = static_cast<qint64>(storage.bytesTotal());
+        vol["free_bytes"] = static_cast<qint64>(storage.bytesFree());
+        vol["used_bytes"] = static_cast<qint64>(storage.bytesTotal() - storage.bytesFree());
+        // Human-readable sizes
+        auto fmt = [](quint64 b) -> QString {
+            if (b == 0) return "0 B";
+            const char *u[] = {"B","KB","MB","GB","TB"};
+            int i = 0;
+            double v = static_cast<double>(b);
+            while (v >= 1024.0 && i < 4) { v /= 1024.0; i++; }
+            return QString::number(v, 'f', i > 0 ? 1 : 0) + " " + u[i];
+        };
+        vol["total_human"] = fmt(storage.bytesTotal());
+        vol["free_human"] = fmt(storage.bytesFree());
+        vol["used_human"] = fmt(storage.bytesTotal() - storage.bytesFree());
+        vol["usage_pct"] = storage.bytesTotal() > 0
+            ? static_cast<double>(storage.bytesTotal() - storage.bytesFree()) / storage.bytesTotal() * 100.0
+            : 0.0;
+        volumes.append(vol);
+    }
+    return resultToJson(true, QJsonDocument(volumes).toJson(QJsonDocument::Compact));
 }
 
 QString IpcBridge::checkForUpdates()
