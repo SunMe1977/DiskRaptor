@@ -454,6 +454,49 @@ button.icon-btn {
     border-radius: 4px;
     overflow: hidden;
 }
+.fav-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 2px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    z-index: 999;
+    display: none;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.fav-dropdown.active {
+    display: block;
+}
+.fav-item {
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.fav-item:hover {
+    background: var(--bg-hover);
+}
+.fav-del {
+    margin-left: auto;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 0 4px;
+}
+.fav-del:hover {
+    color: var(--accent-red);
+}
 #btn-rescan {
     padding: 4px 10px;
     font-size: 14px;

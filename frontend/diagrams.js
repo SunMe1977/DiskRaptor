@@ -1047,7 +1047,7 @@ class DiagramRenderer {
     switch (action) {
       case "explorer":
         this._invoke("open_explorer", { path: filePath }).catch(() => {});
-        if (sb) sb.textContent = "Opened: " + filePath;
+        if (sb) sb.textContent = (window.__ || function(s){return s;})("status.opened").replace("{path}", filePath);
         break;
       case "terminal":
         this._invoke("open_terminal", { path: filePath }).catch(() => {});
@@ -1061,7 +1061,7 @@ class DiagramRenderer {
         break;
       case "copy":
         navigator.clipboard.writeText(filePath).then(() => {
-          if (sb) sb.textContent = "Copied: " + filePath;
+          if (sb) sb.textContent = (window.__ || function(s){return s;})("status.copied").replace("{path}", filePath);
         });
         break;
       case "delete":
@@ -1072,7 +1072,7 @@ class DiagramRenderer {
           if (ok && ok.success !== false) {
             this.files = this.files.filter((f) => f.path !== filePath);
             this._draw();
-            if (sb) sb.textContent = "Moved to Trash: " + filePath;
+            if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
           }
         });
         break;

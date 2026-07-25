@@ -132,7 +132,7 @@ class TopFilesPanel {
           .writeText(path)
           .then(function () {
             var sb = document.querySelector(".status-bar");
-            if (sb) sb.textContent = "Copied: " + path;
+            if (sb) sb.textContent = (window.__ || function(s){return s;})("status.copied").replace("{path}", path);
           })
           .catch(function () {});
       } else if (action === "delete") {
@@ -141,7 +141,7 @@ class TopFilesPanel {
           this._exec("delete_path", { path: path })
             .then(function () {
               var sb = document.querySelector(".status-bar");
-              if (sb) sb.textContent = "Moved to Trash: " + path;
+              if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
             })
             .catch(function (err) {
               alert("Failed: " + err);

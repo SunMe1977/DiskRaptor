@@ -23,6 +23,7 @@ class TreeView {
     this._initDiagramJump();
     this._initSortControls();
     this._initFilter();
+    this._initKeyboard();
   }
 
   /** Listen for diagram "jump in tree" clicks */
@@ -57,6 +58,46 @@ class TreeView {
     el.addEventListener("input", function() {
       self._filterText = this.value.toLowerCase().trim();
       self.rebuild();
+    });
+  }
+
+  _initKeyboard() {
+    var self = this;
+    document.addEventListener("keydown", function(e) {
+      // Only handle when tree is visible and not typing in filter
+      var filter = document.getElementById("tree-filter");
+      if (filter && document.activeElement === filter) return;
+      if (self.visibleNodes.length === 0) return;
+      var cur = self.selectedIndex;
+      if (cur === null || cur === undefined) cur = self.visibleNodes[0];
+      var idx = self.visibleNodes.indexOf(cur);
+      if (idx === -1) idx = 0;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        idx = Math.min(idx + 1, self.visibleNodes.length - 1);
+        self.select(self.visibleNodes[idx]);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        idx = Math.max(idx - 1, 0);
+        self.select(self.visibleNodes[idx]);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        var node = self.loader.getNode(cur);
+        if (node && (node.node_type === "Directory" || node.node_type === 0)) {
+          self.toggleExpand(cur);
+        }
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        var node = self.loader.getNode(cur);
+        if (node && self.expanded.has(cur)) {
+          self.toggleExpand(cur);
+        } else if (node && node.parent !== 4294967295) {
+          self.select(node.parent);
+        }
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        self._handleOpenFile(cur);
+      }
     });
   }
 
@@ -153,7 +194,8 @@ class TreeView {
         await self.rebuild();
         self.select(currentIdx);
         var sb = document.querySelector(".status-bar");
-        if (sb) sb.textContent = "Jumped to: " + fullPath;
+        var t = window.__ || function(s){return s;};
+        if (sb) sb.textContent = t("status.jumped").replace("{path}", fullPath);
       } else {
         console.warn("Jump: could not find path in tree:", fullPath);
       }
@@ -257,7 +299,8 @@ class TreeView {
         alert("Failed: " + (res.error || "unknown error"));
         return;
       }
-      document.querySelector(".status-bar").textContent = "Moved to Trash: " + name;
+      var t = window.__ || function(s){return s;};
+      document.querySelector(".status-bar").textContent = t("status.moved_to_trash").replace("{name}", name);
       this._removeNodeFromTree(arenaIdx);
       await this.rebuild();
     } catch (e) {
@@ -329,7 +372,8 @@ class TreeView {
     if (!path) return;
     try {
       await navigator.clipboard.writeText(path);
-      document.querySelector(".status-bar").textContent = "Copied: " + path;
+      var t = window.__ || function(s){return s;};
+      document.querySelector(".status-bar").textContent = t("status.copied").replace("{path}", path);
     } catch (e) {
       console.warn("Copy failed:", e);
     }
@@ -418,6 +462,9 @@ class TreeView {
   }
 
   async rebuild() {
+    var scrollEl = document.getElementById("tree-scroll");
+    var savedScroll = scrollEl ? scrollEl.scrollTop : 0;
+
     this.visibleNodes = [];
     try {
       await this._buildList(0, 0);
@@ -438,6 +485,9 @@ class TreeView {
     const totalItems = this.visibleNodes.length;
     this.vs.setTotalItems(totalItems, totalItems * 26);
     this.vs.refresh();
+
+    // Restore scroll position
+    if (scrollEl && savedScroll > 0) scrollEl.scrollTop = savedScroll;
 
     const nc = document.getElementById("node-count");
     if (nc) nc.textContent = totalItems.toLocaleString() + " shown";

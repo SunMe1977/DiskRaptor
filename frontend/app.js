@@ -161,8 +161,18 @@ getSetting("theme", "auto").then(function(savedTheme) {
     }
 
     if (welcomeClose) {
-      welcomeClose.addEventListener("click", hideWelcome);
+      welcomeClose.addEventListener("click", function() {
+        hideWelcome();
+        window.__TAURI__.invoke("save_settings", { welcome_dismissed: true }).catch(function(){});
+      });
     }
+    // Restore welcome state
+    (async function() {
+      try {
+        var s = await window.__TAURI__.invoke("load_settings", {});
+        if (s && s.welcome_dismissed) hideWelcome();
+      } catch(e) {}
+    })();
 
     // Welcome Start Scan button — scans home directory
     if (welcomeScanBtn) {
@@ -241,6 +251,90 @@ getSetting("theme", "auto").then(function(savedTheme) {
       }
     } catch (e) {
       console.warn("get_home_dir failed:", e && e.message ? e.message : e);
+    }
+
+    // ── Favorites/Bookmarked directories ─────────────────
+    var btnFav = document.getElementById("btn-fav");
+    var favMenu = document.getElementById("fav-menu");
+    var favorites = [];
+
+    async function loadFavorites() {
+      try {
+        var s = await window.__TAURI__.invoke("load_settings", {});
+        if (s && s.favorites) favorites = s.favorites;
+      } catch(e) {}
+    }
+    async function saveFavorites() {
+      await window.__TAURI__.invoke("save_settings", { favorites: favorites }).catch(function(){});
+    }
+    function renderFavorites() {
+      if (!favMenu) return;
+      if (favorites.length === 0) {
+        favMenu.classList.remove("active");
+        return;
+      }
+      var html = "";
+      for (var fi = 0; fi < favorites.length; fi++) {
+        var f = favorites[fi];
+        html += '<div class="fav-item" data-path="' + f.replace(/"/g, "&quot;") + '"><span>📌</span><span style="overflow:hidden;text-overflow:ellipsis;">' + f + '</span><span class="fav-del" data-idx="' + fi + '">✕</span></div>';
+      }
+      favMenu.innerHTML = html;
+    }
+    loadFavorites().then(renderFavorites);
+
+    if (btnFav && favMenu) {
+      btnFav.addEventListener("click", function(e) {
+        e.stopPropagation();
+        var path = scanPath.value.trim();
+        if (!path) return;
+        // Toggle bookmark
+        var idx = favorites.indexOf(path);
+        if (idx >= 0) {
+          favorites.splice(idx, 1);
+          btnFav.textContent = "☆";
+        } else {
+          favorites.push(path);
+          btnFav.textContent = "★";
+        }
+        saveFavorites();
+        renderFavorites();
+      });
+      // Show favorites dropdown on focus
+      scanPath.addEventListener("focus", function() {
+        renderFavorites();
+        if (favorites.length > 0) favMenu.classList.add("active");
+      });
+      scanPath.addEventListener("blur", function() {
+        setTimeout(function() { favMenu.classList.remove("active"); }, 200);
+      });
+      favMenu.addEventListener("click", function(e) {
+        var item = e.target.closest(".fav-item");
+        var del = e.target.closest(".fav-del");
+        if (del) {
+          var idx = parseInt(del.dataset.idx);
+          if (!isNaN(idx) && idx >= 0 && idx < favorites.length) {
+            favorites.splice(idx, 1);
+            saveFavorites();
+            renderFavorites();
+            if (favorites.length === 0) favMenu.classList.remove("active");
+          }
+          return;
+        }
+        if (item) {
+          var path = item.dataset.path;
+          if (path && scanPath) {
+            scanPath.value = path;
+            favMenu.classList.remove("active");
+          }
+        }
+      });
+      document.addEventListener("click", function() {
+        favMenu.classList.remove("active");
+      });
+      // Update star state when path changes
+      scanPath.addEventListener("input", function() {
+        btnFav.textContent = favorites.indexOf(scanPath.value.trim()) >= 0 ? "★" : "☆";
+      });
     }
 
     // ── Volume stats on welcome page ─────────────────────
@@ -989,8 +1083,9 @@ clearTimeout(safetyTimer);
           diagram.setData(result.stats);
           var files = Number(result.stats.total_files || 0).toLocaleString("en-US");
           var dirs = Number(result.stats.total_dirs || 0).toLocaleString("en-US");
+          var t = window.__ || function(s){return s;};
           document.querySelector(".status-bar").textContent =
-            "Complete - " + files + " files, " + dirs + " dirs";
+            t("status.complete").replace("{files}", files).replace("{dirs}", dirs);
           topFiles.render(result.stats ? result.stats.top_files : [], true);
         } else {
           // Fallback: use last known progress data
@@ -1012,7 +1107,7 @@ clearTimeout(safetyTimer);
           var es = totalSecs % 60;
           progressElapsedValEl.textContent = (em < 10 ? "0" : "") + em + ":" + (es < 10 ? "0" : "") + es;
           document.querySelector(".status-bar").textContent =
-            "Complete - " + lastFilesFound.toLocaleString() + " files, " + lastDirsFound.toLocaleString() + " dirs";
+            t("status.complete").replace("{files}", lastFilesFound.toLocaleString()).replace("{dirs}", lastDirsFound.toLocaleString());
           topFiles.render([], true);
         }
 
@@ -1109,7 +1204,7 @@ clearTimeout(safetyTimer);
           var files = Number(partial.stats.total_files || 0).toLocaleString("en-US");
           var dirs = Number(partial.stats.total_dirs || 0).toLocaleString("en-US");
           document.querySelector(".status-bar").textContent =
-            "Cancelled - " + files + " files, " + dirs + " dirs (partial)";
+            t("status.cancelled_partial").replace("{files}", files).replace("{dirs}", dirs);
           topFiles.render(partial.stats ? partial.stats.top_files : [], true);
           // Try to load tree chunks BEFORE releasing the loader
           if (partial.root_info && partial.root_info.total_chunks > 0) {
@@ -1211,7 +1306,8 @@ clearTimeout(safetyTimer);
           try {
             item.textContent = "⏳ Emptying...";
             await window.__TAURI__.invoke("empty_trash", {});
-            document.querySelector(".status-bar").textContent = "Trash emptied";
+            var t = window.__ || function(s){return s;};
+            document.querySelector(".status-bar").textContent = t("status.trash_emptied");
           } catch(e) {
             console.warn("Empty trash:", e);
             alert("Failed: " + e);
