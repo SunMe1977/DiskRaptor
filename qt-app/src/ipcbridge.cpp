@@ -674,7 +674,12 @@ QString IpcBridge::findDuplicates(const QString &path)
     if (m_dupRunning) {
         return resultToJson(false, QVariant(), "Duplicate scan already running");
     }
-    cppStartDupScan(path);
+    if (m_drFindDuplicates) {
+        // Run Rust scanner in background thread, poll progress via C++ counters
+        cppStartDupScan(path, true);
+    } else {
+        cppStartDupScan(path, false);
+    }
     return resultToJson(true, QVariantMap{{"status", "started"}});
 }
 
@@ -723,24 +728,22 @@ static QString formatSize(quint64 b)
     return (i == 0 ? QString::number(b) : QString::number(d, 'f', 1)) + " " + units[i];
 }
 
-static quint64 quickHashFile(const QString &path)
+static quint64 quickHashFile(const QString &path, bool fast = false)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) return 0;
     quint64 h = 0;
     char buf[8192];
-    qint64 n;
-    while ((n = f.read(buf, sizeof(buf))) > 0) {
-        for (qint64 i = 0; i < n; i++) {
-            h += static_cast<unsigned char>(buf[i]);
-            h *= 0x9E3779B97F4A7C15ULL;
-            h ^= h >> 31;
-        }
+    qint64 n = f.read(buf, fast ? 4096 : sizeof(buf));
+    for (qint64 i = 0; i < n; i++) {
+        h += static_cast<unsigned char>(buf[i]);
+        h *= 0x9E3779B97F4A7C15ULL;
+        h ^= h >> 31;
     }
     return h;
 }
 
-void IpcBridge::cppStartDupScan(const QString &path)
+void IpcBridge::cppStartDupScan(const QString &path, bool useRust)
 {
     cppCancelDupScan();
     int scanId;
@@ -755,6 +758,28 @@ void IpcBridge::cppStartDupScan(const QString &path)
         m_dupCurrentFile.clear();
         m_dupPhase = 1;
         m_dupResultJson.clear();
+    }
+
+    if (useRust && m_drFindDuplicates) {
+        m_dupThread = QThread::create([this, path, scanId]() {
+            // Use Rust scanner in background
+            QByteArray pathUtf8 = QDir::toNativeSeparators(path).toUtf8();
+            char* result = m_drFindDuplicates(pathUtf8.constData());
+            QString resultStr;
+            if (result) {
+                resultStr = QString::fromUtf8(result);
+                m_drFreeString(result);
+            }
+            QMutexLocker lock(&m_dupMutex);
+            if (m_dupScanId == scanId) {
+                m_dupResultJson = resultStr;
+                m_dupPhase = 3;
+                m_dupRunning = false;
+            }
+        });
+        connect(m_dupThread, &QThread::finished, m_dupThread, &QObject::deleteLater);
+        m_dupThread->start();
+        return;
     }
 
     m_dupThread = QThread::create([this, path, scanId]() {
@@ -786,11 +811,13 @@ void IpcBridge::cppStartDupScan(const QString &path)
             return;
         }
 
-        // Phase 2: hash same-size groups
+        // Phase 2: hash same-size groups (first 4KB only for speed)
         {
             QMutexLocker lock(&m_dupMutex);
             if (m_dupScanId == scanId) m_dupPhase = 2;
         }
+        qint64 totalGroups = static_cast<qint64>(sizeGroups.size());
+        qint64 groupsDone = 0;
         QJsonArray dupGroups;
         quint64 wastedTotal = 0;
         for (auto it = sizeGroups.begin(); it != sizeGroups.end(); ++it) {
@@ -806,7 +833,7 @@ void IpcBridge::cppStartDupScan(const QString &path)
                     QMutexLocker lock(&m_dupMutex);
                     m_dupCurrentFile = fp;
                 }
-                quint64 h = quickHashFile(fp);
+                quint64 h = quickHashFile(fp, true); // fast = first 4KB only
                 hashGroups[h].append(fp);
             }
 

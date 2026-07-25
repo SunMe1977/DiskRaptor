@@ -118,7 +118,7 @@ private:
     int m_dupPhase = 0; // 0=idle, 1=hashing, 2=processing, 3=done
     QString m_dupResultJson;
 
-    void cppStartDupScan(const QString &path);
+    void cppStartDupScan(const QString &path, bool useRust = false);
     void cppCancelDupScan();
     QString cppGetDupStatsJson();
 };
