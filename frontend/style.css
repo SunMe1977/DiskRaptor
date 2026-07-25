@@ -1789,6 +1789,20 @@ body.light-theme #about-overlay {
     height: 28px;
     font-size: 14px;
   }
+  .about-card {
+    min-width: 280px;
+    max-width: 85vw;
+  }
+  .about-logo {
+    width: 120px;
+    height: 120px;
+  }
+  .about-content {
+    padding: 20px 20px 20px;
+  }
+  .about-card h2 {
+    font-size: 20px;
+  }
   #topfiles-container {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
