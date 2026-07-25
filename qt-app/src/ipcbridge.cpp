@@ -22,6 +22,8 @@
 #include <QMutex>
 #include <QDateTime>
 #include <QAtomicInteger>
+#include <QDesktopServices>
+#include <QUrl>
 #include <atomic>
 
 #ifdef Q_OS_LINUX
