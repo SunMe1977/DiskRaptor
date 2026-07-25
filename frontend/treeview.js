@@ -360,7 +360,9 @@ class TreeView {
 
   _pathSep(rootPath) {
     if (typeof rootPath === "string" && rootPath.indexOf("\\") >= 0) return "\\";
-    return this._isLinux ? "/" : "\\";
+    // macOS always uses forward slashes
+    if (/mac/i.test(navigator.platform || "")) return "/";
+    return "/";
   }
 
   _placeContextMenu(x, y) {
