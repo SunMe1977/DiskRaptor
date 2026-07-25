@@ -641,9 +641,13 @@ QString IpcBridge::listDrives()
         QString path = storage.rootPath();
 #ifdef Q_OS_MACOS
         if (storage.isReadOnly() && path != "/" && !path.startsWith("/System/Volumes/Data")) continue;
+        if (path.startsWith("/System/Volumes/") && path != "/System/Volumes/Data") continue;
+        if (path.startsWith("/private/")) continue;
+        if (path.startsWith("/Volumes/") && storage.bytesTotal() == 0) continue;
 #else
         if (storage.isReadOnly()) continue;
 #endif
+        if (storage.bytesTotal() == 0) continue;
         // Determine drive type for icon
         QString driveType = "local";
         if (path.startsWith("A:") || path.startsWith("B:")) driveType = "floppy";
@@ -679,10 +683,16 @@ QString IpcBridge::getVolumeStats()
         if (!storage.isValid()) continue;
         QString path = storage.rootPath();
 #ifdef Q_OS_MACOS
+        // Show only real drives: root, /System/Volumes/Data, and writable volumes with actual capacity
         if (storage.isReadOnly() && path != "/" && !path.startsWith("/System/Volumes/Data")) continue;
+        if (path.startsWith("/System/Volumes/") && path != "/System/Volumes/Data") continue;
+        if (path.startsWith("/private/")) continue;
+        if (path.startsWith("/Volumes/") && storage.bytesTotal() == 0) continue;
 #else
         if (storage.isReadOnly()) continue;
 #endif
+        // Skip volumes with no actual storage capacity (synthetic/snapshot volumes)
+        if (storage.bytesTotal() == 0) continue;
         QJsonObject vol;
         vol["path"] = path;
         vol["name"] = storage.displayName();
