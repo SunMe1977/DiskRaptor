@@ -769,15 +769,6 @@ EOF
     echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
     echo "  DEBUG: DMG created, continuing..."
 
-    echo "  DEBUG: Creating ZIP step..."
-    echo "  DEBUG: Running zip from $(pwd)..."
-    ls -la dist/DiskRaptor.app || true
-    if ! zip -r "dist/DiskRaptor-$VERSION-macos.zip" "dist/DiskRaptor.app" 2>&1; then
-      echo "  ERROR: zip creation failed (exit code $?)"
-      echo "  DEBUG: dist/ contents:" && ls -la dist/
-      exit 1
-    fi
-    echo "  ZIP: dist/DiskRaptor-$VERSION-macos.zip"
 
     # Notarization (requires Apple ID email, team ID, and app-specific password)
     if [ -n "$CODESIGN_IDENTITY" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then

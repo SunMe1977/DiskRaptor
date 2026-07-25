@@ -33,7 +33,8 @@ PLATFORM="$(uname -s)"
 case "$PLATFORM" in
   Darwin*)
     echo "  Platform: macOS"
-    ASSETS="dist/DiskRaptor-$VERSION-macos.dmg dist/DiskRaptor-$VERSION-macos.zip"
+    ASSETS="dist/DiskRaptor-$VERSION-macos.dmg"
+    for f in dist/DiskRaptor-$VERSION-macos.pkg; do [ -f "$f" ] && ASSETS="$ASSETS $f"; done
     ;;
   Linux*)
     echo "  Platform: Linux"
