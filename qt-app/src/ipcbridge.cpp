@@ -791,6 +791,8 @@ void IpcBridge::cppStartDupScan(const QString &path, bool useRust)
 
     m_dupThread = QThread::create([this, path, scanId]() {
         quint64 total = 0;
+        QJsonArray dupGroups;
+        quint64 wastedTotal = 0;
 
         // Phase 1: walk files, group by size
         QHash<quint64, QVector<QString>> sizeGroups;
@@ -809,68 +811,58 @@ void IpcBridge::cppStartDupScan(const QString &path, bool useRust)
             sizeGroups[sz].append(fp);
         }
 
-        if (m_dupCancelled) {
-            QMutexLocker lock(&m_dupMutex);
-            if (m_dupScanId == scanId) {
-                m_dupPhase = 0;
-                m_dupRunning = false;
-            }
-            return;
-        }
-
         // Phase 2: hash same-size groups (first 4KB only for speed)
-        {
-            QMutexLocker lock(&m_dupMutex);
-            if (m_dupScanId == scanId) m_dupPhase = 2;
-        }
-        qint64 totalGroups = static_cast<qint64>(sizeGroups.size());
-        qint64 groupsDone = 0;
-        QJsonArray dupGroups;
-        quint64 wastedTotal = 0;
-        for (auto it = sizeGroups.begin(); it != sizeGroups.end(); ++it) {
-            if (m_dupCancelled) break;
-            auto &files = it.value();
-            quint64 size = it.key();
-            if (files.size() < 2) continue;
-
-            QHash<quint64, QVector<QString>> hashGroups;
-            for (const auto &fp : files) {
-                if (m_dupCancelled) break;
-                {
-                    QMutexLocker lock(&m_dupMutex);
-                    m_dupCurrentFile = fp;
-                }
-                quint64 h = quickHashFile(fp, true); // fast = first 4KB only
-                hashGroups[h].append(fp);
-            }
-
-            for (auto hit = hashGroups.begin(); hit != hashGroups.end(); ++hit) {
-                if (hit.value().size() < 2) continue;
-                quint64 wasted = size * (static_cast<quint64>(hit.value().size()) - 1);
-                wastedTotal += wasted;
-                QJsonArray filesArr;
-                for (const auto &fp : hit.value()) {
-                    filesArr.append(fp);
-                }
-                QJsonObject g;
-                g["size"] = static_cast<qint64>(size);
-                g["sizeHuman"] = formatSize(size);
-                g["count"] = static_cast<int>(hit.value().size());
-                g["wasted"] = static_cast<qint64>(wasted);
-                g["wastedHuman"] = formatSize(wasted);
-                g["files"] = filesArr;
-                dupGroups.append(g);
-            }
-
+        if (!m_dupCancelled) {
             {
                 QMutexLocker lock(&m_dupMutex);
-                if (m_dupScanId == scanId) {
-                    m_dupGroups = static_cast<quint64>(dupGroups.size());
-                    m_dupWastedBytes = wastedTotal;
+                if (m_dupScanId == scanId) m_dupPhase = 2;
+            }
+            for (auto it = sizeGroups.begin(); it != sizeGroups.end(); ++it) {
+                if (m_dupCancelled) break;
+                auto &files = it.value();
+                quint64 size = it.key();
+                if (files.size() < 2) continue;
+
+                QHash<quint64, QVector<QString>> hashGroups;
+                for (const auto &fp : files) {
+                    if (m_dupCancelled) break;
+                    {
+                        QMutexLocker lock(&m_dupMutex);
+                        m_dupCurrentFile = fp;
+                    }
+                    quint64 h = quickHashFile(fp, true);
+                    hashGroups[h].append(fp);
+                }
+
+                for (auto hit = hashGroups.begin(); hit != hashGroups.end(); ++hit) {
+                    if (hit.value().size() < 2) continue;
+                    quint64 wasted = size * (static_cast<quint64>(hit.value().size()) - 1);
+                    wastedTotal += wasted;
+                    QJsonArray filesArr;
+                    for (const auto &fp : hit.value()) {
+                        filesArr.append(fp);
+                    }
+                    QJsonObject g;
+                    g["size"] = static_cast<qint64>(size);
+                    g["sizeHuman"] = formatSize(size);
+                    g["count"] = static_cast<int>(hit.value().size());
+                    g["wasted"] = static_cast<qint64>(wasted);
+                    g["wastedHuman"] = formatSize(wasted);
+                    g["files"] = filesArr;
+                    dupGroups.append(g);
+                }
+
+                {
+                    QMutexLocker lock(&m_dupMutex);
+                    if (m_dupScanId == scanId) {
+                        m_dupGroups = static_cast<quint64>(dupGroups.size());
+                        m_dupWastedBytes = wastedTotal;
+                    }
                 }
             }
         }
 
+        // Store result (partial if cancelled, complete otherwise)
         QJsonObject result;
         result["groups"] = dupGroups;
         result["totalFilesScanned"] = static_cast<qint64>(total);
@@ -878,6 +870,7 @@ void IpcBridge::cppStartDupScan(const QString &path, bool useRust)
         result["totalDuplicates"] = static_cast<qint64>(dupGroups.size());
         result["wastedBytes"] = static_cast<qint64>(wastedTotal);
         result["wastedHuman"] = formatSize(wastedTotal);
+        result["cancelled"] = m_dupCancelled;
 
         {
             QMutexLocker lock(&m_dupMutex);

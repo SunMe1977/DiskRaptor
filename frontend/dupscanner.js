@@ -101,9 +101,17 @@ class DupScanner {
     }, 200);
   }
 
-  cancel() {
+  async cancel() {
     this._running = false;
-    window.__TAURI__.invoke("cancel_dup_scan", {}).catch(function(){});
+    await window.__TAURI__.invoke("cancel_dup_scan", {}).catch(function(){});
+    // Wait briefly for thread to store partial results
+    await new Promise(function(r) { setTimeout(r, 300); });
+    try {
+      var data = await window.__TAURI__.invoke("get_dup_result", {});
+      if (data && data.groups && data.groups.length > 0) {
+        this._showResults(data, true);
+      }
+    } catch(e) { /* no partial results */ }
     this.overlay.style.display = "none";
   }
 
@@ -131,23 +139,27 @@ class DupScanner {
     }
   }
 
-  _showResults(data) {
+  _showResults(data, cancelled) {
     var list = document.getElementById("dup-groups-list");
     var summary = document.getElementById("dup-summary");
     list.innerHTML = "";
 
     var groups = data.groups || [];
+    var headerText = groups.length + " groups \u00B7 " + this._fmtSize(data.wastedBytes || 0) + " reclaimable";
+    if (cancelled && groups.length > 0) {
+      headerText = "⚠ Cancelled \u2014 " + headerText + " (partial)";
+    } else if (cancelled) {
+      headerText = "Cancelled \u2014 no duplicates found";
+    }
+
     if (groups.length === 0) {
-      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">\u2728 No duplicate files found</div>';
-      if (summary) summary.textContent = "0 groups";
+      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">\u2728 ' + (cancelled ? "Cancelled" : "No duplicate files found") + '</div>';
+      if (summary) summary.textContent = headerText;
       this.resultsPanel.style.display = "block";
       return;
     }
 
-    var totalWasted = data.wastedBytes || 0;
-    if (summary) {
-      summary.textContent = groups.length + " groups \u00B7 " + this._fmtSize(totalWasted) + " reclaimable";
-    }
+    if (summary) summary.textContent = headerText;
 
     // Add delete selected button
     var toolbar = document.createElement("div");
