@@ -234,7 +234,8 @@ class TreeView {
       '<div class="tctx-item" data-action="scan-here">🔍 Scan this Folder</div>' +
       '<div class="tctx-sep"></div>' +
       '<div class="tctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
-      '<div class="tctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
+      '<div class="tctx-item" data-action="copy">\u{1F4CB} ' + (window.__ ? window.__("action.copy_path") : "Copy Path") + '</div>' +
+      '<div class="tctx-item" data-action="copy-size">\u{1F4B0} ' + (window.__ ? window.__("action.copy_size") : "Copy Size") + '</div>' +
       '<div class="tctx-sep"></div>' +
       '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (window.__ ? window.__("action.move_to_trash") : "Move to Trash") + '</div>';
     document.body.appendChild(this._ctxMenu);
@@ -280,6 +281,7 @@ class TreeView {
       if (action === "terminal") this._handleTerminal(idx);
       if (action === "explorer") this._handleExplorer(idx);
       if (action === "copy") this._handleCopyPath(idx);
+      if (action === "copy-size") this._handleCopySize(idx);
       if (action === "properties") this._handleProperties(idx);
     });
   }
@@ -390,6 +392,17 @@ class TreeView {
     }
   }
 
+  async _handleCopySize(arenaIdx) {
+    const node = this.loader.getNode(arenaIdx);
+    if (!node) return;
+    var sizeStr = this._formatSize(node.size);
+    try {
+      await navigator.clipboard.writeText(sizeStr);
+      var t = window.__ || function(s){return s;};
+      document.querySelector(".status-bar").textContent = t("status.copied").replace("{path}", sizeStr);
+    } catch(e) {}
+  }
+
   async _handleOpenFile(arenaIdx) {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
@@ -489,17 +502,13 @@ class TreeView {
     // Restore scroll position
     if (scrollEl && savedScroll > 0) scrollEl.scrollTop = savedScroll;
 
+    var t = window.__ || function(s){return s;};
     const nc = document.getElementById("node-count");
-    if (nc) nc.textContent = totalItems.toLocaleString() + " shown";
+    if (nc) nc.textContent = t("tree.shown").replace("{n}", totalItems.toLocaleString());
 
     const se = document.querySelector("#tree-panel .status-bar");
     if (se)
-      se.textContent =
-        "Root \u2022 " +
-        totalItems +
-        " item" +
-        (totalItems === 1 ? "" : "s") +
-        " visible";
+      se.textContent = t("tree.visible").replace("{n}", totalItems).replace("{s}", totalItems === 1 ? "" : "s");
   }
 
   async _buildList(arenaIdx, depth) {

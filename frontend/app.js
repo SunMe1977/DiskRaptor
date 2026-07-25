@@ -350,7 +350,11 @@ getSetting("theme", "auto").then(function(savedTheme) {
       try {
         var vols = await window.__TAURI__.invoke("get_volume_stats", {});
         var container = document.getElementById("welcome-volumes");
-        if (!container || !vols) return;
+        if (!container) return;
+        if (!vols || vols.length === 0) {
+          container.innerHTML = '<div style="font-size:11px;color:var(--text-muted);text-align:center;">No volumes detected</div>';
+          return;
+        }
         var html = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">💾 Drives<span id="refresh-volumes" style="font-size:11px;cursor:pointer;color:var(--text-muted);font-weight:400;">↻ refresh</span></div>';
         for (var vi = 0; vi < vols.length; vi++) {
           var v = vols[vi];
@@ -368,7 +372,11 @@ getSetting("theme", "auto").then(function(savedTheme) {
         try {
           var vols = await window.__TAURI__.invoke("get_volume_stats", {});
           var container = document.getElementById("welcome-volumes");
-          if (!container || !vols) return;
+          if (!container) return;
+          if (!vols || vols.length === 0) {
+            container.innerHTML = '<div style="font-size:11px;color:var(--text-muted);text-align:center;">No volumes detected</div>';
+            return;
+          }
           var html = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">💾 Drives<span id="refresh-volumes" style="font-size:11px;cursor:pointer;color:var(--text-muted);font-weight:400;">↻ refresh</span></div>';
           for (var vi = 0; vi < vols.length; vi++) {
             var v = vols[vi];
@@ -761,6 +769,7 @@ getSetting("theme", "auto").then(function(savedTheme) {
             scanPath.value = p;
             driveSelected.textContent = p;
             driveMenu.classList.remove("active");
+            btnScan.click();
           });
         });
         // Auto-select first real drive if none is active
@@ -858,6 +867,12 @@ getSetting("theme", "auto").then(function(savedTheme) {
           }
         } catch(e) {}
       })();
+      // Set engine text with thread count
+      var engineEl = document.getElementById("progress-engine");
+      if (engineEl) {
+        var tc = navigator.hardwareConcurrency || 4;
+        engineEl.textContent = (window.__ || function(s){return s;})("progress.engine_text").replace("{threads}", tc);
+      }
       // Fire-and-forget TCC permission pre-flight (silent on non-macOS)
       window.__TAURI__.invoke("request_permissions", {}).catch(function(){});
       var followLinks = chkFollow.querySelector("input").checked;
@@ -1229,7 +1244,7 @@ clearTimeout(safetyTimer);
 
     // Cancel (toolbar + progress overlay)
     btnCancel.addEventListener("click", async function () {
-      document.getElementById("progress-status").textContent = "Cancelling...";
+      document.getElementById("progress-status").textContent = (window.__ || function(s){return s;})("status.cancelling");
       btnCancel.disabled = true;
       // 1. Tell Rust to stop scanning
       try { await window.__TAURI__.invoke("cancel_scan", {}); } catch(e) {}
@@ -1266,7 +1281,7 @@ clearTimeout(safetyTimer);
           }
         } else {
           document.querySelector(".status-bar").textContent =
-            "Scan cancelled - " + lastFilesFound.toLocaleString() + " files found";
+            (window.__ || function(s){return s;})("status.scan_cancelled").replace("{files}", lastFilesFound.toLocaleString());
         }
       } catch(e) {
         console.warn("cancel partial error:", e);
@@ -1292,7 +1307,7 @@ clearTimeout(safetyTimer);
     // Export
     btnExport.addEventListener("click", async function () {
       try {
-        var fmt = prompt("Export format: JSON or CSV?", "CSV");
+        var fmt = prompt((window.__ || function(s){return s;})("status.export_prompt"), "CSV");
         if (!fmt) return;
         fmt = fmt.toUpperCase();
         var stats = currentStats || {};
@@ -1339,7 +1354,7 @@ clearTimeout(safetyTimer);
           URL.revokeObjectURL(url);
         }
         var t = window.__ || function(s){return s;};
-        document.querySelector(".status-bar").textContent = "Exported as " + fmt;
+        document.querySelector(".status-bar").textContent = (window.__ || function(s){return s;})("status.exported").replace("{fmt}", fmt);
       } catch (err) {
         console.error("Export failed:", err);
         alert("Export failed: " + err);
@@ -1414,6 +1429,19 @@ clearTimeout(safetyTimer);
             var tr = p ? p.replace(/[\\/]+$/, "") + "/.Trash" : "";
             if (tr && scanPath) { scanPath.value = tr; btnScan.click(); }
           }).catch(function(){});
+        } else if (action === "clear-scan") {
+          currentStats = null;
+          currentScanResult = null;
+          loader.release().catch(function(){});
+          treeView.visibleNodes = [];
+          treeView.expanded.clear();
+          treeView.selectedIndex = null;
+          treeView.rebuild().catch(function(){});
+          statsPanel.clear();
+          diagram.setData(null);
+          topFiles.render([], true);
+          document.querySelector(".status-bar").textContent = (window.__ || function(s){return s;})("status.clear_scan");
+          showWelcome();
         } else if (action === "settings") {
           var so = document.getElementById("settings-overlay");
           if (so) {
