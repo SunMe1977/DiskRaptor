@@ -1138,7 +1138,19 @@ clearTimeout(safetyTimer);
         if (!item) return;
         var action = item.dataset.action;
         toolsMenu.classList.remove("active");
-        if (action === "duplicates") {
+        if (action === "scan-downloads") {
+          window.__TAURI__.invoke("get_home_dir").then(function(home) {
+            var p = typeof home === "string" ? home : (home?.data || "");
+            var dl = p ? p.replace(/[\\/]+$/, "") + "/Downloads" : "";
+            if (dl && scanPath) { scanPath.value = dl; btnScan.click(); }
+          }).catch(function(){});
+        } else if (action === "scan-trash") {
+          window.__TAURI__.invoke("get_home_dir").then(function(home) {
+            var p = typeof home === "string" ? home : (home?.data || "");
+            var tr = p ? p.replace(/[\\/]+$/, "") + "/.Trash" : "";
+            if (tr && scanPath) { scanPath.value = tr; btnScan.click(); }
+          }).catch(function(){});
+        } else if (action === "duplicates") {
           var dupBtn = document.getElementById("btn-duplicates");
           if (dupBtn) dupBtn.click();
         } else if (action === "trash") {
