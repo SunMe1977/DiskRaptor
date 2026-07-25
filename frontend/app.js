@@ -696,7 +696,7 @@ getSetting("theme", "auto").then(function(savedTheme) {
       var safetyTimer = setTimeout(function () {
         progressOverlay.classList.remove("active");
         document.querySelector(".status-bar").textContent = "Timeout triggered";
-      }, 1200000);
+      }, 1800000); // 30 min safety
 
       // Progress elements (new rich layout)
       var progressFilesEl = document.getElementById("progress-files");
@@ -829,7 +829,7 @@ getSetting("theme", "auto").then(function(savedTheme) {
 
         var done = false;
         var zeroCount = 0;
-        for (var i = 0; i < 1200; i++) {
+        for (var i = 0; i < 3600; i++) {
           await sleep(500);
           var p = await window.__TAURI__
             .invoke("get_scan_progress", { scanId: scanId })
@@ -931,15 +931,15 @@ getSetting("theme", "auto").then(function(savedTheme) {
         progressSpeedValEl.textContent = "✓";
 
         var result = null;
-        // Try up to 5 times with 100ms delay (max 500ms) instead of 60x500ms
-        for (var ri = 0; ri < 5; ri++) {
+        for (var ri = 0; ri < 20; ri++) {
           result = await window.__TAURI__
             .invoke("get_scan_result", { scanId: scanId })
             .catch(function () {
               return null;
             });
           if (result && result.stats) break;
-          await sleep(100);
+          if (ri < 5) await sleep(100);
+          else await sleep(500);
         }
 clearTimeout(safetyTimer);
         progressOverlay.classList.remove("active");
@@ -957,6 +957,19 @@ clearTimeout(safetyTimer);
           topFiles.render(result.stats ? result.stats.top_files : [], true);
         } else {
           // Fallback: use last known progress data
+          var fbStats = {
+            total_files: lastFilesFound || 0,
+            total_dirs: lastDirsFound || 0,
+            total_size: 0,
+            scan_time_ms: Date.now() - pollStartTime,
+            top_files: [],
+            file_type_breakdown: []
+          };
+          currentStats = fbStats;
+          if (fbStats.total_files > 0) {
+            statsPanel.render(fbStats);
+            diagram.setData(fbStats);
+          }
           progressElapsedValEl.textContent = statsPanel._formatDuration(Date.now() - pollStartTime);
           document.querySelector(".status-bar").textContent =
             "Complete - " + lastFilesFound.toLocaleString() + " files, " + lastDirsFound.toLocaleString() + " dirs";
@@ -986,6 +999,17 @@ clearTimeout(safetyTimer);
             }
             try { await treeView.rebuild(); } catch(e) {}
           })();
+        } else if (currentStats && currentStats.total_files > 0) {
+          // Synthetic root node so the tree shows something
+          try {
+            var rootNode = { name: scanPath.value, size: currentStats.total_size || 0, file_count: currentStats.total_files || 0, dir_count: currentStats.total_dirs || 0, node_type: 0, parent: 4294967295, first_child: 4294967295, next_sibling: 4294967295, depth: 0, chunk_id: 0, _arenaIndex: 0, _children: [] };
+            loader.totalNodes = 1;
+            loader.totalChunks = 0;
+            loader.allNodes = [rootNode];
+            loader.scanId = scanId;
+            treeView.expanded.add(0);
+            try { await treeView.rebuild(); } catch(e) {}
+          } catch(e) { console.warn("Synthetic root:", e); }
         }
 
         btnExport.disabled = false;

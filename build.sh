@@ -35,7 +35,7 @@ case "$OS" in
   CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
   *)        echo "Unknown OS: $OS"; exit 1 ;;
 esac
-VERSION="0.0.7"
+VERSION="0.0.8"
 echo "=========================================="
 echo "  DiskRaptor $VERSION - $PLATFORM Build"
 echo "=========================================="
@@ -432,8 +432,8 @@ case "$PLATFORM" in
     <key>CFBundleExecutable</key><string>DiskRaptor</string>
     <key>CFBundleIdentifier</key><string>diskraptor</string>
     <key>CFBundleName</key><string>DiskRaptor</string>
-    <key>CFBundleVersion</key><string>0.0.7</string>
-    <key>CFBundleShortVersionString</key><string>0.0.7</string>
+    <key>CFBundleVersion</key><string>0.0.8</string>
+    <key>CFBundleShortVersionString</key><string>0.0.8</string>
     <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>CFBundleIconFile</key><string>icon.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
@@ -551,6 +551,7 @@ EOF
         mkdir -p "$WEP_FW"
         # Symlink dylibs from main app Frameworks (excluding QtWebEngineCore to avoid recursion)
         for dylib in "$APP/Contents/Frameworks/"*.dylib; do
+          [ -f "$dylib" ] || continue
           name=$(basename "$dylib")
           [ ! -e "$WEP_FW/$name" ] && ln -sf "../../../../../../../$name" "$WEP_FW/$name" 2>/dev/null || true
         done

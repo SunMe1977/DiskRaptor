@@ -140,6 +140,7 @@ class DiagramRenderer {
       this._updateOverlays(-9999, -9999);
     });
     this.canvas.addEventListener("click", (e) => this._onClick(e));
+    this.canvas.addEventListener("contextmenu", (e) => this._onContextMenu(e));
     document.addEventListener("click", (e) => {
       if (
         this.contextMenu &&
@@ -979,6 +980,22 @@ class DiagramRenderer {
   }
 
   _onClick(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    this.contextMenu.style.display = "none";
+    if (hit) {
+      this._selectedIndex = hit.index;
+      this._draw();
+      // Directly jump to tree on click
+      window.dispatchEvent(new CustomEvent("diagram-jump-to-path", { detail: { path: hit.path } }));
+    } else {
+      this._selectedIndex = -1;
+      this._draw();
+    }
+  }
+
+  _onContextMenu(e) {
+    e.preventDefault();
     const rect = this.canvas.getBoundingClientRect();
     const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
     if (hit) {
