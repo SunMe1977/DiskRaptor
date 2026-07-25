@@ -1,34 +1,32 @@
 #!/bin/bash
-# DiskRaptor Release Upload Script
+# DiskRaptor Release Upload Script — pure curl, no gh CLI
 set -euo pipefail
 
-VERSION="0.0.2"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VERSION="$(grep -o '^VERSION="[^"]*"' "$SCRIPT_DIR/build.sh" 2>/dev/null | sed 's/^VERSION="//;s/"//' || echo "0.0.2")"
 TAG="v$VERSION"
 GH_REPO="SunMe1977/DiskRaptor"
+API="https://api.github.com"
 
 echo "=========================================="
 echo "  DiskRaptor Release Upload v$VERSION"
 echo "=========================================="
 echo ""
 
-# ── Find gh CLI ──────────────────────────────
-GH=""
-for p in $(which gh 2>/dev/null || true) $(command -v gh 2>/dev/null || true) /usr/bin/gh /usr/local/bin/gh /snap/bin/gh /home/linuxbrew/.linuxbrew/bin/gh; do
-  if [ -x "$p" ]; then GH="$p"; break; fi
-done
-if [ -z "$GH" ]; then
-  echo "ERROR: GitHub CLI (gh) not found."
-  echo "  Install: sudo apt install gh && gh auth login"
-  echo "  Or: brew install gh && gh auth login"
+# ── Token (gh keyring > env var) ──────────────
+TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+if [ -z "$TOKEN" ]; then
+  TOKEN=$(gh auth token 2>/dev/null || true)
+fi
+if [ -z "$TOKEN" ]; then
+  echo "ERROR: No token found. Run: gh auth login  or  set GH_TOKEN"
   exit 1
 fi
-echo "  gh: $GH"
+echo "  Token: OK (${#TOKEN} chars)"
 
-if ! "$GH" auth status 2>&1 | grep -qi "active account: true"; then
-  echo "ERROR: Not authenticated. Run: gh auth login"
-  exit 1
-fi
-echo "  ✓ gh CLI authenticated"
+CURL() {
+  curl -sS -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github+json" "$@"
+}
 
 # ── Detect platform assets ────────────────────
 PLATFORM="$(uname -s)"
@@ -55,36 +53,39 @@ esac
 # ── Ensure release exists ────────────────────
 echo ""
 echo "  Ensuring release $TAG exists..."
-"$GH" release create "$TAG" --title "DiskRaptor v$VERSION" --notes "" 2>/dev/null || true
 
-# ── Get upload URL and token ──────────────────
-echo ""
-echo "  Getting upload URL..."
-UPLOAD_URL="$("$GH" release view "$TAG" --json "uploadUrl" --jq ".uploadUrl" 2>/dev/null | sed 's/{?name,label}//')"
-if [ -z "$UPLOAD_URL" ]; then
-  echo "  ERROR: Could not get upload URL for release $TAG"
-  exit 1
-fi
-echo "  Upload URL: $UPLOAD_URL"
+RELEASE_JSON=$(CURL "$API/repos/$GH_REPO/releases/tags/$TAG" 2>/dev/null || true)
+RELEASE_ID=$(echo "$RELEASE_JSON" | grep -o '"id": [0-9]*' | head -1 | awk '{print $2}' || true)
 
-TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-if [ -z "$TOKEN" ]; then
-  TOKEN=$("$GH" auth token 2>/dev/null || true)
+if [ -z "$RELEASE_ID" ]; then
+  echo "    Creating release $TAG..."
+  RELEASE_JSON=$(CURL -X POST "$API/repos/$GH_REPO/releases" \
+    -H "Content-Type: application/json" \
+    -d "{\"tag_name\":\"$TAG\",\"name\":\"DiskRaptor v$VERSION\",\"body\":\"\"}" 2>/dev/null)
+  RELEASE_ID=$(echo "$RELEASE_JSON" | grep -o '"id": [0-9]*' | head -1 | awk '{print $2}' || true)
+  if [ -z "$RELEASE_ID" ]; then
+    echo "    ERROR: Failed to create release. Response:"
+    echo "$RELEASE_JSON" | head -5
+    exit 1
+  fi
+  echo "    Created release ID: $RELEASE_ID"
+else
+  echo "    Release exists (ID: $RELEASE_ID)"
 fi
-if [ -z "$TOKEN" ]; then
-  echo "ERROR: No token found. Set GH_TOKEN or use gh auth login."
-  exit 1
-fi
+
+UPLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"upload_url": "[^"]*"' | head -1 | sed 's/"upload_url": "//;s/"//;s/{?name,label}//')
+echo "    Upload URL: $UPLOAD_URL"
 
 # ── Delete stale assets ──────────────────────
 echo ""
 echo "  Cleaning stale assets..."
+ASSETS_JSON=$(CURL "$API/repos/$GH_REPO/releases/$RELEASE_ID/assets" 2>/dev/null || echo "[]")
 for FILE in $ASSETS; do
   NAME=$(basename "$FILE")
-  ASSET_ID=$("$GH" release view "$TAG" --json assets --jq '.assets[] | select(.name == "'"$NAME"'") | .id' 2>/dev/null || true)
+  ASSET_ID=$(echo "$ASSETS_JSON" | grep -o '"id": [0-9]*,"name": "'"$NAME"'"' | grep -o '"[0-9]*"' | head -1 | tr -d '"' || true)
   if [ -n "$ASSET_ID" ]; then
-    echo "    Removing stale: $NAME"
-    "$GH" api -X DELETE "repos/$GH_REPO/releases/assets/$ASSET_ID" --silent 2>/dev/null || true
+    echo "    Removing stale: $NAME (ID: $ASSET_ID)"
+    CURL -X DELETE "$API/repos/$GH_REPO/releases/assets/$ASSET_ID" >/dev/null 2>&1 || true
     sleep 2
   fi
 done
@@ -117,7 +118,7 @@ for FILE in $ASSETS; do
   fi
   COUNT=$((COUNT+1))
   NAME=$(basename "$FILE")
-  SIZE=$(stat -f%z "$FILE")
+  SIZE=$(stat -f%z "$FILE" 2>/dev/null || stat -c%s "$FILE" 2>/dev/null)
   EST_SEC=$(( SIZE / SPEED ))
   EST_MIN=$(( EST_SEC / 60 ))
   EST_REM=$(( EST_SEC % 60 ))
@@ -129,7 +130,13 @@ for FILE in $ASSETS; do
       -H "Authorization: token $TOKEN" \
       -H "Content-Type: application/octet-stream" \
       --data-binary "@$FILE" \
-      --connect-timeout 30 --max-time 10800 > "${LOG}.result" 2>&1 || true
+      --connect-timeout 30 \
+      --max-time 10800 \
+      --retry 5 \
+      --retry-delay 30 \
+      --retry-max-time 7200 \
+      --speed-limit 100 \
+      --speed-time 60 > "${LOG}.result" 2>&1 || true
 
     if grep -q '"message"' "${LOG}.result" 2>/dev/null; then
       echo "      ✗ Failed: $NAME — $(grep -o '"message":"[^"]*"' "${LOG}.result" | head -1)" > "${LOG}.status"

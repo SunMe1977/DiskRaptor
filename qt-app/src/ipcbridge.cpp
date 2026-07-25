@@ -478,6 +478,7 @@ QString IpcBridge::getScanResult()
     if (m_drGetResult) {
         char* cjson = m_drGetResult();
         if (!cjson) {
+            qWarning() << "[DiskRaptor] getScanResult: dr_get_result returned null";
             return resultToJson(false, QVariant(), "null result");
         }
         QString jsonStr = QString::fromUtf8(cjson);
@@ -499,11 +500,16 @@ QString IpcBridge::getScanResult()
                 QJsonObject wrapper;
                 wrapper["success"] = true;
                 wrapper["data"] = resultObj;
+                qDebug() << "[DiskRaptor] getScanResult: Rust result OK, files:" << obj["stats"].toObject()["total_files"].toDouble();
                 return QString::fromUtf8(QJsonDocument(wrapper).toJson(QJsonDocument::Compact));
             }
+            qWarning() << "[DiskRaptor] getScanResult: Rust result missing stats, obj keys:" << obj.keys();
+        } else {
+            qWarning() << "[DiskRaptor] getScanResult: Rust result not valid JSON, raw:" << jsonStr.left(200);
         }
         // Rust result fallback...
         bool isRunning = m_drIsRunning ? m_drIsRunning() : false;
+        qDebug() << "[DiskRaptor] getScanResult: fallback path, isRunning:" << isRunning;
         if (!isRunning) {
             QString progressJson = getScanProgress();
             QJsonDocument pdoc = QJsonDocument::fromJson(progressJson.toUtf8());
@@ -513,18 +519,20 @@ QString IpcBridge::getScanResult()
                     QJsonObject data = pobj["data"].toObject();
                     qint64 files = static_cast<qint64>(data["files_found"].toDouble());
                     qint64 dirs = static_cast<qint64>(data["dirs_found"].toDouble());
+                    qint64 bytes = static_cast<qint64>(data["bytes_found"].toDouble());
                     qint64 elapsed = static_cast<qint64>(data["elapsed_secs"].toDouble());
+                    qDebug() << "[DiskRaptor] getScanResult: fallback stats from progress - files:" << files << "dirs:" << dirs << "bytes:" << bytes;
                     QJsonObject stats;
                     stats["total_files"] = files;
                     stats["total_dirs"] = dirs;
-                    stats["total_size"] = 0;
+                    stats["total_size"] = bytes;
                     stats["scan_time_ms"] = elapsed * 1000;
                     stats["top_files"] = QJsonArray();
                     stats["file_type_breakdown"] = QJsonArray();
-                    stats["size_human"] = "0 B";
+                    stats["size_human"] = bytes > 0 ? "-" : "0 B";
                     stats["time_human"] = QString::number(elapsed) + "s";
                     QJsonObject ri;
-                    ri["root_index"] = 0; ri["total_nodes"] = files + dirs; ri["total_chunks"] = 1;
+                    ri["root_index"] = 0; ri["total_nodes"] = (files + dirs > 0) ? (files + dirs) : 1; ri["total_chunks"] = 1;
                     QJsonObject resultObj;
                     resultObj["stats"] = stats; resultObj["root_info"] = ri; resultObj["scan_id"] = m_scanId;
                     QJsonObject wrapper;
@@ -533,9 +541,11 @@ QString IpcBridge::getScanResult()
                 }
             }
         }
+        qWarning() << "[DiskRaptor] getScanResult: result not ready yet";
         return resultToJson(false, QVariant(), "result not ready yet");
     }
     // C++ fallback
+    qDebug() << "[DiskRaptor] getScanResult: using C++ fallback";
     return cppGetResultJson();
 }
 
@@ -1042,6 +1052,7 @@ QString IpcBridge::cppGetProgressJson()
 QString IpcBridge::cppGetResultJson()
 {
     QMutexLocker lock(&m_cppMutex);
+    qDebug() << "[DiskRaptor] cppGetResultJson: running:" << m_cppScanRunning << "files:" << m_cppFilesFound << "dirs:" << m_cppDirsFound;
     if (m_cppScanRunning) {
         return resultToJson(false, QVariant(), "scan still running");
     }
