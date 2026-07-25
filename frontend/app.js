@@ -1122,24 +1122,34 @@ clearTimeout(safetyTimer);
       }
     });
 
-    // ── Empty Trash button ────────────────────────────────
-    var btnTrash = document.getElementById("btn-trash");
-    if (btnTrash) {
-      btnTrash.addEventListener("click", async function() {
-        if (!confirm("Empty Trash? This permanently deletes all trashed files.")) return;
-        try {
-          btnTrash.textContent = "⏳";
-          if (navigator.platform === "MacIntel" || navigator.platform === "MacARM") {
+    // ── Tools dropdown ──────────────────────────────────
+    var btnTools = document.getElementById("btn-tools");
+    var toolsMenu = document.getElementById("tools-menu");
+    if (btnTools && toolsMenu) {
+      btnTools.addEventListener("click", function(e) {
+        e.stopPropagation();
+        toolsMenu.classList.toggle("active");
+      });
+      document.addEventListener("click", function() {
+        toolsMenu.classList.remove("active");
+      });
+      toolsMenu.addEventListener("click", async function(e) {
+        var item = e.target.closest(".tools-item");
+        if (!item) return;
+        var action = item.dataset.action;
+        toolsMenu.classList.remove("active");
+        if (action === "trash") {
+          if (!confirm("Empty Trash? This permanently deletes all trashed files.")) return;
+          try {
+            item.textContent = "⏳ Emptying...";
             await window.__TAURI__.invoke("empty_trash", {});
-          } else {
-            await window.__TAURI__.invoke("empty_trash", {});
+            document.querySelector(".status-bar").textContent = "Trash emptied";
+          } catch(e) {
+            console.warn("Empty trash:", e);
+            alert("Failed: " + e);
           }
-          document.querySelector(".status-bar").textContent = "Trash emptied";
-        } catch(e) {
-          console.warn("Empty trash:", e);
-          alert("Failed to empty trash: " + e);
+          setTimeout(function() { item.textContent = "🗑️ Empty Trash"; }, 3000);
         }
-        setTimeout(function() { btnTrash.textContent = "🗑️"; }, 3000);
       });
     }
 

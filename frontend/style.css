@@ -1705,6 +1705,45 @@ body.light-theme #about-overlay {
     margin-left: auto;
 }
 
+.tools-dropdown-wrap {
+    position: relative;
+}
+#tools-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    width: 180px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    z-index: 1000;
+    display: none;
+    overflow: hidden;
+}
+#tools-menu.active {
+    display: block;
+}
+.tools-item {
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+.tools-item:hover {
+    background: var(--bg-hover);
+}
+.tools-item:first-child {
+    border-top-left-radius: var(--radius);
+    border-top-right-radius: var(--radius);
+}
+.tools-item:last-child {
+    border-bottom-left-radius: var(--radius);
+    border-bottom-right-radius: var(--radius);
+}
+
 /* ═══════════════════════════════════════════════════════════
    RESPONSIVE — Medium Screens (1024px and below)
    ═══════════════════════════════════════════════════════════ */
