@@ -883,6 +883,7 @@ getSetting("theme", "auto").then(function(savedTheme) {
 
       function drawSpeedChart() {
         if (!speedChartCtx) return;
+        speedChartCanvas.width = speedChartCanvas.clientWidth || speedChartCanvas.width;
         var w = speedChartCanvas.width;
         var h = speedChartCanvas.height;
         var ctx = speedChartCtx;

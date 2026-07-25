@@ -1271,8 +1271,9 @@ button.icon-btn {
     border-radius: 20px;
     padding: 0;
     text-align: center;
-    min-width: 520px;
+    min-width: 320px;
     max-width: 580px;
+    width: min(90vw, 580px);
     background: rgba(22, 27, 34, 0.92);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
