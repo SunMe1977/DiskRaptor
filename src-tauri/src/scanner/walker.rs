@@ -60,11 +60,11 @@ impl Default for TopFilesAccum {
 }
 impl TopFilesAccum {
     fn insert(&self, path: String, size: u64, max_count: usize) {
-        let mut min = self.min_size.lock();
-        if size <= *min {
+        let mut files = self.files.lock();
+        // Quick check: if smaller than current minimum, skip (files lock held, no TOCTOU race)
+        if size <= *self.min_size.lock() && files.len() >= max_count {
             return;
         }
-        let mut files = self.files.lock();
         files.push(TopFileEntry {
             path,
             size,
@@ -74,7 +74,7 @@ impl TopFilesAccum {
         if files.len() > max_count {
             files.truncate(max_count);
         }
-        *min = files.last().map(|f| f.size).unwrap_or(0);
+        *self.min_size.lock() = files.last().map(|f| f.size).unwrap_or(0);
     }
     fn into_inner(self) -> Vec<TopFileEntry> {
         self.files.into_inner()
