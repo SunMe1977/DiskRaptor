@@ -1229,6 +1229,8 @@ clearTimeout(safetyTimer);
 
     // Cancel (toolbar + progress overlay)
     btnCancel.addEventListener("click", async function () {
+      document.getElementById("progress-status").textContent = "Cancelling...";
+      btnCancel.disabled = true;
       // 1. Tell Rust to stop scanning
       try { await window.__TAURI__.invoke("cancel_scan", {}); } catch(e) {}
       // 2. Poll until scan is no longer running (max 5s)
@@ -1344,6 +1346,46 @@ clearTimeout(safetyTimer);
       }
     });
 
+    // ── Drag & drop from Finder ─────────────────────────
+    document.addEventListener("dragover", function(e) { e.preventDefault(); });
+    document.addEventListener("drop", function(e) {
+      e.preventDefault();
+      var items = e.dataTransfer.items;
+      if (!items || items.length === 0) return;
+      for (var di = 0; di < items.length; di++) {
+        var item = items[di];
+        if (item.kind === "file") {
+          var file = item.getAsFile();
+          if (file && file.path) {
+            scanPath.value = file.path;
+            btnScan.click();
+            return;
+          }
+        }
+      }
+    });
+
+    // ── Settings dialog ─────────────────────────────────
+    (function() {
+      var so = document.getElementById("settings-overlay");
+      if (!so) return;
+      document.getElementById("settings-close")?.addEventListener("click", function() { so.style.display = "none"; });
+      document.getElementById("settings-save")?.addEventListener("click", async function() {
+        var defPath = document.getElementById("settings-default-path")?.value || "";
+        var selTheme = document.getElementById("settings-theme")?.value || "auto";
+        await window.__TAURI__.invoke("save_settings", { default_scan_path: defPath, theme: selTheme }).catch(function(){});
+        // Apply theme immediately
+        if (selTheme === "light") document.body.classList.add("light-theme");
+        else if (selTheme === "dark") document.body.classList.remove("light-theme");
+        else {
+          var isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+          document.body.classList.toggle("light-theme", isLight);
+        }
+        so.style.display = "none";
+      });
+      so.addEventListener("click", function(e) { if (e.target === so) so.style.display = "none"; });
+    })();
+
     // ── Tools dropdown ──────────────────────────────────
     var btnTools = document.getElementById("btn-tools");
     var toolsMenu = document.getElementById("tools-menu");
@@ -1372,6 +1414,22 @@ clearTimeout(safetyTimer);
             var tr = p ? p.replace(/[\\/]+$/, "") + "/.Trash" : "";
             if (tr && scanPath) { scanPath.value = tr; btnScan.click(); }
           }).catch(function(){});
+        } else if (action === "settings") {
+          var so = document.getElementById("settings-overlay");
+          if (so) {
+            // Load current settings
+            var defPath = document.getElementById("settings-default-path");
+            var selTheme = document.getElementById("settings-theme");
+            if (defPath) defPath.value = scanPath.value || "";
+            if (selTheme) selTheme.value = "auto";
+            window.__TAURI__.invoke("load_settings", {}).then(function(s) {
+              if (s) {
+                if (defPath && s.default_scan_path) defPath.value = s.default_scan_path;
+                if (selTheme && s.theme) selTheme.value = s.theme;
+              }
+            }).catch(function(){});
+            so.style.display = "flex";
+          }
         } else if (action === "duplicates") {
           var dupBtn = document.getElementById("btn-duplicates");
           if (dupBtn) dupBtn.click();

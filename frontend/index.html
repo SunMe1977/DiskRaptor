@@ -57,6 +57,7 @@
                         <div class="tools-item" data-action="scan-trash" data-i18n="tools.scan_trash">🗑️ Scan Trash</div>
                         <div class="tools-item" data-action="duplicates" data-i18n="tools.find_duplicates">🔍 Find Duplicates</div>
                         <div class="tools-sep"></div>
+                        <div class="tools-item" data-action="settings">⚙️ Preferences</div>
                         <div class="tools-item" data-action="trash" data-i18n="tools.empty_trash">🗑️ Empty Trash</div>
                     </div>
                 </div>
@@ -356,6 +357,28 @@
                 </p>
                 <div class="progress-actions">
                     <button id="progress-cancel" class="progress-btn">✖ Cancel Scan</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="settings-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+            <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:28px 32px;max-width:360px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.4);">
+                <h3 style="margin:0 0 16px 0;font-size:16px;color:var(--text-primary);">⚙️ Preferences</h3>
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Default scan path</label>
+                    <input id="settings-default-path" type="text" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Theme</label>
+                    <select id="settings-theme" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
+                        <option value="auto">System</option>
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button id="settings-close" style="padding:6px 16px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;font-size:13px;">Cancel</button>
+                    <button id="settings-save" style="padding:6px 16px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
                 </div>
             </div>
         </div>
