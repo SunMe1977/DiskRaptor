@@ -153,7 +153,7 @@ class DupScanner {
     toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);";
     toolbar.innerHTML = `
       <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete</span>
-      <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 Delete Selected</button>
+      <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 Move Selected to Trash</button>
     `;
     list.appendChild(toolbar);
 
@@ -258,30 +258,30 @@ class DupScanner {
       });
 
       if (toDelete.length === 0) {
-        alert("No files selected to delete.");
+        alert("No files selected.");
         return;
       }
 
-      if (!confirm("Delete " + toDelete.length + " duplicate files?\nThis cannot be undone.")) return;
+      if (!confirm("Move " + toDelete.length + " duplicate files to Trash?")) return;
 
-      // Delete one by one with status updates
+      // Move one by one with status updates
       var delBtn = document.getElementById("dup-delete-btn");
       delBtn.disabled = true;
-      delBtn.textContent = "Deleting...";
+      delBtn.textContent = "Moving to Trash...";
 
       (function deleteNext(idx) {
         if (idx >= toDelete.length) {
-          delBtn.textContent = "\u2705 Deleted " + toDelete.length + " files";
+          delBtn.textContent = "\u2705 " + toDelete.length + " files moved to Trash";
           delBtn.style.background = "#238636";
           return;
         }
         window.__TAURI__.invoke("delete_path", { path: toDelete[idx] })
           .then(function() {
-            delBtn.textContent = "Deleting " + (idx + 1) + "/" + toDelete.length + "...";
+            delBtn.textContent = "Moving " + (idx + 1) + "/" + toDelete.length + "...";
             setTimeout(function() { deleteNext(idx + 1); }, 200);
           })
           .catch(function(err) {
-            alert("Failed to delete: " + toDelete[idx] + "\n" + err);
+            alert("Failed: " + toDelete[idx] + "\n" + err);
             setTimeout(function() { deleteNext(idx + 1); }, 200);
           });
       })(0);

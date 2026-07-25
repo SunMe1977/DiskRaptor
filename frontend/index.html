@@ -44,6 +44,7 @@
                 <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
+                <button id="btn-trash" class="icon-btn" title="Empty Trash">🗑️</button>
                 <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
                 <div class="lang-dropdown-wrap">
                     <button id="btn-lang" class="icon-btn" title="Language">🌐</button>
@@ -84,9 +85,6 @@
                         <div style="margin-top:20px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
                             <button id="welcome-browse-btn" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
                                 📂 Browse Folder
-                            </button>
-                            <button id="welcome-permit-btn" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;display:none;">
-                                🔑 Grant Permissions
                             </button>
                             <button id="welcome-about-btn" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
                                 ℹ️ About DiskRaptor
@@ -268,9 +266,8 @@
                             </button>
                             <button
                                 class="sel-action"
-                                data-action="delete"
-                                data-i18n-title="action.delete"
-                                title="Delete"
+                                data-action="trash"
+                                title="Move to Trash"
                                 disabled
                                 style="color: var(--accent-red)"
                             >

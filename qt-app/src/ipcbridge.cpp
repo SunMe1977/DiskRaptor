@@ -62,6 +62,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     if (command == "get_home_dir") return getHomeDir();
     if (command == "pick_directory") return pickDirectory();
     if (command == "request_permissions") return requestPermissions();
+    if (command == "empty_trash") return emptyTrash();
     if (command == "delete_path") return deletePath(args.value("path").toString());
     if (command == "open_explorer") return openExplorer(args.value("path").toString());
     if (command == "open_terminal") return openTerminal(args.value("path").toString());
@@ -403,6 +404,37 @@ QString IpcBridge::requestPermissions()
     return resultToJson(true, QVariantMap{{"permissions", results.join(",")}});
 #else
     return resultToJson(true, QVariantMap{{"permissions", "not_needed"}});
+#endif
+}
+
+QString IpcBridge::emptyTrash()
+{
+#ifdef Q_OS_MACOS
+    QProcess::startDetached("osascript", {"-e", "tell app \"Finder\" to empty trash"});
+    return resultToJson(true, QVariantMap{{"status", "emptying"}});
+#elif defined(Q_OS_LINUX)
+    int ret = QProcess::execute("gio", {"trash", "--empty"});
+    if (ret != 0) {
+        // Fallback: remove files from FreeDesktop Trash dir
+        QDir trashDir(QDir::homePath() + "/.local/share/Trash/expunged");
+        if (trashDir.exists()) {
+            trashDir.removeRecursively();
+        }
+        QDir trashFiles(QDir::homePath() + "/.local/share/Trash/files");
+        if (trashFiles.exists()) {
+            trashFiles.removeRecursively();
+        }
+        QDir trashInfo(QDir::homePath() + "/.local/share/Trash/info");
+        if (trashInfo.exists()) {
+            trashInfo.removeRecursively();
+        }
+    }
+    return resultToJson(true, QVariantMap{{"status", "emptied"}});
+#elif defined(Q_OS_WIN)
+    QProcess::startDetached("cmd", {"/c", "rd /s /q \"%TEMP%\\..\\..\\Recycle.Bin\""});
+    return resultToJson(true, QVariantMap{{"status", "emptying"}});
+#else
+    return resultToJson(true, QVariantMap{{"status", "unsupported"}});
 #endif
 }
 
