@@ -104,6 +104,7 @@ private:
 
     QString requestPermissions();
     QString emptyTrash();
+    QString getVolumeStats();
 
     // ── C++ duplicate scanner (background thread) ──────────────
     QThread *m_dupThread = nullptr;
