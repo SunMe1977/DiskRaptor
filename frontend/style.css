@@ -454,6 +454,23 @@ button.icon-btn {
     border-radius: 4px;
     overflow: hidden;
 }
+#btn-rescan {
+    padding: 4px 10px;
+    font-size: 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    cursor: pointer;
+    line-height: 1;
+}
+#btn-rescan:hover {
+    background: var(--bg-hover);
+}
+#btn-rescan:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
 .tree-pct-fill {
     display: block;
     height: 100%;

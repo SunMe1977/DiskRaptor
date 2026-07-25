@@ -214,6 +214,7 @@ getSetting("theme", "auto").then(function(savedTheme) {
     var scanPath = document.getElementById("scan-path");
     var btnBrowse = document.getElementById("btn-browse");
     var btnScan = document.getElementById("btn-scan");
+    var btnRescan = document.getElementById("btn-rescan");
     var btnCancel = document.getElementById("btn-cancel");
     var btnExport = document.getElementById("btn-export");
     var progressOverlay = document.getElementById("progress-overlay");
@@ -690,6 +691,7 @@ getSetting("theme", "auto").then(function(savedTheme) {
 
       isScanning = true;
       btnScan.disabled = true;
+      if (btnRescan) btnRescan.disabled = true;
       btnBrowse.disabled = true;
       btnCancel.disabled = false;
       btnExport.disabled = true;
@@ -992,13 +994,21 @@ clearTimeout(safetyTimer);
           treeView.expanded.add(0);
           try { await treeView.rebuild(); } catch(e) {}
           
-          // Load remaining chunks in background (no await - let UI breathe)
+          // Load remaining chunks in parallel batches (20 at a time)
           (async function() {
-            for (var ci = 1; ci < loader.totalChunks; ci++) {
-              try { await loader.loadChunk(ci); } catch(e) {}
-              if (ci % 10 === 0) {
+            var BATCH = 20;
+            for (var start = 1; start < loader.totalChunks; start += BATCH) {
+              var end = Math.min(start + BATCH, loader.totalChunks);
+              var promises = [];
+              for (var ci = start; ci < end; ci++) {
+                if (!loader.loadedChunks.has(ci)) {
+                  promises.push(loader.loadChunk(ci).catch(function(){}));
+                }
+              }
+              if (promises.length > 0) {
+                await Promise.all(promises);
                 try { await treeView.rebuild(); } catch(e) {}
-                await sleep(0); // yield to UI
+                await sleep(0);
               }
             }
             try { await treeView.rebuild(); } catch(e) {}
@@ -1028,11 +1038,19 @@ clearTimeout(safetyTimer);
         clearTimeout(safetyTimer);
         isScanning = false;
         btnScan.disabled = false;
+        if (btnRescan) btnRescan.disabled = false;
         btnBrowse.disabled = false;
         btnCancel.disabled = true;
         progressOverlay.classList.remove("active");
       }
     });
+
+    // Rescan (same path)
+    if (btnRescan) {
+      btnRescan.addEventListener("click", function() {
+        if (btnScan && !btnScan.disabled) btnScan.click();
+      });
+    }
 
     // Cancel (toolbar + progress overlay)
     btnCancel.addEventListener("click", async function () {
