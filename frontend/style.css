@@ -1756,6 +1756,11 @@ body.light-theme #about-overlay {
     border-bottom-left-radius: var(--radius);
     border-bottom-right-radius: var(--radius);
 }
+.tools-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 8px;
+}
 
 /* ═══════════════════════════════════════════════════════════
    RESPONSIVE — Medium Screens (1024px and below)
