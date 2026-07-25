@@ -441,11 +441,14 @@ QString IpcBridge::emptyTrash()
 QString IpcBridge::deletePath(const QString &path)
 {
 #ifdef Q_OS_MACOS
-    // On macOS, move to Trash instead of permanent delete (no extra permissions needed)
-    QFile file(path);
-    bool ok = file.moveToTrash();
-    if (!ok) {
-        return resultToJson(false, QVariant(), "Failed to move to Trash: " + path);
+    // Use Finder via AppleScript to move to Trash (works without sandbox)
+    QString escaped = QString(path).replace("\"", "\\\"");
+    QProcess proc;
+    proc.start("osascript", {"-e", "tell app \"Finder\" to delete POSIX file \"" + escaped + "\""});
+    proc.waitForFinished(10000);
+    if (proc.exitCode() != 0) {
+        QString err = QString::fromUtf8(proc.readAllStandardError()).trimmed();
+        return resultToJson(false, QVariant(), "Failed to move to Trash: " + path + " (" + err + ")");
     }
     return resultToJson(true);
 #else
