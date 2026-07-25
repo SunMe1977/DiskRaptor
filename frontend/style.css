@@ -815,6 +815,29 @@ button.icon-btn {
 }
 
 /* Topfiles card fills remaining space (resizable via splitter) */
+/* Collapsible cards */
+.collapsible .card-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.collapsible .card-header:hover {
+    opacity: 0.8;
+}
+.collapse-arrow {
+    font-size: 10px;
+    transition: transform 0.15s;
+    color: var(--text-muted);
+}
+.collapsible.collapsed .collapse-arrow {
+    transform: rotate(-90deg);
+}
+.collapsible.collapsed .card-body {
+    display: none;
+}
+
 #topfiles-card {
     flex: 1 1 auto;
     min-height: 60px;
@@ -1846,6 +1869,14 @@ body.light-theme #about-overlay {
   #detail-panel {
     width: 300px;
     min-width: 200px;
+  }
+  #selection-content .sel-action {
+    font-size: 10px;
+    padding: 2px 3px;
+    min-width: 20px;
+  }
+  #selection-content > div[style] {
+    gap: 2px !important;
   }
   .toolbar-center #scan-path {
     width: 140px;
