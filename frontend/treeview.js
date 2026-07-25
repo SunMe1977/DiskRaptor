@@ -17,10 +17,12 @@ class TreeView {
     this._isLinux =
       /linux/i.test(navigator.platform || "") ||
       /linux/i.test(navigator.userAgent || "");
+    this._filterText = "";
     this._initScroll();
     this._initContextMenu();
     this._initDiagramJump();
     this._initSortControls();
+    this._initFilter();
   }
 
   /** Listen for diagram "jump in tree" clicks */
@@ -45,6 +47,16 @@ class TreeView {
         this.classList.add(self.sortDesc ? "sort-desc" : "sort-asc");
         self.rebuild();
       });
+    });
+  }
+
+  _initFilter() {
+    var self = this;
+    var el = document.getElementById("tree-filter");
+    if (!el) return;
+    el.addEventListener("input", function() {
+      self._filterText = this.value.toLowerCase().trim();
+      self.rebuild();
     });
   }
 
@@ -416,10 +428,21 @@ class TreeView {
   async _buildList(arenaIdx, depth) {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
+
+    // Apply filter: show node if name matches OR it's an ancestor of a match
+    var filterMatch = true;
+    if (this._filterText) {
+      filterMatch = (node.name || "").toLowerCase().indexOf(this._filterText) !== -1;
+      if (!filterMatch && depth > 0) {
+        // Check if any descendant matches (keep ancestors visible)
+        filterMatch = this._hasMatchingDescendant(arenaIdx);
+      }
+    }
+    if (depth > 0 && this._filterText && !filterMatch) return;
+
     this.visibleNodes.push(arenaIdx);
 
     const isDir = node.node_type === "Directory" || node.node_type === 0;
-    if (isDir && this.expanded.has(arenaIdx)) {
       let children = this.loader.getChildrenIndices(arenaIdx);
       if (children.length === 0) {
         const rawNodes = await this.loader.fetchChildren(arenaIdx);
@@ -468,6 +491,19 @@ class TreeView {
         if (childNode) await this._buildList(childIdx, depth + 1);
       }
     }
+  }
+
+  _hasMatchingDescendant(arenaIdx) {
+    var filter = this._filterText;
+    if (!filter) return true;
+    var children = this.loader.getChildrenIndices(arenaIdx);
+    for (var ci = 0; ci < children.length; ci++) {
+      var child = this.loader.getNode(children[ci]);
+      if (!child) continue;
+      if ((child.name || "").toLowerCase().indexOf(filter) !== -1) return true;
+      if (this._hasMatchingDescendant(children[ci])) return true;
+    }
+    return false;
   }
 
   _findNodeByNameAndParent(name, size, parentIdx) {
@@ -637,7 +673,6 @@ class TreeView {
     dc.textContent = isDir ? (node.dir_count || 0).toLocaleString() : "—";
     el.appendChild(dc);
 
-    // Old bar removed — now only the green pct bar in front
   }
 
   _computeDepth(arenaIdx) {

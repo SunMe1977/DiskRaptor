@@ -752,22 +752,17 @@ EOF
         "$APP" 2>/dev/null || true
     fi
 
-    echo "  DEBUG: Creating DMG step..."
     echo ""
     echo "  Creating DMG..."
     if [ ! -d "$APP" ]; then
       echo "  ERROR: .app bundle not found at $APP"
+      exit 1
+    fi
+    if ! hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1; then
+      echo "  ERROR: hdiutil failed (exit code $?)"
       ls -la dist/
       exit 1
     fi
-    echo "  DEBUG: Running hdiutil..."
-    if ! hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" -verbose 2>&1; then
-      echo "  ERROR: hdiutil failed"
-      echo "  DEBUG: dist/ contents:" && ls -la dist/
-      exit 1
-    fi
-    echo "  DMG: dist/DiskRaptor-$VERSION-macos.dmg"
-    echo "  DEBUG: DMG created, continuing..."
 
 
     # Notarization (requires Apple ID email, team ID, and app-specific password)

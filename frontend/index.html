@@ -41,6 +41,7 @@
                 />
                 <button id="btn-browse" data-i18n="btn.browse">📁 Browse</button>
                 <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
+                <button id="btn-rescan" disabled title="Rescan same directory">🔄</button>
                 <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
@@ -123,6 +124,7 @@
                     <div class="panel-header">
                         <h2 data-i18n="tree.title">Directory Tree</h2>
                         <span id="node-count" class="badge">0 <span data-i18n="tree.nodes">nodes</span></span>
+                        <input id="tree-filter" type="text" placeholder="🔍 Filter..." style="margin-left:auto;width:140px;padding:3px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);outline:none;">
                     </div>
                     <div id="tree-container">
                         <div id="tree-header" class="tree-header">
