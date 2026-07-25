@@ -729,12 +729,8 @@ QString IpcBridge::findDuplicates(const QString &path)
     if (m_dupRunning) {
         return resultToJson(false, QVariant(), "Duplicate scan already running");
     }
-    if (m_drFindDuplicates) {
-        // Run Rust scanner in background thread, poll progress via C++ counters
-        cppStartDupScan(path, true);
-    } else {
-        cppStartDupScan(path, false);
-    }
+    // Always use C++ fallback for duplicates — Rust version has no progress update
+    cppStartDupScan(path, false);
     return resultToJson(true, QVariantMap{{"status", "started"}});
 }
 
