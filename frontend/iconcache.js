@@ -49,7 +49,6 @@ class IconCache {
       });
       return result;
     } catch (e) {
-      console.warn("IconCache: failed for", key, e.message || e);
       var fallback = this._getFallback(key);
       // Resolve with fallback so callers get something
       pending.forEach(function (r) {
@@ -95,7 +94,7 @@ class IconCache {
       ? "__folder__"
       : (path.split(".").pop() || "file").toLowerCase();
     this.cache.set(key, dataUri);
-    console.log("IconCache: cached", key, "(" + dataUri.length + " bytes)");
+    // IconCache: cached
     return dataUri;
   }
 
@@ -122,4 +121,4 @@ class IconCache {
 }
 
 window.__ICON_CACHE__ = new IconCache();
-console.log("IconCache initialized");
+

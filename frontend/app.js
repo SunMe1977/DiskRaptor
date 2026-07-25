@@ -890,6 +890,15 @@ getSetting("theme", "auto").then(function(savedTheme) {
         ctx.clearRect(0, 0, w, h);
         if (speedSamples.length < 2) return;
         var maxBps = Math.max.apply(null, speedSamples.map(function(s){return s.bps})) || 1;
+
+        // Y-axis labels
+        ctx.fillStyle = "rgba(255,255,255,0.3)";
+        ctx.font = "8px monospace";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        function fmtSpeed(bps) { return (bps / 1024 / 1024).toFixed(bps > 1048576 ? 0 : 1) + " MB/s"; }
+        ctx.fillText(fmtSpeed(maxBps), w - 4, pad + 2);
+        ctx.fillText("0 MB/s", w - 4, h - pad - 2);
         var pad = 4;
         var cw = w - pad * 2;
         var ch = h - pad * 2;
@@ -1046,6 +1055,15 @@ getSetting("theme", "auto").then(function(savedTheme) {
           } else {
             progressSpeedValEl.textContent = "—";
             progressSpeedValEl.style.color = "#8b949e";
+          }
+
+          // ── Progress percentage (estimate based on rate) ──
+          var pctBar = document.getElementById("progress-pct-bar");
+          var pctText = document.getElementById("progress-pct-text");
+          if (pctBar && pctText) {
+            var pct = Math.min(95, Math.max(1, (elapsedSecs > 5) ? Math.min(95, (filesFound / Math.max(1, filesFound + dirsFound)) * 50 + (elapsedSecs / 1200) * 50) : (filesFound / 5000) * 20));
+            pctBar.style.width = pct + "%";
+            pctText.textContent = Math.round(pct) + "%";
           }
 
           // ── ETA ──
