@@ -97,19 +97,17 @@
                             </button>
                         </div>
                         <div style="margin-top:20px;font-size:13px;color:var(--text-secondary);text-align:center;">
-                            <div style="font-size:22px;letter-spacing:2px;margin-bottom:4px;">
-                                <a href="https://github.com/SunMe1977/DiskRaptor" target="_blank" style="color:#ffd700;text-decoration:none;">
-                                    ⭐⭐⭐⭐⭐
-                                </a>
+                            <div style="font-size:22px;letter-spacing:2px;margin-bottom:4px;cursor:pointer;" onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor'}).catch(function(){})">
+                                ⭐⭐⭐⭐⭐
                             </div>
                             <div>
-                                <a href="https://github.com/SunMe1977/DiskRaptor" target="_blank" style="color:#58a6ff;text-decoration:none;font-weight:500;">
+                                <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor'}).catch(function(){})">
                                     Please star ✨
-                                </a>
+                                </span>
                                 <span style="margin:0 6px;color:var(--text-muted);">·</span>
-                                <a href="https://github.com/SunMe1977/DiskRaptor/fork" target="_blank" style="color:#58a6ff;text-decoration:none;font-weight:500;">
+                                <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor/fork'}).catch(function(){})">
                                     🍴 Fork
-                                </a>
+                                </span>
                             </div>
                             <div style="margin-top:2px;font-size:11px;color:var(--text-muted);">:==)</div>
                         </div>
@@ -362,9 +360,9 @@
                     <p class="about-name">Hansjoerg Hofer</p>
                     <div class="about-divider"></div>
                     <p class="about-links">
-                        <a href="mailto:support@diskraptor.com" class="about-link" title="support@diskraptor.com">📧 support@diskraptor.com</a>
-                        <a href="https://diskraptor.com" class="about-link" target="_blank">🌐 diskraptor.com</a>
-                        <a href="https://github.com/SunMe1977/DiskRaptor" class="about-link" target="_blank">🐙 GitHub</a>
+                        <a onclick="window.__TAURI__.invoke('open_url',{url:'mailto:support@diskraptor.com'}).catch(function(){})" class="about-link" title="support@diskraptor.com">📧 support@diskraptor.com</a>
+                        <a onclick="window.__TAURI__.invoke('open_url',{url:'https://diskraptor.com'}).catch(function(){})" class="about-link">🌐 diskraptor.com</a>
+                        <a onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor'}).catch(function(){})" class="about-link">🐙 GitHub</a>
                     </p>
                     <div class="about-divider"></div>
                     <p class="about-copy">© 2026 DiskRaptor</p>

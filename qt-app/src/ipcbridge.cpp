@@ -61,6 +61,11 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
 {
     if (command == "get_home_dir") return getHomeDir();
     if (command == "pick_directory") return pickDirectory();
+    if (command == "open_url") {
+        QString url = args.value("url").toString();
+        if (!url.isEmpty()) QDesktopServices::openUrl(QUrl(url));
+        return resultToJson(true);
+    }
     if (command == "request_permissions") return requestPermissions();
     if (command == "empty_trash") return emptyTrash();
     if (command == "delete_path") return deletePath(args.value("path").toString());
