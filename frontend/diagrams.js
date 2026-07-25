@@ -31,6 +31,9 @@ class DiagramRenderer {
     this._isLinux =
       /linux/i.test(navigator.platform || "") ||
       /linux/i.test(navigator.userAgent || "");
+    this._isMac =
+      /mac/i.test(navigator.platform || "") ||
+      /mac/i.test(navigator.userAgent || "");
 
     // Zoom state
     this._zoom = 1;
@@ -119,7 +122,7 @@ class DiagramRenderer {
       '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
       '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
       '<div class="diag-ctx-sep"></div>' +
-      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F Delete</div>';
+      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (this._isMac ? "Move to Trash" : "Delete") + '</div>';
     document.body.appendChild(this.contextMenu);
 
     // Context menu styles

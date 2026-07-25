@@ -186,6 +186,35 @@ getSetting("theme", "auto").then(function(savedTheme) {
       });
     }
 
+    // Welcome Grant Permissions button (macOS TCC pre-flight)
+    var welcomePermitBtn = document.getElementById("welcome-permit-btn");
+    if (welcomePermitBtn) {
+      if (navigator.platform === "MacIntel" || navigator.platform === "MacARM") {
+        welcomePermitBtn.style.display = "";
+      }
+      welcomePermitBtn.addEventListener("click", async function() {
+        welcomePermitBtn.textContent = "⏳ Requesting...";
+        welcomePermitBtn.disabled = true;
+        try {
+          var r = await window.__TAURI__.invoke("request_permissions", {});
+          if (r && r.permissions) {
+            var ps = r.permissions.split(",");
+            var granted = ps.filter(function(p) { return p === "granted"; }).length;
+            welcomePermitBtn.textContent = "✅ " + granted + "/" + ps.length + " Permissions OK";
+          } else {
+            welcomePermitBtn.textContent = "✅ Permissions Granted";
+          }
+        } catch(e) {
+          welcomePermitBtn.textContent = "⚠️ Permission Error";
+          console.warn("Permissions request:", e);
+        }
+        setTimeout(function() {
+          welcomePermitBtn.textContent = "🔑 Grant Permissions";
+          welcomePermitBtn.disabled = false;
+        }, 5000);
+      });
+    }
+
     // Welcome About button
     if (welcomeAboutBtn) {
       welcomeAboutBtn.addEventListener("click", function() {

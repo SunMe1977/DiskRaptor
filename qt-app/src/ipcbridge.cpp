@@ -61,6 +61,7 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
 {
     if (command == "get_home_dir") return getHomeDir();
     if (command == "pick_directory") return pickDirectory();
+    if (command == "request_permissions") return requestPermissions();
     if (command == "delete_path") return deletePath(args.value("path").toString());
     if (command == "open_explorer") return openExplorer(args.value("path").toString());
     if (command == "open_terminal") return openTerminal(args.value("path").toString());
@@ -378,8 +379,44 @@ QString IpcBridge::pickDirectory()
     return resultToJson(true, QDir::toNativeSeparators(dir));
 }
 
+QString IpcBridge::requestPermissions()
+{
+#ifdef Q_OS_MACOS
+    // Pre-flight: access protected directories to trigger TCC prompts upfront
+    QStringList dirs = {
+        QDir::homePath(),
+        QDir::homePath() + "/Desktop",
+        QDir::homePath() + "/Downloads",
+        QDir::homePath() + "/Documents",
+    };
+    QStringList results;
+    for (const QString &dir : dirs) {
+        QDir d(dir);
+        bool ok = d.exists();
+        // Try to read first entry to force permission prompt
+        if (ok) {
+            QDirIterator it(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+            ok = it.hasNext(); // force TCC prompt
+        }
+        results << (ok ? "granted" : "denied");
+    }
+    return resultToJson(true, QVariantMap{{"permissions", results.join(",")}});
+#else
+    return resultToJson(true, QVariantMap{{"permissions", "not_needed"}});
+#endif
+}
+
 QString IpcBridge::deletePath(const QString &path)
 {
+#ifdef Q_OS_MACOS
+    // On macOS, move to Trash instead of permanent delete (no extra permissions needed)
+    QFile file(path);
+    bool ok = file.moveToTrash();
+    if (!ok) {
+        return resultToJson(false, QVariant(), "Failed to move to Trash: " + path);
+    }
+    return resultToJson(true);
+#else
     QDir dir(path);
     bool ok = false;
     if (QFileInfo(path).isDir()) {
@@ -391,6 +428,7 @@ QString IpcBridge::deletePath(const QString &path)
         return resultToJson(false, QVariant(), "Failed to delete: " + path);
     }
     return resultToJson(true);
+#endif
 }
 
 QString IpcBridge::openExplorer(const QString &path)
