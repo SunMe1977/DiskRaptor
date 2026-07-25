@@ -18,7 +18,7 @@ class DupScanner {
       <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:32px 40px;max-width:480px;width:90%;text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.4);">
         <div style="font-size:40px;margin-bottom:12px;">🔍</div>
         <h3 style="margin:0 0 6px 0;font-size:16px;color:var(--text-primary);">Scanning for Duplicates</h3>
-        <p id="dup-progress-status" style="margin:0 0 20px 0;font-size:13px;color:var(--text-secondary);">Hashing files...</p>
+        <p id="dup-progress-status" style="margin:0 0 20px 0;font-size:13px;color:var(--text-secondary);">Scanning files...</p>
         <div style="display:flex;gap:20px;justify-content:center;margin-bottom:16px;">
           <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-files">0</div><div style="font-size:11px;color:var(--text-muted);">Files</div></div>
           <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-groups">0</div><div style="font-size:11px;color:var(--text-muted);">Groups</div></div>
@@ -121,7 +121,8 @@ class DupScanner {
     if (file) file.textContent = stats.currentFile || "";
     if (status) {
       if (stats.phase === 3) status.textContent = "Processing results...";
-      else status.textContent = "Hashing files...";
+      else if (stats.phase === 2) status.textContent = "Hashing duplicates...";
+      else status.textContent = "Scanning files...";
     }
     // Animated bar (indeterminate progress)
     if (bar) {
