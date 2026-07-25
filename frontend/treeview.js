@@ -115,8 +115,8 @@ class TreeView {
         return;
       }
       var root = scanPath.value.replace(/[\\/]+$/, "");
-      var fullNorm = fullPath.replace(/\//g, "\\");
-      var rootNorm = root.replace(/\//g, "\\");
+      var fullNorm = fullPath.replace(new RegExp("/", "g"), "\\");
+      var rootNorm = root.replace(new RegExp("/", "g"), "\\");
       if (fullNorm.toUpperCase().indexOf(rootNorm.toUpperCase()) !== 0) {
         console.warn("Jump: path mismatch", fullPath, "vs", root);
         return;
@@ -529,6 +529,7 @@ class TreeView {
     this.visibleNodes.push(arenaIdx);
 
     const isDir = node.node_type === "Directory" || node.node_type === 0;
+    if (isDir && this.expanded.has(arenaIdx)) {
       let children = this.loader.getChildrenIndices(arenaIdx);
       if (children.length === 0) {
         const rawNodes = await this.loader.fetchChildren(arenaIdx);
