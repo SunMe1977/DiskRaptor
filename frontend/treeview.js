@@ -189,6 +189,7 @@ class TreeView {
     this._ctxMenu.innerHTML =
       '<div class="tctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
       '<div class="tctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
+      '<div class="tctx-item" data-action="scan-here">🔍 Scan this Folder</div>' +
       '<div class="tctx-sep"></div>' +
       '<div class="tctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
       '<div class="tctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
@@ -233,6 +234,7 @@ class TreeView {
       const idx = this._ctxMenu._arenaIdx;
       this._ctxMenu.style.display = "none";
       if (action === "delete") this._handleDelete(idx);
+      if (action === "scan-here") this._handleScanHere(idx);
       if (action === "terminal") this._handleTerminal(idx);
       if (action === "explorer") this._handleExplorer(idx);
       if (action === "copy") this._handleCopyPath(idx);
@@ -247,7 +249,8 @@ class TreeView {
     if (!path) return;
     const name = node.name || "?";
     const isDir = node.node_type === "Directory" || node.node_type === 0;
-    if (!confirm("Move to Trash: " + (isDir ? "folder" : "file") + "?\n" + path)) return;
+    var t = window.__ || function(s){return s;};
+    if (!confirm((isDir ? t("confirm.move_trash_folder") : t("confirm.move_trash_file")) + path)) return;
     try {
       var res = await window.__TAURI__.invoke("delete_path", { path: path });
       if (res && res.success === false) {
@@ -329,6 +332,30 @@ class TreeView {
       document.querySelector(".status-bar").textContent = "Copied: " + path;
     } catch (e) {
       console.warn("Copy failed:", e);
+    }
+  }
+
+  async _handleScanHere(arenaIdx) {
+    const path = this._buildPath(arenaIdx);
+    if (!path) return;
+    var sp = document.getElementById("scan-path");
+    var btn = document.getElementById("btn-scan");
+    if (sp && btn) {
+      sp.value = path;
+      btn.click();
+    }
+  }
+
+  async _handleOpenFile(arenaIdx) {
+    const node = this.loader.getNode(arenaIdx);
+    if (!node) return;
+    if (node.node_type === "Directory" || node.node_type === 0) return; // only files
+    const path = this._buildPath(arenaIdx);
+    if (!path) return;
+    try {
+      await window.__TAURI__.invoke("open_explorer", { path: path });
+    } catch (e) {
+      console.warn("Open failed:", e);
     }
   }
 
@@ -582,6 +609,9 @@ class TreeView {
         return;
       }
       this.select(arenaIdx);
+    };
+    el.ondblclick = (e) => {
+      this._handleOpenFile(arenaIdx);
     };
 
     el.oncontextmenu = (e) => {

@@ -1066,7 +1066,8 @@ class DiagramRenderer {
         break;
       case "delete":
         if (!filePath) break;
-        if (!confirm("Move to Trash?\n" + filePath)) break;
+        var t = window.__ || function(s){return s;};
+        if (!confirm(t("confirm.move_trash_file") + filePath)) break;
         this._invoke("delete_path", { path: filePath }).then((ok) => {
           if (ok && ok.success !== false) {
             this.files = this.files.filter((f) => f.path !== filePath);

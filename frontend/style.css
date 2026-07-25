@@ -1399,6 +1399,16 @@ body.light-theme .about-bg {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
+/* ETA styling */
+.eta-stat .eta-val {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 1px;
+}
+
 /* Timer styling */
 .timer-stat .timer-val {
     font-size: 28px;

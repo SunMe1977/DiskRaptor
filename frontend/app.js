@@ -893,6 +893,17 @@ getSetting("theme", "auto").then(function(savedTheme) {
             progressSpeedValEl.style.color = "#8b949e";
           }
 
+          // ── ETA ──
+          if (elapsedSecs > 5 && filesFound > 100 && filesFound > lastFilesFound) {
+            var rate = filesFound / elapsedSecs;
+            var remaining = (lastFilesFound > 0 && filesFound > lastFilesFound) ? (filesFound * (filesFound / Math.max(1, filesFound - lastFilesFound) - 1)) / rate : 0;
+            remaining = Math.max(0, Math.min(36000, remaining));
+            var etaM = Math.floor(remaining / 60);
+            var etaS = Math.floor(remaining % 60);
+            var etaEl = document.getElementById("progress-eta-val");
+            if (etaEl) etaEl.textContent = (etaM < 10 ? "0" : "") + etaM + ":" + (etaS < 10 ? "0" : "") + etaS;
+          }
+
           // ── Live stats panel update ──
           statsPanel.updateLive(filesFound, dirsFound, elapsedSecs);
 
@@ -1172,7 +1183,8 @@ clearTimeout(safetyTimer);
           var dupBtn = document.getElementById("btn-duplicates");
           if (dupBtn) dupBtn.click();
         } else if (action === "trash") {
-          if (!confirm("Empty Trash? This permanently deletes all trashed files.")) return;
+          var t = window.__ || function(s){return s;};
+          if (!confirm(t("confirm.empty_trash"))) return;
           try {
             item.textContent = "⏳ Emptying...";
             await window.__TAURI__.invoke("empty_trash", {});
