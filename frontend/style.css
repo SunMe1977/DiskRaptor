@@ -2003,11 +2003,21 @@ body.light-theme #about-overlay {
     margin: 0 8px;
   }
   .progress-metrics {
-    gap: 8px;
+    gap: 4px;
     margin: 12px 0 8px;
   }
   .progress-stat .stat-val {
     font-size: 16px;
+  }
+  .timer-stat .timer-val {
+    font-size: 18px;
+    padding: 1px 6px;
+  }
+  .eta-stat .eta-val {
+    font-size: 16px;
+  }
+  .progress-stat {
+    padding: 0 6px;
   }
   .drive-menu {
     min-width: 240px;
