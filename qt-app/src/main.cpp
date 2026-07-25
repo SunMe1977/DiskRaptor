@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
     // Set up runtime environment — needs QApplication initialized
     PlatformUtils::setupRuntimeEnvironment();
     app.setApplicationName("DiskRaptor");
-    app.setApplicationVersion("0.0.2");
+    app.setApplicationVersion("0.0.8");
     app.setOrganizationName("DiskRaptor");
 #ifdef Q_OS_LINUX
     app.setDesktopFileName("diskraptor");

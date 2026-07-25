@@ -688,7 +688,7 @@ class TreeView {
         else if (action === "terminal") self._handleTerminal(idx);
         else if (action === "properties") self._handleProperties(idx);
         else if (action === "copy") self._handleCopyPath(idx);
-        else if (action === "delete") self._handleDelete(idx);
+        else if (action === "delete" || action === "trash") self._handleDelete(idx);
       };
     });
   }
