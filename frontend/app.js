@@ -213,6 +213,14 @@ getSetting("theme", "auto").then(function(savedTheme) {
     let lastFilesFound = 0;
     let lastDirsFound = 0;
 
+    // ── Collapsible detail cards ─────────────────────────
+    document.querySelectorAll(".collapsible .card-header").forEach(function(h) {
+      h.addEventListener("click", function() {
+        var card = this.closest(".collapsible");
+        if (card) card.classList.toggle("collapsed");
+      });
+    });
+
     loader.onProgress = (loaded, total) => {
       const el = document.querySelector("#tree-panel .status-bar");
       if (el) el.textContent = "Loading chunks... " + loaded + "/" + total;
