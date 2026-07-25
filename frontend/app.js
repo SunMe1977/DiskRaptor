@@ -870,12 +870,9 @@ getSetting("theme", "auto").then(function(savedTheme) {
           progressFilesEl.textContent = filesFound.toLocaleString("en-US");
           progressDirsEl.textContent = dirsFound.toLocaleString("en-US");
 
-          var elapsedStr = "0s";
-          if (elapsedSecs > 0) {
-            var mins = Math.floor(elapsedSecs / 60);
-            var secs = elapsedSecs % 60;
-            elapsedStr = (mins > 0 ? mins + "m " : "") + secs + "s";
-          }
+          var mins = Math.floor(elapsedSecs / 60);
+          var secs = elapsedSecs % 60;
+          var elapsedStr = (mins < 10 ? "0" : "") + mins + ":" + (secs < 10 ? "0" : "") + secs;
           progressElapsedValEl.textContent = elapsedStr;
 
           // ── Speed (MB/s primary, files/sec secondary) ──
@@ -974,7 +971,10 @@ clearTimeout(safetyTimer);
             statsPanel.render(fbStats);
             diagram.setData(fbStats);
           }
-          progressElapsedValEl.textContent = statsPanel._formatDuration(Date.now() - pollStartTime);
+          var totalSecs = Math.floor((Date.now() - pollStartTime) / 1000);
+          var em = Math.floor(totalSecs / 60);
+          var es = totalSecs % 60;
+          progressElapsedValEl.textContent = (em < 10 ? "0" : "") + em + ":" + (es < 10 ? "0" : "") + es;
           document.querySelector(".status-bar").textContent =
             "Complete - " + lastFilesFound.toLocaleString() + " files, " + lastDirsFound.toLocaleString() + " dirs";
           topFiles.render([], true);
