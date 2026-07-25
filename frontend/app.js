@@ -1138,7 +1138,10 @@ clearTimeout(safetyTimer);
         if (!item) return;
         var action = item.dataset.action;
         toolsMenu.classList.remove("active");
-        if (action === "trash") {
+        if (action === "duplicates") {
+          var dupBtn = document.getElementById("btn-duplicates");
+          if (dupBtn) dupBtn.click();
+        } else if (action === "trash") {
           if (!confirm("Empty Trash? This permanently deletes all trashed files.")) return;
           try {
             item.textContent = "⏳ Emptying...";
