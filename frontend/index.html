@@ -349,6 +349,14 @@
                     </div>
                 </div>
                 <div id="progress-dir" class="progress-dir"></div>
+                <div style="padding:0 24px;margin-bottom:8px;">
+                    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-bottom:2px;">
+                        <span id="progress-pct-text">0%</span>
+                    </div>
+                    <div style="width:100%;height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;">
+                        <div id="progress-pct-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#3fb950,#2ea043);border-radius:2px;transition:width 0.3s;"></div>
+                    </div>
+                </div>
                 <div class="speed-chart-wrap">
                     <canvas id="speed-chart" style="width:100%;max-width:480px;height:60px;"></canvas>
                 </div>
