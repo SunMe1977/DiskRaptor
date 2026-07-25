@@ -442,7 +442,9 @@ QString IpcBridge::deletePath(const QString &path)
 {
 #ifdef Q_OS_MACOS
     // Use Finder via AppleScript to move to Trash (works without sandbox)
-    QString escaped = QString(path).replace("\"", "\\\"");
+    // Ensure forward-slash POSIX path and escape AppleScript special chars
+    QString posixPath = QDir::fromNativeSeparators(path);
+    QString escaped = QString(posixPath).replace("\\", "\\\\").replace("\"", "\\\"");
     QProcess proc;
     proc.start("osascript", {"-e", "tell app \"Finder\" to delete POSIX file \"" + escaped + "\""});
     proc.waitForFinished(10000);
