@@ -94,7 +94,7 @@ class TopFilesPanel {
       '<div class="tfctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
       '<div class="tfctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
       '<div class="tfctx-sep"></div>' +
-      '<div class="tfctx-item tfctx-del" data-action="delete">\u{1F5D1}\uFE0F Move to Trash</div>';
+      '<div class="tfctx-item tfctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (window.__ ? window.__("action.move_to_trash") : "Move to Trash") + '</div>';
     document.body.appendChild(this._ctxMenu);
 
     const style = document.createElement("style");
