@@ -661,7 +661,11 @@ class TreeView {
       this.select(arenaIdx);
     };
     el.ondblclick = (e) => {
-      this._handleOpenFile(arenaIdx);
+      if (isDir) {
+        this.toggleExpand(arenaIdx);
+      } else {
+        this._handleOpenFile(arenaIdx);
+      }
     };
 
     el.oncontextmenu = (e) => {

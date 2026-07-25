@@ -351,7 +351,7 @@ getSetting("theme", "auto").then(function(savedTheme) {
         var vols = await window.__TAURI__.invoke("get_volume_stats", {});
         var container = document.getElementById("welcome-volumes");
         if (!container || !vols) return;
-        var html = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;">💾 Drives</div>';
+        var html = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">💾 Drives<span id="refresh-volumes" style="font-size:11px;cursor:pointer;color:var(--text-muted);font-weight:400;">↻ refresh</span></div>';
         for (var vi = 0; vi < vols.length; vi++) {
           var v = vols[vi];
           var pct = Math.min(100, Math.max(0, v.usage_pct || 0));
@@ -364,7 +364,26 @@ getSetting("theme", "auto").then(function(savedTheme) {
           html += '</div>';
         }
         container.innerHTML = html;
-      } catch(e) { console.warn("Volume stats:", e); }
+      document.getElementById("refresh-volumes")?.addEventListener("click", async function() {
+        try {
+          var vols = await window.__TAURI__.invoke("get_volume_stats", {});
+          var container = document.getElementById("welcome-volumes");
+          if (!container || !vols) return;
+          var html = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">💾 Drives<span id="refresh-volumes" style="font-size:11px;cursor:pointer;color:var(--text-muted);font-weight:400;">↻ refresh</span></div>';
+          for (var vi = 0; vi < vols.length; vi++) {
+            var v = vols[vi];
+            var pct = Math.min(100, Math.max(0, v.usage_pct || 0));
+            var color = pct > 90 ? "#f85149" : pct > 70 ? "#d29922" : "#3fb950";
+            html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--bg-tertiary);margin-bottom:4px;">';
+            html += '<span style="font-size:14px;">💽</span>';
+            html += '<span style="flex:1;font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (v.name || v.path || "") + '</span>';
+            html += '<div style="width:80px;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:3px;"></div></div>';
+            html += '<span style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono);white-space:nowrap;">' + (v.used_human || "?") + ' / ' + (v.total_human || "?") + '</span>';
+            html += '</div>';
+          }
+          container.innerHTML = html;
+        } catch(e) { console.warn("Volume refresh:", e); }
+      });
     })();
     }
 
@@ -509,6 +528,11 @@ getSetting("theme", "auto").then(function(savedTheme) {
     aboutOverlay.addEventListener("click", function (e) {
       if (e.target === aboutOverlay) aboutOverlay.classList.remove("active");
     });
+    document.addEventListener("keydown", function escAbout(e) {
+      if (e.key === "Escape" && aboutOverlay.classList.contains("active")) {
+        aboutOverlay.classList.remove("active");
+      }
+    });
 
     // ── Language Switcher ──────────────────────────────────
     (function initLangSwitcher() {
@@ -580,6 +604,9 @@ getSetting("theme", "auto").then(function(savedTheme) {
         if (!e.target.closest(".lang-dropdown-wrap")) {
           langMenu.classList.remove("active");
         }
+      });
+      document.addEventListener("keydown", function(e) {
+        if (e.key === "Escape") langMenu.classList.remove("active");
       });
 
       // Close on Escape
@@ -820,6 +847,17 @@ getSetting("theme", "auto").then(function(savedTheme) {
       btnBrowse.disabled = true;
       btnCancel.disabled = false;
       btnExport.disabled = true;
+      // Save to scan history
+      (async function() {
+        try {
+          var s = await window.__TAURI__.invoke("load_settings", {});
+          var hist = (s && s.scan_history) || [];
+          if (path && hist[0] !== path) {
+            hist = [path].concat(hist.filter(function(h){return h !== path;})).slice(0, 10);
+            await window.__TAURI__.invoke("save_settings", { scan_history: hist });
+          }
+        } catch(e) {}
+      })();
       // Fire-and-forget TCC permission pre-flight (silent on non-macOS)
       window.__TAURI__.invoke("request_permissions", {}).catch(function(){});
       var followLinks = chkFollow.querySelector("input").checked;
@@ -1252,25 +1290,54 @@ clearTimeout(safetyTimer);
     // Export
     btnExport.addEventListener("click", async function () {
       try {
+        var fmt = prompt("Export format: JSON or CSV?", "CSV");
+        if (!fmt) return;
+        fmt = fmt.toUpperCase();
         var stats = currentStats || {};
-        var json = JSON.stringify(
-          {
-            export_time: new Date().toISOString(),
-            scan_path: scanPath.value,
-            stats: stats,
-          },
-          null,
-          2,
-        );
-        var blob = new Blob([json], { type: "application/json" });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement("a");
-        a.href = url;
-        a.download = "diskraptor-export-" + Date.now() + ".json";
-        a.click();
-        URL.revokeObjectURL(url);
-        document.querySelector(".status-bar").textContent =
-          "Exported successfully";
+        var scanPathVal = scanPath.value || "";
+        if (fmt === "CSV") {
+          // Build CSV from tree nodes
+          var csv = "Path,Size,File Count,Dir Count,Type\n";
+          var nodes = loader.allNodes || [];
+          for (var ni = 0; ni < nodes.length; ni++) {
+            var n = nodes[ni];
+            if (!n) continue;
+            var fullPath = scanPathVal;
+            if (n.name && n.name !== scanPathVal) {
+              // Walk up to reconstruct path from arena index
+              var parts = [n.name];
+              var p = n.parent;
+              var safety = 0;
+              while (p !== 4294967295 && p !== undefined && safety < 100) {
+                var parent = nodes[p];
+                if (parent && parent.name) parts.unshift(parent.name);
+                p = parent ? parent.parent : 4294967295;
+                safety++;
+              }
+              fullPath = scanPathVal + "/" + parts.join("/");
+            }
+            var esc = function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+            csv += esc(fullPath) + "," + (n.size || 0) + "," + (n.file_count || 0) + "," + (n.dir_count || 0) + "," + (n.node_type === 1 ? "File" : "Directory") + "\n";
+          }
+          var blob = new Blob([csv], { type: "text/csv" });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = "diskraptor-export-" + Date.now() + ".csv";
+          a.click();
+          URL.revokeObjectURL(url);
+        } else {
+          var json = JSON.stringify({ export_time: new Date().toISOString(), scan_path: scanPathVal, stats: stats }, null, 2);
+          var blob = new Blob([json], { type: "application/json" });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = "diskraptor-export-" + Date.now() + ".json";
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+        var t = window.__ || function(s){return s;};
+        document.querySelector(".status-bar").textContent = "Exported as " + fmt;
       } catch (err) {
         console.error("Export failed:", err);
         alert("Export failed: " + err);
