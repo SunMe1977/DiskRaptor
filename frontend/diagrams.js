@@ -1051,7 +1051,7 @@ class DiagramRenderer {
         break;
       case "terminal":
         this._invoke("open_terminal", { path: filePath }).catch(() => {});
-        if (sb) sb.textContent = "Terminal: " + filePath;
+        if (sb) sb.textContent = (window.__ || function(s){return s;})("status.opened").replace("{path}", filePath);
         break;
       case "tree":
         window.dispatchEvent(new CustomEvent("diagram-jump-to-path", { detail: { path: filePath } }));
