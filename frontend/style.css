@@ -1737,6 +1737,21 @@ body.light-theme #about-overlay {
     height: 28px;
     font-size: 14px;
   }
+  #topfiles-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #topfiles-table tbody td:nth-child(2) {
+    max-width: 120px;
+  }
+  #topfiles-table tbody td {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  #topfiles-table thead th {
+    padding: 8px 8px;
+    font-size: 9px;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
