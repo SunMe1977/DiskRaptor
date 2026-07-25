@@ -32,13 +32,18 @@
                     <button id="btn-drive" class="drive-trigger">💽 <span id="drive-selected">/</span> ▾</button>
                     <div id="drive-menu" class="drive-menu"></div>
                 </div>
-                <input
-                    type="text"
-                    id="scan-path"
-                    data-i18n-placeholder="scan.path.placeholder"
-                    placeholder="Select or type a directory path..."
-                    value=""
-                />
+                <div style="position:relative;flex:1;display:flex;">
+                    <input
+                        type="text"
+                        id="scan-path"
+                        data-i18n-placeholder="scan.path.placeholder"
+                        placeholder="Select or type a directory path..."
+                        value=""
+                        style="flex:1;"
+                    />
+                    <button id="btn-fav" title="Bookmark this path" style="padding:4px 8px;font-size:14px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">☆</button>
+                    <div id="fav-menu" class="fav-dropdown"></div>
+                </div>
                 <button id="btn-browse" data-i18n="btn.browse">📁 Browse</button>
                 <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
                 <button id="btn-rescan" disabled title="Rescan same directory">🔄</button>
