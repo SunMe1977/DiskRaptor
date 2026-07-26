@@ -234,14 +234,15 @@ echo "  All tools present"
 case "$PLATFORM" in
   macos)
     QT_PREFIX=""
-    for d in "$HOME/Qt"/*/macos /usr/local/opt/qt@6 /opt/homebrew/opt/qt@6; do
+    # Prefer highest Qt version (6.12 > 6.10)
+    for d in "$HOME/Qt"/6.12*/macos "$HOME/Qt"/6.11*/macos "$HOME/Qt"/6.10*/macos "$HOME/Qt"/6.9*/macos "$HOME/Qt"/6.8*/macos /usr/local/opt/qt@6 /opt/homebrew/opt/qt@6; do
       [ -d "$d" ] && QT_PREFIX="$d" && break
     done
     # Verify Qt 6.5+ (minimum for Qt WebEngine)
     if [ -n "$QT_PREFIX" ]; then
-      QT_VER=$(otool -L "$QT_PREFIX/lib/QtCore.framework/QtCore" 2>/dev/null | grep -oE 'QtCore.*compatibility' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+      QT_VER=$(otool -L "$QT_PREFIX/lib/QtCore.framework/QtCore" 2>/dev/null | grep "compatibility version" | head -1 | grep -oE 'version [0-9]+\.[0-9]+' | head -1 | cut -d' ' -f2)
       if [ -n "$QT_VER" ] && [ "$(echo "$QT_VER" | cut -d. -f1)" -lt 6 ]; then
-        echo "  ERROR: Qt 6.5+ required (found Qt $QT_VER at $QT_PREFIX)"
+        echo "  ERROR: Qt 6.0+ required (found Qt $QT_VER at $QT_PREFIX)"
         exit 1
       fi
     fi
