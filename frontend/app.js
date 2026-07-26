@@ -1204,16 +1204,18 @@ clearTimeout(safetyTimer);
           topFiles.render([], true);
         }
 
-        // Load tree chunks sequentially after scan
-        if (result && result.root_info && result.root_info.total_chunks > 0) {
+        // Load tree chunks and ensure at least a root node is shown
+        var statusBar = document.querySelector("#tree-panel .status-bar");
+        var hadChunks = false;
+
+        if (result && result.root_info && result.root_info.total_chunks > 0 && result.root_info.total_nodes > 0) {
           loader.totalNodes = result.root_info.total_nodes;
           loader.totalChunks = result.root_info.total_chunks;
           loader.allNodes = new Array(loader.totalNodes);
           loader.scanId = scanId;
-          var statusBar = document.querySelector("#tree-panel .status-bar");
 
           // Load first chunk immediately (root)
-          try { await loader.loadChunk(0); } catch(e) { console.warn("Chunk 0:", e); }
+          try { await loader.loadChunk(0); hadChunks = true; } catch(e) { console.warn("Chunk 0:", e); }
           treeView.expanded.add(0);
           try { await treeView.rebuild(); } catch(e) {}
           
@@ -1239,8 +1241,10 @@ clearTimeout(safetyTimer);
             try { await treeView.rebuild(); } catch(e) {}
             if (statusBar) statusBar.textContent = "Ready";
           })();
-        } else if (currentStats && currentStats.total_files > 0) {
-          // Synthetic root node so the tree shows something
+        }
+
+        // Fallback: show a synthetic root node when no chunks were loaded
+        if (!hadChunks && currentStats && currentStats.total_files > 0) {
           try {
             var rootNode = { name: scanPath.value, size: currentStats.total_size || 0, file_count: currentStats.total_files || 0, dir_count: currentStats.total_dirs || 0, node_type: 0, parent: 4294967295, first_child: 4294967295, next_sibling: 4294967295, depth: 0, chunk_id: 0, _arenaIndex: 0, _children: [] };
             loader.totalNodes = 1;
