@@ -87,8 +87,11 @@ class TopFilesPanel {
       minWidth: "200px",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
+    var isMac = /mac/i.test(navigator.platform || "");
+    var isLinux = /linux/i.test(navigator.platform || "");
+    var explorerLabel = isMac ? "Open in Finder" : isLinux ? "Open in File Manager" : "Open in Explorer";
     this._ctxMenu.innerHTML =
-      '<div class="tfctx-item" data-action="explorer">\u{1F4C2} Open in Explorer</div>' +
+      '<div class="tfctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
       '<div class="tfctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
       '<div class="tfctx-sep"></div>' +
       '<div class="tfctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +

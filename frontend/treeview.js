@@ -17,6 +17,9 @@ class TreeView {
     this._isLinux =
       /linux/i.test(navigator.platform || "") ||
       /linux/i.test(navigator.userAgent || "");
+    this._isMac =
+      /mac/i.test(navigator.platform || "") ||
+      /mac/i.test(navigator.userAgent || "");
     this._filterText = "";
     this._typeFilter = "all";
     this._initScroll();
@@ -241,7 +244,7 @@ class TreeView {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    const explorerLabel = this._isLinux ? "Open in File Manager" : "Open in Explorer";
+    const explorerLabel = this._isMac ? "Open in Finder" : this._isLinux ? "Open in File Manager" : "Open in Explorer";
     this._ctxMenu.innerHTML =
       '<div class="tctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
       '<div class="tctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
