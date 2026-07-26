@@ -62,6 +62,7 @@ Pre-built binaries are available on the [Releases](https://github.com/SunMe1977/
 | Platform | Format |
 |----------|--------|
 | **macOS** | `.dmg` (signed + notarized) or `.pkg` |
+| **Uninstall** | `bash installer/uninstall.sh` (macOS) |
 | **Windows** | `.exe` (NSIS Installer) |
 | **Linux** | `.deb` (Debian/Ubuntu) |
 

@@ -415,16 +415,48 @@
                     <h2>DiskRaptor</h2>
                     <p class="about-version"><span data-i18n="about.version">Version</span> 0.0.9</p>
                     <p class="about-desc" data-i18n="about.desc">Ultra-fast disk space analyzer</p>
-                    <p class="about-tech">⚡ Rust + Qt 6 WebEngine</p>
-                    <div class="about-divider"></div>
-                    <p class="about-author">created by</p>
-                    <p class="about-name">Hansjoerg Hofer</p>
-                    <div class="about-divider"></div>
-                    <p class="about-links">
-                        <a onclick="window.__TAURI__.invoke('open_url',{url:'mailto:support@diskraptor.com'}).catch(function(){})" class="about-link" title="support@diskraptor.com">📧 support@diskraptor.com</a>
-                        <a onclick="window.__TAURI__.invoke('open_url',{url:'https://diskraptor.com'}).catch(function(){})" class="about-link">🌐 diskraptor.com</a>
-                        <a onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor'}).catch(function(){})" class="about-link">🐙 GitHub</a>
-                    </p>
+                    <div class="about-tabs" style="display:flex;gap:0;margin:12px 0 8px;border-bottom:2px solid var(--border);width:100%;">
+                        <button class="about-tab active" data-tab="about">📋 About</button>
+                        <button class="about-tab" data-tab="changelog">📜 Changelog</button>
+                        <button class="about-tab" data-tab="credits">🙏 Credits</button>
+                    </div>
+                    <div id="about-tab-about" class="about-tab-content">
+                        <p class="about-tech">⚡ Rust + Qt 6 WebEngine · jwalk · walkdir</p>
+                        <div class="about-divider"></div>
+                        <p class="about-author">created by</p>
+                        <p class="about-name">Hansjoerg Hofer</p>
+                        <div class="about-divider"></div>
+                        <p class="about-links">
+                            <a onclick="window.__TAURI__.invoke('open_url',{url:'mailto:support@diskraptor.com'}).catch(function(){})" class="about-link" title="support@diskraptor.com">📧 support@diskraptor.com</a>
+                            <a onclick="window.__TAURI__.invoke('open_url',{url:'https://diskraptor.com'}).catch(function(){})" class="about-link">🌐 diskraptor.com</a>
+                            <a onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor'}).catch(function(){})" class="about-link">🐙 GitHub</a>
+                        </p>
+                        <p id="about-update-check" style="font-size:11px;color:var(--text-muted);cursor:pointer;margin:8px 0 0;" onclick="window.__checkUpdate()">🔍 Check for Updates</p>
+                    </div>
+                    <div id="about-tab-changelog" class="about-tab-content" style="display:none;">
+                        <div style="font-size:11px;text-align:left;max-height:160px;overflow-y:auto;padding:4px 8px;color:var(--text-secondary);line-height:1.6;">
+                            <b>v0.0.9</b> — File age view, HTML export, empty folders, multi-path scan<br>
+                            <b>v0.0.8</b> — jwalk scanner, i18n, trash recovery, find files, type filter, keyboard nav, drag-drop, CDP tests<br>
+                            <b>v0.0.7</b> — Duplicate scanner, file icons, progress ETA, settings dialog, bookmarks, collapsible panels<br>
+                            <b>v0.0.6</b> — Galaxy 3D view, Move to Trash, export CSV, clear scan, cancel feedback<br>
+                            <b>v0.0.5</b> — Drive selector, collapsible cards, favorites, double-click toggle<br>
+                            <b>v0.0.4</b> — Dark/light theme, resizable splitters, context menus<br>
+                            <b>v0.0.3</b> — Tree view with virtual scrolling, pie chart, bar chart<br>
+                            <b>v0.0.2</b> — Basic scan with progress, stats panel<br>
+                            <b>v0.0.1</b> — Initial prototype
+                        </div>
+                    </div>
+                    <div id="about-tab-credits" class="about-tab-content" style="display:none;">
+                        <div style="font-size:11px;text-align:center;color:var(--text-secondary);line-height:1.8;">
+                            <p>🦀 <b>Rust</b> — Scanner engine</p>
+                            <p>⚡ <b>Qt 6</b> — GUI framework</p>
+                            <p>🌐 <b>Qt WebEngine</b> — Frontend rendering</p>
+                            <p>📦 <b>jwalk</b> — Parallel directory walking</p>
+                            <p>🔍 <b>serde / serde_json</b> — Serialization</p>
+                            <p>🗺️ <b>walkdir</b> — Cross-platform directory walking</p>
+                            <p>🌍 <b>Qt Linguist</b> — i18n framework</p>
+                        </div>
+                    </div>
                     <div class="about-divider"></div>
                     <p class="about-copy">© 2026 DiskRaptor</p>
                     <button id="btn-about-close" class="primary" data-i18n="about.done">✓ Done</button>

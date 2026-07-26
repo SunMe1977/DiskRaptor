@@ -234,7 +234,7 @@ echo "  All tools present"
 case "$PLATFORM" in
   macos)
     QT_PREFIX=""
-    for d in /Users/hjh/Qt/6.12.0/macos /usr/local/opt/qt@6 /opt/homebrew/opt/qt@6; do
+    for d in "$HOME/Qt"/*/macos /usr/local/opt/qt@6 /opt/homebrew/opt/qt@6; do
       [ -d "$d" ] && QT_PREFIX="$d" && break
     done
     if [ -z "$QT_PREFIX" ]; then

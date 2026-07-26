@@ -513,6 +513,38 @@ getSetting("theme", "auto").then(function(savedTheme) {
         aboutOverlay.classList.remove("active");
       }
     });
+    // About tabs
+    document.querySelectorAll(".about-tab").forEach(function(tab) {
+      tab.addEventListener("click", function() {
+        document.querySelectorAll(".about-tab").forEach(function(t) { t.classList.remove("active"); });
+        document.querySelectorAll(".about-tab-content").forEach(function(c) { c.style.display = "none"; });
+        this.classList.add("active");
+        var target = document.getElementById("about-tab-" + this.dataset.tab);
+        if (target) target.style.display = "";
+      });
+    });
+    // Update check
+    window.__checkUpdate = async function() {
+      var el = document.getElementById("about-update-check");
+      if (!el) return;
+      el.textContent = "⏳ Checking...";
+      try {
+        var r = await fetch("https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest");
+        var data = await r.json();
+        var latest = (data.tag_name || "").replace(/^v/, "");
+        var current = "0.0.9";
+        if (latest && latest !== current) {
+          el.textContent = "⬇️ Update available: v" + latest + " (current: v" + current + ")";
+          el.style.color = "var(--accent-orange)";
+        } else {
+          el.textContent = "✅ You have the latest version (v" + current + ")";
+          el.style.color = "var(--accent-green)";
+        }
+      } catch(e) {
+        el.textContent = "⚠️ Update check failed";
+        el.style.color = "var(--accent-red)";
+      }
+    };
 
     // ── Language Switcher ──────────────────────────────────
     (function initLangSwitcher() {
