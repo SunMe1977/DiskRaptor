@@ -1468,7 +1468,7 @@ clearTimeout(safetyTimer);
           if (dupBtn) dupBtn.click();
         } else if (action === "empty-folders") {
           var loader = window.__loader;
-          if (!loader || !loader.allNodes) break;
+          if (!loader || !loader.allNodes) return;
           var nodes = loader.allNodes;
           var emptyDirs = [];
           for (var ni = 0; ni < nodes.length; ni++) {
@@ -1477,7 +1477,7 @@ clearTimeout(safetyTimer);
               emptyDirs.push({ name: n.name, arenaIdx: ni });
             }
           }
-          if (emptyDirs.length === 0) { alert("No empty folders found"); break; }
+          if (emptyDirs.length === 0) { alert("No empty folders found"); return; }
           var html2 = '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
           for (var ei = 0; ei < Math.min(emptyDirs.length, 500); ei++) {
             html2 += '<div class="empty-folder-item" data-idx="' + emptyDirs[ei].arenaIdx + '" style="padding:3px 8px;cursor:pointer;border-radius:4px;font-size:12px;">📂 ' + emptyDirs[ei].name + '</div>';
@@ -1528,14 +1528,14 @@ clearTimeout(safetyTimer);
           URL.revokeObjectURL(url);
         } else if (action === "find-files") {
           var query = prompt("Find files by name (e.g. *.jpg, *test*, partial name):", "*");
-          if (!query) break;
+          if (!query) return;
           var loader = window.__loader;
           var treeView = window.__treeView;
-          if (!loader || !loader.allNodes) break;
+          if (!loader || !loader.allNodes) return;
           var nodes = loader.allNodes;
           var results = [];
           var pattern = query.replace(/\*/g, ".*").replace(/\?/g, ".").toLowerCase();
-          try { var re = new RegExp("^" + pattern + "$", "i"); } catch(e) { break; }
+          try { var re = new RegExp("^" + pattern + "$", "i"); } catch(e) { return; }
           for (var ni = 0; ni < nodes.length; ni++) {
             var n = nodes[ni];
             if (n && n.name && re.test(n.name)) {
@@ -1548,7 +1548,7 @@ clearTimeout(safetyTimer);
               results.push({ name: n.name, path: fullPath + "/" + parts.join("/"), size: n.size, arenaIdx: ni });
             }
           }
-          if (results.length === 0) { alert("No files found matching: " + query); break; }
+          if (results.length === 0) { alert("No files found matching: " + query); return; }
           results.sort(function(a,b){return b.size - a.size;});
           var html = '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
           for (var ri = 0; ri < Math.min(results.length, 200); ri++) {
