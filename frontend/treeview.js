@@ -591,6 +591,8 @@ class TreeView {
           cmp = (na.file_count || 0) - (nb.file_count || 0);
         } else if (this.sortBy === "dirs") {
           cmp = (na.dir_count || 0) - (nb.dir_count || 0);
+        } else if (this.sortBy === "date") {
+          cmp = (na.mtime || 0) - (nb.mtime || 0);
         } else {
           cmp = (na.size || 0) - (nb.size || 0);
         }
@@ -789,6 +791,18 @@ class TreeView {
     dc.className = "node-dirs";
     dc.textContent = isDir ? (node.dir_count || 0).toLocaleString() : "—";
     el.appendChild(dc);
+
+    // Date column
+    const dateEl = document.createElement("span");
+    dateEl.className = "node-date";
+    if (node.mtime && node.mtime > 0) {
+      var d = new Date((node.mtime) * 1000);
+      var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      dateEl.textContent = d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
+    } else {
+      dateEl.textContent = "—";
+    }
+    el.appendChild(dateEl);
 
   }
 
