@@ -1210,7 +1210,8 @@ clearTimeout(safetyTimer);
           loader.totalChunks = result.root_info.total_chunks;
           loader.allNodes = new Array(loader.totalNodes);
           loader.scanId = scanId;
-          
+          var statusBar = document.querySelector("#tree-panel .status-bar");
+
           // Load first chunk immediately (root)
           try { await loader.loadChunk(0); } catch(e) { console.warn("Chunk 0:", e); }
           treeView.expanded.add(0);
@@ -1219,8 +1220,10 @@ clearTimeout(safetyTimer);
           // Load remaining chunks in parallel batches (20 at a time)
           (async function() {
             var BATCH = 20;
-            for (var start = 1; start < loader.totalChunks; start += BATCH) {
-              var end = Math.min(start + BATCH, loader.totalChunks);
+            var total = loader.totalChunks;
+            for (var start = 1; start < total; start += BATCH) {
+              var end = Math.min(start + BATCH, total);
+              if (statusBar) statusBar.textContent = "Loading tree... " + Math.round(end / total * 100) + "%";
               var promises = [];
               for (var ci = start; ci < end; ci++) {
                 if (!loader.loadedChunks.has(ci)) {
@@ -1234,6 +1237,7 @@ clearTimeout(safetyTimer);
               }
             }
             try { await treeView.rebuild(); } catch(e) {}
+            if (statusBar) statusBar.textContent = "Ready";
           })();
         } else if (currentStats && currentStats.total_files > 0) {
           // Synthetic root node so the tree shows something
@@ -1632,6 +1636,34 @@ clearTimeout(safetyTimer);
         }
       });
     }
+
+    // ── Keyboard shortcuts ────────────────────────────
+    document.addEventListener("keydown", function(e) {
+      // Ctrl+Enter / Cmd+Enter → Scan
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (btnScan && !btnScan.disabled) btnScan.click();
+        return;
+      }
+      // Ctrl+O / Cmd+O → Browse
+      if ((e.ctrlKey || e.metaKey) && e.key === "o") {
+        e.preventDefault();
+        if (btnBrowse && !btnBrowse.disabled) btnBrowse.click();
+        return;
+      }
+      // Ctrl+F / Cmd+F → Focus filter
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        var tf = document.getElementById("tree-filter");
+        if (tf) { e.preventDefault(); tf.focus(); return; }
+      }
+      // Escape → Close overlays
+      if (e.key === "Escape") {
+        document.querySelectorAll("#about-overlay.active,#settings-overlay[style*='flex']").forEach(function(o) {
+          o.classList.remove("active");
+          o.style.display = "none";
+        });
+      }
+    });
 
     scanPath.addEventListener("keydown", function (e) {
       if (e.key === "Enter") btnScan.click();

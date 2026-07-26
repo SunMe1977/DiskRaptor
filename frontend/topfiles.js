@@ -164,7 +164,7 @@ class TopFilesPanel {
       var tr = document.createElement("tr");
       var td = document.createElement("td");
       td.colSpan = showDelete ? 4 : 3;
-      td.textContent = "No files found";
+      td.textContent = "📭 No files found — run a scan first";
       td.style.textAlign = "center";
       td.style.color = "var(--text-muted)";
       td.style.padding = "24px";
