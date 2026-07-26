@@ -839,6 +839,15 @@ getSetting("theme", "auto").then(function(savedTheme) {
           }
         } catch(e) {}
       })();
+
+      // Multi-path: if path contains semicolons, scan each separately
+      var paths = path.split(";").map(function(p){return p.trim();}).filter(function(p){return p;});
+      if (paths.length > 1) {
+        // Scan first path, then queue the rest
+        path = paths[0];
+        // Store remaining paths for sequential scanning
+        window.__pendingScans = paths.slice(1);
+      }
       // Set engine text with thread count
       var engineEl = document.getElementById("progress-engine");
       if (engineEl) {
@@ -1207,6 +1216,11 @@ clearTimeout(safetyTimer);
           } catch(e) { console.warn("Synthetic root:", e); }
         }
 
+        // Trigger next queued scan if multi-path
+        if (window.__pendingScans && window.__pendingScans.length > 0) {
+          var nextPath = window.__pendingScans.shift();
+          if (nextPath && scanPath) { scanPath.value = nextPath; btnScan.click(); }
+        }
         btnExport.disabled = false;
         var nc = document.getElementById("node-count");
         if (nc)
@@ -1452,6 +1466,66 @@ clearTimeout(safetyTimer);
         } else if (action === "duplicates") {
           var dupBtn = document.getElementById("btn-duplicates");
           if (dupBtn) dupBtn.click();
+        } else if (action === "empty-folders") {
+          var loader = window.__loader;
+          if (!loader || !loader.allNodes) break;
+          var nodes = loader.allNodes;
+          var emptyDirs = [];
+          for (var ni = 0; ni < nodes.length; ni++) {
+            var n = nodes[ni];
+            if (n && (n.node_type === 0 || n.node_type === "Directory") && n.file_count === 0 && n.dir_count === 0 && n.parent !== 4294967295) {
+              emptyDirs.push({ name: n.name, arenaIdx: ni });
+            }
+          }
+          if (emptyDirs.length === 0) { alert("No empty folders found"); break; }
+          var html2 = '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
+          for (var ei = 0; ei < Math.min(emptyDirs.length, 500); ei++) {
+            html2 += '<div class="empty-folder-item" data-idx="' + emptyDirs[ei].arenaIdx + '" style="padding:3px 8px;cursor:pointer;border-radius:4px;font-size:12px;">📂 ' + emptyDirs[ei].name + '</div>';
+          }
+          if (emptyDirs.length > 500) html2 += '<div style="padding:4px;text-align:center;color:var(--text-muted);font-size:11px;">+ ' + (emptyDirs.length-500) + ' more</div>';
+          html2 += '</div>';
+          var ov2 = document.createElement("div");
+          ov2.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+          var card2 = document.createElement("div");
+          card2.style.cssText = "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:400px;width:90%;max-height:80vh;overflow:hidden;";
+          card2.innerHTML = '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">📂 Empty Folders (' + emptyDirs.length + ')</div>' + html2 +
+            '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;"><button class="ef-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button></div>';
+          ov2.appendChild(card2);
+          document.body.appendChild(ov2);
+          ov2.querySelector(".ef-close-btn").onclick = function(){ document.body.removeChild(ov2); };
+          ov2.onclick = function(e) { if (e.target === ov2) document.body.removeChild(ov2); };
+          ov2.querySelectorAll(".empty-folder-item").forEach(function(el) {
+            el.onclick = function() {
+              var idx = parseInt(this.dataset.idx);
+              if (!isNaN(idx) && window.__treeView) { window.__treeView.select(idx); document.body.removeChild(ov2); }
+            };
+            el.onmouseenter = function() { this.style.background = "var(--bg-hover)"; };
+            el.onmouseleave = function() { this.style.background = "transparent"; };
+          });
+        } else if (action === "export-html") {
+          var stats = currentStats || {};
+          var svg = document.querySelector('#diagram-container canvas');
+          var chartData = "";
+          try { chartData = svg ? svg.toDataURL() : ""; } catch(e) {}
+          var fileRows = "";
+          var nodes = (window.__loader && window.__loader.allNodes) || [];
+          for (var hni = 0; hni < Math.min(nodes.length, 200); hni++) {
+            var hn = nodes[hni];
+            if (!hn) continue;
+            fileRows += "<tr><td>" + (hn.name || "") + "</td><td>" + (hn.size || 0) + "</td></tr>\n";
+          }
+          var htmlReport = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>DiskRaptor Report</title><style>body{font-family:sans-serif;margin:20px;color:#333}h1{color:#2ea043}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5}</style></head><body>' +
+            '<h1>🦖 DiskRaptor Report</h1>' +
+            '<p>Path: ' + (scanPath.value || "") + '</p>' +
+            '<p>Files: ' + (stats.total_files || 0) + ' | Dirs: ' + (stats.total_dirs || 0) + ' | Size: ' + (stats.size_human || "0 B") + '</p>' +
+            (chartData ? '<img src="' + chartData + '" style="max-width:600px;">' : '') +
+            '<h2>Files</h2><table><tr><th>Name</th><th>Size</th></tr>' + fileRows + '</table>' +
+            '<p style="color:#999;font-size:11px;margin-top:20px;">Generated by DiskRaptor</p></body></html>';
+          var blob = new Blob([htmlReport], { type: "text/html" });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url; a.download = "diskraptor-report-" + Date.now() + ".html"; a.click();
+          URL.revokeObjectURL(url);
         } else if (action === "find-files") {
           var query = prompt("Find files by name (e.g. *.jpg, *test*, partial name):", "*");
           if (!query) break;
