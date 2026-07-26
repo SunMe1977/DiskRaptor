@@ -1452,6 +1452,61 @@ clearTimeout(safetyTimer);
         } else if (action === "duplicates") {
           var dupBtn = document.getElementById("btn-duplicates");
           if (dupBtn) dupBtn.click();
+        } else if (action === "find-files") {
+          var query = prompt("Find files by name (e.g. *.jpg, *test*, partial name):", "*");
+          if (!query) break;
+          var loader = window.__loader;
+          var treeView = window.__treeView;
+          if (!loader || !loader.allNodes) break;
+          var nodes = loader.allNodes;
+          var results = [];
+          var pattern = query.replace(/\*/g, ".*").replace(/\?/g, ".").toLowerCase();
+          try { var re = new RegExp("^" + pattern + "$", "i"); } catch(e) { break; }
+          for (var ni = 0; ni < nodes.length; ni++) {
+            var n = nodes[ni];
+            if (n && n.name && re.test(n.name)) {
+              var fullPath = scanPath.value.replace(/[\\/]+$/, "");
+              var parts = [n.name]; var p = n.parent; var safety = 0;
+              while (p !== 4294967295 && p !== undefined && safety < 20) {
+                var parent = nodes[p]; if (parent && parent.name) parts.unshift(parent.name);
+                p = parent ? parent.parent : 4294967295; safety++;
+              }
+              results.push({ name: n.name, path: fullPath + "/" + parts.join("/"), size: n.size, arenaIdx: ni });
+            }
+          }
+          if (results.length === 0) { alert("No files found matching: " + query); break; }
+          results.sort(function(a,b){return b.size - a.size;});
+          var html = '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
+          for (var ri = 0; ri < Math.min(results.length, 200); ri++) {
+            var r = results[ri];
+            html += '<div class="find-file-item" data-idx="' + r.arenaIdx + '" style="padding:4px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:8px;">';
+            html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + r.name + '</span>';
+            html += '<span style="font-family:monospace;color:var(--text-muted);font-size:11px;">' + (r.size ? (r.size/1024).toFixed(1) + " KB" : "") + '</span>';
+            html += '</div>';
+          }
+          if (results.length > 200) html += '<div style="padding:4px;text-align:center;color:var(--text-muted);font-size:11px;">+ ' + (results.length-200) + ' more</div>';
+          html += '</div>';
+          var ov = document.createElement("div");
+          ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+          var card = document.createElement("div");
+          card.style.cssText = "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:500px;width:90%;max-height:80vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+          card.innerHTML = '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">🔎 Find Files (' + results.length + ' matches)</div>' + html +
+            '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;"><button class="find-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button></div>';
+          ov.appendChild(card);
+          document.body.appendChild(ov);
+          ov.querySelector(".find-close-btn").onclick = function(){ document.body.removeChild(ov); };
+          ov.onclick = function(e) { if (e.target === ov) document.body.removeChild(ov); };
+          ov.querySelectorAll(".find-file-item").forEach(function(el) {
+            el.onclick = function() {
+              var idx = parseInt(this.dataset.idx);
+              if (!isNaN(idx) && treeView) {
+                treeView.select(idx);
+                document.body.removeChild(ov);
+              }
+            };
+            el.onmouseenter = function() { this.style.background = "var(--bg-hover)"; };
+            el.onmouseleave = function() { this.style.background = "transparent"; };
+          });
         } else if (action === "trash-recovery") {
           if (!window.__trashRecovery) window.__trashRecovery = new TrashRecovery();
           window.__trashRecovery.open();
