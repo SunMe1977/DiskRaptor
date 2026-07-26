@@ -3,25 +3,26 @@ class TrashRecovery {
     this._createUI();
   }
 
+  _t(key) { return (window.__ || function(s){return s;})(key); }
+
   _createUI() {
     this.panel = document.createElement("div");
     this.panel.id = "trash-panel";
     this.panel.style.cssText = "display:none;margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);overflow:hidden;";
     this.panel.innerHTML = `
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="margin:0;font-size:14px;color:var(--text-primary);">🗑️ Trash Recovery</h3>
+        <h3 style="margin:0;font-size:14px;color:var(--text-primary);">🗑️ ${this._t("trash.title")}</h3>
         <span id="trash-summary" style="font-size:12px;color:var(--text-muted);"></span>
       </div>
       <div id="trash-list" style="max-height:400px;overflow-y:auto;padding:8px;"></div>
       <div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;gap:6px;justify-content:flex-end;">
-        <button id="trash-select-all" style="padding:5px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Select All</button>
-        <button id="trash-restore-selected" style="padding:5px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;">Restore Selected</button>
-        <button id="trash-delete-selected" style="padding:5px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">Delete Permanently</button>
-        <button id="trash-close" style="padding:5px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Close</button>
+        <button id="trash-select-all" style="padding:5px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">${this._t("trash.select_all")}</button>
+        <button id="trash-restore-selected" style="padding:5px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;">${this._t("trash.restore_selected")}</button>
+        <button id="trash-delete-selected" style="padding:5px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">${this._t("trash.delete_selected")}</button>
+        <button id="trash-close" style="padding:5px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">${this._t("trash.close")}</button>
       </div>
     `;
     document.body.appendChild(this.panel);
-
     document.getElementById("trash-close").onclick = () => { this.panel.style.display = "none"; };
     document.getElementById("trash-select-all").onclick = () => this._toggleAll(true);
     document.getElementById("trash-restore-selected").onclick = () => this._restoreSelected();
@@ -30,28 +31,26 @@ class TrashRecovery {
 
   async open() {
     this.panel.style.display = "block";
-    document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">Loading...</div>';
-
+    document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">' + this._t("trash.loading") + '</div>';
     try {
       var items = await window.__TAURI__.invoke("list_trash", {});
       this._items = items || [];
       this._selected = {};
       this._render();
     } catch(e) {
-      console.error("Trash list failed:", e);
-      document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--accent-red);">Failed to load trash</div>';
+      document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--accent-red);">' + this._t("trash.failed") + '</div>';
     }
   }
 
   _render() {
+    var t = this._t.bind(this);
     var list = document.getElementById("trash-list");
     var summary = document.getElementById("trash-summary");
     if (this._items.length === 0) {
-      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">🗑️ Trash is empty</div>';
+      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">🗑️ ' + t("trash.empty") + '</div>';
       if (summary) summary.textContent = "0 items";
       return;
     }
-
     var totalSize = 0;
     var html = "";
     for (var i = 0; i < this._items.length; i++) {
@@ -67,20 +66,13 @@ class TrashRecovery {
       html += '</div>';
     }
     list.innerHTML = html;
-
-    // Wire checkboxes
     list.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
       cb.onchange = function() {
         var idx = parseInt(this.dataset.idx);
-        if (!isNaN(idx)) {
-          if (this.checked) that._selected[idx] = true;
-          else delete that._selected[idx];
-        }
+        if (!isNaN(idx)) { if (this.checked) that._selected[idx] = true; else delete that._selected[idx]; }
       };
     });
     var that = this;
-
-    // Wire row clicks
     list.querySelectorAll(".trash-item").forEach(function(row) {
       row.onclick = function(e) {
         if (e.target.tagName === "INPUT") return;
@@ -90,13 +82,11 @@ class TrashRecovery {
       row.onmouseenter = function() { this.style.background = "var(--bg-hover)"; };
       row.onmouseleave = function() { this.style.background = "transparent"; };
     });
-
     var fmt = function(b) {
       if (b === 0) return "0 B";
       var u = ["B","KB","MB","GB"];
       var i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 3);
-      var v = b / Math.pow(1024, i);
-      return v.toFixed(i > 0 ? 1 : 0) + " " + u[i];
+      return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i];
     };
     if (summary) summary.textContent = this._items.length + " items · " + fmt(totalSize);
   }
@@ -110,36 +100,33 @@ class TrashRecovery {
   }
 
   async _restoreSelected() {
+    var t = this._t.bind(this);
     var idxs = Object.keys(this._selected).map(Number).filter(function(i) { return !isNaN(i); });
-    if (idxs.length === 0) { alert("No items selected"); return; }
-    if (!confirm("Restore " + idxs.length + " item(s) from Trash?")) return;
-
+    if (idxs.length === 0) { alert(t("trash.no_selection")); return; }
+    if (!confirm(t("trash.restore_confirm").replace("{n}", idxs.length))) return;
     for (var ci = 0; ci < idxs.length; ci++) {
       var item = this._items[idxs[ci]];
       if (!item) continue;
       try {
         var r = await window.__TAURI__.invoke("restore_trash", { path: item.path });
-        if (r && r.restored_to) {
-          delete this._selected[idxs[ci]];
-        }
-      } catch(e) { alert("Failed to restore: " + (item.name || "?") + "\n" + e); }
+        if (r && r.restored_to) delete this._selected[idxs[ci]];
+      } catch(e) { alert(t("trash.restore_failed").replace("{name}", item.name || "?") + "\n" + e); }
     }
-    // Reload
     await this.open();
   }
 
   async _deleteSelected() {
+    var t = this._t.bind(this);
     var idxs = Object.keys(this._selected).map(Number).filter(function(i) { return !isNaN(i); });
-    if (idxs.length === 0) { alert("No items selected"); return; }
-    if (!confirm("Permanently delete " + idxs.length + " item(s)? This cannot be undone.")) return;
-
+    if (idxs.length === 0) { alert(t("trash.no_selection")); return; }
+    if (!confirm(t("trash.delete_confirm").replace("{n}", idxs.length))) return;
     for (var ci = 0; ci < idxs.length; ci++) {
       var item = this._items[idxs[ci]];
       if (!item) continue;
       try {
         await window.__TAURI__.invoke("delete_permanent", { path: item.path });
         delete this._selected[idxs[ci]];
-      } catch(e) { alert("Failed to delete: " + (item.name || "?") + "\n" + e); }
+      } catch(e) { alert(t("trash.delete_failed").replace("{name}", item.name || "?") + "\n" + e); }
     }
     await this.open();
   }
