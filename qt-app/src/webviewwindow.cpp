@@ -141,9 +141,31 @@ void MainWindow::setupMenuBar()
 
     // ── Tools Menu ─────────────────────────────────────
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
+    auto *scanDl = toolsMenu->addAction(tr("Scan Downloads"));
+    connect(scanDl, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=scan-downloads]');if(el)el.click();"); });
+    auto *scanTrash = toolsMenu->addAction(tr("Scan Trash"));
+    connect(scanTrash, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=scan-trash]');if(el)el.click();"); });
+    auto *trashRec = toolsMenu->addAction(tr("Trash Recovery…"));
+    connect(trashRec, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=trash-recovery]');if(el)el.click();"); });
+    auto *findFiles = toolsMenu->addAction(tr("Find Files…"));
+    connect(findFiles, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=find-files]');if(el)el.click();"); });
+    auto *emptyFolders = toolsMenu->addAction(tr("Empty Folders…"));
+    connect(emptyFolders, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=empty-folders]');if(el)el.click();"); });
     auto *findDupes = toolsMenu->addAction(tr("Find Duplicate Files…"));
     findDupes->setShortcut(QKeySequence("Ctrl+D"));
     connect(findDupes, &QAction::triggered, this, &MainWindow::onFindDuplicates);
+    toolsMenu->addSeparator();
+    auto *exportHtml = toolsMenu->addAction(tr("Export HTML Report…"));
+    connect(exportHtml, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=export-html]');if(el)el.click();"); });
+    auto *prefs = toolsMenu->addAction(tr("Preferences…"));
+    prefs->setShortcut(QKeySequence("Ctrl+,"));
+    connect(prefs, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=settings]');if(el)el.click();"); });
+    auto *clearScan = toolsMenu->addAction(tr("Clear Scan"));
+    connect(clearScan, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=clear-scan]');if(el)el.click();"); });
+    toolsMenu->addSeparator();
+    auto *emptyTrash = toolsMenu->addAction(tr("Empty Trash…"));
+    emptyTrash->setShortcut(QKeySequence("Ctrl+Delete"));
+    connect(emptyTrash, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=trash]');if(el)el.click();"); });
 
     // ── Help Menu ──────────────────────────────────────
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
