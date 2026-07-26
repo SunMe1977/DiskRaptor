@@ -104,6 +104,9 @@ private:
 
     QString requestPermissions();
     QString emptyTrash();
+    QString listTrash();
+    QString restoreTrash(const QString &trashPath);
+    QString deletePermanent(const QString &path);
     QString getVolumeStats();
 
     // ── C++ duplicate scanner (background thread) ──────────────

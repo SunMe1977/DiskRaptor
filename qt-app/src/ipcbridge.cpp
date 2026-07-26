@@ -71,6 +71,9 @@ QString IpcBridge::invoke(const QString &command, const QVariantMap &args)
     }
     if (command == "request_permissions") return requestPermissions();
     if (command == "empty_trash") return emptyTrash();
+    if (command == "list_trash") return listTrash();
+    if (command == "restore_trash") return restoreTrash(args.value("path").toString());
+    if (command == "delete_permanent") return deletePermanent(args.value("path").toString());
     if (command == "delete_path") return deletePath(args.value("path").toString());
     if (command == "open_explorer") return openExplorer(args.value("path").toString());
     if (command == "open_terminal") return openTerminal(args.value("path").toString());
@@ -444,6 +447,75 @@ QString IpcBridge::emptyTrash()
 #else
     return resultToJson(true, QVariantMap{{"status", "unsupported"}});
 #endif
+}
+
+QString IpcBridge::listTrash()
+{
+    QJsonArray items;
+    QString trashPath = QDir::homePath() + "/.Trash";
+    QDir trashDir(trashPath);
+    if (!trashDir.exists()) {
+        return resultToJson(true, QJsonDocument(items).toJson(QJsonDocument::Compact));
+    }
+    // Try to get original paths via mdls (macOS)
+    QHash<QString, QString> origPaths;
+    QProcess mdls;
+    mdls.start("bash", {"-c", "mdls -name kMDItemFSLabel -name kMDItemFSCreationDate -name kMDItemWhereFroms " + trashPath + "/* 2>/dev/null | grep -B1 \"kMDItemWhereFroms\" | grep -v \"kMDItemWhereFroms\" | grep -v \"^--$\" | sed 's/.*\\\\/([^/]*)\\\\):.*/\\\\1/' || true"});
+    mdls.waitForFinished(3000);
+    QString mdlsOut = QString::fromUtf8(mdls.readAllStandardOutput());
+
+    for (const QFileInfo &fi : trashDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+        QJsonObject item;
+        item["name"] = fi.fileName();
+        item["path"] = fi.absoluteFilePath();
+        item["size"] = static_cast<qint64>(fi.size());
+        item["size_human"] = fi.isDir() ? "-" : (fi.size() < 1024 ? QString::number(fi.size()) + " B" :
+            fi.size() < 1048576 ? QString::number(fi.size() / 1024.0, 'f', 1) + " KB" :
+            QString::number(fi.size() / 1048576.0, 'f', 1) + " MB");
+        item["is_dir"] = fi.isDir();
+        item["deleted_at"] = fi.lastModified().toString(Qt::ISODate);
+        item["original_path"] = ""; // TODO: extract from mdls or .DS_Store
+        items.append(item);
+    }
+    return resultToJson(true, QJsonDocument(items).toJson(QJsonDocument::Compact));
+}
+
+QString IpcBridge::restoreTrash(const QString &trashPath)
+{
+    QFileInfo fi(trashPath);
+    if (!fi.exists()) {
+        return resultToJson(false, QVariant(), "File not found: " + trashPath);
+    }
+    // Try to restore to original location (home dir as fallback)
+    QString destDir = QDir::homePath();
+    QString destPath = destDir + "/" + fi.fileName();
+    // If file already exists at destination, append timestamp
+    if (QFile::exists(destPath)) {
+        QString base = fi.completeBaseName();
+        QString ext = fi.suffix();
+        destPath = destDir + "/" + base + "_restored_" + QString::number(QDateTime::currentSecsSinceEpoch()) + (ext.isEmpty() ? "" : "." + ext);
+    }
+    if (QFile::copy(trashPath, destPath)) {
+        QFile::remove(trashPath);
+        return resultToJson(true, QVariantMap{{"restored_to", destPath}});
+    }
+    return resultToJson(false, QVariant(), "Failed to restore: " + trashPath);
+}
+
+QString IpcBridge::deletePermanent(const QString &path)
+{
+    QFileInfo fi(path);
+    bool ok = false;
+    if (fi.isDir()) {
+        QDir dir(path);
+        ok = dir.removeRecursively();
+    } else {
+        ok = QFile::remove(path);
+    }
+    if (!ok) {
+        return resultToJson(false, QVariant(), "Failed to delete: " + path);
+    }
+    return resultToJson(true);
 }
 
 QString IpcBridge::deletePath(const QString &path)
