@@ -18,11 +18,13 @@ class TreeView {
       /linux/i.test(navigator.platform || "") ||
       /linux/i.test(navigator.userAgent || "");
     this._filterText = "";
+    this._typeFilter = "all";
     this._initScroll();
     this._initContextMenu();
     this._initDiagramJump();
     this._initSortControls();
     this._initFilter();
+    this._initTypeFilters();
     this._initKeyboard();
   }
 
@@ -58,6 +60,18 @@ class TreeView {
     el.addEventListener("input", function() {
       self._filterText = this.value.toLowerCase().trim();
       self.rebuild();
+    });
+  }
+
+  _initTypeFilters() {
+    var self = this;
+    document.querySelectorAll(".type-filter").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        document.querySelectorAll(".type-filter").forEach(function(b) { b.classList.remove("active"); });
+        this.classList.add("active");
+        self._typeFilter = this.dataset.ext;
+        self.rebuild();
+      });
     });
   }
 
@@ -525,6 +539,15 @@ class TreeView {
       }
     }
     if (depth > 0 && this._filterText && !filterMatch) return;
+
+    // File type filter
+    if (this._typeFilter && this._typeFilter !== "all" && !isDir) {
+      var ext = (node.name || "").toLowerCase();
+      var dot = ext.lastIndexOf(".");
+      ext = dot >= 0 ? ext.substring(dot + 1) : "";
+      var exts = this._typeFilter.split("|");
+      if (exts.indexOf(ext) === -1) return;
+    }
 
     this.visibleNodes.push(arenaIdx);
 

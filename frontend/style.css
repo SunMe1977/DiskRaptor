@@ -1858,6 +1858,26 @@ body.light-theme #about-overlay {
     border-bottom-left-radius: var(--radius);
     border-bottom-right-radius: var(--radius);
 }
+.type-filter {
+    padding: 2px 5px;
+    font-size: 13px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    opacity: 0.5;
+    line-height: 1;
+    transition: all 0.15s;
+}
+.type-filter:hover {
+    opacity: 0.8;
+    background: var(--bg-hover);
+}
+.type-filter.active {
+    opacity: 1;
+    border-color: var(--border);
+    background: var(--bg-tertiary);
+}
 .tools-sep {
     height: 1px;
     background: var(--border);

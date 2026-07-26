@@ -57,8 +57,10 @@
                         <div class="tools-item" data-action="scan-trash" data-i18n="tools.scan_trash">🗑️ Scan Trash</div>
                         <div class="tools-item" data-action="trash-recovery">♻️ Trash Recovery</div>
                         <div class="tools-item" data-action="find-files">🔎 Find Files</div>
+                        <div class="tools-item" data-action="empty-folders">📂 Empty Folders</div>
                         <div class="tools-item" data-action="duplicates" data-i18n="tools.find_duplicates">🔍 Find Duplicates</div>
                         <div class="tools-sep"></div>
+                        <div class="tools-item" data-action="export-html">📄 Export HTML Report</div>
                         <div class="tools-item" data-action="settings">⚙️ Preferences</div>
                         <div class="tools-item" data-action="clear-scan">🗑️ Clear Scan</div>
                         <div class="tools-item" data-action="trash" data-i18n="tools.empty_trash">🗑️ Empty Trash</div>
@@ -134,7 +136,15 @@
                     <div class="panel-header">
                         <h2 data-i18n="tree.title">Directory Tree</h2>
                         <span id="node-count" class="badge">0 <span data-i18n="tree.nodes">nodes</span></span>
-                        <input id="tree-filter" type="text" placeholder="🔍 Filter..." style="margin-left:auto;width:140px;padding:3px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);outline:none;">
+                        <div id="type-filters" style="display:flex;gap:2px;margin-left:8px;flex-shrink:0;">
+                            <button class="type-filter active" data-ext="all" title="All">📁</button>
+                            <button class="type-filter" data-ext="jpg|jpeg|png|gif|webp|svg" title="Images">🖼️</button>
+                            <button class="type-filter" data-ext="mp4|mov|avi|mkv|wmv" title="Videos">🎬</button>
+                            <button class="type-filter" data-ext="mp3|wav|flac|aac|ogg" title="Audio">🎵</button>
+                            <button class="type-filter" data-ext="zip|tar|gz|bz2|7z|rar|dmg|iso" title="Archives">🗜️</button>
+                            <button class="type-filter" data-ext="pdf" title="PDF">📕</button>
+                        </div>
+                        <input id="tree-filter" type="text" placeholder="🔍 Filter..." style="margin-left:auto;width:120px;padding:3px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);outline:none;">
                     </div>
                     <div id="tree-container">
                         <div id="tree-header" class="tree-header">
