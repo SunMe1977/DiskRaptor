@@ -1259,9 +1259,11 @@ clearTimeout(safetyTimer);
         // ── Downloads Cleanup Suggestions ──────────────
         (function() {
           var scanPathVal = (scanPath && scanPath.value) || "";
-          if (!scanPathVal.toLowerCase().includes("download")) return;
+          if (scanPathVal.toLowerCase().indexOf("download") < 0) return;
           var nodes = loader.allNodes || [];
-          if (nodes.length < 2) return;
+          var count = 0;
+          for (var cni = 0; cni < nodes.length; cni++) if (nodes[cni]) count++;
+          if (count < 2) return;
           var cleanable = [];
           var seen = {};
           for (var cni = 0; cni < nodes.length; cni++) {
@@ -1270,8 +1272,8 @@ clearTimeout(safetyTimer);
             var cname = (cn.name || "").toLowerCase();
             var cext = cname.lastIndexOf(".") >= 0 ? cname.substring(cname.lastIndexOf(".")) : "";
             var csize = cn.size || 0;
-            // Detect cleanable: installers, archives, duplicates with (1), (2)
-            var isCleanable = /\.(dmg|zip|tar\.gz|tgz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(cext);
+            // Detect cleanable: installers, archives
+            var isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(cext);
             // Detect duplicates like "file (1).dmg", "file (2).zip"
             var isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
             // Detect old files (>60 days since modification)
@@ -1279,7 +1281,6 @@ clearTimeout(safetyTimer);
             if (isCleanable || isDup || (isOld && csize > 1048576)) {
               var displayName = cn.name || "?";
               var reason = isDup ? "duplicate" : isOld ? "old" : "installer";
-              // Avoid listing the same file twice
               if (seen[displayName]) continue;
               seen[displayName] = true;
               cleanable.push({ name: displayName, size: csize, reason: reason, mtime: cn.mtime });
@@ -1300,7 +1301,8 @@ clearTimeout(safetyTimer);
           for (var cni2 = 0; cni2 < Math.min(cleanable.length, 100); cni2++) {
             var ci = cleanable[cni2];
             var badge = ci.reason === "duplicate" ? "🔁" : ci.reason === "old" ? "⏳" : "📦";
-            listHtml += '<div class="cleanup-item" data-file="' + ci.name.replace(/"/g,'&quot;') + '" style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;color:var(--text-secondary);">' +
+            var escName = ci.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            listHtml += '<div class="cleanup-item" data-file="' + escName + '" style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;color:var(--text-secondary);">' +
               '<input type="checkbox" checked style="width:14px;height:14px;cursor:pointer;flex-shrink:0;">' +
               '<span>' + badge + '</span>' +
               '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + ci.name + '</span>' +
