@@ -11,7 +11,7 @@ if [ -f ".env" ]; then
   set +a
 fi
 
-VERSION="0.0.8"
+VERSION="0.0.9"
 IDENTIFIER="diskraptor"
 APP_NAME="DiskRaptor"
 TEAM_ID="7TK444BCPC"
