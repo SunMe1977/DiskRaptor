@@ -2003,21 +2003,35 @@ body.light-theme #about-overlay {
     margin: 0 8px;
   }
   .progress-metrics {
-    gap: 4px;
+    gap: 2px;
     margin: 12px 0 8px;
-  }
-  .progress-stat .stat-val {
-    font-size: 16px;
-  }
-  .timer-stat .timer-val {
-    font-size: 18px;
-    padding: 1px 6px;
-  }
-  .eta-stat .eta-val {
-    font-size: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
   .progress-stat {
-    padding: 0 6px;
+    padding: 0 4px;
+    min-width: 60px;
+    flex: 0 0 auto;
+  }
+  .progress-stat .stat-val {
+    font-size: 14px;
+  }
+  .timer-stat .timer-val {
+    font-size: 16px;
+    padding: 1px 4px;
+  }
+  .eta-stat .eta-val {
+    font-size: 14px;
+  }
+  #progress-dir {
+    font-size: 11px;
+    padding: 0 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .speed-chart-wrap {
+    display: none;
   }
   .drive-menu {
     min-width: 240px;
