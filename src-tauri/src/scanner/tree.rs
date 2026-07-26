@@ -64,6 +64,8 @@ pub struct TreeNode {
     pub depth: u16,
     /// Chunk identifier – which serialisation chunk this node belongs to
     pub chunk_id: u32,
+    /// Last modification time (Unix epoch seconds). 0 = unknown/not set.
+    pub mtime: u64,
 }
 
 impl TreeNode {

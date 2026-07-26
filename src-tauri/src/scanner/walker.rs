@@ -160,6 +160,7 @@ mod platform {
             next_sibling: u32::MAX,
             depth: 0,
             chunk_id: 0,
+        mtime: 0,
         });
         use walkdir::WalkDir;
         let mut ptix: HashMap<String, u32> = HashMap::new();
@@ -251,6 +252,7 @@ mod platform {
                     next_sibling: u32::MAX,
                     depth,
                     chunk_id: 0,
+        mtime: 0,
                 });
                 match lc.get(&pi) {
                     Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -279,6 +281,7 @@ mod platform {
                     next_sibling: u32::MAX,
                     depth,
                     chunk_id: 0,
+        mtime: 0,
                 });
                 match lc.get(&pi) {
                     Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -334,6 +337,7 @@ mod platform {
             next_sibling: u32::MAX,
             depth: 0,
             chunk_id: 0,
+        mtime: 0,
         });
         let mut ptix: HashMap<String, u32> = HashMap::new();
         ptix.insert(root_path.into(), root_idx);
@@ -417,17 +421,18 @@ mod platform {
                     arena.nodes[pi as usize].depth + 1
                 };
             let ci = arena.alloc(TreeNode {
-            name: fname,
-                    size: 0,
-                    file_count: 0,
-                    dir_count: 1,
-                    node_type: NodeType::Directory,
-                    parent: pi,
-                    first_child: u32::MAX,
-                    next_sibling: u32::MAX,
-                    depth,
-                    chunk_id: 0,
-                });
+                name: fname,
+                size: 0,
+                file_count: 0,
+                dir_count: 1,
+                node_type: NodeType::Directory,
+                parent: pi,
+                first_child: u32::MAX,
+                next_sibling: u32::MAX,
+                depth,
+                chunk_id: 0,
+                mtime: 0,
+            });
                 match lc.get(&pi) {
                     Some(&last) => arena.nodes[last as usize].next_sibling = ci,
                     None => arena.nodes[pi as usize].first_child = ci,
@@ -443,7 +448,8 @@ mod platform {
                 } else {
                     arena.nodes[pi as usize].depth + 1
                 };
-            let ci = arena.alloc(TreeNode {
+                let mtime = entry.metadata().map(|m| m.modified().map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()).unwrap_or(0)).unwrap_or(0);
+                let ci = arena.alloc(TreeNode {
                     name: fname.clone(),
                     size: sz,
                     file_count: 1,
@@ -454,6 +460,7 @@ mod platform {
                     next_sibling: u32::MAX,
                     depth,
                     chunk_id: 0,
+                    mtime,
                 });
                 match lc.get(&pi) {
                     Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -515,6 +522,7 @@ mod platform {
             next_sibling: u32::MAX,
             depth: 0,
             chunk_id: 0,
+        mtime: 0,
         });
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut stack: Vec<DirCtx> = vec![DirCtx {
@@ -589,6 +597,7 @@ mod platform {
                         next_sibling: u32::MAX,
                         depth,
                         chunk_id: 0,
+        mtime: 0,
                     });
                     match lc.get(&parent_idx) {
                         Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -619,6 +628,7 @@ mod platform {
                         next_sibling: u32::MAX,
                         depth,
                         chunk_id: 0,
+        mtime: 0,
                     });
                     match lc.get(&parent_idx) {
                         Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -715,6 +725,7 @@ pub fn scan_simple(
         next_sibling: u32::MAX,
         depth: 0,
         chunk_id: 0,
+        mtime: 0,
     });
     let mut ptix: HashMap<String, u32> = HashMap::new();
     ptix.insert(root_path.into(), root_idx);
@@ -765,6 +776,7 @@ pub fn scan_simple(
                 next_sibling: u32::MAX,
                 depth,
                 chunk_id: 0,
+        mtime: 0,
             });
             match lc.get(&pi) {
                 Some(&last) => arena.nodes[last as usize].next_sibling = ci,
@@ -793,6 +805,7 @@ pub fn scan_simple(
                 next_sibling: u32::MAX,
                 depth,
                 chunk_id: 0,
+        mtime: 0,
             });
             match lc.get(&pi) {
                 Some(&last) => arena.nodes[last as usize].next_sibling = ci,

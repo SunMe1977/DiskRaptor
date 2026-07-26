@@ -576,6 +576,15 @@ button.icon-btn {
     color: var(--text-secondary);
     padding-right: 8px;
 }
+.tree-row .node-date {
+    flex-shrink: 0;
+    width: 80px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    padding-right: 8px;
+}
 
 /* Tree header row */
 .tree-header {
