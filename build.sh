@@ -35,7 +35,7 @@ case "$OS" in
   CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
   *)        echo "Unknown OS: $OS"; exit 1 ;;
 esac
-VERSION="0.0.9"
+VERSION="1.0.0"
 echo "=========================================="
 echo "  DiskRaptor $VERSION - $PLATFORM Build"
 echo "=========================================="
@@ -237,6 +237,14 @@ case "$PLATFORM" in
     for d in "$HOME/Qt"/*/macos /usr/local/opt/qt@6 /opt/homebrew/opt/qt@6; do
       [ -d "$d" ] && QT_PREFIX="$d" && break
     done
+    # Verify Qt 6.5+ (minimum for Qt WebEngine)
+    if [ -n "$QT_PREFIX" ]; then
+      QT_VER=$(otool -L "$QT_PREFIX/lib/QtCore.framework/QtCore" 2>/dev/null | grep -oE 'QtCore.*compatibility' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+      if [ -n "$QT_VER" ] && [ "$(echo "$QT_VER" | cut -d. -f1)" -lt 6 ]; then
+        echo "  ERROR: Qt 6.5+ required (found Qt $QT_VER at $QT_PREFIX)"
+        exit 1
+      fi
+    fi
     if [ -z "$QT_PREFIX" ]; then
       QT_PREFIX="$(brew --prefix qt@6 2>/dev/null || true)"
     fi
