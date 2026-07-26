@@ -1452,6 +1452,9 @@ clearTimeout(safetyTimer);
         } else if (action === "duplicates") {
           var dupBtn = document.getElementById("btn-duplicates");
           if (dupBtn) dupBtn.click();
+        } else if (action === "trash-recovery") {
+          if (!window.__trashRecovery) window.__trashRecovery = new TrashRecovery();
+          window.__trashRecovery.open();
         } else if (action === "trash") {
           var t = window.__ || function(s){return s;};
           if (!confirm(t("confirm.empty_trash"))) return;
