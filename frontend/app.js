@@ -1259,11 +1259,11 @@ clearTimeout(safetyTimer);
         // ── Downloads Cleanup Suggestions ──────────────
         (function() {
           var scanPathVal = (scanPath && scanPath.value) || "";
-          if (scanPathVal.toLowerCase().indexOf("download") < 0) return;
+          if (scanPathVal.toLowerCase().indexOf("download") < 0) { console.log("Cleanup: not Downloads path"); return; }
           var nodes = loader.allNodes || [];
           var count = 0;
           for (var cni = 0; cni < nodes.length; cni++) if (nodes[cni]) count++;
-          if (count < 2) return;
+          if (count < 2) { console.log("Cleanup: too few nodes", count); return; }
           var cleanable = [];
           var seen = {};
           for (var cni = 0; cni < nodes.length; cni++) {
@@ -1320,10 +1320,14 @@ clearTimeout(safetyTimer);
             '<button id="cleanup-move-trash" style="padding:4px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">🗑️ Move to Trash</button>' +
             '<button id="cleanup-close" style="padding:4px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button>' +
             '</div>';
-          // Insert after topfiles card
-          var topfilesCard = document.getElementById("topfiles-card");
-          if (topfilesCard && topfilesCard.parentNode) {
-            topfilesCard.parentNode.insertBefore(panel, topfilesCard.nextSibling);
+          // Insert after the stats/selection cards, before the splitter
+          var tfSplit = document.getElementById("tf-splitter");
+          if (tfSplit && tfSplit.parentNode) {
+            tfSplit.parentNode.insertBefore(panel, tfSplit);
+          } else {
+            // Fallback: append to detail panel
+            var dp = document.getElementById("detail-panel");
+            if (dp) dp.appendChild(panel);
           }
           // Wire buttons
           document.getElementById("cleanup-close").onclick = function(){ panel.style.display = "none"; };
