@@ -1421,6 +1421,24 @@ clearTimeout(safetyTimer);
       }
     });
 
+    // ── First-run tips ────────────────────────────────
+    (async function() {
+      try {
+        var s = await window.__TAURI__.invoke("load_settings", {});
+        if (s && s.tips_dismissed) return;
+      } catch(e) {}
+      var tipOv = document.getElementById("tip-overlay");
+      var tipClose = document.getElementById("tip-close");
+      var tipDont = document.getElementById("tip-dont-show");
+      if (tipOv) tipOv.style.display = "flex";
+      if (tipClose) tipClose.onclick = function() {
+        tipOv.style.display = "none";
+        if (tipDont && tipDont.checked) {
+          window.__TAURI__.invoke("save_settings", { tips_dismissed: true }).catch(function(){});
+        }
+      };
+    })();
+
     // ── Settings dialog ─────────────────────────────────
     (function() {
       var so = document.getElementById("settings-overlay");
