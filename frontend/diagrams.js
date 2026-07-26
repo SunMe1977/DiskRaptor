@@ -113,7 +113,7 @@ class DiagramRenderer {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    var explorerLabel = this._isLinux ? "Open in File Manager" : "Open in Explorer";
+    var explorerLabel = this._isMac ? "Open in Finder" : this._isLinux ? "Open in File Manager" : "Open in Explorer";
     this.contextMenu.innerHTML =
       '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
       '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
