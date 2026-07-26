@@ -104,14 +104,22 @@ class DupScanner {
   async cancel() {
     this._running = false;
     await window.__TAURI__.invoke("cancel_dup_scan", {}).catch(function(){});
-    // Wait briefly for thread to store partial results
-    await new Promise(function(r) { setTimeout(r, 300); });
-    try {
-      var data = await window.__TAURI__.invoke("get_dup_result", {});
-      if (data && data.groups && data.groups.length > 0) {
-        this._showResults(data, true);
-      }
-    } catch(e) { /* no partial results */ }
+    // Poll for result until available (thread may still be cleaning up)
+    var data = null;
+    for (var ci = 0; ci < 30; ci++) {
+      await new Promise(function(r) { setTimeout(r, 100); });
+      try {
+        data = await window.__TAURI__.invoke("get_dup_result", {}).catch(function(){return null;});
+        // data is valid if it has 'groups' (even empty array is valid)
+        if (data && data.groups !== undefined) break;
+        data = null;
+      } catch(e) {}
+    }
+    if (data && data.groups) {
+      this._showResults(data, true);
+    } else {
+      this._showResults({ groups: [], totalFilesScanned: (data && data.filesScanned) || 0, cancelled: true }, true);
+    }
     this.overlay.style.display = "none";
   }
 
