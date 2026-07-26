@@ -161,18 +161,8 @@ getSetting("theme", "auto").then(function(savedTheme) {
     }
 
     if (welcomeClose) {
-      welcomeClose.addEventListener("click", function() {
-        hideWelcome();
-        window.__TAURI__.invoke("save_settings", { welcome_dismissed: true }).catch(function(){});
-      });
+      welcomeClose.addEventListener("click", hideWelcome);
     }
-    // Restore welcome state
-    (async function() {
-      try {
-        var s = await window.__TAURI__.invoke("load_settings", {});
-        if (s && s.welcome_dismissed) hideWelcome();
-      } catch(e) {}
-    })();
 
     // Welcome Start Scan button — scans home directory
     if (welcomeScanBtn) {
