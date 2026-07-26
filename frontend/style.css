@@ -1442,6 +1442,7 @@ body.light-theme .about-bg {
     justify-content: center;
     gap: 16px;
     margin: 24px 0 16px 0;
+    flex-wrap: wrap;
 }
 .progress-stat {
     display: flex;
@@ -1451,6 +1452,13 @@ body.light-theme .about-bg {
     min-width: 0;
     padding: 0 12px;
     max-width: none;
+}
+.progress-stat .stat-val {
+    font-size: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
 }
 .stat-icon {
     font-size: 18px;
@@ -2004,24 +2012,23 @@ body.light-theme #about-overlay {
   }
   .progress-metrics {
     gap: 2px;
-    margin: 12px 0 8px;
+    margin: 8px 0 4px;
     flex-wrap: wrap;
     justify-content: center;
   }
   .progress-stat {
-    padding: 0 4px;
-    min-width: 60px;
-    flex: 0 0 auto;
+    padding: 0 2px;
   }
   .progress-stat .stat-val {
-    font-size: 14px;
+    font-size: 12px;
+    max-width: 80px;
   }
   .timer-stat .timer-val {
-    font-size: 16px;
+    font-size: 13px;
     padding: 1px 4px;
   }
   .eta-stat .eta-val {
-    font-size: 14px;
+    font-size: 12px;
   }
   #progress-dir {
     font-size: 11px;
