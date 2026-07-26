@@ -181,8 +181,13 @@ int main(int argc, char *argv[])
         window.setWindowIcon(appIcon);
         app.setWindowIcon(appIcon);
     }
+    window.setMinimumSize(1024, 600);
     window.resize(1280, 860);
+#ifdef Q_OS_WIN
+    window.setWindowState(window.windowState() | Qt::WindowMaximized);
+#else
     window.showMaximized();
+#endif
 
     qDebug() << "[DiskRaptor] Started successfully";
 
