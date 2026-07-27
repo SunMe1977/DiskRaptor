@@ -365,9 +365,9 @@ fn format_size(b: u64) -> String {
         return "0 B".into();
     }
     let bf = b as f64;
-    let i = (bf.log10() / 3.0) as usize;
+    let i = (bf.log2() / 10.0).floor() as usize;
     let i = i.min(U.len() - 1);
-    let v = bf / (1024u64.pow(i as u32) as f64);
+    let v = bf / (1024f64.powi(i as i32));
     if i == 0 {
         format!("{} {}", b, U[i])
     } else {
