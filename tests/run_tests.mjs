@@ -2,13 +2,17 @@
 import { execSync, spawn } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PLATFORM = process.platform;
 const IS_WIN = PLATFORM === "win32";
 const IS_MAC = PLATFORM === "darwin";
 const IS_LINUX = PLATFORM === "linux";
 
-const DIST_DIR = path.resolve("dist");
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const DIST_DIR = path.join(PROJECT_ROOT, "dist");
 const BIN_NAME = IS_WIN ? "DiskRaptor.exe" : "DiskRaptor";
 const BIN_PATH = path.join(DIST_DIR, BIN_NAME);
 const MAC_PATH = path.join(DIST_DIR, "DiskRaptor.app", "Contents", "MacOS", "DiskRaptor");
@@ -76,7 +80,7 @@ function printUsage() {
   console.log();
   console.log("Examples:");
   console.log("  node run_tests.mjs                         # Run all tests");
-  console.log("  node run_tests.mjs test_scan_ui.mjs        # Run specific test");
+  console.log("  node tests/run_tests.mjs test_scan_ui.mjs        # Run specific test");
   console.log("  node run_tests.mjs --quick                 # Quick smoke test");
   console.log("  node run_tests.mjs --timeout 300           # Longer timeout");
   console.log();
@@ -128,7 +132,7 @@ async function main() {
   let results = [];
 
   for (const test of testList) {
-    const testPath = path.resolve(test.file);
+    const testPath = path.resolve(__dirname, test.file);
     console.log("-".repeat(50));
     console.log(`  Running: ${test.file} (${test.name})`);
     console.log("-".repeat(50));
