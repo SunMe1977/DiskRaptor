@@ -7,19 +7,6 @@
         <title>DiskRaptor</title>
 </title>        <link rel="icon" type="image/x-icon" href="../src-tauri/icons/icon.ico" />
         <link rel="stylesheet" href="style.css" />
-        <!-- Galaxy View scripts - pre-loaded for reliability -->
-        <script src="galaxyview/config.js"></script>
-        <script src="galaxyview/spatial-index.js"></script>
-        <script src="galaxyview/data-mapper.js"></script>
-        <script src="galaxyview/animation.js"></script>
-        <script src="galaxyview/effects.js"></script>
-        <script src="galaxyview/interaction.js"></script>
-        <script src="galaxyview/lod.js"></script>
-        <script src="galaxyview/timeline.js"></script>
-        <script src="galaxyview/live-scan.js"></script>
-        <script src="galaxyview/insights.js"></script>
-        <script src="galaxyview/plugin-api.js"></script>
-        <script src="galaxyview.js"></script>
     </head>
     <body>
         <header id="toolbar">
@@ -449,7 +436,7 @@
                         <p id="about-update-check" style="font-size:11px;color:var(--text-muted);cursor:pointer;margin:8px 0 0;" onclick="window.__checkUpdate()">🔍 Check for Updates</p>
                     </div>
                     <div id="about-tab-changelog" class="about-tab-content" style="display:none;">
-                        <div style="font-size:11px;text-align:left;max-height:160px;overflow-y:auto;padding:4px 8px;color:var(--text-secondary);line-height:1.6;">
+                        <div style="font-size:11px;text-align:left;padding:4px 8px;color:var(--text-secondary);line-height:1.6;">
                             <b>v1.0.0</b> — File age view, HTML export, empty folders, multi-path scan<br>
                             <b>v0.0.8</b> — jwalk scanner, i18n, trash recovery, find files, type filter, keyboard nav, drag-drop, CDP tests<br>
                             <b>v0.0.7</b> — Duplicate scanner, file icons, progress ETA, settings dialog, bookmarks, collapsible panels<br>
@@ -519,6 +506,19 @@
         <script src="app-modules/export.js"></script>
         <script src="app-modules/settings.js"></script>
         <script src="app.js"></script>
+        <!-- Galaxy View scripts - pre-loaded for reliability -->
+        <script src="galaxyview/config.js"></script>
+        <script src="galaxyview/spatial-index.js"></script>
+        <script src="galaxyview/data-mapper.js"></script>
+        <script src="galaxyview/animation.js"></script>
+        <script src="galaxyview/effects.js"></script>
+        <script src="galaxyview/interaction.js"></script>
+        <script src="galaxyview/lod.js"></script>
+        <script src="galaxyview/timeline.js"></script>
+        <script src="galaxyview/live-scan.js"></script>
+        <script src="galaxyview/insights.js"></script>
+        <script src="galaxyview/plugin-api.js"></script>
+        <script src="galaxyview.js"></script>
         <script>
             // If Tauri bridge isn't ready after 12s, show a hint
             var stuckTimer = setTimeout(function () {

@@ -265,14 +265,22 @@ class TopFilesPanel {
         delBtn.style.cssText =
           "padding:1px 6px;font-size:12px;background:transparent;border:1px solid var(--border);border-radius:3px;cursor:pointer";
         delBtn.title = "Move to Trash: " + (entry.path || "");
-        delBtn.onclick = function (p) {
+        delBtn.onclick = function (p, row) {
           return function () {
             const t = window.__ || function(s){return s;};
             if (confirm(t("confirm.move_trash_file") + p)) {
-              this._exec("delete_path", { path: p });
+              this._exec("delete_path", { path: p })
+                .then(function () {
+                  const sb = document.querySelector(".status-bar");
+                  if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", p);
+                  row.remove();
+                })
+                .catch(function (err) {
+                  alert("Failed: " + err);
+                });
             }
           }.bind(this);
-        }.bind(this)(entry.path);
+        }.bind(this)(entry.path, tr);
         delTd.appendChild(delBtn);
         tr.appendChild(delTd);
       }
