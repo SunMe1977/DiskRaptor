@@ -162,7 +162,7 @@ async function main() {
 
   // Click Scan
   console.log("Scan...");
-  await jsExpr(cdp, `document.getElementById('btn-scan').click(); 'clicked'`);
+  await jsExpr(cdp, `document.getElementById('btn-scan').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); 'clicked'`);
 
   // Wait for overlay
   console.log("\nWaiting for progress...");

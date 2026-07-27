@@ -9,8 +9,16 @@
     const statusBar = document.querySelector(".status-bar");
 
     const bridgeReady = new Promise((resolve) => {
-      if (window.__TAURI__ && typeof window.__TAURI__.invoke === "function") {
+      if (window.__TAURI__ && typeof window.__TAURI__.invoke === "function" && window.__TAURI__.__qtBridgeReady) {
         resolve(true);
+        return;
+      }
+      if (window.__TAURI__ && typeof window.__TAURI__.invoke === "function") {
+        const check = () => {
+          if (window.__TAURI__.__qtBridgeReady) { resolve(true); return; }
+          setTimeout(check, 50);
+        };
+        check();
         return;
       }
       window.addEventListener("tauri-bridge-ready", () => resolve(true), {
