@@ -318,7 +318,11 @@ bool ScannerHandler::loadRustLibrary()
                 << QDir::currentPath() + "/../src-tauri/target/release"
                 << QDir::currentPath() + "/../../src-tauri/target/release"
                 << QCoreApplication::applicationDirPath() + "/../../src-tauri/target/release"
-                << QDir::currentPath() + "/../../../src-tauri/target/release";
+                << QDir::currentPath() + "/../../../src-tauri/target/release"
+                << QCoreApplication::applicationDirPath() + "/../lib/diskraptor"
+                << QCoreApplication::applicationDirPath() + "/../lib64/diskraptor"
+                << "/usr/lib/diskraptor"
+                << "/usr/lib/x86_64-linux-gnu/diskraptor";
 
     QStringList libNames;
 #ifdef Q_OS_WIN

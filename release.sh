@@ -83,7 +83,7 @@ echo "  Cleaning stale assets..."
 ASSETS_JSON=$(CURL "$API/repos/$GH_REPO/releases/$RELEASE_ID/assets" 2>/dev/null || echo "[]")
 for FILE in $ASSETS; do
   NAME=$(basename "$FILE")
-  ASSET_ID=$(echo "$ASSETS_JSON" | grep -o '"id": [0-9]*,"name": "'"$NAME"'"' | grep -o '"[0-9]*"' | head -1 | tr -d '"' || true)
+  ASSET_ID=$(echo "$ASSETS_JSON" | grep -B1 '"name": "'"$NAME"'"' | grep -o '"id": [0-9]*' | head -1 | grep -o '[0-9]*' || true)
   if [ -n "$ASSET_ID" ]; then
     echo "    Removing stale: $NAME (ID: $ASSET_ID)"
     CURL -X DELETE "$API/repos/$GH_REPO/releases/assets/$ASSET_ID" >/dev/null 2>&1 || true
@@ -127,9 +127,17 @@ for FILE in $ASSETS; do
 
   LOG="$LOG_DIR/${NAME//\//_}"
   (
-    curl -s -X POST "${UPLOAD_URL}?name=$NAME" \
+      MIME="application/octet-stream"
+      case "$NAME" in
+        *.deb) MIME="application/vnd.debian.binary-package" ;;
+        *.dmg) MIME="application/x-apple-diskimage" ;;
+        *.pkg) MIME="application/x-newton-compatible-pkg" ;;
+        *.zip) MIME="application/zip" ;;
+        *.AppImage) MIME="application/vnd.appimage" ;;
+      esac
+      curl -s -X POST "${UPLOAD_URL}?name=$NAME" \
       -H "Authorization: token $TOKEN" \
-      -H "Content-Type: application/octet-stream" \
+      -H "Content-Type: $MIME" \
       --data-binary "@$FILE" \
       --connect-timeout 30 \
       --max-time 10800 \

@@ -8,6 +8,7 @@
 #include <QStandardPaths>
 #include <QStorageInfo>
 #include <QApplication>
+#include <QJsonArray>
 #include <QFileDialog>
 #include <QTimer>
 #include <QCoreApplication>

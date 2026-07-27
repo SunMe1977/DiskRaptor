@@ -19,8 +19,8 @@
   const initStartedAt = Date.now();
   const maxInitWaitMs = 60000;
   let initRetryTimer = null;
-  const pendingInvokes = [];
-  const tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
+    let pendingInvokes = [];
+    const tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
     ? window.__TAURI__.invoke
     : null;
 

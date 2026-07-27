@@ -34,6 +34,9 @@ Thumbs.db
 
 # ── Temp / Debug ────────────────────
 *.log
+linuxcrash.txt
+macerror.txt
+crash*.txt
 *.py
 *.ps1
 *.bat
