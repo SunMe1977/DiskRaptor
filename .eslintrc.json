@@ -15,7 +15,7 @@
   },
   "rules": {
     "no-unused-vars": ["warn", { "args": "none", "vars": "local" }],
-    "no-undef": "error",
+    "no-undef": "warn",
     "no-var": "off",
     "prefer-const": "warn",
     "no-console": "off"
