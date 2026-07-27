@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
     auto *settings = profile->settings();
     settings->setAttribute(QWebEngineSettings::WebGLEnabled, true);
     settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
-    settings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
+    settings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, false);
     settings->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
     settings->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
     settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
