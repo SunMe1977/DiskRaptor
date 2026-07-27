@@ -19,6 +19,7 @@ path = "src/bin/clean_testdata.rs"
 
 [dev-dependencies]
 walkdir = "2"
+libloading = "0.8"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
