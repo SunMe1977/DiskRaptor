@@ -1328,6 +1328,15 @@ body.light-theme .about-bg {
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    max-height: 90vh;
+    overflow: hidden;
+    flex: 1;
+}
+.about-tab-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    width: 100%;
 }
 .about-logo {
     width: 240px;

@@ -4,6 +4,9 @@
  * NOTE: Tauri v1 uses snake_case parameter names matching Rust function params.
  */
 class ChunkLoader {
+  /**
+   * Create a new ChunkLoader for loading tree data from the Tauri backend.
+   */
   constructor() {
     this.scanId = null;
     this.totalNodes = 0;
@@ -220,6 +223,10 @@ class ChunkLoader {
     }
   }
 
+  /**
+   * Load a single chunk of nodes from the backend.
+   * @param {number} chunkIndex - The chunk index to load
+   */
   async loadChunk(chunkIndex) {
     if (this.loadedChunks.has(chunkIndex)) return;
 
@@ -343,6 +350,9 @@ class ChunkLoader {
     return this._invoke("get_stats", { scanId: this.scanId });
   }
 
+  /**
+   * Release the current scan and reset the loader state.
+   */
   async release() {
     if (this.scanId) {
       await this._invoke("release_scan", { scanId: this.scanId });

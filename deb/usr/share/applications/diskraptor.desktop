@@ -1,8 +1,9 @@
 [Desktop Entry]
 Name=DiskRaptor
 Comment=Ultra-fast disk space analyzer
-Exec=/usr/bin/DiskRaptor.sh
+Exec=diskraptor
 Icon=diskraptor
 Terminal=false
 Type=Application
-Categories=Utility;FileTools;
+Categories=Utility;System;FileTools;
+StartupNotify=true
