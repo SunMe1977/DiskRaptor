@@ -59,6 +59,7 @@ modulesPro/build/
 # ── Secrets (NEVER commit) ──────────
 .env
 .env.*
+!.env.example
 apple_private.key
 developer.key
 *.certSigningRequest
