@@ -777,6 +777,7 @@
           };
           document.getElementById("cleanup-select-all").onclick =
             function () {
+              const btn = document.getElementById("cleanup-select-all");
               const allChecked = panel.querySelectorAll(
                 '.cleanup-item input[type="checkbox"]',
               );
@@ -788,6 +789,7 @@
               allChecked.forEach(function (cb) {
                 cb.checked = someUnchecked;
               });
+              if (btn) btn.textContent = someUnchecked ? "Select All" : "Select None";
             };
           document.getElementById("cleanup-move-trash").onclick =
             function () {
@@ -811,17 +813,22 @@
                 scanPath && scanPath.value || ""
               ).replace(/[\\/]+$/, "");
               (async function () {
+                let ok = 0, fail = 0;
                 for (let fi = 0; fi < files.length; fi++) {
                   const fullPath = rootPath + "/" + files[fi];
                   try {
                     await window.__TAURI__.invoke("delete_path", {
                       path: fullPath,
                     });
+                    ok++;
                   } catch (e) {
+                    fail++;
                     console.warn("Cleanup failed:", fullPath, e);
                   }
                 }
                 panel.style.display = "none";
+                if (fail > 0 && window.showToast)
+                  window.showToast(ok + " moved to trash, " + fail + " failed", "warning");
                 if (btnScan) btnScan.click();
               })();
             };

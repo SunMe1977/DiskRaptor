@@ -145,6 +145,13 @@ class TopFilesPanel {
             .then(function () {
               const sb = document.querySelector(".status-bar");
               if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
+              const st = window.app && window.app.state && window.app.state.currentStats;
+              if (st && Array.isArray(st.top_files)) {
+                st.top_files = st.top_files.filter(function (f) {
+                  return (typeof f === "string" ? f : (f.path || "")) !== path;
+                });
+              }
+              if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
             })
             .catch(function (err) {
               alert("Failed: " + err);
