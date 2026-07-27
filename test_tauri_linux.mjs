@@ -207,7 +207,7 @@ async function main() {
   if (failed > 0) { console.log("  ✗ FAIL"); process.exit(1); }
   else { console.log("  ✓ PASS"); }
 
-  cdp.close(); killAll();
+  killAll();
 }
 
 main().catch((err) => { console.error(`\nError: ${err.message}`); killAll(); process.exit(1); });

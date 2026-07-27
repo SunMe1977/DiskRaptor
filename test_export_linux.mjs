@@ -192,7 +192,7 @@ async function main() {
     console.log(`  Failed: ${failed}`);
     if (failed > 0) { console.log("  ✗ FAIL"); process.exit(1); }
     else { console.log("  ✓ PASS"); }
-    cdp.close();
+
     killAll();
     return;
   }
@@ -277,7 +277,7 @@ async function main() {
   if (failed > 0) { console.log("  ✗ FAIL"); process.exit(1); }
   else { console.log("  ✓ PASS"); }
 
-  cdp.close();
+
   killAll();
 }
 

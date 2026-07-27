@@ -592,7 +592,7 @@ async function main() {
   if (failed > 0) { console.log("  ✗ FAIL"); process.exit(1); }
   else { console.log("  ✓ PASS (all buttons and menus tested)"); }
 
-  cdp.close();
+
   killAll();
 }
 
