@@ -11,8 +11,10 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebEngineWidgets WebChanne
 
 # Minimal Qt modules needed — exclude Qml, Quick, OpenGL, etc.
 
-set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/platform_utils.cpp src/modules/module_loader.cpp)
-set(HEADERS src/webviewwindow.h src/ipcbridge.h src/platform_utils.h src/modules/module_loader.h)
+set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/platform_utils.cpp src/modules/module_loader.cpp
+  src/commands/file_ops.cpp src/commands/system.cpp src/commands/settings.cpp src/commands/scanner.cpp)
+set(HEADERS src/webviewwindow.h src/ipcbridge.h src/platform_utils.h src/modules/module_loader.h
+  src/commands/file_ops.h src/commands/system.h src/commands/settings.h src/commands/scanner.h)
 set(RESOURCES resources/resources.qrc)
 
 if(WIN32)
@@ -104,7 +106,7 @@ if(WIN32)
   endif()
 endif()
 
-# â”€â”€ Launcher (no Qt deps, Win32 only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Launcher (no Qt deps, Win32 only) ─────────────────────────────
 if(WIN32)
   add_executable(DiskRaptorLauncher WIN32 src/launcher.cpp ${CMAKE_BINARY_DIR}/launcher-icon.rc)
   target_link_libraries(DiskRaptorLauncher PRIVATE
@@ -114,14 +116,14 @@ if(WIN32)
   install(TARGETS DiskRaptorLauncher RUNTIME DESTINATION bin)
 endif()
 
-# â”€â”€ Install â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Install ──────────────────────────────────────────────────────
 # Install core binary - platform agnostic
 install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin
   BUNDLE DESTINATION bin)
 
 if(WIN32)
-  # Install core DLLs (windeployqt output) â€” exclude WebEngine + avoid recursion
+  # Install core DLLs (windeployqt output) — exclude WebEngine + avoid recursion
   install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
     DESTINATION bin
     FILES_MATCHING
@@ -156,12 +158,12 @@ if(UNIX AND NOT APPLE)
   install(FILES ${CMAKE_SOURCE_DIR}/../images/128x128@2x.png DESTINATION share/icons/hicolor/128x128/apps RENAME diskraptor.png)
 endif()
 
-# â”€â”€ CPack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# IMPORTANT: set CPack variables BEFORE include(CPack) â€” CPack reads them at include time
+# ── CPack ────────────────────────────────────────────────────────
+# IMPORTANT: set CPack variables BEFORE include(CPack) — CPack reads them at include time
 set(CPACK_PACKAGE_NAME "DiskRaptor")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_FILE_NAME "DiskRaptor_${PROJECT_VERSION}_amd64")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "DiskRaptor Team")
 include(CPack)
 
-message(STATUS "DiskRaptor ${PROJECT_VERSION} â€” Qt ${Qt6_VERSION}")
+message(STATUS "DiskRaptor ${PROJECT_VERSION} — Qt ${Qt6_VERSION}")

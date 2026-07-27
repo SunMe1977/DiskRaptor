@@ -3,6 +3,11 @@
  * With right-click context menu matching the diagram menu.
  */
 class TreeView {
+  /**
+   * Create a virtual tree view for the directory hierarchy.
+   * @param {string} containerId - The DOM element ID for the tree container
+   * @param {ChunkLoader} chunkLoader - The ChunkLoader instance for data access
+   */
   constructor(containerId, chunkLoader) {
     this.loader = chunkLoader;
     this.visibleNodes = [];
@@ -491,6 +496,9 @@ class TreeView {
     menu.style.top = top + "px";
   }
 
+  /**
+   * Rebuild the visible node list and re-render the tree.
+   */
   async rebuild() {
     const scrollEl = document.getElementById("tree-scroll");
     const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
@@ -637,6 +645,10 @@ class TreeView {
     return null;
   }
 
+  /**
+   * Toggle the expanded/collapsed state of a directory node.
+   * @param {number} arenaIdx - The arena index of the node to toggle
+   */
   async toggleExpand(arenaIdx) {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
@@ -664,6 +676,10 @@ class TreeView {
     }
   }
 
+  /**
+   * Select a node by its arena index.
+   * @param {number} arenaIdx - The arena index of the node to select
+   */
   select(arenaIdx) {
     this.selectedIndex = arenaIdx;
     const pos = this.visibleNodes.indexOf(arenaIdx);

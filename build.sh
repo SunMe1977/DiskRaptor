@@ -36,6 +36,16 @@ case "$OS" in
   *)        echo "Unknown OS: $OS"; exit 1 ;;
 esac
 VERSION="1.0.0"
+
+# ── Tool paths (override via env vars) ──────────────────────────
+: "${QT_DIR:=/usr/local/opt/qt}"                  # macOS Homebrew default
+: "${QT_VERSION:=6}"                               # Qt major version
+: "${RUST_TARGET:=release}"                        # release or debug
+: "${SIGNING_IDENTITY:=}"                          # macOS codesign identity
+: "${APPLE_ID:=}"                                  # Apple ID for notarization
+: "${APPLE_TEAM_ID:=}"                             # Apple Team ID
+: "${BUNDLE_ID:=diskraptor}"                      # Bundle identifier
+
 echo "=========================================="
 echo "  DiskRaptor $VERSION - $PLATFORM Build"
 echo "=========================================="
@@ -46,8 +56,8 @@ build_mas_pkg() {
   local APP_SRC="dist/DiskRaptor.app"
   local MAS_DIR="dist-mas"
   local APP_DST="$MAS_DIR/DiskRaptor.app"
-  local IDENTIFIER="diskraptor"
-  local DIST_CERT="${APPLE_DIST_CERT:-Apple Distribution: Hansjoerg Hofer (7TK444BCPC)}"
+  local IDENTIFIER="${BUNDLE_ID}"
+  local DIST_CERT="${APPLE_DIST_CERT:-${SIGNING_IDENTITY:-}}"
   local ENTITLEMENTS="installer/DiskRaptor-MAS.entitlements"
 
   echo ""
@@ -186,7 +196,7 @@ build_mas_pkg() {
         --source "$PKG_PATH" \
         --type package \
         --apple-id "${APPLE_ID:-}" \
-        --team-id "${APPLE_TEAM_ID:-7TK444BCPC}" \
+        --team-id "${APPLE_TEAM_ID:-}" \
         --password "${APPLE_APP_PASSWORD:-}" \
         --verbose 2>&1
     fi
@@ -802,10 +812,10 @@ EOF
     PKG_OUT="dist/DiskRaptor-$VERSION-macos.pkg"
     if [ -n "$INSTALLER_CERT" ]; then
       echo "  Creating signed PKG: $PKG_OUT (signed with $INSTALLER_CERT)"
-      productbuild --component "$APP" /Applications --sign "$INSTALLER_CERT" --identifier "diskraptor" --version "$VERSION" "$PKG_OUT" 2>&1 || true
+      productbuild --component "$APP" /Applications --sign "$INSTALLER_CERT" --identifier "$BUNDLE_ID" --version "$VERSION" "$PKG_OUT" 2>&1 || true
     else
       echo "  Creating unsigned PKG: $PKG_OUT (no installer cert found)"
-      productbuild --component "$APP" /Applications --identifier "diskraptor" --version "$VERSION" "$PKG_OUT" 2>&1 || true
+      productbuild --component "$APP" /Applications --identifier "$BUNDLE_ID" --version "$VERSION" "$PKG_OUT" 2>&1 || true
     fi
     echo "  PKG: $PKG_OUT"
     echo ""
@@ -863,15 +873,6 @@ exec ./DiskRaptor "$@"
 SCRIPT
     chmod +x dist/DiskRaptor.sh
 
-    # Create ZIP
-    if command -v zip &>/dev/null; then
-      ROOT="$(pwd)"
-      cd "$ROOT"
-      zip -r "dist/DiskRaptor-$VERSION-linux-x64.zip" "dist/" -x "dist/DiskRaptor-*.zip" "dist/DiskRaptor-*.deb" 2>/dev/null || true
-      echo "  ZIP: dist/DiskRaptor-$VERSION-linux-x64.zip"
-    else
-      echo "  SKIP ZIP: 'zip' not installed (sudo apt install zip)"
-    fi
     # Create a .deb package if dpkg-deb is available
     if command -v dpkg-deb &>/dev/null; then
       echo "  Creating .deb package..."
@@ -987,7 +988,6 @@ LAUNCHER
     else
       echo "  SKIP DEB: 'dpkg-deb' not installed"
     fi
-    echo "  ZIP: dist/DiskRaptor-$VERSION-linux-x64.zip"
     echo ""
     echo "  Run: LD_LIBRARY_PATH=dist/lib ./dist/DiskRaptor"
     echo "  Or install: sudo dpkg -i dist/DiskRaptor-$VERSION-amd64.deb"

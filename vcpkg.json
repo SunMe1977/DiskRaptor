@@ -1,0 +1,12 @@
+{
+  "name": "diskraptor",
+  "version": "1.0.0",
+  "description": "Ultra-fast disk space analyzer",
+  "homepage": "https://diskraptor.com",
+  "dependencies": [
+    "qt6",
+    "qt6-webengine",
+    "qt6-websockets"
+  ],
+  "builtin-baseline": "a2a4e10e8f0a315b5f68ca01d20f6d6b3e53e1cc"
+}

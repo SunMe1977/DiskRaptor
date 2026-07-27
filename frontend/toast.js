@@ -19,6 +19,11 @@
     warning: 4000,
   };
 
+  /**
+   * Show a toast notification.
+   * @param {string} message - The message to display
+   * @param {'error'|'success'|'info'|'warning'} [type='info'] - Toast type
+   */
   function showToast(message, type) {
     type = type || "info";
     const duration = DURATIONS[type] || 4000;
