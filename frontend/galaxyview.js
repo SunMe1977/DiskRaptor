@@ -138,12 +138,12 @@
       console.log("[GalaxyView] Initializing...");
 
       // Remove any existing galaxy canvases from container first
-      var oldCanvases = this.container.querySelectorAll('canvas.galaxy-canvas');
-      for (var ci = 0; ci < oldCanvases.length; ci++) {
+      const oldCanvases = this.container.querySelectorAll('canvas.galaxy-canvas');
+      for (let ci = 0; ci < oldCanvases.length; ci++) {
         oldCanvases[ci].parentNode.removeChild(oldCanvases[ci]);
       }
-      var oldToolbars = this.container.querySelectorAll('.galaxy-toolbar');
-      for (var ti = 0; ti < oldToolbars.length; ti++) {
+      const oldToolbars = this.container.querySelectorAll('.galaxy-toolbar');
+      for (let ti = 0; ti < oldToolbars.length; ti++) {
         oldToolbars[ti].parentNode.removeChild(oldToolbars[ti]);
       }
 
@@ -205,8 +205,8 @@
     _resize() {
       if (!this.canvas || !this.container) return;
       // Use window dimensions directly (avoid container client sizing bugs)
-      var w = window.innerWidth;
-      var h = window.innerHeight;
+      let w = window.innerWidth;
+      let h = window.innerHeight;
       if (w <= 0 || h <= 0) {
         w = this.container.clientWidth || 800;
         h = this.container.clientHeight || 600;
@@ -329,19 +329,18 @@
     _autoFitCamera() {
       if (!this.objects || this.objects.length === 0) return;
       // Find bounding sphere centered on origin (where star is)
-      var maxDist = 10;
-      for (var di = 0; di < this.objects.length; di++) {
-        var pp = this.objects[di].position;
+      let maxDist = 10;
+      for (let di = 0; di < this.objects.length; di++) {
+        const pp = this.objects[di].position;
         if (pp) {
-          var dx = pp[0], dy = pp[1], dz = pp[2];
-          var d = Math.sqrt(dx*dx + dy*dy + dz*dz) + (this.objects[di].scale || 5);
+          const dx = pp[0], dy = pp[1], dz = pp[2];
+          let d = Math.sqrt(dx*dx + dy*dy + dz*dz) + (this.objects[di].scale || 5);
           if (d > maxDist) maxDist = d;
         }
       }
-      // Position camera to fit the bounding sphere with some margin
-      var fovRad = CFG.camera.fov * Math.PI / 180;
+      let fovRad = CFG.camera.fov * Math.PI / 180;
       if (fovRad <= 0) fovRad = 1;
-      var dist = maxDist / Math.sin(fovRad / 2) * 1.8;
+      let dist = maxDist / Math.sin(fovRad / 2) * 1.8;
       dist = Math.max(dist, CFG.camera.minZoom);
       dist = Math.min(dist, CFG.camera.maxZoom);
       this.camera.position[0] = 0;
@@ -521,9 +520,9 @@
 
       // Hover ring — circle around the hovered object
       if (this.hoveredObject && this.hoveredObject._screenX !== undefined) {
-        var hx = this.hoveredObject._screenX;
-        var hy = this.hoveredObject._screenY;
-        var hr = Math.max((this.hoveredObject.scale || 5) + 6, 22);
+        const hx = this.hoveredObject._screenX;
+        const hy = this.hoveredObject._screenY;
+        const hr = Math.max((this.hoveredObject.scale || 5) + 6, 22);
         ctx.save();
         ctx.strokeStyle = "rgba(255,215,0,0.6)";
         ctx.lineWidth = 2;
@@ -675,7 +674,7 @@
 
     _renderPlanet(ctx, screen, planet, state, time) {
       // Minimum planet size so tiny planets are always clickable
-      var baseScale = Math.max(planet.scale || 1, 6);
+      const baseScale = Math.max(planet.scale || 1, 6);
       const r = baseScale * state.pulse;
       const c = planet.color;
       const rotation = state.rotation || 0;
@@ -709,8 +708,8 @@
 
       // Saturn-like rings (only for larger planets)
       if (r > 6) {
-        var ringInner = r * 1.4;
-        var ringOuter = r * 2.2;
+        const ringInner = r * 1.4;
+        const ringOuter = r * 2.2;
         // Semi-transparent ring behind planet
         ctx.save();
         ctx.shadowBlur = 0;
@@ -1159,7 +1158,7 @@
       }
       // Don't hide main-layout - galaxy overlays on top with z-index
       // Just hide the toolbar for clean view
-      var toolbar = document.getElementById("toolbar");
+      const toolbar = document.getElementById("toolbar");
       if (toolbar) toolbar.style.display = "none";
       // Escape key to close
       this._escHandler = (e) => { if (e.key === "Escape") this.hide(); };
@@ -1177,7 +1176,7 @@
       this.container.style.zIndex = "";
       this.container.style.background = "";
       // Restore toolbar
-      var toolbar = document.getElementById("toolbar");
+      const toolbar = document.getElementById("toolbar");
       if (toolbar) toolbar.style.display = "";
       // Remove Escape handler
       if (this._escHandler) {

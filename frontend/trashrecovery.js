@@ -33,7 +33,7 @@ class TrashRecovery {
     this.panel.style.display = "block";
     document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">' + this._t("trash.loading") + '</div>';
     try {
-      var items = await window.__TAURI__.invoke("list_trash", {});
+      const items = await window.__TAURI__.invoke("list_trash", {});
       this._items = items || [];
       this._selected = {};
       this._render();
@@ -43,19 +43,19 @@ class TrashRecovery {
   }
 
   _render() {
-    var t = this._t.bind(this);
-    var list = document.getElementById("trash-list");
-    var summary = document.getElementById("trash-summary");
+    const t = this._t.bind(this);
+    const list = document.getElementById("trash-list");
+    const summary = document.getElementById("trash-summary");
     if (this._items.length === 0) {
       list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">🗑️ ' + t("trash.empty") + '</div>';
       if (summary) summary.textContent = "0 items";
       return;
     }
-    var totalSize = 0;
-    var html = "";
-    for (var i = 0; i < this._items.length; i++) {
-      var item = this._items[i];
-      var checked = this._selected[i] || false;
+    let totalSize = 0;
+    let html = "";
+    for (let i = 0; i < this._items.length; i++) {
+      const item = this._items[i];
+      const checked = this._selected[i] || false;
       totalSize += item.size || 0;
       html += '<div class="trash-item" data-idx="' + i + '" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);transition:background 0.15s;">';
       html += '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" data-idx="' + i + '">';
@@ -68,31 +68,31 @@ class TrashRecovery {
     list.innerHTML = html;
     list.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
       cb.onchange = function() {
-        var idx = parseInt(this.dataset.idx);
+        const idx = parseInt(this.dataset.idx);
         if (!isNaN(idx)) { if (this.checked) that._selected[idx] = true; else delete that._selected[idx]; }
       };
     });
-    var that = this;
+    const that = this;
     list.querySelectorAll(".trash-item").forEach(function(row) {
       row.onclick = function(e) {
         if (e.target.tagName === "INPUT") return;
-        var cb = this.querySelector('input[type="checkbox"]');
+        const cb = this.querySelector('input[type="checkbox"]');
         if (cb) { cb.checked = !cb.checked; cb.onchange(); }
       };
       row.onmouseenter = function() { this.style.background = "var(--bg-hover)"; };
       row.onmouseleave = function() { this.style.background = "transparent"; };
     });
-    var fmt = function(b) {
+    const fmt = function(b) {
       if (b === 0) return "0 B";
-      var u = ["B","KB","MB","GB"];
-      var i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 3);
+      const u = ["B","KB","MB","GB"];
+      const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 3);
       return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i];
     };
     if (summary) summary.textContent = this._items.length + " items · " + fmt(totalSize);
   }
 
   _toggleAll(checked) {
-    for (var i = 0; i < this._items.length; i++) {
+    for (let i = 0; i < this._items.length; i++) {
       if (checked) this._selected[i] = true;
       else delete this._selected[i];
     }
@@ -100,15 +100,15 @@ class TrashRecovery {
   }
 
   async _restoreSelected() {
-    var t = this._t.bind(this);
-    var idxs = Object.keys(this._selected).map(Number).filter(function(i) { return !isNaN(i); });
+    const t = this._t.bind(this);
+    const idxs = Object.keys(this._selected).map(Number).filter(function(i) { return !isNaN(i); });
     if (idxs.length === 0) { alert(t("trash.no_selection")); return; }
     if (!confirm(t("trash.restore_confirm").replace("{n}", idxs.length))) return;
-    for (var ci = 0; ci < idxs.length; ci++) {
-      var item = this._items[idxs[ci]];
+    for (let ci = 0; ci < idxs.length; ci++) {
+      const item = this._items[idxs[ci]];
       if (!item) continue;
       try {
-        var r = await window.__TAURI__.invoke("restore_trash", { path: item.path });
+        const r = await window.__TAURI__.invoke("restore_trash", { path: item.path });
         if (r && r.restored_to) delete this._selected[idxs[ci]];
       } catch(e) { alert(t("trash.restore_failed").replace("{name}", item.name || "?") + "\n" + e); }
     }
@@ -116,12 +116,12 @@ class TrashRecovery {
   }
 
   async _deleteSelected() {
-    var t = this._t.bind(this);
-    var idxs = Object.keys(this._selected).map(Number).filter(function(i) { return !isNaN(i); });
+    const t = this._t.bind(this);
+    const idxs = Object.keys(this._selected).map(Number).filter(function(i) { return !isNaN(i); });
     if (idxs.length === 0) { alert(t("trash.no_selection")); return; }
     if (!confirm(t("trash.delete_confirm").replace("{n}", idxs.length))) return;
-    for (var ci = 0; ci < idxs.length; ci++) {
-      var item = this._items[idxs[ci]];
+    for (let ci = 0; ci < idxs.length; ci++) {
+      const item = this._items[idxs[ci]];
       if (!item) continue;
       try {
         await window.__TAURI__.invoke("delete_permanent", { path: item.path });

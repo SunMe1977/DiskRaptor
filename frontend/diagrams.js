@@ -113,7 +113,7 @@ class DiagramRenderer {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    var explorerLabel = this._isMac ? "Open in Finder" : this._isLinux ? "Open in File Manager" : "Open in Explorer";
+    const explorerLabel = this._isMac ? "Open in Finder" : this._isLinux ? "Open in File Manager" : "Open in Explorer";
     this.contextMenu.innerHTML =
       '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
       '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
@@ -505,8 +505,7 @@ class DiagramRenderer {
       ctx.closePath();
 
       // Solarize hover: use completely different highlight color
-      var sliceColor = (isHov || isSel) ? this._highlightColor() : color;
-      // For selected, blend a bit of the original for variety
+      let sliceColor = (isHov || isSel) ? this._highlightColor() : color;
       if (isSel && !isHov) {
         sliceColor = this._blendColors(color, this._highlightColor(), 0.5);
       }
@@ -520,7 +519,7 @@ class DiagramRenderer {
 
       // Shadow for depth - use highlight color glow for hovered
       if (isHov || isSel) {
-        var glowColor = isHov ? "rgba(255,215,0,0.5)" : "rgba(88,166,255,0.25)";
+        const glowColor = isHov ? "rgba(255,215,0,0.5)" : "rgba(88,166,255,0.25)";
         ctx.shadowColor = glowColor;
         ctx.shadowBlur = isHov ? 24 : 12;
       } else {
@@ -744,7 +743,7 @@ class DiagramRenderer {
       const isSel = r.index === this._selectedIndex;
 
       // Premium gradient: solarize hover/select with highlight color
-      var treemapColor = (isHov || isSel) ? this._highlightColor() : color;
+      let treemapColor = (isHov || isSel) ? this._highlightColor() : color;
       if (isSel && !isHov) {
         treemapColor = this._blendColors(color, this._highlightColor(), 0.5);
       }
@@ -848,14 +847,14 @@ class DiagramRenderer {
     const startY = Math.max(4, Math.floor((barArea - totalH) / 2));
     const hlColor = this._highlightColor();
 
-    for (var i = 0; i < maxBars; i++) {
-      var file = this.files[i];
-      var pct = file.size / totalSize;
-      var barW = Math.max(2, Math.round(barMaxW * pct));
-      var y = startY + i * (barH + gap);
-      var color = colors[i % colors.length];
-      var isHov = i === this._hoveredIndex;
-      var isSel = i === this._selectedIndex;
+    for (let i = 0; i < maxBars; i++) {
+      const file = this.files[i];
+      const pct = file.size / totalSize;
+      const barW = Math.max(2, Math.round(barMaxW * pct));
+      const y = startY + i * (barH + gap);
+      const color = colors[i % colors.length];
+      const isHov = i === this._hoveredIndex;
+      const isSel = i === this._selectedIndex;
 
       // Background track (subtle)
       ctx.fillStyle = "rgba(128,128,128,0.1)";
@@ -864,7 +863,7 @@ class DiagramRenderer {
       ctx.fill();
 
       // Bar fill
-      var fillColor = (isHov || isSel) ? hlColor : color;
+      const fillColor = (isHov || isSel) ? hlColor : color;
       ctx.fillStyle = fillColor;
       ctx.beginPath();
       this._roundRect(ctx, padding, y, barW, barH, 2);
@@ -881,10 +880,10 @@ class DiagramRenderer {
       }
 
       // Label — overlay on bar or to the right if bar is short
-      var shortName = this._shortName(file.path);
-      var pctStr = (pct * 100).toFixed(1) + "%";
-      var label = this._ellipsize(shortName, 28) + "  " + pctStr;
-      var labelX = padding + Math.min(barW + 6, barMaxW - ctx.measureText(label).width - 8);
+      const shortName = this._shortName(file.path);
+      const pctStr = (pct * 100).toFixed(1) + "%";
+      const label = this._ellipsize(shortName, 28) + "  " + pctStr;
+      const labelX = padding + Math.min(barW + 6, barMaxW - ctx.measureText(label).width - 8);
       ctx.fillStyle = isHov ? "#ffd700" : "#e6edf3";
       ctx.font = (barH > 10 ? "9px bold" : "7px bold") + " sans-serif";
       ctx.textAlign = "left";
@@ -1066,7 +1065,7 @@ class DiagramRenderer {
         break;
       case "delete":
         if (!filePath) break;
-        var t = window.__ || function(s){return s;};
+        const t = window.__ || function(s){return s;};
         if (!confirm(t("confirm.move_trash_file") + filePath)) break;
         this._invoke("delete_path", { path: filePath }).then((ok) => {
           if (ok && ok.success !== false) {
@@ -1114,8 +1113,8 @@ class DiagramRenderer {
   }
 
   _colors() {
-    var theme = this._theme || "default";
-    var palettes = {
+    const theme = this._theme || "default";
+    const palettes = {
       "default": [
         "#58a6ff", "#3fb950", "#d29922", "#f85149", "#bc8cff",
         "#79c0ff", "#56d364", "#e3b341", "#ff7b72", "#d2a8ff",
@@ -1147,16 +1146,16 @@ class DiagramRenderer {
         "#9c27b0", "#8e24aa", "#7b1fa2", "#6a1b9a", "#4a148c",
       ],
     };
-    var p = palettes[theme] || palettes["default"];
-    var res = [];
-    for (var i = 0; i < 50; i++) res.push(p[i % p.length]);
+    const p = palettes[theme] || palettes["default"];
+    const res = [];
+    for (let i = 0; i < 50; i++) res.push(p[i % p.length]);
     return res;
   }
 
   /** Get a bright highlight color for the current theme */
   _highlightColor() {
-    var theme = this._theme || "default";
-    var highlights = {
+    const theme = this._theme || "default";
+    const highlights = {
       "default": "#ffd700",
       "forest": "#f8f9a0",
       "desert": "#ff6b35",
@@ -1174,11 +1173,11 @@ class DiagramRenderer {
 
   _blendColors(c1, c2, t) {
     // Blend two hex colors by factor t (0..1)
-    var r1 = parseInt(c1.slice(1,3), 16), g1 = parseInt(c1.slice(3,5), 16), b1 = parseInt(c1.slice(5,7), 16);
-    var r2 = parseInt(c2.slice(1,3), 16), g2 = parseInt(c2.slice(3,5), 16), b2 = parseInt(c2.slice(5,7), 16);
-    var r = Math.round(r1 + (r2 - r1) * t);
-    var g = Math.round(g1 + (g2 - g1) * t);
-    var b = Math.round(b1 + (b2 - b1) * t);
+    const r1 = parseInt(c1.slice(1,3), 16), g1 = parseInt(c1.slice(3,5), 16), b1 = parseInt(c1.slice(5,7), 16);
+    const r2 = parseInt(c2.slice(1,3), 16), g2 = parseInt(c2.slice(3,5), 16), b2 = parseInt(c2.slice(5,7), 16);
+    const r = Math.round(r1 + (r2 - r1) * t);
+    const g = Math.round(g1 + (g2 - g1) * t);
+    const b = Math.round(b1 + (b2 - b1) * t);
     return "rgb(" + r + "," + g + "," + b + ")";
   }
 

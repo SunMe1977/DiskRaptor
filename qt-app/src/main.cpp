@@ -118,6 +118,16 @@ int main(int argc, char *argv[])
         QApplication::applicationDirPath() + "/../share/DiskRaptor/frontend",
         QDir::currentPath() + "/share/DiskRaptor/frontend",
         QDir::currentPath() + "/../share/DiskRaptor/frontend",
+        // Linux FHS paths for deb/rpm packages
+        QApplication::applicationDirPath() + "/../share/diskraptor/frontend",
+        // Explicit /usr paths for when binary path resolution doesn't work
+        "/usr/share/DiskRaptor/frontend",
+        "/usr/share/diskraptor/frontend",
+        "/usr/local/share/DiskRaptor/frontend",
+        "/usr/local/share/diskraptor/frontend",
+        // When installed to /opt
+        "/opt/DiskRaptor/frontend",
+        "/opt/diskraptor/frontend",
     };
 
     for (const auto &path : searchPaths) {

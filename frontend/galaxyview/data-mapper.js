@@ -51,10 +51,10 @@
 
   /** HSL → hex color string */
   function hslToHex(h, s, l) {
-    var r, g, b;
+    let r, g, b;
     if (s === 0) { r = g = b = l; }
     else {
-      var hue2rgb = function(p, q, t) {
+      const hue2rgb = function(p, q, t) {
         if (t < 0) t += 1;
         if (t > 1) t -= 1;
         if (t < 1/6) return p + (q - p) * 6 * t;
@@ -62,31 +62,30 @@
         if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
         return p;
       };
-      var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-      var p = 2 * l - q;
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
       r = hue2rgb(p, q, h + 1/3);
       g = hue2rgb(p, q, h);
       b = hue2rgb(p, q, h - 1/3);
     }
-    var toHex = function(v) { return Math.round(v * 255).toString(16).padStart(2, '0'); };
+    const toHex = function(v) { return Math.round(v * 255).toString(16).padStart(2, '0'); };
     return '#' + toHex(r) + toHex(g) + toHex(b);
   }
 
   /** Generate a unique, saturated color per object index using golden ratio hue spread */
-  var _colorSeed = 0;
   function getUniqueColor(index) {
     // Golden ratio: 0.618... spreads hues evenly across the spectrum
-    var hue = ((index + 1) * 0.618033988749895) % 1.0;
+    const hue = ((index + 1) * 0.618033988749895) % 1.0;
     // Vary saturation and lightness smoothly using sine waves
-    var sat = 0.55 + Math.sin(index * 0.7) * 0.3;
-    var lit = 0.45 + Math.sin(index * 1.3 + 1) * 0.2;
+    const sat = 0.55 + Math.sin(index * 0.7) * 0.3;
+    const lit = 0.45 + Math.sin(index * 1.3 + 1) * 0.2;
     return hslToHex(hue, sat, lit);
   }
 
   /** Planet color based on type and index — each planet gets a unique shade */
   function getFileTypeColor(type, index) {
-    var hue = ((index + 1) * 0.618033988749895) % 1.0;
-    var sat = 0.65, lit = 0.5;
+    const hue = ((index + 1) * 0.618033988749895) % 1.0;
+    let sat = 0.65, lit = 0.5;
     switch (type) {
       case "code": sat = 0.7; lit = 0.55; break;
       case "docs": sat = 0.5; lit = 0.6; break;
@@ -99,9 +98,9 @@
 
   /** Moon color based on type and index */
   function getMoonColor(type, index) {
-    var hue = ((index + 1) * 0.618033988749895 + 0.3) % 1.0;
-    var sat = 0.4 + Math.sin(index * 0.5) * 0.2;
-    var lit = 0.5 + Math.sin(index * 0.7) * 0.15;
+    const hue = ((index + 1) * 0.618033988749895 + 0.3) % 1.0;
+    const sat = 0.4 + Math.sin(index * 0.5) * 0.2;
+    const lit = 0.5 + Math.sin(index * 0.7) * 0.15;
     return hslToHex(hue, sat, lit);
   }
 

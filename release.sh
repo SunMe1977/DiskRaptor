@@ -38,11 +38,11 @@ case "$PLATFORM" in
     ;;
   Linux*)
     echo "  Platform: Linux"
-    ASSETS="dist/DiskRaptor-$VERSION-amd64.deb dist/DiskRaptor-$VERSION-linux-x64.zip"
+    ASSETS="dist/DiskRaptor-$VERSION-amd64.deb"
     ;;
   CYGWIN*|MINGW*|MSYS*)
     echo "  Platform: Windows"
-    ASSETS="dist/DiskRaptor-$VERSION-win64.zip"
+    ASSETS=""
     for f in dist/DiskRaptor_*_Setup.exe; do [ -f "$f" ] && ASSETS="$ASSETS $f"; done
     ;;
   *)

@@ -19,7 +19,7 @@ class ChunkLoader {
 
   /** Start a scan (async — returns promise that resolves when scan completes). */
   startScan(path) {
-    var self = this;
+    const self = this;
     return new Promise(function (resolve, reject) {
       self._scanResolve = resolve;
       self._scanReject = reject;
@@ -32,7 +32,7 @@ class ChunkLoader {
    * Polls for completion and loads chunks.
    */
   startScanWithId(scanId, path) {
-    var self = this;
+    const self = this;
     return new Promise(function (resolve, reject) {
       self._scanResolve = resolve;
       self._scanReject = reject;
@@ -42,7 +42,7 @@ class ChunkLoader {
 
   /** Internal: poll for scan completion by scan ID. */
   async _pollScanComplete(scanId) {
-    var self = this;
+    const self = this;
 
     // Release previous scan
     if (this.scanId) {
@@ -51,8 +51,8 @@ class ChunkLoader {
       } catch (e) {}
     }
     // Save resolve/reject before _reset() clears them
-    var savedResolve = this._scanResolve;
-    var savedReject = this._scanReject;
+    const savedResolve = this._scanResolve;
+    const savedReject = this._scanReject;
     this._reset();
     this._scanResolve = savedResolve;
     this._scanReject = savedReject;
@@ -60,8 +60,8 @@ class ChunkLoader {
 
     try {
       // Poll for completion (max 100 iterations = ~30s safety)
-      for (var pollIter = 0; pollIter < 100; pollIter++) {
-        var prog = await self
+      for (let pollIter = 0; pollIter < 100; pollIter++) {
+        const prog = await self
           ._invoke("get_scan_progress", { scanId: scanId })
           .catch(function () {
             return null;
@@ -73,7 +73,7 @@ class ChunkLoader {
           throw new Error(prog.error || "Scan did not complete successfully.");
         }
 
-        var result = await self
+        const result = await self
           ._invoke("get_scan_result", { scanId: scanId })
           .catch(function () {
             return null;
@@ -110,11 +110,11 @@ class ChunkLoader {
 
   /** Internal: start scan, poll for completion. */
   async _doStartScan(path) {
-    var self = this;
+    const self = this;
 
     // Save resolve/reject before _reset() clears them
-    var savedResolve = this._scanResolve;
-    var savedReject = this._scanReject;
+    const savedResolve = this._scanResolve;
+    const savedReject = this._scanReject;
 
     if (this.scanId) {
       try {
@@ -128,7 +128,7 @@ class ChunkLoader {
     this._scanReject = savedReject;
 
     try {
-      var initResult = await self._invoke("start_scan", { path: path });
+      const initResult = await self._invoke("start_scan", { path: path });
       this.scanId = initResult.scan_id;
       await self._pollScanComplete(this.scanId);
     } catch (e) {
@@ -143,7 +143,7 @@ class ChunkLoader {
       return;
     }
 
-    var chunksArray;
+    let chunksArray;
     if (typeof result.chunks === "string") {
       try { chunksArray = JSON.parse(result.chunks); } catch(e) {
         console.warn("Failed to parse chunks JSON:", e);
@@ -167,11 +167,11 @@ class ChunkLoader {
     this.parentMap = new Map();
 
     // First pass: count total nodes
-    var totalNodes = 0;
+    let totalNodes = 0;
     if (result.root_info && result.root_info.total_nodes) {
       totalNodes = result.root_info.total_nodes;
     } else {
-      for (var ci = 0; ci < chunksArray.length; ci++) {
+      for (let ci = 0; ci < chunksArray.length; ci++) {
         totalNodes += (chunksArray[ci].nodes || []).length;
       }
     }
@@ -179,12 +179,12 @@ class ChunkLoader {
     this.allNodes = new Array(totalNodes);
 
     // Second pass: populate all nodes and parent map
-    var nodeIdx = 0;
-    for (var ci = 0; ci < chunksArray.length; ci++) {
-      var chunk = chunksArray[ci];
+    let nodeIdx = 0;
+    for (let ci = 0; ci < chunksArray.length; ci++) {
+      const chunk = chunksArray[ci];
       if (!chunk || !chunk.nodes) continue;
-      for (var ni = 0; ni < chunk.nodes.length; ni++) {
-        var node = chunk.nodes[ni];
+      for (let ni = 0; ni < chunk.nodes.length; ni++) {
+        const node = chunk.nodes[ni];
         if (!node) continue;
         node._arenaIndex = nodeIdx;
         node._children = [];
@@ -204,13 +204,13 @@ class ChunkLoader {
     this.loadedCount = nodeIdx;
 
     // Sort children by size (largest first)
-    var self = this;
-    var entries = Array.from(this.parentMap.entries());
-    for (var ei = 0; ei < entries.length; ei++) {
-      var children = entries[ei][1];
+    const self = this;
+    const entries = Array.from(this.parentMap.entries());
+    for (let ei = 0; ei < entries.length; ei++) {
+      const children = entries[ei][1];
       children.sort(function (a, b) {
-        var na = self.allNodes[a];
-        var nb = self.allNodes[b];
+        const na = self.allNodes[a];
+        const nb = self.allNodes[b];
         return (nb ? nb.size : 0) - (na ? na.size : 0);
       });
     }
@@ -223,16 +223,16 @@ class ChunkLoader {
   async loadChunk(chunkIndex) {
     if (this.loadedChunks.has(chunkIndex)) return;
 
-    var self = this;
-    var chunk = await this._invoke("get_chunk", {
+    const self = this;
+    const chunk = await this._invoke("get_chunk", {
       scanId: this.scanId,
       chunkIndex: chunkIndex,
     });
 
-    var baseIdx = chunkIndex * 10000;
-    for (var i = 0; i < chunk.nodes.length; i++) {
-      var arenaIdx = baseIdx + i;
-      var node = chunk.nodes[i];
+    const baseIdx = chunkIndex * 10000;
+    for (let i = 0; i < chunk.nodes.length; i++) {
+      const arenaIdx = baseIdx + i;
+      const node = chunk.nodes[i];
       node._arenaIndex = arenaIdx;
       node._children = [];
       node._loadedChildren = false;
@@ -249,13 +249,13 @@ class ChunkLoader {
     this.loadedChunks.add(chunkIndex);
     this.loadedCount += chunk.nodes.length;
 
-    var _self = this;
-    var entries = Array.from(this.parentMap.entries());
-    for (var ei = 0; ei < entries.length; ei++) {
-      var children = entries[ei][1];
+    const _self = this;
+    const entries = Array.from(this.parentMap.entries());
+    for (let ei = 0; ei < entries.length; ei++) {
+      const children = entries[ei][1];
       children.sort(function (a, b) {
-        var na = _self.allNodes[a];
-        var nb = _self.allNodes[b];
+        const na = _self.allNodes[a];
+        const nb = _self.allNodes[b];
         return (nb ? nb.size : 0) - (na ? na.size : 0);
       });
     }
@@ -267,14 +267,14 @@ class ChunkLoader {
 
   /** Pre-load all remaining chunks in parallel batches of 20 */
   _preloadRemainingChunks() {
-    var BATCH_SIZE = 20;
-    var start = 1; // chunk 0 already loaded
-    var self = this;
+    const BATCH_SIZE = 20;
+    let start = 1; // chunk 0 already loaded
+    const self = this;
 
     function loadBatch() {
-      var end = Math.min(start + BATCH_SIZE, self.totalChunks);
-      var promises = [];
-      for (var i = start; i < end; i++) {
+      const end = Math.min(start + BATCH_SIZE, self.totalChunks);
+      const promises = [];
+      for (let i = start; i < end; i++) {
         if (!self.loadedChunks.has(i)) {
           promises.push(self.loadChunk(i));
         }
@@ -311,12 +311,12 @@ class ChunkLoader {
   async fetchChildren(arenaIndex) {
     if (arenaIndex === 4294967295) return [];
     // Use the locally-built parentMap first (populated by loadChunk)
-    var cached = this.getChildrenIndices(arenaIndex);
+    const cached = this.getChildrenIndices(arenaIndex);
     if (cached && cached.length > 0) {
       return cached;
     }
     // Fallback to backend (useful when chunks not yet loaded)
-    var result = await this._invoke("get_children", {
+    const result = await this._invoke("get_children", {
       scanId: this.scanId,
       nodeIndex: arenaIndex,
     });
@@ -330,8 +330,8 @@ class ChunkLoader {
   }
 
   async ensureChunks(startChunk, endChunk) {
-    var promises = [];
-    for (var i = startChunk; i < endChunk && i < this.totalChunks; i++) {
+    const promises = [];
+    for (let i = startChunk; i < endChunk && i < this.totalChunks; i++) {
       if (!this.loadedChunks.has(i)) {
         promises.push(this.loadChunk(i));
       }
