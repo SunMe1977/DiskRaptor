@@ -139,11 +139,11 @@ async function main() {
   console.log("\n── Diagram Color Themes ──");
   // First, scan raw dir to have data in the diagram
   await jsExpr(cdp, `document.getElementById('scan-path').value = ${JSON.stringify(path.resolve("raw"))};`);
-  await jsExpr(cdp, `document.getElementById('btn-scan').click();`);
+  await jsExpr(cdp, `document.getElementById('btn-scan').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));`);
   for (let i = 0; i < 120; i++) { await sleep(500); const ov = await jsExpr(cdp, `document.getElementById('progress-overlay')?.classList.contains('active')`); if (ov === false) break; }
   
   // Switch to pie chart
-  await jsExpr(cdp, `var btn=document.querySelector('.diagram-mode[data-mode="pie"]'); if(btn)btn.click();`);
+  await jsExpr(cdp, `var btn=document.querySelector('.diagram-mode[data-mode="pie"]'); if(btn)btn.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));`);
   await sleep(1000);
 
   const themes = [

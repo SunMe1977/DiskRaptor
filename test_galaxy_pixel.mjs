@@ -74,7 +74,7 @@ c.ws?.on("message", (raw) => {
 // Do a scan
 console.log("Scanning...");
 await js(c, `document.getElementById('scan-path').value = ${JSON.stringify(SCAN_PATH)};`);
-await js(c, `document.getElementById('btn-scan').click();`);
+await js(c, `document.getElementById('btn-scan').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));`);
 for (let i = 0; i < 120; i++) {
   await sleep(500);
   const ov = await js(c, `document.getElementById('progress-overlay')?.classList.contains('active')`);
@@ -84,7 +84,7 @@ console.log("Scan done");
 
 // Switch to galaxy mode via app's button
 console.log("Activating galaxy mode...");
-await js(c, `document.querySelector('.diagram-mode[data-mode="galaxy"]')?.click();`);
+await js(c, `document.querySelector('.diagram-mode[data-mode="galaxy"]')?.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));`);
 await sleep(4000);
 
 // --- TESTS ---
@@ -153,7 +153,7 @@ const hidden = await js(c, `document.getElementById('galaxy-container')?.style?.
 test("Galaxy hides on Escape", hidden === true, `display: ${await js(c, `document.getElementById('galaxy-container')?.style?.display`)}`);
 
 // 7. Re-open galaxy
-await js(c, `document.querySelector('.diagram-mode[data-mode="galaxy"]')?.click();`);
+await js(c, `document.querySelector('.diagram-mode[data-mode="galaxy"]')?.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));`);
 await sleep(3000);
 const reFps = await js(c, `document.getElementById('g-fps-display')?.textContent || ''`);
 test("Galaxy re-opens with FPS", parseInt(reFps) > 0, reFps);

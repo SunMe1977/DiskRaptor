@@ -1,9 +1,0 @@
-[Desktop Entry]
-Name=DiskRaptor
-Comment=Ultra-fast disk space analyzer
-Exec=diskraptor
-Icon=diskraptor
-Terminal=false
-Type=Application
-Categories=Utility;System;FileTools;
-StartupNotify=true

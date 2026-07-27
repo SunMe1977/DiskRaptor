@@ -262,16 +262,13 @@
         let lastDirsFound = 0;
         const pollStartTime = Date.now();
 
-        let done = false;
         let zeroCount = 0;
-        for (let i = 0; i < 3600; i++) {
-          await sleep(500);
-          const p = await window.__TAURI__
-            .invoke("get_scan_progress", { scanId: scanId })
-            .catch(function () {
-              return null;
-            });
-          if (!p) continue;
+        let scanDone = false;
+        let scanError = null;
+
+        function onProgress(p) {
+          if (scanDone) return;
+          if (!p) return;
 
           const rawDisplay = document.getElementById("progress-raw");
           if (rawDisplay) {
@@ -405,12 +402,33 @@
             p.is_running !== undefined ? p.is_running : true;
           const isDone = p.phase === 3 || !isRunning;
           if (isDone) {
-            await sleep(500);
-            done = true;
-            break;
+            scanDone = true;
           }
         }
 
+        const unlisten = window.__TAURI__.event.listen(
+          "scan:progress",
+          function (evt) {
+            onProgress(evt.payload);
+          },
+        );
+
+        let done = false;
+        for (let i = 0; i < 3600; i++) {
+          await sleep(500);
+          if (scanDone) {
+            done = true;
+            break;
+          }
+          const p = await window.__TAURI__
+            .invoke("get_scan_progress", { scanId: scanId })
+            .catch(function () {
+              return null;
+            });
+          if (p) onProgress(p);
+        }
+
+        if (unlisten && typeof unlisten === "function") unlisten();
         if (!done) throw new Error("Scan timeout");
 
         progressSpeedValEl.textContent = "\u2713";

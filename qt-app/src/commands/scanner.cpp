@@ -23,6 +23,7 @@ ScannerHandler::ScannerHandler(QObject *parent)
 
 ScannerHandler::~ScannerHandler()
 {
+    if (m_progressTimer) m_progressTimer->stop();
     cppCancelScan();
     unloadRustLibrary();
 }
@@ -60,10 +61,20 @@ QString ScannerHandler::startScan(const QVariantMap &args)
                     return resultToJson(false, QVariant(), err);
                 }
             }
+            if (!m_progressTimer) {
+                m_progressTimer = new QTimer(this);
+                connect(m_progressTimer, &QTimer::timeout, this, &ScannerHandler::onProgressTick);
+            }
+            m_progressTimer->start(500);
             return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", rustScanId}});
         } else {
             qDebug() << "[DiskRaptor] Using C++ fallback scanner for:" << path;
             cppStartScan(path);
+            if (!m_progressTimer) {
+                m_progressTimer = new QTimer(this);
+                connect(m_progressTimer, &QTimer::timeout, this, &ScannerHandler::onProgressTick);
+            }
+            m_progressTimer->start(500);
             return resultToJson(true, QVariantMap{{"status", "started"}, {"scan_id", m_cppScanId}});
         }
     }
@@ -82,6 +93,32 @@ QString ScannerHandler::getScanProgress()
         return "{\"success\":true,\"data\":" + jsonStr + "}";
     }
     return cppGetProgressJson();
+}
+
+void ScannerHandler::onProgressTick()
+{
+    QString raw = getScanProgress();
+    QJsonDocument doc = QJsonDocument::fromJson(raw.toUtf8());
+    if (doc.isNull() || !doc.isObject()) return;
+    QJsonObject obj = doc.object();
+    QJsonValue dataVal = obj.value("data");
+    QVariant payload;
+    if (!dataVal.isUndefined()) {
+        payload = dataVal.toVariant();
+    } else {
+        payload = obj.toVariantMap();
+    }
+    emit eventEmitted("scan:progress", payload);
+    bool isRunning = false;
+    if (m_drIsRunning) {
+        isRunning = m_drIsRunning();
+    } else {
+        QVariantMap pm = payload.toMap();
+        isRunning = pm.value("is_running", false).toBool();
+    }
+    if (!isRunning && m_progressTimer) {
+        m_progressTimer->stop();
+    }
 }
 
 QString ScannerHandler::getScanResult()
@@ -271,6 +308,7 @@ QString ScannerHandler::releaseScan()
 
 QString ScannerHandler::cancelScan()
 {
+    if (m_progressTimer) m_progressTimer->stop();
     if (m_drCancelScan) {
         m_drCancelScan();
         return resultToJson(true, QVariantMap{{"status", "cancelled"}});

@@ -53,7 +53,7 @@ async function getText(cdp, selector) {
 }
 
 async function click(cdp, selector) {
-  return await jsExpr(cdp, `document.querySelector('${selector}')?.click()`);
+  return await jsExpr(cdp, `document.querySelector('${selector}')?.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))`);
 }
 
 function killApp() {

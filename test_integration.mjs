@@ -116,7 +116,7 @@ async function main() {
   try {
     const scanPath = TEST_DIR.replace(/\\/g, "/");
     await jsExpr(cdp, `document.getElementById('scan-path').value = ${JSON.stringify(scanPath)}`);
-    await jsExpr(cdp, `document.getElementById('btn-scan').click()`);
+    await jsExpr(cdp, `document.getElementById('btn-scan').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))`);
 
     // Wait for overlay
     let overlay = false;

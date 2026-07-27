@@ -204,11 +204,11 @@ async function main() {
 
   // Click "Scan Downloads"
   console.log("\nClicking Scan Downloads...");
-  await jsExpr(cdp, "document.getElementById('btn-tools').click()");
+  await jsExpr(cdp, "document.getElementById('btn-tools').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))");
   await sleep(300);
   await jsExpr(
     cdp,
-    `document.querySelector('.tools-item[data-action="scan-downloads"]').click()`,
+    `document.querySelector('.tools-item[data-action="scan-downloads"]').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))`,
   );
   console.log("  Scan Downloads clicked");
 
@@ -333,7 +333,7 @@ async function main() {
       cdp,
       `Array.from(document.querySelectorAll('#cleanup-panel .cleanup-item input[type="checkbox"]')).every(cb => cb.checked)`,
     );
-    await jsExpr(cdp, "document.getElementById('cleanup-select-all').click()");
+    await jsExpr(cdp, "document.getElementById('cleanup-select-all').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))");
     await sleep(200);
     const afterState = await jsExpr(
       cdp,
@@ -342,7 +342,7 @@ async function main() {
     assert("Select All toggles checkboxes", beforeState !== afterState);
 
     // Test Close button
-    await jsExpr(cdp, "document.getElementById('cleanup-close').click()");
+    await jsExpr(cdp, "document.getElementById('cleanup-close').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))");
     await sleep(300);
     const panelHidden = await jsExpr(
       cdp,
