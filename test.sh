@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 BINARY="dist/DiskRaptor"
 FRONTEND="dist/frontend"
-LIB="$dist/lib/libdiskraptor_scanner.so"
+LIB="dist/lib/libdiskraptor_scanner.so"
 
 echo "========================================"
 echo " DiskRaptor — Run All Linux UI Tests"
