@@ -285,9 +285,8 @@ async function main() {
     if (!completed) console.log(`  Scan did not complete within timeout`);
   }
 
-  cdp.close();
-  killAll();
-  if (!completed || maxFiles === 0 || maxDirs === 0) process.exit(1);
+  cdp.send("Close").catch(function () {});
+  setTimeout(function () { killAll(); process.exit(completed && maxFiles > 0 && maxDirs > 0 ? 0 : 1); }, 500);
 }
 
 main().catch((err) => {
