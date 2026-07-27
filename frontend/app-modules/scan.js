@@ -619,9 +619,6 @@
         function showCleanupPanel() {
           const spv = (scanPath && scanPath.value) || "";
           if (spv.toLowerCase().indexOf("download") < 0) return;
-          const stb = document.querySelector(".status-bar");
-          if (stb)
-            stb.textContent = "Analyzing Downloads for cleanup...";
           const cleanable = [];
           const seen = {};
           const nodes = loader.allNodes || [];
@@ -643,36 +640,18 @@
           if (count >= 2) {
             for (let cni = 0; cni < nodes.length; cni++) {
               const cn = nodes[cni];
-              if (!cn || cn.node_type === 0 || cn.node_type === "Directory")
-                continue;
+              if (!cn || cn.node_type === 0 || cn.node_type === "Directory") continue;
               const cname = (cn.name || "").toLowerCase();
-              const cext =
-                cname.lastIndexOf(".") >= 0
-                  ? cname.substring(cname.lastIndexOf("."))
-                  : "";
+              const cext = cname.lastIndexOf(".") >= 0 ? cname.substring(cname.lastIndexOf(".")) : "";
               const csize = cn.size || 0;
-              const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(
-                cext,
-              );
+              const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(cext);
               const isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
-              const isOld =
-                cn.mtime &&
-                cn.mtime > 0 &&
-                Date.now() / 1000 - cn.mtime > 60 * 86400;
+              const isOld = cn.mtime && cn.mtime > 0 && Date.now() / 1000 - cn.mtime > 60 * 86400;
               if (isCleanable || isDup || (isOld && csize > 1048576)) {
                 const relPath = getNodeRelPath(cn, nodes);
                 if (seen[relPath]) continue;
                 seen[relPath] = true;
-                cleanable.push({
-                  name: relPath,
-                  size: csize,
-                  reason: isDup
-                    ? "duplicate"
-                    : isOld
-                      ? "old"
-                      : "installer",
-                  mtime: cn.mtime,
-                });
+                cleanable.push({ name: relPath, size: csize, reason: isDup ? "duplicate" : isOld ? "old" : "installer", mtime: cn.mtime });
               }
             }
           } else {
@@ -686,205 +665,90 @@
                 const fname = fullPath.replace(rootPath + "/", "").replace(rootPath + "\\", "");
                 if (!fname) continue;
                 const cname = fname.toLowerCase();
-                const cext =
-                  cname.lastIndexOf(".") >= 0
-                    ? cname.substring(cname.lastIndexOf("."))
-                    : "";
-                const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(
-                  cext,
-                );
+                const cext = cname.lastIndexOf(".") >= 0 ? cname.substring(cname.lastIndexOf(".")) : "";
+                const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(cext);
                 const isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
                 if (isCleanable || isDup) {
                   if (seen[fname]) continue;
                   seen[fname] = true;
-                  cleanable.push({
-                    name: fname,
-                    size: tsize || 0,
-                    reason: isDup ? "duplicate" : "installer",
-                    mtime: 0,
-                  });
+                  cleanable.push({ name: fname, size: tsize || 0, reason: isDup ? "duplicate" : "installer", mtime: 0 });
                 }
               }
             }
           }
           if (cleanable.length === 0) {
+            const stb = document.querySelector(".status-bar");
             if (stb) stb.textContent = "No cleanable files found in Downloads";
             return;
           }
-          cleanable.sort(function (a, b) {
-            return b.size - a.size;
-          });
-          const existing = document.getElementById("cleanup-panel");
-          if (existing) existing.remove();
-          const panel = document.createElement("div");
-          panel.id = "cleanup-panel";
-          panel.style.cssText =
-            "margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);overflow:hidden;";
-          const totalWaste = cleanable.reduce(function (s, i) {
-            return s + i.size;
-          }, 0);
-          let listHtml = "";
-          for (
-            let cni2 = 0;
-            cni2 < Math.min(cleanable.length, 100);
-            cni2++
-          ) {
-            const ci = cleanable[cni2];
-            const badge =
-              ci.reason === "duplicate"
-                ? "\uD83D\uDD01"
-                : ci.reason === "old"
-                  ? "\u23F3"
-                  : "\uD83D\uDCE6";
-            const escName = ci.name
-              .replace(/&/g, "&amp;")
-              .replace(/"/g, "&quot;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;");
-            listHtml +=
-              '<div class="cleanup-item" data-file="' +
-              escName +
-              '" style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;color:var(--text-secondary);">' +
-              '<input type="checkbox" checked style="width:14px;height:14px;cursor:pointer;flex-shrink:0;">' +
-              "<span>" +
-              badge +
-              "</span>" +
-              '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' +
-              ci.name +
-              "</span>" +
-              '<span style="font-family:monospace;font-size:11px;color:var(--text-muted);">' +
-              (function (b) {
-                const u = ["B", "KB", "MB", "GB"];
-                const i = Math.min(
-                  Math.floor(Math.log(b || 1) / Math.log(1024)),
-                  3,
-                );
-                return (
-                  (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) +
-                  " " +
-                  u[i]
-                );
-              })(ci.size) +
-              "</span>" +
-              '<span style="font-size:10px;color:var(--text-muted);padding:1px 5px;border-radius:3px;background:var(--bg-tertiary);">' +
-              ci.reason +
-              "</span>" +
-              "</div>";
+          cleanable.sort(function (a, b) { return b.size - a.size; });
+          var existingOverlay = document.getElementById("cleanup-overlay");
+          if (existingOverlay) existingOverlay.remove();
+          var overlay = document.createElement("div");
+          overlay.id = "cleanup-overlay";
+          overlay.className = "overlay-base";
+          overlay.style.cssText = "display:flex;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);z-index:1000;";
+          var card = document.createElement("div");
+          card.className = "overlay-card";
+          card.style.cssText = "max-width:560px;width:90%;max-height:80vh;display:flex;flex-direction:column;";
+          var totalWaste = cleanable.reduce(function (s, i) { return s + i.size; }, 0);
+          var headerHtml = '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">' +
+            '<h3 style="margin:0;font-size:15px;color:var(--text-primary);">\uD83E\uDDF9 Downloads Cleanup</h3>' +
+            '<span style="font-size:12px;color:var(--text-muted);">' + cleanable.length + ' items \u00B7 ' +
+            (function (b) { var u = ["B", "KB", "MB", "GB"]; var i = Math.min(Math.floor(Math.log(b || 1) / Math.log(1024)), 3); return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i]; })(totalWaste) + ' reclaimable</span></div>';
+          var listHtml = '<div style="flex:1;overflow-y:auto;padding:6px 0;">';
+          for (var ci = 0; ci < Math.min(cleanable.length, 200); ci++) {
+            var item = cleanable[ci];
+            var badge = item.reason === "duplicate" ? "\uD83D\uDD01" : item.reason === "old" ? "\u23F3" : "\uD83D\uDCE6";
+            var escName = item.name.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            var fullPath = (scanPath.value || "").replace(/[\\/]+$/, "") + "/" + escName;
+            var sizeStr = (function (b) { var u = ["B", "KB", "MB", "GB"]; var i = Math.min(Math.floor(Math.log(b || 1) / Math.log(1024)), 3); return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i]; })(item.size);
+            listHtml += '<div class="cleanup-item" data-file="' + escName + '" title="' + fullPath.replace(/"/g, "&quot;") + '" style="display:flex;align-items:center;gap:8px;padding:5px 14px;cursor:pointer;border-radius:4px;font-size:12px;color:var(--text-secondary);transition:background 0.15s;">' +
+              '<input type="checkbox" checked style="width:15px;height:15px;cursor:pointer;flex-shrink:0;">' +
+              '<span style="flex-shrink:0;">' + badge + '</span>' +
+              '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">' + escName + '</span>' +
+              '<span style="font-family:monospace;font-size:11px;color:var(--text-muted);flex-shrink:0;">' + sizeStr + '</span>' +
+              '<span style="font-size:10px;color:var(--text-muted);padding:1px 6px;border-radius:3px;background:var(--bg-tertiary);flex-shrink:0;">' + item.reason + '</span></div>';
           }
-          panel.innerHTML =
-            '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">' +
-            '<h4 style="margin:0;font-size:13px;color:var(--text-primary);">\uD83E\uDDF9 Downloads Cleanup</h4>' +
-            '<span style="font-size:11px;color:var(--text-muted);">' +
-            cleanable.length +
-            " items \u00B7 " +
-            (function (b) {
-              const u = ["B", "KB", "MB", "GB"];
-              const i = Math.min(
-                Math.floor(Math.log(b || 1) / Math.log(1024)),
-                3,
-              );
-              return (
-                (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) +
-                " " +
-                u[i]
-              );
-            })(totalWaste) +
-            " reclaimable</span>" +
-            "</div>" +
-            '<div style="max-height:250px;overflow-y:auto;padding:4px 0;">' +
-            listHtml +
-            "</div>" +
-            '<div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:6px;justify-content:flex-end;">' +
-            '<button id="cleanup-select-all" style="padding:4px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Select All</button>' +
-            '<button id="cleanup-move-trash" style="padding:4px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">\uD83D\uDDD1\uFE0F Move to Trash</button>' +
-            '<button id="cleanup-close" style="padding:4px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button>' +
-            "</div>";
-          const tfSplit = document.getElementById("tf-splitter");
-          if (tfSplit && tfSplit.parentNode) {
-            tfSplit.parentNode.insertBefore(panel, tfSplit);
-          } else {
-            const dp = document.getElementById("detail-panel");
-            if (dp) dp.appendChild(panel);
-          }
-          document.getElementById("cleanup-close").onclick = function () {
-            panel.style.display = "none";
+          listHtml += '</div>';
+          var footerHtml = '<div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:6px;justify-content:flex-end;flex-shrink:0;">' +
+            '<button id="cleanup-select-all" style="padding:5px 14px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg-tertiary);cursor:pointer;color:var(--text-primary);">Select All</button>' +
+            '<button id="cleanup-move-trash" style="padding:5px 14px;font-size:12px;border:none;border-radius:5px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">\uD83D\uDDD1\uFE0F Move to Trash</button>' +
+            '<button id="cleanup-close-btn" style="padding:5px 14px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg-tertiary);cursor:pointer;color:var(--text-primary);">Close</button></div>';
+          card.innerHTML = headerHtml + listHtml + footerHtml;
+          overlay.appendChild(card);
+          document.body.appendChild(overlay);
+          overlay.addEventListener("click", function (e) { if (e.target === overlay) overlay.style.display = "none"; });
+          document.getElementById("cleanup-close-btn").onclick = function () { overlay.remove(); };
+          document.getElementById("cleanup-select-all").onclick = function () {
+            var btn = document.getElementById("cleanup-select-all");
+            var cbs = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]');
+            var someUnchecked = Array.from(cbs).some(function (cb) { return !cb.checked; });
+            cbs.forEach(function (cb) { cb.checked = someUnchecked; });
+            if (btn) btn.textContent = someUnchecked ? "Select All" : "Select None";
           };
-          document.getElementById("cleanup-select-all").onclick =
-            function () {
-              const btn = document.getElementById("cleanup-select-all");
-              const allChecked = panel.querySelectorAll(
-                '.cleanup-item input[type="checkbox"]',
-              );
-              const someUnchecked = Array.from(allChecked).some(function (
-                cb,
-              ) {
-                return !cb.checked;
-              });
-              allChecked.forEach(function (cb) {
-                cb.checked = someUnchecked;
-              });
-              if (btn) btn.textContent = someUnchecked ? "Select All" : "Select None";
-            };
-          document.getElementById("cleanup-move-trash").onclick =
-            function () {
-              const items = panel.querySelectorAll(
-                '.cleanup-item input[type="checkbox"]:checked',
-              );
-              const files = Array.from(items).map(function (cb) {
-                return cb.closest(".cleanup-item").dataset.file;
-              });
-              if (files.length === 0) {
-                window.showToast("No items selected", "warning");
-                return;
+          document.getElementById("cleanup-move-trash").onclick = function () {
+            var items = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');
+            var files = Array.from(items).map(function (cb) { return cb.closest(".cleanup-item").dataset.file; });
+            if (files.length === 0) { window.showToast("No items selected", "warning"); return; }
+            if (!confirm("Move " + files.length + " file(s) to Trash?")) return;
+            var rootPath = (scanPath && scanPath.value || "").replace(/[\\/]+$/, "");
+            (async function () {
+              var ok = 0, fail = 0;
+              for (var fi = 0; fi < files.length; fi++) {
+                var fullPath = rootPath + "/" + files[fi];
+                try { await window.__TAURI__.invoke("delete_path", { path: fullPath }); ok++; } catch (e) { fail++; console.warn("Cleanup failed:", fullPath, e); }
               }
-              if (
-                !confirm(
-                  "Move " + files.length + " file(s) to Trash?",
-                )
-              )
-                return;
-              const rootPath = (
-                scanPath && scanPath.value || ""
-              ).replace(/[\\/]+$/, "");
-              (async function () {
-                let ok = 0, fail = 0;
-                for (let fi = 0; fi < files.length; fi++) {
-                  const fullPath = rootPath + "/" + files[fi];
-                  try {
-                    await window.__TAURI__.invoke("delete_path", {
-                      path: fullPath,
-                    });
-                    ok++;
-                  } catch (e) {
-                    fail++;
-                    console.warn("Cleanup failed:", fullPath, e);
-                  }
-                }
-                panel.style.display = "none";
-                if (fail > 0 && window.showToast)
-                  window.showToast(ok + " moved to trash, " + fail + " failed", "warning");
-                if (btnScan) btnScan.click();
-              })();
-            };
-          panel
-            .querySelectorAll(".cleanup-item")
-            .forEach(function (row) {
-              row.onclick = function (e) {
-                if (e.target.tagName === "INPUT") return;
-                const cb = this.querySelector(
-                  'input[type="checkbox"]',
-                );
-                if (cb) {
-                  cb.checked = !cb.checked;
-                }
-              };
-              row.onmouseenter = function () {
-                this.style.background = "var(--bg-hover)";
-              };
-              row.onmouseleave = function () {
-                this.style.background = "transparent";
-              };
-            });
+              overlay.remove();
+              if (fail > 0 && window.showToast) window.showToast(ok + " moved to trash, " + fail + " failed", "warning");
+              if (btnScan) btnScan.click();
+            })();
+          };
+          overlay.querySelectorAll(".cleanup-item").forEach(function (row) {
+            row.onclick = function (e) { if (e.target.tagName === "INPUT") return; var cb = this.querySelector('input[type="checkbox"]'); if (cb) cb.checked = !cb.checked; };
+            row.onmouseenter = function () { this.style.background = "var(--bg-hover)"; };
+            row.onmouseleave = function () { this.style.background = "transparent"; };
+          });
         }
 
         // Trigger next queued scan if multi-path
