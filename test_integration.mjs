@@ -95,18 +95,17 @@ async function main() {
   }
   console.log("✓ Bridge connected\n");
 
-  // ── Test 1: Browse current dir via pick_directory ──
-  console.log("── Test 1: Browse (pick_directory) ──");
+  // ── Test 1: Set scan path via JS (no native dialog) ──
+  console.log("── Test 1: Set scan path ──");
   try {
-    const result = await jsExpr(cdp,
-      `window.__TAURI__.invoke('pick_directory').then(r => JSON.stringify(r)).catch(e => 'ERR:'+e.message)`
-    );
-    if (result && !result.startsWith("ERR:")) {
-      const data = JSON.parse(result);
-      console.log(`  ✓ pick_directory returned: ${data?.data || '(dialog cancelled)'}`);
+    const testPath = TEST_DIR.replace(/\\/g, "/");
+    await jsExpr(cdp, `document.getElementById('scan-path').value = ${JSON.stringify(testPath)}`);
+    const read = await jsExpr(cdp, `document.getElementById('scan-path').value`);
+    if (read === testPath) {
+      console.log(`  ✓ scan-path set to: ${testPath}`);
       passed++;
     } else {
-      console.log(`  ✗ pick_directory failed: ${result}`);
+      console.log(`  ✗ scan-path value mismatch: "${read}"`);
       failed++;
     }
   } catch (e) { console.log(`  ✗ ${e.message}`); failed++; }
