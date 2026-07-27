@@ -1,0 +1,8 @@
+Package: diskraptor
+Version: 0.0.4
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: DiskRaptor Team
+Description: Ultra-fast disk space analyzer with virtual tree view, pie chart, and live progress.
+ Scans millions of files using a parallel Rust engine.

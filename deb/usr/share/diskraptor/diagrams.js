@@ -1,0 +1,1191 @@
+/**
+ * DiskRaptor Diagrams — Top 50 files visualization
+ *
+ * Pie Chart and Treemap of the 50 largest files.
+ * Hover → full filename tooltip.  Click → action menu + jump in tree.
+ * Supports zoom: 20%, 50%, 100% (Actual Size), Fit (auto-zoom to viewport).
+ *
+ * Premium effects (GPU-accelerated, no canvas repaints):
+ * - Micro-specular highlight following cursor
+ * - Satin surface sweep (Apple Keynote style)
+ * - Soft pressure effect on hover
+ * - Entrance animation with micro-rotation noise
+ * - Magnetic slice hover
+ * - Center ripple pulse
+ * - Animated numbers with spring easing
+ */
+class DiagramRenderer {
+  constructor(containerId) {
+    this.container = document.getElementById(containerId);
+    if (!this.container) return;
+    this.canvas = null;
+    this.ctx = null;
+    this.mode = "pie";
+    this.data = null;
+    this.files = [];
+    this.hitRegions = [];
+    this.tooltipEl = null;
+    this.contextMenu = null;
+    this._hoveredIndex = -1;
+    this._selectedIndex = -1;
+    this._isLinux =
+      /linux/i.test(navigator.platform || "") ||
+      /linux/i.test(navigator.userAgent || "");
+    this._isMac =
+      /mac/i.test(navigator.platform || "") ||
+      /mac/i.test(navigator.userAgent || "");
+
+    // Zoom state
+    this._zoom = 1;
+    this._panX = 0;
+    this._panY = 0;
+    this._baseW = 0;
+    this._baseH = 0;
+
+    // Premium effects state
+    this._cursorX = 0;
+    this._cursorY = 0;
+    this._sweepX = 0;
+    this._sweepY = 0;
+    this._specOverlay = null;
+    this._sweepOverlay = null;
+    this._entered = false;
+    this._bloomActive = false;
+    this._rippleTime = 0;
+    this._mouseInside = false;
+
+    // Micro‑Scatter → Reassemble animation
+    this._scatterAmt = 0; // 0..1, 0=assembled, 1=fully scattered
+    this._scatterTarget = 0;
+    this._scatterAnimId = null;
+    this._scatterEaseStart = 0;
+
+    this._init();
+    this._initPremiumEffects();
+  }
+
+  _init() {
+    // Canvas
+    this.canvas = document.createElement("canvas");
+    this.canvas.style.width = "100%";
+    this.canvas.style.height = "100%";
+    this.canvas.style.display = "block";
+    this.canvas.style.position = "relative";
+    this.canvas.style.zIndex = "1";
+    this.container.appendChild(this.canvas);
+    this.ctx = this.canvas.getContext("2d");
+
+    // Tooltip
+    this.tooltipEl = document.createElement("div");
+    this.tooltipEl.className = "diagram-tooltip";
+    Object.assign(this.tooltipEl.style, {
+      position: "fixed",
+      display: "none",
+      zIndex: 3000,
+      background: "#1f1f1f",
+      border: "1px solid #444",
+      borderRadius: "4px",
+      padding: "4px 10px",
+      fontSize: "12px",
+      color: "#e6edf3",
+      pointerEvents: "none",
+      maxWidth: "500px",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+      fontFamily: "monospace",
+    });
+    document.body.appendChild(this.tooltipEl);
+
+    // Context menu
+    this.contextMenu = document.createElement("div");
+    Object.assign(this.contextMenu.style, {
+      position: "fixed",
+      display: "none",
+      zIndex: 3001,
+      background: "#161b22",
+      border: "1px solid #30363d",
+      borderRadius: "6px",
+      padding: "4px 0",
+      minWidth: "200px",
+      maxHeight: "70vh",
+      overflowY: "auto",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    });
+    const explorerLabel = this._isMac ? "Open in Finder" : this._isLinux ? "Open in File Manager" : "Open in Explorer";
+    this.contextMenu.innerHTML =
+      '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
+      '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
+      '<div class="diag-ctx-item" data-action="tree">\u{1F332} Jump in Tree</div>' +
+      '<div class="diag-ctx-sep"></div>' +
+      '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
+      '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
+      '<div class="diag-ctx-sep"></div>' +
+      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (window.__ ? window.__("action.move_to_trash") : "Move to Trash") + '</div>';
+    document.body.appendChild(this.contextMenu);
+
+    // Context menu styles
+    const style = document.createElement("style");
+    style.textContent =
+      ".diag-ctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
+      ".diag-ctx-item:hover{background:#30363d;}" +
+      ".diag-ctx-sep{height:1px;background:#30363d;margin:4px 8px;}" +
+      ".diag-ctx-del{color:#f85149;}";
+    document.head.appendChild(style);
+
+    // Events
+    this.canvas.addEventListener("mousemove", (e) => this._onMouseMove(e));
+    this.canvas.addEventListener("mouseenter", () => { this._mouseInside = true; });
+    this.canvas.addEventListener("mouseleave", () => {
+      this._mouseInside = false;
+      this._hideTooltip();
+      this._updateOverlays(-9999, -9999);
+    });
+    this.canvas.addEventListener("click", (e) => this._onClick(e));
+    this.canvas.addEventListener("contextmenu", (e) => this._onContextMenu(e));
+    document.addEventListener("click", (e) => {
+      if (
+        this.contextMenu &&
+        !this.contextMenu.contains(e.target) &&
+        e.target !== this.canvas
+      ) {
+        this.contextMenu.style.display = "none";
+      }
+    });
+    this.contextMenu.addEventListener("click", (e) =>
+      this._onContextMenuAction(e),
+    );
+
+    // Mouse wheel zoom
+    this.canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.05, Math.min(10, this._zoom * delta));
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const scale = newZoom / this._zoom;
+      this._panX = mx - scale * (mx - this._panX);
+      this._panY = my - scale * (my - this._panY);
+      this._zoom = newZoom;
+      this._userZoom = true;
+      this._updateZoomUI();
+      this._draw();
+    }, { passive: false });
+
+    this._resize();
+    window.addEventListener("resize", () => this._resize());
+  }
+
+  // ── Premium overlay layers (GPU-accelerated, no canvas repaints) ──
+
+  _initPremiumEffects() {
+    // Specular highlight overlay — radial gradient following cursor
+    this._specOverlay = document.createElement("div");
+    this._specOverlay.style.cssText =
+      "position:absolute;top:0;left:0;width:100%;height:100%;" +
+      "pointer-events:none;z-index:2;" +
+      "background:radial-gradient(circle 60px at 0 0, rgba(255,255,255,0.04) 0%, transparent 70%);" +
+      "opacity:0;transition:opacity 0.3s ease;";
+    this.container.appendChild(this._specOverlay);
+
+    // Satin surface sweep overlay — linear gradient that follows cursor with delay
+    this._sweepOverlay = document.createElement("div");
+    this._sweepOverlay.style.cssText =
+      "position:absolute;top:0;left:0;width:100%;height:100%;" +
+      "pointer-events:none;z-index:2;" +
+      "background:linear-gradient(135deg, transparent 35%, rgba(255,255,255,0.03) 45%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0.03) 55%, transparent 65%);" +
+      "background-size:200% 200%;" +
+      "opacity:0;transition:opacity 0.4s ease;";
+    this.container.appendChild(this._sweepOverlay);
+
+    // Apply GPU-accelerated entrance animation to canvas
+    this.canvas.style.transition =
+      "transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), filter 0.12s ease-out, box-shadow 0.2s ease";
+    this.canvas.style.transform = "scale(0.95) rotate(-3deg)";
+    this.canvas.style.opacity = "0";
+    this.canvas.style.willChange = "transform, opacity, filter";
+  }
+
+  _updateOverlays(cx, cy) {
+    if (!this._specOverlay || !this._sweepOverlay) return;
+    const rect = this.container.getBoundingClientRect();
+    const rx = cx - rect.left;
+    const ry = cy - rect.top;
+
+    // Specular: radial gradient follows cursor
+    this._specOverlay.style.background =
+      "radial-gradient(circle 80px at " + rx + "px " + ry + "px, rgba(255,255,255,0.035) 0%, transparent 70%)";
+    this._specOverlay.style.opacity = this._mouseInside ? "1" : "0";
+
+    // Satin sweep: linear gradient position follows cursor with smooth tracking
+    const pctX = (rx / rect.width) * 100;
+    const pctY = (ry / rect.height) * 100;
+    this._sweepOverlay.style.backgroundPosition = pctX + "% " + pctY + "%";
+    this._sweepOverlay.style.opacity = this._mouseInside ? "1" : "0";
+  }
+
+  // ── Entrance animation ──────────────────────────────
+
+  _playEntrance() {
+    if (this._entered) return;
+    this._entered = true;
+    // Start from micro-rotated, slightly scaled down state
+    this.canvas.style.transform = "scale(0.95) rotate(-3deg)";
+    this.canvas.style.opacity = "0";
+    this.canvas.style.filter = "brightness(0.9)";
+    // Force layout
+    void this.canvas.offsetWidth;
+    // Animate to final state with micro-rotation noise
+    const jitter = (Math.random() - 0.5) * 0.4; // ±0.2°
+    this.canvas.style.transform = "scale(1) rotate(" + jitter + "deg)";
+    this.canvas.style.opacity = "1";
+    this.canvas.style.filter = "brightness(1)";
+    // Remove jitter after entrance settles
+    setTimeout(() => {
+      this.canvas.style.transform = "scale(1) rotate(0deg)";
+    }, 120);
+  }
+
+  // ── Scan completion bloom ───────────────────────────
+
+  _playBloom() {
+    if (this._bloomActive) return;
+    this._bloomActive = true;
+    this.canvas.style.filter = "brightness(1.05) saturate(1.1)";
+    this.canvas.style.transition = "filter 0.12s ease-out";
+    setTimeout(() => {
+      this.canvas.style.filter = "brightness(1) saturate(1)";
+      this._bloomActive = false;
+    }, 120);
+    // Also trigger center ripple
+    this._rippleTime = Date.now();
+  }
+
+  // ── Scatter snap (instant, no animation loop to avoid flicker) ──
+
+  _startScatter(target) {
+    this._scatterAmt = target;
+    this._draw();
+  }
+
+  // ── Spring easing for numbers ───────────────────────
+
+  _springEasing(t) {
+    // Physically-based: overshoots 1-2% then settles
+    const c = 0.3; // stiffness
+    const k = 0.7; // damping
+    return 1 - Math.exp(-k * t) * Math.cos(c * t * Math.PI * 2);
+  }
+
+  _animateValue(from, to, duration, callback) {
+    const start = performance.now();
+    const ease = (t) => {
+      // Custom momentum curve: fast start, smooth end
+      return t < 0.5
+        ? 4 * t * t * t
+        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    };
+    const step = (now) => {
+      let t = (now - start) / duration;
+      if (t > 1) t = 1;
+      const v = from + (to - from) * ease(t);
+      callback(Math.round(v));
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  // ── Zoom API ─────────────────────────────────────────
+
+  setZoom(level) {
+    if (level === "fit") {
+      this._userZoom = false;
+      this._fitToView();
+      return;
+    }
+    this._zoom = Math.max(0.05, Math.min(10, Number(level) || 1));
+    this._panX = 0;
+    this._panY = 0;
+    this._userZoom = true;
+    this._updateZoomUI();
+    this._draw();
+  }
+
+  getZoom() { return this._zoom; }
+
+  _fitToView() {
+    if (!this.canvas || !this.data || this.files.length === 0) {
+      this._zoom = 1;
+      this._panX = 0;
+      this._panY = 0;
+      this._updateZoomUI();
+      this._draw();
+      return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const viewW = this.canvas.width / dpr;
+    const viewH = this.canvas.height / dpr;
+
+    let contentW, contentH;
+    if (this.mode === "pie") {
+      const margin = 6;
+      const legendW = Math.min(120, this._baseW * 0.18 || 120);
+      const pieArea = (this._baseW || viewW) - legendW - margin * 3;
+      contentW = pieArea + legendW + margin * 3;
+      contentH = (this._baseH || viewH || 200);
+    } else if (this.mode === "bar") {
+      contentW = this._baseW || viewW || 1200;
+      contentH = Math.max(this.files.length * 14 + 40, this._baseH || viewH || 400);
+    } else {
+      contentW = this._baseW || viewW;
+      contentH = this._baseH || viewH || 200;
+    }
+
+    if (contentW <= 0 || contentH <= 0) {
+      this._zoom = 1;
+      this._panX = 0;
+      this._panY = 0;
+      this._updateZoomUI();
+      this._draw();
+      return;
+    }
+
+    const scaleX = viewW / (contentW + 20);
+    const scaleY = viewH / (contentH + 20);
+    // Bar mode fills full width; pie/treemap keep slight padding
+    const padFactor = this.mode === "bar" ? 1.0 : 0.92;
+    this._zoom = Math.min(scaleX, scaleY) * padFactor;
+    // Center with extra padding for legend text
+    this._panX = (viewW - contentW * this._zoom) / 2;
+    this._panY = (viewH - contentH * this._zoom) / 2;
+    this._fitPanX = this._panX;
+    this._fitPanY = this._panY;
+    this._updateZoomUI();
+    this._draw();
+  }
+
+  onZoomChanged(zoom) {}
+
+  _updateZoomUI() {
+    if (this.onZoomChanged) this.onZoomChanged(this._zoom);
+  }
+
+  _resize() {
+    if (!this.canvas || !this.container) return;
+    const rect = this.container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = rect.width * dpr;
+    this.canvas.height = rect.height * dpr;
+    this.canvas.style.width = rect.width + "px";
+    this.canvas.style.height = rect.height + "px";
+    this._baseW = rect.width;
+    this._baseH = rect.height;
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!this._userZoom) {
+      this._fitToView();
+    } else {
+      this._draw();
+    }
+  }
+
+  setMode(mode) {
+    if (["pie","treemap","bar"].indexOf(mode) < 0) return;
+    this.mode = mode;
+    this._entered = false;
+    this._userZoom = false;
+    this._resize();
+  }
+
+  setData(data) {
+    this.data = data;
+    const raw = (data && data.top_files) || [];
+    this.files = raw.slice(0, 50).map((f, i) => ({
+      path: f.path || "?",
+      size: f.size || 0,
+      size_human: f.size_human || this._formatSize(f.size || 0),
+      index: i,
+    }));
+    this.files.sort((a, b) => b.size - a.size);
+    this._entered = false;
+    this._userZoom = false;
+    // Delay resize+fit so container has final layout dimensions
+    requestAnimationFrame(() => {
+      this._resize();
+      requestAnimationFrame(() => this._resize());
+    });
+    // Play entrance and bloom for new data
+    setTimeout(() => this._playEntrance(), 100);
+    setTimeout(() => this._playBloom(), 600);
+  }
+
+  _draw() {
+    if (!this.ctx || !this.canvas || !this.data) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
+
+    this.ctx.clearRect(0, 0, w, h);
+    this.hitRegions = [];
+
+    if (this.files.length === 0) {
+      this.ctx.fillStyle = "#484f58";
+      this.ctx.font = "14px sans-serif";
+      this.ctx.textAlign = "center";
+      this.ctx.fillText("No file data. Run a scan first.", w / 2, h / 2);
+      return;
+    }
+
+    this.ctx.save();
+    this.ctx.translate(this._panX, this._panY);
+    this.ctx.scale(this._zoom, this._zoom);
+
+    if (this.mode === "pie") {
+      this._drawPie(this._baseW, this._baseH);
+    } else if (this.mode === "bar") {
+      this._drawBars(this._baseW, this._baseH);
+    } else {
+      this._drawTreemap(this._baseW, this._baseH);
+    }
+
+    this.ctx.restore();
+  }
+
+  // ── Pie Chart with Premium Effects ──────────────────
+  _drawPie(w, h) {
+    const ctx = this.ctx;
+    const margin = 6;
+    const legendW = Math.min(120, w * 0.18);
+    const pieArea = w - legendW - margin * 3;
+    const cx = margin + pieArea / 2;
+    const cy = h / 2;
+    const radius = Math.min(pieArea / 2, cy) - 4;
+    const totalSize = this.files.reduce((s, f) => s + f.size, 1);
+    const colors = this._colors();
+
+    // ── Micro‑Scatter → Reassemble ───────────────────────
+    // All slices shift slightly on hover, adjacent slices react.
+    const scatterStrength = this._scatterAmt || 0; // 0..1
+
+    let startAngle = -Math.PI / 2;
+    const maxLabels = Math.min(this.files.length, 8);
+    const usedLabelBoxes = [];
+    const sliceAngles = [];
+
+    // First pass: collect all slice angles
+    this.files.forEach((file, i) => {
+      const sliceAngle = (file.size / totalSize) * Math.PI * 2;
+      sliceAngles.push(sliceAngle);
+    });
+
+    // Draw slices with premium effects
+    this.files.forEach((file, i) => {
+      const sliceAngle = sliceAngles[i];
+      const color = colors[i % colors.length];
+      const isHov = i === this._hoveredIndex;
+      const isSel = i === this._selectedIndex;
+
+      // Radius: slight pressure scale on hover
+      const r = radius * (isHov && this._mouseInside ? 0.985 : 1);
+
+      // Micro‑Scatter offset: each slice moves radially by a weighted amount
+      const midAngle = startAngle + sliceAngle / 2;
+      const selOffset = isSel ? 8 : 0;
+      // Scatter weight: hovered=1, adjacent=0.3, rest=0.05
+      // Only the hovered slice pulls out radially, nothing else moves
+      const scatterDist = isHov ? 14 * scatterStrength : 0;
+      const sliceCx = cx + Math.cos(midAngle) * (scatterDist + (isSel ? 8 : 0));
+      const sliceCy = cy + Math.sin(midAngle) * (scatterDist + (isSel ? 8 : 0));
+
+      // Draw slice
+      ctx.beginPath();
+      ctx.moveTo(sliceCx, sliceCy);
+      ctx.arc(sliceCx, sliceCy, r, startAngle, startAngle + sliceAngle);
+      ctx.closePath();
+
+      // Solarize hover: use completely different highlight color
+      let sliceColor = (isHov || isSel) ? this._highlightColor() : color;
+      if (isSel && !isHov) {
+        sliceColor = this._blendColors(color, this._highlightColor(), 0.5);
+      }
+
+      // Specular-inspired coloring
+      const grad = ctx.createRadialGradient(sliceCx, sliceCy, 0, sliceCx, sliceCy, r);
+      grad.addColorStop(0, this._lightenColor(sliceColor, isHov ? 20 : 5));
+      grad.addColorStop(0.7, sliceColor);
+      grad.addColorStop(1, this._darkenColor(sliceColor, 10));
+      ctx.fillStyle = grad;
+
+      // Shadow for depth - use highlight color glow for hovered
+      if (isHov || isSel) {
+        const glowColor = isHov ? "rgba(255,215,0,0.5)" : "rgba(88,166,255,0.25)";
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = isHov ? 24 : 12;
+      } else {
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+      }
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Selection outline
+      if (isSel) {
+        ctx.strokeStyle = "rgba(255,215,0,0.7)";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+
+      // Hover glow outline
+      if (isHov && this._mouseInside) {
+        ctx.strokeStyle = "rgba(255,215,0,0.4)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // Magnetic effect: adjacent slices shift slightly
+      if (this._mouseInside && this._hoveredIndex >= 0 && !isHov) {
+        const dist = Math.abs(i - this._hoveredIndex);
+        if (dist === 1) {
+          // Adjacent slices shift 0.5-1px away
+          const adjOffset = 0.8;
+          const adjCx = cx + Math.cos(midAngle) * adjOffset;
+          const adjCy = cy + Math.sin(midAngle) * adjOffset;
+          // Re-draw small background circle for magnetic feel (no real impact)
+        }
+      }
+
+      this.hitRegions.push({
+        index: i,
+        path: file.path,
+        size: file.size,
+        size_human: file.size_human,
+        type: "pie",
+        cx: sliceCx,
+        cy: sliceCy,
+        startAngle,
+        endAngle: startAngle + sliceAngle,
+        radius: r,
+      });
+
+      // Labels with smooth fade-style rendering
+      if (sliceAngle > 0.2 && i < maxLabels) {
+        const mid = startAngle + sliceAngle / 2;
+        const lx = sliceCx + Math.cos(mid) * (r * 0.65);
+        const ly = sliceCy + Math.sin(mid) * (r * 0.65);
+        const name = this._shortName(file.path);
+        const drawName = this._ellipsize(name, 16);
+        const tw = ctx.measureText(drawName).width;
+        const th = 11;
+        const box = { x: lx - tw / 2 - 2, y: ly - th / 2, w: tw + 4, h: th };
+        const overlaps = usedLabelBoxes.some((b) =>
+          box.x < b.x + b.w && box.x + box.w > b.x && box.y < b.y + b.h && box.y + box.h > b.y,
+        );
+        if (!overlaps) {
+          usedLabelBoxes.push(box);
+          ctx.fillStyle = "rgba(255,255,255,0.9)";
+          ctx.font = "bold 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(drawName, lx, ly);
+        }
+      }
+      startAngle += sliceAngle;
+    });
+
+    // ── Center ripple effect ──────────────────────────
+    const rippleElapsed = Date.now() - this._rippleTime;
+    if (rippleElapsed < 240 && this._mouseInside) {
+      const rippleProgress = rippleElapsed / 240;
+      const rippleRadius = radius * 0.3 * rippleProgress;
+      const rippleAlpha = 0.06 * (1 - rippleProgress);
+      ctx.beginPath();
+      ctx.arc(cx, cy, rippleRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255," + rippleAlpha + ")";
+      ctx.fill();
+    }
+
+    // Legend
+    const lx = w - legendW - margin;
+    let ly = 16;
+    ctx.font = "10px sans-serif";
+    ctx.textBaseline = "top";
+    const maxLeg = Math.min(this.files.length, 18);
+    for (let i = 0; i < maxLeg; i++) {
+      const f = this.files[i];
+      const name = this._ellipsize(this._shortName(f.path), 18);
+      const pct = ((f.size / totalSize) * 100).toFixed(1);
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillRect(lx, ly, 8, 8);
+      ctx.fillStyle = "#e6edf3";
+      ctx.textAlign = "left";
+      ctx.fillText(name + " " + pct + "%", lx + 12, ly);
+      ly += 15;
+    }
+    if (this.files.length > 18) {
+      ctx.fillStyle = "#8b949e";
+      ctx.textAlign = "left";
+      ctx.fillText("+" + (this.files.length - 18) + " more", lx + 12, ly);
+    }
+
+    // Center label
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Top " + this.files.length, cx, cy - 8);
+    ctx.fillStyle = "#e6edf3";
+    ctx.font = "bold 13px sans-serif";
+    ctx.fillText(this._formatSize(totalSize), cx, cy + 10);
+  }
+
+  // ── Treemap: Squarified Algorithm ───────────────────
+  _drawTreemap(w, h) {
+    const ctx = this.ctx;
+    const totalSize = this.files.reduce((s, f) => s + f.size, 1);
+    const colors = this._colors();
+    const titleH = 18;
+    const margin = 4;
+    const availW = w - margin * 2;
+    const availH = h - margin * 2 - titleH;
+
+    if (this.files.length === 0 || availW < 20 || availH < 20) {
+      ctx.fillStyle = "#484f58";
+      ctx.font = "14px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("No data", w / 2, h / 2);
+      return;
+    }
+
+    const totalArea = availW * availH;
+    const items = this.files.map((f, i) => ({
+      index: i, path: f.path, size: f.size,
+      size_human: f.size_human,
+      area: Math.max(totalArea * 0.001, (f.size / totalSize) * totalArea),
+    }));
+    const areaSum = items.reduce((s, it) => s + it.area, 0);
+    items.forEach((it) => { it.area = (it.area / areaSum) * totalArea; });
+
+    const rects = [];
+    const stack = [{ x: margin, y: margin, w: availW, h: availH, items }];
+
+    while (stack.length > 0) {
+      const cell = stack.pop();
+      if (cell.items.length === 0) continue;
+      if (cell.items.length === 1) {
+        rects.push({
+          index: cell.items[0].index, x: cell.x, y: cell.y,
+          w: cell.w, h: cell.h, path: cell.items[0].path,
+          size: cell.items[0].size, size_human: cell.items[0].size_human,
+        });
+        continue;
+      }
+      const horizontal = cell.w >= cell.h;
+      const total = cell.items.reduce((s, it) => s + it.area, 0);
+      let splitIdx = 1, bestScore = Infinity, cumSum = 0;
+      const halfTotal = total / 2;
+      for (let i = 0; i < cell.items.length - 1; i++) {
+        cumSum += cell.items[i].area;
+        const ratio = cumSum / total;
+        const firstSize = horizontal ? cell.w : cell.h;
+        const secondSize = horizontal ? cell.w : cell.h;
+        const firstDim = ratio * firstSize;
+        const secondDim = (1 - ratio) * secondSize;
+        const otherDim = horizontal ? cell.h : cell.w;
+        const ar1 = horizontal ? firstDim / otherDim : otherDim / firstDim;
+        const ar2 = horizontal ? secondDim / otherDim : otherDim / secondDim;
+        const score = Math.max(ar1, ar2) + Math.abs(ratio - 0.5) * 2;
+        if (score < bestScore) { bestScore = score; splitIdx = i + 1; }
+      }
+      const leftItems = cell.items.slice(0, splitIdx);
+      const rightItems = cell.items.slice(splitIdx);
+      const leftArea = leftItems.reduce((s, it) => s + it.area, 0);
+      const ratio = leftArea / total;
+      if (horizontal) {
+        const leftW = Math.max(10, ratio * cell.w);
+        const rightW = Math.max(10, cell.w - leftW);
+        stack.push({ x: cell.x, y: cell.y, w: leftW, h: cell.h, items: leftItems });
+        stack.push({ x: cell.x + leftW, y: cell.y, w: rightW, h: cell.h, items: rightItems });
+      } else {
+        const topH = Math.max(10, ratio * cell.h);
+        const bottomH = Math.max(10, cell.h - topH);
+        stack.push({ x: cell.x, y: cell.y, w: cell.w, h: topH, items: leftItems });
+        stack.push({ x: cell.x, y: cell.y + topH, w: cell.w, h: bottomH, items: rightItems });
+      }
+    }
+
+    const gap = 1;
+    // Center for ripple
+    const centerX = w / 2, centerY = h / 2;
+
+    // ── Draw with Micro‑Scatter effect ──
+    for (const r of rects) {
+      const isHov = r.index === this._hoveredIndex;
+      const color = colors[r.index % colors.length];
+      let rx = r.x + gap, ry = r.y + gap;
+      let rw = Math.max(2, r.w - gap * 2), rh = Math.max(2, r.h - gap * 2);
+
+      // Micro‑Scatter offset: hovered moves toward center, adjacent shift too
+      const scatterStrength = this._scatterAmt || 0;
+      // Only the hovered rectangle pulls out toward center, nothing else moves
+      if (isHov) {
+        const rectCx = rx + rw / 2;
+        const rectCy = ry + rh / 2;
+        const dx = centerX - rectCx;
+        const dy = centerY - rectCy;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const pull = 8 * scatterStrength;
+        rx += (dx / dist) * pull;
+        ry += (dy / dist) * pull;
+      }
+
+      // Selective glow for selected item
+      const isSel = r.index === this._selectedIndex;
+
+      // Premium gradient: solarize hover/select with highlight color
+      let treemapColor = (isHov || isSel) ? this._highlightColor() : color;
+      if (isSel && !isHov) {
+        treemapColor = this._blendColors(color, this._highlightColor(), 0.5);
+      }
+      const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, Math.max(rw, rh) * 0.8);
+      grad.addColorStop(0, this._lightenColor(treemapColor, isHov ? 18 : 8));
+      grad.addColorStop(0.6, treemapColor);
+      grad.addColorStop(1, this._darkenColor(treemapColor, 12));
+      ctx.fillStyle = grad;
+
+      // Shadow for depth - golden glow on hover/select
+      if (isHov || isSel) {
+        ctx.shadowColor = isHov ? "rgba(255,215,0,0.5)" : "rgba(255,215,0,0.25)";
+        ctx.shadowBlur = isHov ? 24 : 12;
+      } else {
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+      }
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.shadowBlur = 0;
+
+      // Selection outline - golden
+      if (isSel) {
+        ctx.strokeStyle = "rgba(255,215,0,0.7)";
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(rx, ry, rw, rh);
+      }
+
+      // Hover glow outline - golden
+      if (isHov && this._mouseInside) {
+        ctx.strokeStyle = "rgba(255,215,0,0.4)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rx, ry, rw, rh);
+      }
+
+      this.hitRegions.push({
+        index: r.index, path: r.path, size: r.size,
+        size_human: r.size_human, type: "treemap",
+        x: rx, y: ry, w: rw, h: rh,
+      });
+
+      // Labels with fade-style rendering
+      if (rw > 44 && rh > 16) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rx + 1, ry + 1, rw - 2, rh - 2);
+        ctx.clip();
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        ctx.font = "bold 9px sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        const maxNameChars = Math.max(6, Math.floor((rw - 8) / 5.5));
+        const name = this._ellipsize(this._shortName(r.path), maxNameChars);
+        ctx.fillText(name, rx + 3, ry + 3);
+
+        if (rh > 28 && rw > 70) {
+          ctx.fillStyle = "rgba(255,255,255,0.7)";
+          ctx.font = "8px sans-serif";
+          ctx.fillText(r.size_human, rx + 3, ry + 14);
+        }
+        ctx.restore();
+      }
+    }
+
+    // ── Center ripple effect (adapted for treemap) ──
+    const rippleElapsed = Date.now() - this._rippleTime;
+    if (rippleElapsed < 240 && this._mouseInside) {
+      const rippleProgress = rippleElapsed / 240;
+      const rippleRadius = Math.min(w, h) * 0.2 * rippleProgress;
+      const rippleAlpha = 0.04 * (1 - rippleProgress);
+      // Soft square-ish ripple
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY, rippleRadius * 1.2, rippleRadius * 0.8, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255," + rippleAlpha + ")";
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText("Top " + this.files.length + " Files by Size", w / 2, h - 2);
+  }
+
+  // ── Bar Chart: Top 100 Files as % Bars ──────────────────
+  _drawBars(w, h) {
+    const ctx = this.ctx;
+    const colors = this._colors();
+    const totalSize = this.files.reduce((s, f) => s + f.size, 1);
+    const maxBars = Math.min(this.files.length, 100);
+    if (maxBars === 0) return;
+
+    // Use full width — labels overlaid on bars
+    const padding = 8;
+    const barMaxW = w - padding * 2;
+    const barArea = h - 24;
+    const barH = Math.max(6, Math.min(14, Math.floor(barArea / maxBars)));
+    const gap = Math.max(1, Math.floor(barH * 0.25));
+    const totalH = maxBars * (barH + gap);
+    const startY = Math.max(4, Math.floor((barArea - totalH) / 2));
+    const hlColor = this._highlightColor();
+
+    for (let i = 0; i < maxBars; i++) {
+      const file = this.files[i];
+      const pct = file.size / totalSize;
+      const barW = Math.max(2, Math.round(barMaxW * pct));
+      const y = startY + i * (barH + gap);
+      const color = colors[i % colors.length];
+      const isHov = i === this._hoveredIndex;
+      const isSel = i === this._selectedIndex;
+
+      // Background track (subtle)
+      ctx.fillStyle = "rgba(128,128,128,0.1)";
+      ctx.beginPath();
+      this._roundRect(ctx, padding, y, barMaxW, barH, 2);
+      ctx.fill();
+
+      // Bar fill
+      const fillColor = (isHov || isSel) ? hlColor : color;
+      ctx.fillStyle = fillColor;
+      ctx.beginPath();
+      this._roundRect(ctx, padding, y, barW, barH, 2);
+      ctx.fill();
+
+      // Glow on hover/select
+      if (isHov || isSel) {
+        ctx.shadowColor = "rgba(255,215,0,0.3)";
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        this._roundRect(ctx, padding, y, barW, barH, 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      // Label — overlay on bar or to the right if bar is short
+      const shortName = this._shortName(file.path);
+      const pctStr = (pct * 100).toFixed(1) + "%";
+      const label = this._ellipsize(shortName, 28) + "  " + pctStr;
+      const labelX = padding + Math.min(barW + 6, barMaxW - ctx.measureText(label).width - 8);
+      ctx.fillStyle = isHov ? "#ffd700" : "#e6edf3";
+      ctx.font = (barH > 10 ? "9px bold" : "7px bold") + " sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = 2;
+      ctx.fillText(label, Math.max(padding + 4, labelX), y + barH / 2);
+      ctx.shadowBlur = 0;
+
+      // Hit region
+      this.hitRegions.push({
+        index: i,
+        path: file.path,
+        size: file.size,
+        size_human: file.size_human,
+        type: "bar",
+        x: 4, y: y, w: barMaxW, h: barH,
+      });
+    }
+  }
+
+  _roundRect(ctx, x, y, w, h, r) {
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // ── Hit Testing ────────────────────────────────────
+  _hitTest(mx, my) {
+    const mxT = (mx - this._panX) / this._zoom;
+    const myT = (my - this._panY) / this._zoom;
+
+    for (let i = this.hitRegions.length - 1; i >= 0; i--) {
+      const r = this.hitRegions[i];
+      if (r.type === "pie") {
+        const dx = mxT - r.cx, dy = myT - r.cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > r.radius) continue;
+        let angle = Math.atan2(dy, dx);
+        if (angle < 0) angle += Math.PI * 2;
+        let sa = r.startAngle, ea = r.endAngle;
+        if (sa < 0) sa += Math.PI * 2;
+        if (ea < 0) ea += Math.PI * 2;
+        if (angle >= sa && angle <= ea) return r;
+        if (ea < sa && (angle >= sa || angle <= ea)) return r;
+      } else if (r.type === "treemap" || r.type === "bar") {
+        if (mxT >= r.x && mxT <= r.x + r.w && myT >= r.y && myT <= r.y + r.h) return r;
+      }
+    }
+    return null;
+  }
+
+  _onMouseMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    this._cursorX = e.clientX;
+    this._cursorY = e.clientY;
+    this._updateOverlays(e.clientX, e.clientY);
+
+    const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit) {
+      // Only redraw when hovered index actually changes — avoids flicker
+      const indexChanged = this._hoveredIndex !== hit.index;
+      if (indexChanged) {
+        this._hoveredIndex = hit.index;
+        // Scatter the hovered slice (instant snap, no animation loop)
+        this._startScatter(1);
+      }
+      this.canvas.style.cursor = "pointer";
+      this.tooltipEl.textContent = hit.path + "  [" + hit.size_human + "]";
+      this.tooltipEl.style.display = "block";
+      this.tooltipEl.style.left = e.clientX + 12 + "px";
+      this.tooltipEl.style.top = e.clientY - 10 + "px";
+    } else {
+      this._hideTooltip();
+    }
+  }
+
+  _hideTooltip() {
+    if (this._hoveredIndex !== -1) {
+      this._hoveredIndex = -1;
+      // Micro‑Reassemble: animate back to assembled state
+      this._startScatter(0);
+    }
+    this.tooltipEl.style.display = "none";
+    this.canvas.style.cursor = "default";
+    // Reset soft pressure
+    this.canvas.style.transform = "scale(1)";
+    this.canvas.style.boxShadow = "none";
+  }
+
+  _onClick(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    this.contextMenu.style.display = "none";
+    if (hit) {
+      this._selectedIndex = hit.index;
+      this._draw();
+      // Directly jump to tree on click
+      window.dispatchEvent(new CustomEvent("diagram-jump-to-path", { detail: { path: hit.path } }));
+    } else {
+      this._selectedIndex = -1;
+      this._draw();
+    }
+  }
+
+  _onContextMenu(e) {
+    e.preventDefault();
+    const rect = this.canvas.getBoundingClientRect();
+    const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit) {
+      this._selectedIndex = hit.index;
+      this._draw();
+      this._showContextMenu(e.clientX, e.clientY, hit);
+    } else {
+      this._selectedIndex = -1;
+      this._draw();
+      this.contextMenu.style.display = "none";
+    }
+  }
+
+  _showContextMenu(x, y, hit) {
+    this.contextMenu.style.display = "block";
+    const rect = this.contextMenu.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const mw = rect.width;
+    const mh = rect.height;
+
+    let left = x;
+    if (left + mw > vw - 8) left = vw - mw - 8;
+
+    let top;
+    if (y + mh + 8 <= vh) {
+      top = y;
+    } else {
+      top = y - mh - 8;
+      if (top < 0) top = Math.max(0, vh - mh - 8);
+    }
+
+    this.contextMenu.style.left = Math.max(0, left) + "px";
+    this.contextMenu.style.top = Math.max(0, top) + "px";
+    this.contextMenu.style.maxHeight = Math.min(70 * vh / 100, vh - top - 8) + "px";
+    this._contextHit = hit;
+  }
+
+  _onContextMenuAction(e) {
+    const item = e.target.closest(".diag-ctx-item");
+    if (!item) return;
+    const action = item.dataset.action;
+    const filePath = this._contextHit ? this._contextHit.path : "";
+    const sb = document.getElementById("tree-status") || document.querySelector(".status-bar");
+
+    switch (action) {
+      case "explorer":
+        this._invoke("open_explorer", { path: filePath }).catch(() => {});
+        if (sb) sb.textContent = (window.__ || function(s){return s;})("status.opened").replace("{path}", filePath);
+        break;
+      case "terminal":
+        this._invoke("open_terminal", { path: filePath }).catch(() => {});
+        if (sb) sb.textContent = (window.__ || function(s){return s;})("status.opened").replace("{path}", filePath);
+        break;
+      case "tree":
+        window.dispatchEvent(new CustomEvent("diagram-jump-to-path", { detail: { path: filePath } }));
+        break;
+      case "properties":
+        this._invoke("open_properties", { path: filePath }).catch(() => {});
+        break;
+      case "copy":
+        navigator.clipboard.writeText(filePath).then(() => {
+          if (sb) sb.textContent = (window.__ || function(s){return s;})("status.copied").replace("{path}", filePath);
+        });
+        break;
+      case "delete":
+        if (!filePath) break;
+        const t = window.__ || function(s){return s;};
+        if (!confirm(t("confirm.move_trash_file") + filePath)) break;
+        this._invoke("delete_path", { path: filePath }).then((ok) => {
+          if (ok && ok.success !== false) {
+            this.files = this.files.filter((f) => f.path !== filePath);
+            this._draw();
+            if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
+          }
+        });
+        break;
+    }
+    this.contextMenu.style.display = "none";
+  }
+
+  _invoke(cmd, args) {
+    if (window.__TAURI__ && window.__TAURI__.invoke)
+      return window.__TAURI__.invoke(cmd, args);
+    return Promise.reject(new Error("No invoke"));
+  }
+
+  _shortName(p) {
+    return p.split("\\").pop() || p.split("/").pop() || p;
+  }
+
+  _ellipsize(text, maxChars) {
+    if (!text) return "";
+    if (text.length <= maxChars) return text;
+    if (maxChars <= 1) return text.substring(0, 1);
+    return text.substring(0, Math.max(1, maxChars - 1)) + "\u2026";
+  }
+
+  _lightenColor(hex, percent) {
+    const num = parseInt(hex.replace("#", ""), 16);
+    const r = Math.min(255, (num >> 16) + Math.round(2.55 * percent));
+    const g = Math.min(255, ((num >> 8) & 0xFF) + Math.round(2.55 * percent));
+    const b = Math.min(255, (num & 0xFF) + Math.round(2.55 * percent));
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+
+  _darkenColor(hex, percent) {
+    const num = parseInt(hex.replace("#", ""), 16);
+    const r = Math.max(0, (num >> 16) - Math.round(2.55 * percent));
+    const g = Math.max(0, ((num >> 8) & 0xFF) - Math.round(2.55 * percent));
+    const b = Math.max(0, (num & 0xFF) - Math.round(2.55 * percent));
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+
+  _colors() {
+    const theme = this._theme || "default";
+    const palettes = {
+      "default": [
+        "#58a6ff", "#3fb950", "#d29922", "#f85149", "#bc8cff",
+        "#79c0ff", "#56d364", "#e3b341", "#ff7b72", "#d2a8ff",
+        "#8b949e", "#484f58", "#f0883e", "#7ee787", "#a5d6ff",
+        "#ffa657", "#ff7b72", "#c9d1d9", "#f778ba", "#db6d28",
+      ],
+      "forest": [
+        "#1a3c2a", "#2d6a4f", "#40916c", "#52b788", "#74c69d",
+        "#95d5b2", "#b7e4c7", "#d8f3dc", "#52796f", "#354f52",
+        "#2d6a4f", "#40916c", "#52b788", "#74c69d", "#95d5b2",
+        "#6b705c", "#7f8c6b", "#a5a58d", "#cb997e", "#936639",
+      ],
+      "desert": [
+        "#f4a460", "#e8b87a", "#d4a373", "#c9955e", "#e9c46a",
+        "#f4d06f", "#f8f0e3", "#faedcd", "#e3b341", "#d29922",
+        "#cc8b3c", "#b5835a", "#a67c52", "#8b5e34", "#6b4226",
+        "#f4a261", "#e76f51", "#db6d28", "#c75b22", "#a84a1c",
+      ],
+      "ice": [
+        "#e0f7fa", "#b2ebf2", "#80deea", "#4dd0e1", "#26c6da",
+        "#00bcd4", "#00acc1", "#0097a7", "#00838f", "#006064",
+        "#e0f7fa", "#b2ebf2", "#80deea", "#4dd0e1", "#26c6da",
+        "#84ffff", "#18ffff", "#00e5ff", "#00b8d4", "#0091ea",
+      ],
+      "fairy": [
+        "#fce4ec", "#f8bbd0", "#f48fb1", "#f06292", "#ec407a",
+        "#e91e63", "#d81b60", "#c2185b", "#ad1457", "#880e4f",
+        "#f3e5f5", "#e1bee7", "#ce93d8", "#ba68c8", "#ab47bc",
+        "#9c27b0", "#8e24aa", "#7b1fa2", "#6a1b9a", "#4a148c",
+      ],
+    };
+    const p = palettes[theme] || palettes["default"];
+    const res = [];
+    for (let i = 0; i < 50; i++) res.push(p[i % p.length]);
+    return res;
+  }
+
+  /** Get a bright highlight color for the current theme */
+  _highlightColor() {
+    const theme = this._theme || "default";
+    const highlights = {
+      "default": "#ffd700",
+      "forest": "#f8f9a0",
+      "desert": "#ff6b35",
+      "ice": "#ffffff",
+      "fairy": "#fff0f5",
+    };
+    return highlights[theme] || "#ffd700";
+  }
+
+  setTheme(theme) {
+    if (["default","forest","desert","ice","fairy"].indexOf(theme) < 0) return;
+    this._theme = theme;
+    this._draw();
+  }
+
+  _blendColors(c1, c2, t) {
+    // Blend two hex colors by factor t (0..1)
+    const r1 = parseInt(c1.slice(1,3), 16), g1 = parseInt(c1.slice(3,5), 16), b1 = parseInt(c1.slice(5,7), 16);
+    const r2 = parseInt(c2.slice(1,3), 16), g2 = parseInt(c2.slice(3,5), 16), b2 = parseInt(c2.slice(5,7), 16);
+    const r = Math.round(r1 + (r2 - r1) * t);
+    const g = Math.round(g1 + (g2 - g1) * t);
+    const b = Math.round(b1 + (b2 - b1) * t);
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+
+  _formatSize(bytes) {
+    if (bytes === 0) return "0 B";
+    const u = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const v = bytes / Math.pow(1024, i);
+    return i === 0 ? bytes + " B" : v.toFixed(2) + " " + u[i];
+  }
+}

@@ -1,0 +1,60 @@
+==========================================
+  DiskRaptor Release Upload v1.0.0
+==========================================
+
+  Token: OK (40 chars)
+  Platform: Linux
+
+  Ensuring release v1.0.0 exists...
+    Release exists (ID: 360011161)
+    Upload URL: https://uploads.github.com/repos/SunMe1977/DiskRaptor/releases/360011161/assets
+
+  Cleaning stale assets...
+
+  Measuring upload speed...
+  Upload speed: 4734.9 KB/s
+
+  Uploading artifacts...
+    Uploading: DiskRaptor-1.0.0-amd64.deb (299M) — est. 1m4s at 4848555 B/s
+
+  Waiting for uploads to complete...
+      ✗ Failed: DiskRaptor-1.0.0-amd64.deb — "message":"Validation Failed"
+^C
+hjh@hjh-VMware-Virtual-Platform:~/Github/DiskRaptor$ bash build.sh 
+==========================================
+  DiskRaptor 1.0.0 - linux Build
+==========================================
+
+[1] Checking tools...
+  All tools present
+  Qt6_DIR: /usr/lib/x86_64-linux-gnu/cmake/Qt6
+
+[2] Building...
+  Rust scanner...
+   Compiling diskraptor v1.0.0 (/home/hjh/Github/DiskRaptor/src-tauri)
+    Finished `release` profile [optimized] target(s) in 1.98s
+  Qt app...
+-- Could NOT find Cups (missing: CUPS_LIBRARIES CUPS_INCLUDE_DIR) 
+-- Rust scanner library will be deployed: /home/hjh/Github/DiskRaptor/qt-app/../src-tauri/target/release/libdiskraptor_scanner.so
+-- DiskRaptor 1.0.0 — Qt 6.10.2
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/hjh/Github/DiskRaptor/qt-app/build
+[5/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/commands/system.cpp.o
+FAILED: [code=1] CMakeFiles/DiskRaptor.dir/src/commands/system.cpp.o 
+/usr/bin/c++ -DPLATFORM_LINUX -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_POSITIONING_LIB -DQT_PRINTSUPPORT_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_WEBCHANNEL_LIB -DQT_WEBENGINECORE_LIB -DQT_WEBENGINEWIDGETS_LIB -DQT_WIDGETS_LIB -I/home/hjh/Github/DiskRaptor/qt-app/build/DiskRaptor_autogen/include -I/home/hjh/Github/DiskRaptor/qt-app/src -isystem /usr/include/x86_64-linux-gnu/qt6/QtCore -isystem /usr/include/x86_64-linux-gnu/qt6 -isystem /usr/lib/x86_64-linux-gnu/qt6/mkspecs/linux-g++ -isystem /usr/include/x86_64-linux-gnu/qt6/QtGui -isystem /usr/include/x86_64-linux-gnu/qt6/QtWidgets -isystem /usr/include/x86_64-linux-gnu/qt6/QtWebEngineWidgets -isystem /usr/include/x86_64-linux-gnu/qt6/QtWebEngineCore -isystem /usr/include/x86_64-linux-gnu/qt6/QtNetwork -isystem /usr/include/x86_64-linux-gnu/qt6/QtQuick -isystem /usr/include/x86_64-linux-gnu/qt6/QtQml -isystem /usr/include/x86_64-linux-gnu/qt6/QtQmlIntegration -isystem /usr/include/x86_64-linux-gnu/qt6/QtOpenGL -isystem /usr/include/x86_64-linux-gnu/qt6/QtWebChannel -isystem /usr/include/x86_64-linux-gnu/qt6/QtPositioning -isystem /usr/include/x86_64-linux-gnu/qt6/QtPrintSupport -O3 -DNDEBUG -std=gnu++20 -MD -MT CMakeFiles/DiskRaptor.dir/src/commands/system.cpp.o -MF CMakeFiles/DiskRaptor.dir/src/commands/system.cpp.o.d -o CMakeFiles/DiskRaptor.dir/src/commands/system.cpp.o -c /home/hjh/Github/DiskRaptor/qt-app/src/commands/system.cpp
+/home/hjh/Github/DiskRaptor/qt-app/src/commands/system.cpp: In member function ‘QString SystemHandler::listTrash()’:
+/home/hjh/Github/DiskRaptor/qt-app/src/commands/system.cpp:220:16: error: aggregate ‘QJsonArray items’ has incomplete type and cannot be defined
+  220 |     QJsonArray items;
+      |                ^~~~~
+/home/hjh/Github/DiskRaptor/qt-app/src/commands/system.cpp: In member function ‘QString SystemHandler::listDrives()’:
+/home/hjh/Github/DiskRaptor/qt-app/src/commands/system.cpp:295:16: error: aggregate ‘QJsonArray drives’ has incomplete type and cannot be defined
+  295 |     QJsonArray drives;
+      |                ^~~~~~
+/home/hjh/Github/DiskRaptor/qt-app/src/commands/system.cpp: In member function ‘QString SystemHandler::getVolumeStats()’:
+/home/hjh/Github/DiskRaptor/qt-app/src/commands/system.cpp:336:16: error: aggregate ‘QJsonArray volumes’ has incomplete type and cannot be defined
+  336 |     QJsonArray volumes;
+      |                ^~~~~~~
+[9/10] Building CXX object CMakeFiles/DiskRaptor.dir/src/commands/scanner.cpp.o
+ninja: build stopped: subcommand failed.
+hjh@hjh-VMware-Virtual-Platform:~/Github/DiskRaptor$ 
