@@ -374,3 +374,48 @@ fn format_size(b: u64) -> String {
         format!("{:.2} {}", v, U[i])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_size_zero() {
+        assert_eq!(format_size(0), "0 B");
+    }
+
+    #[test]
+    fn test_format_size_bytes() {
+        assert_eq!(format_size(1), "1 B");
+        assert_eq!(format_size(512), "512 B");
+        assert_eq!(format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_size_kb() {
+        assert_eq!(format_size(1024), "1.00 KB");
+        assert_eq!(format_size(1536), "1.50 KB");
+    }
+
+    #[test]
+    fn test_format_size_mb() {
+        assert_eq!(format_size(1024 * 1024), "1.00 MB");
+        assert_eq!(format_size(5 * 1024 * 1024), "5.00 MB");
+    }
+
+    #[test]
+    fn test_format_size_gb() {
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
+        assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GB");
+    }
+
+    #[test]
+    fn test_format_size_tb() {
+        assert_eq!(format_size(1024u64.pow(4)), "1.00 TB");
+    }
+
+    #[test]
+    fn test_format_size_large() {
+        assert_eq!(format_size(3 * 1024u64.pow(4)), "3.00 TB");
+    }
+}

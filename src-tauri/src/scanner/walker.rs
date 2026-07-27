@@ -852,3 +852,90 @@ pub fn scan_directory_with_progress(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_top_files_empty() {
+        let accum = TopFilesAccum::default();
+        let result = accum.into_inner();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_top_files_below_max() {
+        let accum = TopFilesAccum::default();
+        accum.insert("a".into(), 100, 5);
+        accum.insert("b".into(), 200, 5);
+        let result = accum.into_inner();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].size, 200);
+    }
+
+    #[test]
+    fn test_top_files_truncates() {
+        let accum = TopFilesAccum::default();
+        accum.insert("a".into(), 100, 3);
+        accum.insert("b".into(), 200, 3);
+        accum.insert("c".into(), 50, 3);
+        accum.insert("d".into(), 150, 3);
+        let result = accum.into_inner();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].size, 200);
+        assert_eq!(result[1].size, 150);
+        assert_eq!(result[2].size, 100);
+    }
+
+    #[test]
+    fn test_top_files_skips_small() {
+        let accum = TopFilesAccum::default();
+        accum.insert("a".into(), 200, 2);
+        accum.insert("b".into(), 100, 2);
+        accum.insert("c".into(), 50, 2);
+        let result = accum.into_inner();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[1].size, 100);
+    }
+
+    #[test]
+    fn test_file_type_accum_empty() {
+        let accum = FileTypeAccum::default();
+        let result = accum.into_sorted();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_file_type_accum_single() {
+        let accum = FileTypeAccum::default();
+        accum.add("file.txt", 100);
+        let result = accum.into_sorted();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].extension, "txt");
+        assert_eq!(result[0].count, 1);
+        assert_eq!(result[0].total_size, 100);
+    }
+
+    #[test]
+    fn test_file_type_accum_multi() {
+        let accum = FileTypeAccum::default();
+        accum.add("a.txt", 100);
+        accum.add("b.jpg", 200);
+        accum.add("c.txt", 50);
+        let result = accum.into_sorted();
+        assert_eq!(result.len(), 2);
+        let txt = result.iter().find(|f| f.extension == "txt").unwrap();
+        assert_eq!(txt.count, 2);
+        assert_eq!(txt.total_size, 150);
+    }
+
+    #[test]
+    fn test_file_type_accum_no_ext() {
+        let accum = FileTypeAccum::default();
+        accum.add("Makefile", 100);
+        let result = accum.into_sorted();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].extension, "(none)");
+    }
+}

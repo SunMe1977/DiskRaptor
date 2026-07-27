@@ -215,3 +215,109 @@ impl Default for TreeNodeArena {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_node(name: &str, size: u64, node_type: NodeType) -> TreeNode {
+        TreeNode {
+            name: name.into(),
+            size,
+            file_count: if node_type == NodeType::File { 1 } else { 0 },
+            dir_count: if node_type == NodeType::Directory { 1 } else { 0 },
+            node_type,
+            parent: u32::MAX,
+            first_child: u32::MAX,
+            next_sibling: u32::MAX,
+            depth: 0,
+            chunk_id: 0,
+            mtime: 0,
+        }
+    }
+
+    #[test]
+    fn test_arena_empty() {
+        let arena = TreeNodeArena::new();
+        assert!(arena.is_empty());
+        assert_eq!(arena.len(), 0);
+    }
+
+    #[test]
+    fn test_arena_alloc_one() {
+        let mut arena = TreeNodeArena::new();
+        let idx = arena.alloc(make_node("root", 0, NodeType::Directory));
+        assert_eq!(idx, 0);
+        assert_eq!(arena.len(), 1);
+    }
+
+    #[test]
+    fn test_arena_alloc_multiple() {
+        let mut arena = TreeNodeArena::with_capacity(10);
+        let r = arena.alloc(make_node("root", 0, NodeType::Directory));
+        let c1 = arena.alloc(make_node("a.txt", 100, NodeType::File));
+        let c2 = arena.alloc(make_node("b.txt", 200, NodeType::File));
+        assert_eq!(r, 0);
+        assert_eq!(c1, 1);
+        assert_eq!(c2, 2);
+        assert_eq!(arena.len(), 3);
+    }
+
+    #[test]
+    fn test_arena_get_node() {
+        let mut arena = TreeNodeArena::new();
+        arena.alloc(make_node("root", 0, NodeType::Directory));
+        let node = arena.get(0);
+        assert_eq!(node.name, "root");
+        assert!(node.is_directory());
+    }
+
+    #[test]
+    fn test_arena_get_mut() {
+        let mut arena = TreeNodeArena::new();
+        arena.alloc(make_node("root", 0, NodeType::Directory));
+        arena.get_mut(0).size = 999;
+        assert_eq!(arena.get(0).size, 999);
+    }
+
+    #[test]
+    fn test_node_is_file() {
+        let f = make_node("f", 10, NodeType::File);
+        assert!(f.is_file());
+        assert!(!f.is_directory());
+    }
+
+    #[test]
+    fn test_node_size_human() {
+        let f = make_node("f", 1024, NodeType::File);
+        assert_eq!(f.size_human(), "1.00 KB");
+    }
+
+    #[test]
+    fn test_format_size_zero() {
+        assert_eq!(format_size(0), "0 B");
+    }
+
+    #[test]
+    fn test_format_size_kb() {
+        assert_eq!(format_size(2048), "2.00 KB");
+    }
+
+    #[test]
+    fn test_format_size_mb() {
+        assert_eq!(format_size(5 * 1024 * 1024), "5.00 MB");
+    }
+
+    #[test]
+    fn test_arena_with_capacity() {
+        let arena = TreeNodeArena::with_capacity(50_000);
+        assert!(arena.nodes.capacity() >= 50_000);
+    }
+
+    #[test]
+    fn test_approx_heap_bytes() {
+        let mut arena = TreeNodeArena::new();
+        arena.alloc(make_node("hello.txt", 100, NodeType::File));
+        assert!(arena.approx_heap_bytes() > 0);
+    }
+}

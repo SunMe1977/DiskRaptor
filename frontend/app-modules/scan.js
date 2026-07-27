@@ -378,12 +378,28 @@
 
           if (p.error_count > 0 && errDisplay) {
             const errMsg = p.last_error || "";
-            errDisplay.textContent =
-              "\u26A0 " +
+            errDisplay.innerHTML =
+              '\u26A0 <strong>' +
               p.error_count +
-              " permission denied \u2014 " +
-              errMsg.substring(0, 80);
+              '</strong> permission denied \u2014 ' +
+              errMsg.substring(0, 80) +
+              ' <button class="retry-admin-btn" data-path="' +
+              encodeURIComponent(path) +
+              '">Retry as administrator</button>';
             errDisplay.style.display = "block";
+            var adminBtn = errDisplay.querySelector(".retry-admin-btn");
+            if (adminBtn && !adminBtn._listener) {
+              adminBtn._listener = true;
+              adminBtn.addEventListener("click", async function () {
+                this.disabled = true;
+                this.textContent = "Restarting...";
+                try {
+                  await window.__TAURI__.invoke("restart_as_admin", {});
+                } catch (e) {
+                  this.textContent = "Failed: " + e.message;
+                }
+              });
+            }
           } else if (errDisplay) {
             errDisplay.style.display = "none";
           }

@@ -87,3 +87,109 @@ pub fn make_root_chunk(arena: &TreeNodeArena) -> Vec<TreeChunk> {
         nodes,
     }]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanner::tree::*;
+
+    fn make_node(name: &str, size: u64, node_type: NodeType) -> TreeNode {
+        TreeNode {
+            name: name.into(),
+            size,
+            file_count: if node_type == NodeType::File { 1 } else { 0 },
+            dir_count: if node_type == NodeType::Directory { 1 } else { 0 },
+            node_type,
+            parent: u32::MAX,
+            first_child: u32::MAX,
+            next_sibling: u32::MAX,
+            depth: 0,
+            chunk_id: 0,
+            mtime: 0,
+        }
+    }
+
+    fn small_arena() -> TreeNodeArena {
+        let mut arena = TreeNodeArena::new();
+        let root = arena.alloc(make_node("/", 300, NodeType::Directory));
+        let c1 = arena.alloc(make_node("a.txt", 100, NodeType::File));
+        let c2 = arena.alloc(make_node("b.txt", 200, NodeType::File));
+        arena.get_mut(root).first_child = c1;
+        arena.get_mut(c1).parent = root;
+        arena.get_mut(c1).next_sibling = c2;
+        arena.get_mut(c2).parent = root;
+        arena
+    }
+
+    #[test]
+    fn test_chunk_tree_empty() {
+        let arena = TreeNodeArena::new();
+        let chunks = chunk_tree(&arena).unwrap();
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_chunk_tree_small() {
+        let arena = small_arena();
+        let chunks = chunk_tree(&arena).unwrap();
+        assert_eq!(chunks.len(), 1);
+        let c = &chunks[0];
+        assert_eq!(c.chunk_id, 0);
+        assert_eq!(c.total_chunks, 1);
+        assert_eq!(c.total_nodes, 3);
+        assert_eq!(c.nodes.len(), 3);
+        assert_eq!(c.nodes[0].name, "/");
+        assert_eq!(c.nodes[1].name, "a.txt");
+    }
+
+    #[test]
+    fn test_chunk_tree_chunk_id_assigned() {
+        let arena = small_arena();
+        let chunks = chunk_tree(&arena).unwrap();
+        for node in &chunks[0].nodes {
+            assert_eq!(node.chunk_id, 0);
+        }
+    }
+
+    #[test]
+    fn test_get_root_info() {
+        let arena = small_arena();
+        let info = get_root_info(&arena);
+        assert_eq!(info.root_index, 0);
+        assert_eq!(info.total_nodes, 3);
+        assert_eq!(info.total_chunks, 1);
+    }
+
+    #[test]
+    fn test_get_root_info_empty() {
+        let arena = TreeNodeArena::new();
+        let info = get_root_info(&arena);
+        assert_eq!(info.total_nodes, 0);
+        assert_eq!(info.total_chunks, 0);
+    }
+
+    #[test]
+    fn test_make_root_chunk() {
+        let arena = small_arena();
+        let chunks = make_root_chunk(&arena);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].nodes.len(), 3);
+        assert_eq!(chunks[0].nodes[0].name, "/");
+    }
+
+    #[test]
+    fn test_make_root_chunk_empty() {
+        let arena = TreeNodeArena::new();
+        let chunks = make_root_chunk(&arena);
+        assert_eq!(chunks.len(), 1);
+        assert!(chunks[0].nodes.is_empty());
+    }
+
+    #[test]
+    fn test_root_info_serialize() {
+        let arena = small_arena();
+        let info = get_root_info(&arena);
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("\"total_nodes\":3"));
+    }
+}
