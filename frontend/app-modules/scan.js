@@ -737,10 +737,17 @@
               var ok = 0, fail = 0;
               for (var fi = 0; fi < files.length; fi++) {
                 var fullPath = rootPath + "/" + files[fi];
-                try { await window.__TAURI__.invoke("delete_path", { path: fullPath }); ok++; } catch (e) { fail++; console.warn("Cleanup failed:", fullPath, e); }
+                try {
+                  var delRes = await window.__TAURI__.invoke("delete_path", { path: fullPath });
+                  if (delRes && delRes.success === false) { fail++; console.warn("Cleanup failed:", fullPath, delRes.error); }
+                  else { ok++; }
+                } catch (e) { fail++; console.warn("Cleanup failed:", fullPath, e); }
               }
               overlay.remove();
-              if (fail > 0 && window.showToast) window.showToast(ok + " moved to trash, " + fail + " failed", "warning");
+              if (window.showToast) {
+                if (fail > 0) window.showToast(ok + " moved to trash, " + fail + " failed", "warning");
+                else if (ok > 0) window.showToast(ok + " file(s) moved to trash", "success");
+              }
               if (btnScan) btnScan.click();
             })();
           };
