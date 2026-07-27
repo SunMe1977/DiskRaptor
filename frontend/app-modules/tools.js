@@ -349,13 +349,16 @@
         });
       } else if (action === "cleanup-downloads") {
         const stb = document.querySelector(".status-bar");
-        const loader = window.__loader;
-        if (loader && loader.allNodes && loader.allNodes.length > 0) {
-          if (stb) stb.textContent = "Scanning Downloads for cleanup...";
-          if (scanPath) { scanPath.value = scanPath.value.replace(/[\\/]+$/, "") + "/Downloads"; btnScan.click(); }
-          return;
-        }
         if (stb) stb.textContent = "Scanning Downloads...";
+        var dlTarget = "";
+        window.__TAURI__.invoke("get_home_dir").then(function (home) {
+          var p = typeof home === "string" ? home : (home?.data || "");
+          dlTarget = p ? p.replace(/[\\/]+$/, "") + "/Downloads" : "";
+          if (dlTarget && scanPath) {
+            scanPath.value = dlTarget;
+            btnScan.click();
+          }
+        }).catch(function () {});
         window.__TAURI__.invoke("get_home_dir").then(function (home) {
           const p = typeof home === "string" ? home : (home?.data || "");
           const dl = p ? p.replace(/[\\/]+$/, "") + "/Downloads" : "";
