@@ -91,7 +91,6 @@ pub fn make_root_chunk(arena: &TreeNodeArena) -> Vec<TreeChunk> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scanner::tree::*;
 
     fn make_node(name: &str, size: u64, node_type: NodeType) -> TreeNode {
         TreeNode {
