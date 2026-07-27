@@ -80,16 +80,40 @@ echo "    Upload URL: $UPLOAD_URL"
 # ── Delete stale assets ──────────────────────
 echo ""
 echo "  Cleaning stale assets..."
-ASSETS_JSON=$(CURL "$API/repos/$GH_REPO/releases/$RELEASE_ID/assets" 2>/dev/null || echo "[]")
+# Collect asset IDs for all names we intend to upload (including .speedtest)
+STALE_NAMES=""
 for FILE in $ASSETS; do
-  NAME=$(basename "$FILE")
-  ASSET_ID=$(echo "$ASSETS_JSON" | grep -B1 '"name": "'"$NAME"'"' | grep -o '"id": [0-9]*' | head -1 | grep -o '[0-9]*' || true)
-  if [ -n "$ASSET_ID" ]; then
-    echo "    Removing stale: $NAME (ID: $ASSET_ID)"
-    CURL -X DELETE "$API/repos/$GH_REPO/releases/assets/$ASSET_ID" >/dev/null 2>&1 || true
-    sleep 2
-  fi
+  STALE_NAMES="$STALE_NAMES $(basename "$FILE")"
 done
+STALE_NAMES="$STALE_NAMES .speedtest"
+if command -v python3 &>/dev/null; then
+  ASSETS_JSON=$(CURL "$API/repos/$GH_REPO/releases/$RELEASE_ID/assets" 2>/dev/null || echo "[]")
+  for NAME in $STALE_NAMES; do
+    ASSET_ID=$(echo "$ASSETS_JSON" | python3 -c "
+import json,sys
+assets=json.load(sys.stdin)
+for a in assets:
+    if a.get('name') == '$NAME':
+        print(a['id'])
+" 2>/dev/null)
+    if [ -n "$ASSET_ID" ]; then
+      echo "    Removing stale: $NAME (ID: $ASSET_ID)"
+      CURL -X DELETE "$API/repos/$GH_REPO/releases/assets/$ASSET_ID" >/dev/null 2>&1 || true
+      sleep 2
+    fi
+  done
+else
+  # Fallback grep-based parsing (less reliable with minified JSON)
+  ASSETS_JSON=$(CURL "$API/repos/$GH_REPO/releases/$RELEASE_ID/assets" 2>/dev/null || echo "[]")
+  for NAME in $STALE_NAMES; do
+    ASSET_ID=$(echo "$ASSETS_JSON" | tr ',' '\n' | grep -B1 '"name": "'"$NAME"'"' | grep -o '"id": [0-9]*' | head -1 | grep -o '[0-9]*' || true)
+    if [ -n "$ASSET_ID" ]; then
+      echo "    Removing stale: $NAME (ID: $ASSET_ID)"
+      CURL -X DELETE "$API/repos/$GH_REPO/releases/assets/$ASSET_ID" >/dev/null 2>&1 || true
+      sleep 2
+    fi
+  done
+fi
 
 # ── Measure upload speed ─────────────────────
 echo ""
