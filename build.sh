@@ -864,43 +864,7 @@ EOF
       done
     done
 
-    # Launcher script
-    cat > dist/DiskRaptor.sh << 'SCRIPT'
-#!/bin/bash
-cd "$(dirname "$0")"
-export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
-exec ./DiskRaptor "$@"
-SCRIPT
-    chmod +x dist/DiskRaptor.sh
-
-    # Create a .deb package if dpkg-deb is available
-    if command -v dpkg-deb &>/dev/null; then
-      echo "  Creating .deb package..."
-      PKGDIR="dist/deb"
-      mkdir -p "$PKGDIR/DEBIAN"
-      mkdir -p "$PKGDIR/usr/bin"
-      # Minimal control file
-      cat > "$PKGDIR/DEBIAN/control" <<EOF
-Package: diskraptor
-Version: $VERSION
-Section: utils
-Priority: optional
-Architecture: amd64
-Maintainer: DiskRaptor <noreply@example.com>
-Description: DiskRaptor - disk space analyzer
-EOF
-      # Install binary
-      cp dist/DiskRaptor "$PKGDIR/usr/bin/DiskRaptor" 2>/dev/null || true
-      chmod 0755 "$PKGDIR/usr/bin/DiskRaptor" 2>/dev/null || true
-      dpkg-deb --build "$PKGDIR" "dist/DiskRaptor-$VERSION-linux-amd64.deb" 2>/dev/null || true
-      echo "  DEB: dist/DiskRaptor-$VERSION-linux-amd64.deb"
-      rm -rf "$PKGDIR"
-    else
-      echo "  SKIP DEB: 'dpkg-deb' not found"
-    fi
-
-    # Create DEB package
-    echo "  Creating DEB package..."
+    echo "  Creating .deb package..."
     DEB_DIR="deb"
     rm -rf "$DEB_DIR"
     mkdir -p "$DEB_DIR/DEBIAN"
@@ -911,18 +875,19 @@ EOF
     mkdir -p "$DEB_DIR/usr/share/icons/hicolor/256x256/apps"
 
     # Control file
-    cat > "$DEB_DIR/DEBIAN/control" << 'CONTROL'
+    cat > "$DEB_DIR/DEBIAN/control" <<EOF
 Package: diskraptor
-Version: 0.0.4
+Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: amd64
+Depends: libc6 (>= 2.31), libstdc++6 (>= 10), libgcc-s1 (>= 10)
 Maintainer: DiskRaptor Team
 Description: Ultra-fast disk space analyzer with virtual tree view, pie chart, and live progress.
  Scans millions of files using a parallel Rust engine.
-CONTROL
+EOF
 
-    # Post-install: register icon cache
+    # Post-install: register desktop database and icon cache
     cat > "$DEB_DIR/DEBIAN/postinst" << 'POSTINST'
 #!/bin/bash
 set -e
@@ -935,20 +900,29 @@ fi
 POSTINST
     chmod 755 "$DEB_DIR/DEBIAN/postinst"
 
-    # Binary + launcher
+    # Launcher script (at /usr/bin/diskraptor, lower-case, for the .desktop file)
+    cat > "$DEB_DIR/usr/bin/diskraptor" << 'LAUNCHER'
+#!/bin/bash
+export LD_LIBRARY_PATH="/usr/lib/diskraptor:$LD_LIBRARY_PATH"
+exec /usr/bin/DiskRaptor "$@"
+LAUNCHER
+    chmod 755 "$DEB_DIR/usr/bin/diskraptor"
+
+    # Binary
     cp dist/DiskRaptor "$DEB_DIR/usr/bin/"
-    cp dist/DiskRaptor.sh "$DEB_DIR/usr/bin/"
+    chmod 755 "$DEB_DIR/usr/bin/DiskRaptor"
 
     # Desktop entry
     cat > "$DEB_DIR/usr/share/applications/diskraptor.desktop" << 'DESKTOP'
 [Desktop Entry]
 Name=DiskRaptor
 Comment=Ultra-fast disk space analyzer
-Exec=/usr/bin/DiskRaptor.sh
+Exec=diskraptor
 Icon=diskraptor
 Terminal=false
 Type=Application
-Categories=Utility;FileTools;
+Categories=Utility;System;FileTools;
+StartupNotify=true
 DESKTOP
 
     # Icons
@@ -960,37 +934,35 @@ DESKTOP
     fi
     if [ -f images/logo6_original.png ]; then
       cp images/logo6_original.png "$DEB_DIR/usr/share/icons/hicolor/256x256/apps/diskraptor.png"
-      # Generate 128 from 256
       ffmpeg -y -i images/logo6_original.png -vf "scale=128:128" "$DEB_DIR/usr/share/icons/hicolor/128x128/apps/diskraptor.png" 2>/dev/null || true
     fi
 
     # Bundle Qt libraries into DEB
     cp -r dist/lib/*.so* "$DEB_DIR/usr/lib/diskraptor/" 2>/dev/null || true
-    cp -r dist/frontend "$DEB_DIR/usr/share/diskraptor/" 2>/dev/null || true
-    cp -r dist/images "$DEB_DIR/usr/share/diskraptor/" 2>/dev/null || true
 
-    # Update launcher to find bundled libs
-    cat > "$DEB_DIR/usr/bin/diskraptor" << 'LAUNCHER'
-#!/bin/bash
-export LD_LIBRARY_PATH="/usr/lib/diskraptor:$LD_LIBRARY_PATH"
-exec /usr/bin/DiskRaptor "$@"
-LAUNCHER
-    chmod 755 "$DEB_DIR/usr/bin/diskraptor"
-    chmod 755 "$DEB_DIR/usr/bin/DiskRaptor.sh"
+    # Rust scanner library
+    if [ -f dist/libdiskraptor_scanner.so ]; then
+      cp dist/libdiskraptor_scanner.so "$DEB_DIR/usr/lib/diskraptor/"
+    fi
+
+    # Frontend + images (matches search paths in main.cpp)
+    mkdir -p "$DEB_DIR/usr/share/diskraptor"
+    cp -r dist/frontend "$DEB_DIR/usr/share/diskraptor/"
+    cp -r dist/images "$DEB_DIR/usr/share/diskraptor/" 2>/dev/null || true
 
     if command -v dpkg-deb &>/dev/null; then
       if command -v fakeroot &>/dev/null; then
-        fakeroot dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-$VERSION-amd64.deb"
+        fakeroot dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-${VERSION}-amd64.deb"
       else
-        dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-$VERSION-amd64.deb"
+        dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-${VERSION}-amd64.deb"
       fi
-      echo "  DEB: dist/DiskRaptor-$VERSION-amd64.deb"
+      echo "  DEB: dist/DiskRaptor-${VERSION}-amd64.deb"
     else
       echo "  SKIP DEB: 'dpkg-deb' not installed"
     fi
     echo ""
     echo "  Run: LD_LIBRARY_PATH=dist/lib ./dist/DiskRaptor"
-    echo "  Or install: sudo dpkg -i dist/DiskRaptor-$VERSION-amd64.deb"
+    echo "  Or install: sudo dpkg -i dist/DiskRaptor-${VERSION}-amd64.deb"
     ;;
 
   windows)
