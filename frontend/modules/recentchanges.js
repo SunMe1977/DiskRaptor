@@ -110,5 +110,5 @@
 
   if (!window.DiskRaptorModules) window.DiskRaptorModules = {};
   window.DiskRaptorModules.RecentChanges = RecentChangesModule;
-  console.log("[Module] RecentChanges loaded");
+  console.debug("[Module] RecentChanges loaded");
 })();

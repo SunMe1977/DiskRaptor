@@ -135,7 +135,7 @@
 
     /** Initialize the GalaxyView: canvas, UI, event handlers */
     init() {
-      console.log("[GalaxyView] Initializing...");
+      console.debug("[GalaxyView] Initializing...");
 
       // Remove any existing galaxy canvases from container first
       const oldCanvases = this.container.querySelectorAll('canvas.galaxy-canvas');
@@ -181,7 +181,7 @@
         this.timeline.initUI(this.container.querySelector(".galaxy-timeline-wrap"));
       }
 
-      console.log("[GalaxyView] Initialized");
+      console.debug("[GalaxyView] Initialized");
       return this;
     }
 
@@ -288,7 +288,7 @@
      * @param {Array} duplicates - optional duplicate groups
      */
     loadData(scanResult, stats, topFiles, duplicates) {
-      console.log("[GalaxyView] Loading scan data...");
+      console.debug("[GalaxyView] Loading scan data...");
 
       // Show canvas, hide empty state
       this.canvas.style.display = "block";
@@ -322,7 +322,7 @@
       // Start render loop
       this._startRenderLoop();
 
-      console.log(`[GalaxyView] Galaxy created: ${this.objects.length} objects`);
+      console.debug(`[GalaxyView] Galaxy created: ${this.objects.length} objects`);
     }
 
     /** Auto-zoom camera to fit all objects in view */

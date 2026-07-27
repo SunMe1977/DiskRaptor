@@ -36,6 +36,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - run: npm ci
       - run: npx eslint frontend/ frontend/app-modules/ frontend/galaxyview/
 
   release:
@@ -51,7 +52,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev qt6-webchannel-dev \
-            libgl1-mesa-dev ninja-build cmake dpkg-dev
+            libgl1-mesa-dev ninja-build cmake dpkg-dev fakeroot
       - name: Build Rust scanner
         run: cargo build --release --manifest-path src-tauri/Cargo.toml
       - name: Build Qt app
@@ -60,14 +61,65 @@ jobs:
           cmake --build qt-app/build --config Release
       - name: Stage dist
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p dist/frontend dist/images
           cp qt-app/build/DiskRaptor dist/
-          cp qt-app/build/*.dll dist/ 2>/dev/null || true
+          cp src-tauri/target/release/libdiskraptor_scanner.so dist/ 2>/dev/null || true
           cp -r frontend/* dist/frontend/
           cp -r images/* dist/images/
       - name: Package .deb
         run: |
-          VERSION="${GITHUB_REF_NAME#v}" ./build.sh --deb-only
+          VERSION="${GITHUB_REF_NAME#v}"
+          DEB_DIR="deb"
+          rm -rf "$DEB_DIR"
+          mkdir -p "$DEB_DIR/DEBIAN" "$DEB_DIR/usr/bin" "$DEB_DIR/usr/lib/diskraptor" \
+                   "$DEB_DIR/usr/share/applications" \
+                   "$DEB_DIR/usr/share/icons/hicolor/128x128/apps" \
+                   "$DEB_DIR/usr/share/icons/hicolor/256x256/apps" \
+                   "$DEB_DIR/usr/share/diskraptor"
+          cat > "$DEB_DIR/DEBIAN/control" <<EOF
+          Package: diskraptor
+          Version: $VERSION
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Depends: libc6 (>= 2.31), libstdc++6 (>= 10), libgcc-s1 (>= 10)
+          Maintainer: DiskRaptor Team
+          Description: Ultra-fast disk space analyzer with virtual tree view, pie chart, and live progress.
+           Scans millions of files using a parallel Rust engine.
+          EOF
+          cat > "$DEB_DIR/DEBIAN/postinst" << 'EOF'
+          #!/bin/bash
+          set -e
+          if command -v update-desktop-database &>/dev/null; then update-desktop-database 2>/dev/null || true; fi
+          if command -v gtk-update-icon-cache &>/dev/null; then gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true; fi
+          EOF
+          chmod 755 "$DEB_DIR/DEBIAN/postinst"
+          cat > "$DEB_DIR/usr/bin/diskraptor" << 'EOF'
+          #!/bin/bash
+          export LD_LIBRARY_PATH="/usr/lib/diskraptor:\$LD_LIBRARY_PATH"
+          exec /usr/bin/DiskRaptor "\$@"
+          EOF
+          chmod 755 "$DEB_DIR/usr/bin/diskraptor"
+          cp dist/DiskRaptor "$DEB_DIR/usr/bin/" && chmod 755 "$DEB_DIR/usr/bin/DiskRaptor"
+          cp dist/libdiskraptor_scanner.so "$DEB_DIR/usr/lib/diskraptor/" 2>/dev/null || true
+          cp -r dist/frontend "$DEB_DIR/usr/share/diskraptor/"
+          cp -r dist/images "$DEB_DIR/usr/share/diskraptor/" 2>/dev/null || true
+          cat > "$DEB_DIR/usr/share/applications/diskraptor.desktop" << 'EOF'
+          [Desktop Entry]
+          Name=DiskRaptor
+          Comment=Ultra-fast disk space analyzer
+          Exec=diskraptor
+          Icon=diskraptor
+          Terminal=false
+          Type=Application
+          Categories=Utility;System;FileTools;
+          StartupNotify=true
+          EOF
+          if [ -f images/256x256@2x.png ]; then cp images/256x256@2x.png "$DEB_DIR/usr/share/icons/hicolor/256x256/apps/diskraptor.png"; fi
+          if [ -f images/128x128@2x.png ]; then cp images/128x128@2x.png "$DEB_DIR/usr/share/icons/hicolor/128x128/apps/diskraptor.png"; fi
+          fakeroot dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-${VERSION}-amd64.deb"
+          echo "DEB: dist/DiskRaptor-${VERSION}-amd64.deb"
       - name: Upload .deb to release
         uses: softprops/action-gh-release@v2
         with:

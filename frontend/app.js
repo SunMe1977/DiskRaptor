@@ -5,7 +5,7 @@
   "use strict";
 
   async function init() {
-    console.log("DiskRaptor booting...");
+    console.debug("DiskRaptor booting...");
     const statusBar = document.querySelector(".status-bar");
 
     const bridgeReady = new Promise((resolve) => {
@@ -46,7 +46,7 @@
       return;
     }
 
-    console.log("DiskRaptor initializing...");
+    console.debug("DiskRaptor initializing...");
 
     // ── Shared state ────────────────────────────────────
     window.app = window.app || {};
@@ -585,7 +585,7 @@
           window.I18N.setLocale("auto");
         });
       } catch (e) {
-        console.log("Menu events not available:", e.message);
+        console.debug("Menu events not available:", e.message);
       }
     }
 
@@ -705,7 +705,7 @@
       showWelcome: showWelcome,
     });
 
-    console.log("DiskRaptor ready.");
+    console.debug("DiskRaptor ready.");
   }
 
   function sleep(ms) {

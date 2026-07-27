@@ -99,5 +99,5 @@
   // Register globally
   if (!window.DiskRaptorModules) window.DiskRaptorModules = {};
   window.DiskRaptorModules.EmptyFolders = EmptyFoldersModule;
-  console.log("[Module] EmptyFolders loaded");
+  console.debug("[Module] EmptyFolders loaded");
 })();
