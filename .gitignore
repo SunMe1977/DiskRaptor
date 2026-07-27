@@ -71,3 +71,9 @@ setup.nsi
 nul
 DiskRaptor-windows.zip
 *.zip
+
+# ── Binary libraries (too large for git) ─
+deb/usr/lib/diskraptor/*.so
+deb/usr/lib/diskraptor/*.so.*
+
+
