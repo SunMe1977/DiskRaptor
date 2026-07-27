@@ -8,43 +8,34 @@ runTest("DiskRaptor Downloads Cleanup Test", 9222, async (cdp) => {
   const scanPathAfter = await jsExpr(cdp, "document.getElementById('scan-path')?.value || ''");
   assert("Auto-set scan path to Downloads folder", scanPathAfter.toLowerCase().includes("download"), `path="${scanPathAfter}"`);
 
-  let overlaySeen = false;
   for (let i = 0; i < 120; i++) {
     await sleep(250);
-    try {
-      const ov = await jsExpr(cdp, `document.getElementById('progress-overlay')?.classList.contains('active')`);
-      if (ov === true) { overlaySeen = true; break; }
-    } catch {}
+    const ov = await jsExpr(cdp, `document.getElementById('cleanup-overlay')?.style?.display === 'flex'`);
+    if (ov) break;
   }
+  await sleep(1000);
 
-  if (overlaySeen) {
-    for (let i = 0; i < 60; i++) {
-      await sleep(500);
-      try {
-        const ov = await jsExpr(cdp, `document.getElementById('progress-overlay')?.classList.contains('active')`);
-        if (ov !== true) break;
-      } catch {}
-    }
-  }
-  await sleep(2000);
-
-  const panelEl = await jsExpr(cdp, "!!document.getElementById('cleanup-panel')");
+  const overlayFound = await jsExpr(cdp, "document.getElementById('cleanup-overlay')?.style?.display === 'flex'");
   const stbText = await jsExpr(cdp, "document.querySelector('.status-bar')?.textContent || ''");
-  const analysisRan = panelEl || stbText.includes("cleanable") || stbText.includes("Cleanable") || stbText.includes("No cleanable") || /\d+/.test(stbText);
-  assert("Cleanup analysis ran after auto-scan", analysisRan, `stb="${stbText.slice(0, 60)}"`);
+  const resultOk = overlayFound || stbText.includes("No cleanable");
 
-  if (panelEl) {
-    const checkboxCount = await jsExpr(cdp, `document.querySelectorAll('#cleanup-panel .cleanup-item input[type="checkbox"]').length`);
-    assert("Cleanable files listed with checkboxes", checkboxCount > 0, `count=${checkboxCount}`);
+  assert("Cleanup popup appeared or analysis done", resultOk, `overlay=${overlayFound} stb="${stbText.slice(0, 50)}"`);
+
+  if (overlayFound) {
+    const title = await jsExpr(cdp, "document.querySelector('#cleanup-overlay h3')?.textContent || ''");
+    assert("Popup shows title", title.includes("Cleanup"), `title="${title}"`);
+
+    const checkboxCount = await jsExpr(cdp, `document.querySelectorAll('#cleanup-overlay .cleanup-item input[type="checkbox"]').length`);
+    assert("Files listed with checkboxes", checkboxCount > 0, `count=${checkboxCount}`);
+
+    const hasTooltip = await jsExpr(cdp, `document.querySelector('#cleanup-overlay .cleanup-item')?.getAttribute('title') || ''`);
+    assert("Full path shown on hover", hasTooltip.length > 0, `tooltip="${hasTooltip.slice(0, 50)}"`);
 
     const hasSelectAll = await jsExpr(cdp, "!!document.getElementById('cleanup-select-all')");
     const hasMoveTrash = await jsExpr(cdp, "!!document.getElementById('cleanup-move-trash')");
-    const hasClose = await jsExpr(cdp, "!!document.getElementById('cleanup-close')");
+    const hasClose = await jsExpr(cdp, "!!document.getElementById('cleanup-close-btn')");
     assert("Select All button", hasSelectAll);
     assert("Move to Trash button", hasMoveTrash);
     assert("Close button", hasClose);
   }
-
-  console.log(`  Status: ${stbText.slice(0, 60)}`);
-  console.log(`  Panel:  ${panelEl ? "found" : "not found"}`);
 });
