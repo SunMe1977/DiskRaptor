@@ -42,6 +42,9 @@ TESTS=(
   "test_i18n_linux.mjs"
   "test_tauri_linux.mjs"
   "test_fileops_linux.mjs"
+  "test_galaxy_linux.mjs"
+  "test_progress_linux.mjs"
+  "test_context_menu_linux.mjs"
   "tests/downloads-cleanup.spec.mjs"
 )
 

@@ -35,6 +35,9 @@ set TESTS=!TESTS! test_trash_recovery.mjs
 set TESTS=!TESTS! test_i18n.mjs
 set TESTS=!TESTS! test_tauri.mjs
 set TESTS=!TESTS! test_fileops.mjs
+set TESTS=!TESTS! test_galaxy.mjs
+set TESTS=!TESTS! test_progress.mjs
+set TESTS=!TESTS! test_context_menu.mjs
 set TESTS=!TESTS! tests\downloads-cleanup.spec.mjs
 
 set PASSED=0
