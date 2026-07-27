@@ -349,97 +349,12 @@
         });
       } else if (action === "cleanup-downloads") {
         const stb = document.querySelector(".status-bar");
-        function doCleanup() {
-          const loader = window.__loader;
-          if (!loader || !loader.allNodes) return;
-          if (stb) stb.textContent = "Analyzing for cleanup...";
-          const nodes = loader.allNodes;
-          if (!nodes) return;
-          function getNodeRelPath(node, allNodes) {
-            const parts = [];
-            let cur = node;
-            for (;;) {
-              parts.unshift(cur.name || "");
-              if (cur.parent === 4294967295 || cur.parent === undefined) break;
-              cur = allNodes[cur.parent];
-              if (!cur) break;
-            }
-            parts.shift();
-            return parts.join("/");
-          }
-          const cleanable = [];
-          const seen = {};
-          for (let cni = 0; cni < nodes.length; cni++) {
-            const cn = nodes[cni];
-            if (!cn || cn.node_type === 0 || cn.node_type === "Directory") continue;
-            const cname = (cn.name || "").toLowerCase();
-            const cext = cname.lastIndexOf(".") >= 0 ? cname.substring(cname.lastIndexOf(".")) : "";
-            const csize = cn.size || 0;
-            const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(cext);
-            const isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
-            const isOld = cn.mtime && cn.mtime > 0 && Date.now() / 1000 - cn.mtime > 60 * 86400;
-            if (isCleanable || isDup || (isOld && csize > 1048576)) {
-              const relPath = getNodeRelPath(cn, nodes);
-              if (seen[relPath]) continue;
-              seen[relPath] = true;
-              cleanable.push({ name: relPath, size: csize, reason: isDup ? "duplicate" : isOld ? "old" : "installer", mtime: cn.mtime });
-            }
-          }
-          if (cleanable.length === 0) {
-            if (stb) stb.textContent = "No cleanable files found";
-            return;
-          }
-          cleanable.sort(function (a, b) { return b.size - a.size; });
-          const existing = document.getElementById("cleanup-panel");
-          if (existing) existing.remove();
-          const panel = document.createElement("div");
-          panel.id = "cleanup-panel";
-          panel.style.cssText = "margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);overflow:hidden;";
-          const totalWaste = cleanable.reduce(function (s, i) { return s + i.size; }, 0);
-          let listHtml = "";
-          for (let cni2 = 0; cni2 < Math.min(cleanable.length, 100); cni2++) {
-            const ci = cleanable[cni2];
-            const badge = ci.reason === "duplicate" ? "\uD83D\uDD01" : ci.reason === "old" ? "\u23F3" : "\uD83D\uDCE6";
-            const escName = ci.name.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            const sizeStr = (function (b) { const u = ["B", "KB", "MB", "GB"]; const i = Math.min(Math.floor(Math.log(b || 1) / Math.log(1024)), 3); return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i]; })(ci.size);
-            listHtml += '<div class="cleanup-item" data-file="' + escName + '" style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;color:var(--text-secondary);">' + '<input type="checkbox" checked style="width:14px;height:14px;cursor:pointer;flex-shrink:0;">' + "<span>" + badge + "</span>" + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + ci.name + "</span>" + '<span style="font-family:monospace;font-size:11px;color:var(--text-muted);">' + sizeStr + "</span>" + '<span style="font-size:10px;color:var(--text-muted);padding:1px 5px;border-radius:3px;background:var(--bg-tertiary);">' + ci.reason + "</span></div>";
-          }
-          panel.innerHTML = '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">' + '<h4 style="margin:0;font-size:13px;color:var(--text-primary);">\uD83E\uDDF9 Downloads Cleanup</h4>' + '<span style="font-size:11px;color:var(--text-muted);">' + cleanable.length + " items \u00B7 " + (function (b) { const u = ["B", "KB", "MB", "GB"]; const i = Math.min(Math.floor(Math.log(b || 1) / Math.log(1024)), 3); return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i]; })(totalWaste) + " reclaimable</span></div>" + '<div style="max-height:250px;overflow-y:auto;padding:4px 0;">' + listHtml + "</div>" + '<div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:6px;justify-content:flex-end;">' + '<button id="cleanup-select-all" style="padding:4px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Select All</button>' + '<button id="cleanup-move-trash" style="padding:4px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">\uD83D\uDDD1\uFE0F Move to Trash</button>' + '<button id="cleanup-close" style="padding:4px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button></div>';
-          const tfSplit = document.getElementById("tf-splitter");
-          if (tfSplit && tfSplit.parentNode) { tfSplit.parentNode.insertBefore(panel, tfSplit); } else { const dp = document.getElementById("detail-panel"); if (dp) dp.appendChild(panel); }
-          document.getElementById("cleanup-close").onclick = function () { panel.style.display = "none"; if (stb) stb.textContent = "Ready"; };
-          document.getElementById("cleanup-select-all").onclick = function () {
-            const btn = document.getElementById("cleanup-select-all");
-            const cbs = panel.querySelectorAll('.cleanup-item input[type="checkbox"]');
-            const someUnchecked = Array.from(cbs).some(function (cb) { return !cb.checked; });
-            cbs.forEach(function (cb) { cb.checked = someUnchecked; });
-            if (btn) btn.textContent = someUnchecked ? "Select All" : "Select None";
-          };
-          document.getElementById("cleanup-move-trash").onclick = function () {
-            const items = panel.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');
-            const files = Array.from(items).map(function (cb) { return cb.closest(".cleanup-item").dataset.file; });
-            if (files.length === 0) { window.showToast("No items selected", "warning"); return; }
-            if (!confirm("Move " + files.length + " file(s) to Trash?")) return;
-            const rootPath = (document.getElementById("scan-path")?.value || "").replace(/[\\/]+$/, "");
-            (async function () {
-              let ok = 0, fail = 0;
-              for (let fi = 0; fi < files.length; fi++) {
-                try { await window.__TAURI__.invoke("delete_path", { path: rootPath + "/" + files[fi] }); ok++; } catch (e) { fail++; console.warn("Cleanup:", e); }
-              }
-              panel.style.display = "none";
-              if (fail > 0 && window.showToast) window.showToast(ok + " moved to trash, " + fail + " failed", "warning");
-              if (stb) stb.textContent = "Cleaned up " + files.length + " files";
-            })();
-          };
-          panel.querySelectorAll(".cleanup-item").forEach(function (row) {
-            row.onclick = function (e) { if (e.target.tagName === "INPUT") return; const cb = this.querySelector('input[type="checkbox"]'); if (cb) cb.checked = !cb.checked; };
-            row.onmouseenter = function () { this.style.background = "var(--bg-hover)"; };
-            row.onmouseleave = function () { this.style.background = "transparent"; };
-          });
-          if (stb) stb.textContent = "\uD83E\uDDF9 " + cleanable.length + " cleanable files found";
-        }
         const loader = window.__loader;
-        if (loader && loader.allNodes) { doCleanup(); return; }
+        if (loader && loader.allNodes && loader.allNodes.length > 0) {
+          if (stb) stb.textContent = "Scanning Downloads for cleanup...";
+          if (scanPath) { scanPath.value = scanPath.value.replace(/[\\/]+$/, "") + "/Downloads"; btnScan.click(); }
+          return;
+        }
         if (stb) stb.textContent = "Scanning Downloads...";
         window.__TAURI__.invoke("get_home_dir").then(function (home) {
           const p = typeof home === "string" ? home : (home?.data || "");
@@ -447,13 +362,6 @@
           if (dl && scanPath) {
             scanPath.value = dl;
             btnScan.click();
-            var pollTimer = setInterval(function () {
-              if (window.__loader && window.__loader.allNodes) {
-                clearInterval(pollTimer);
-                doCleanup();
-              }
-            }, 500);
-            setTimeout(function () { clearInterval(pollTimer); }, 120000);
           }
         }).catch(function () {});
         return;
