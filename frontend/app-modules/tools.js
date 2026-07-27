@@ -356,6 +356,18 @@
             stb.textContent = "Analyzing for cleanup...";
           const nodes = loader.allNodes;
           if (!nodes) return;
+          function getNodeRelPath(node, allNodes) {
+            const parts = [];
+            let cur = node;
+            for (;;) {
+              parts.unshift(cur.name || "");
+              if (cur.parent === 4294967295 || cur.parent === undefined) break;
+              cur = allNodes[cur.parent];
+              if (!cur) break;
+            }
+            parts.shift();
+            return parts.join("/");
+          }
           const cleanable = [];
           const seen = {};
           for (let cni = 0; cni < nodes.length; cni++) {
@@ -381,18 +393,17 @@
               cn.mtime > 0 &&
               Date.now() / 1000 - cn.mtime > 60 * 86400;
             if (isCleanable || isDup || (isOld && csize > 1048576)) {
-              const displayName = cn.name || "?";
-              const reason = isDup
-                ? "duplicate"
-                : isOld
-                  ? "old"
-                  : "installer";
-              if (seen[displayName]) continue;
-              seen[displayName] = true;
+              const relPath = getNodeRelPath(cn, nodes);
+              if (seen[relPath]) continue;
+              seen[relPath] = true;
               cleanable.push({
-                name: displayName,
+                name: relPath,
                 size: csize,
-                reason: reason,
+                reason: isDup
+                  ? "duplicate"
+                  : isOld
+                    ? "old"
+                    : "installer",
                 mtime: cn.mtime,
               });
             }
@@ -414,18 +425,6 @@
           const totalWaste = cleanable.reduce(function (s, i) {
             return s + i.size;
           }, 0);
-          (function fmt(b) {
-            const u = ["B", "KB", "MB", "GB"];
-            const i = Math.min(
-              Math.floor(Math.log(b || 1) / Math.log(1024)),
-              3,
-            );
-            return (
-              (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) +
-              " " +
-              u[i]
-            );
-          });
           let listHtml = "";
           for (
             let cni2 = 0;
@@ -516,6 +515,7 @@
             };
           document.getElementById("cleanup-select-all").onclick =
             function () {
+              const btn = document.getElementById("cleanup-select-all");
               const cbs = panel.querySelectorAll(
                 '.cleanup-item input[type="checkbox"]',
               );
@@ -527,6 +527,7 @@
               cbs.forEach(function (cb) {
                 cb.checked = someUnchecked;
               });
+              if (btn) btn.textContent = someUnchecked ? "Select All" : "Select None";
             };
           document.getElementById("cleanup-move-trash").onclick =
             function () {
@@ -550,19 +551,23 @@
                 document.getElementById("scan-path")?.value || ""
               ).replace(/[\\/]+$/, "");
               (async function () {
+                let ok = 0, fail = 0;
                 for (let fi = 0; fi < files.length; fi++) {
                   try {
                     await window.__TAURI__.invoke("delete_path", {
                       path: rootPath + "/" + files[fi],
                     });
+                    ok++;
                   } catch (e) {
+                    fail++;
                     console.warn("Cleanup:", e);
                   }
                 }
                 panel.style.display = "none";
+                if (fail > 0 && window.showToast)
+                  window.showToast(ok + " moved to trash, " + fail + " failed", "warning");
                 if (stb)
-                  stb.textContent =
-                    "Cleaned up " + files.length + " files";
+                  stb.textContent = "Cleaned up " + files.length + " files";
               })();
             };
           panel
