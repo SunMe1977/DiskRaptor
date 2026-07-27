@@ -396,11 +396,7 @@ mod platform {
                 continue;
             }
 
-            // Skip hidden files/dirs
             let file_name = entry.file_name().to_string_lossy().into_owned();
-            if file_name.starts_with('.') {
-                continue;
-            }
 
             let is_dir = entry.file_type().is_dir();
             let parent = os_path

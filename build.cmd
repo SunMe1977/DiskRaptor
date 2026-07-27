@@ -9,29 +9,43 @@ echo.
 
 setlocal
 
-set VERSION=0.0.6
+set VERSION=1.0.0
 
-REM -- Find tool paths ----------------------------
-set MSVC_ROOT=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207
-set WIN10_KIT=C:\Program Files (x86)\Windows Kits\10
-set QT_DIR=C:\Qt\6.10.3\msvc2022_64
-set CMAKE_DIR=C:\Qt\Tools\CMake_64
-set NINJA_DIR=C:\Qt\Tools\Ninja
+REM -- Override paths via env vars: DISKRAptor_MSVC_ROOT, DISKRAptor_WIN10_KIT, DISKRAptor_WIN10_KIT_VER, DISKRAptor_QT_DIR, DISKRAptor_CMAKE_DIR, DISKRAptor_NINJA_DIR
+
+REM -- Find tool paths (override via environment variables) ------
+set "MSVC_ROOT=%DISKRAptor_MSVC_ROOT%"
+if "%MSVC_ROOT%"=="" set "MSVC_ROOT=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207"
+
+set "WIN10_KIT=%DISKRAptor_WIN10_KIT%"
+if "%WIN10_KIT%"=="" set "WIN10_KIT=C:\Program Files (x86)\Windows Kits\10"
+
+set "WIN10_KIT_VER=%DISKRAptor_WIN10_KIT_VER%"
+if "%WIN10_KIT_VER%"=="" set "WIN10_KIT_VER=10.0.26100.0"
+
+set "QT_DIR=%DISKRAptor_QT_DIR%"
+if "%QT_DIR%"=="" set "QT_DIR=C:\Qt\6.10.3\msvc2022_64"
+
+set "CMAKE_DIR=%DISKRAptor_CMAKE_DIR%"
+if "%CMAKE_DIR%"=="" set "CMAKE_DIR=C:\Qt\Tools\CMake_64"
+
+set "NINJA_DIR=%DISKRAptor_NINJA_DIR%"
+if "%NINJA_DIR%"=="" set "NINJA_DIR=C:\Qt\Tools\Ninja"
 
 set PATH=%MSVC_ROOT%\bin\Hostx64\x64;%PATH%
-set PATH=%WIN10_KIT%\bin\10.0.26100.0\x64;%PATH%
+set PATH=%WIN10_KIT%\bin\%WIN10_KIT_VER%\x64;%PATH%
 set PATH=%CMAKE_DIR%\bin;%PATH%
 set PATH=%NINJA_DIR%;%PATH%
 
 set INCLUDE=%MSVC_ROOT%\include
-set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\ucrt
-set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\shared
-set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\um
-set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\10.0.26100.0\winrt
+set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\%WIN10_KIT_VER%\ucrt
+set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\%WIN10_KIT_VER%\shared
+set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\%WIN10_KIT_VER%\um
+set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\%WIN10_KIT_VER%\winrt
 
 set LIB=%MSVC_ROOT%\lib\x64
-set LIB=%LIB%;%WIN10_KIT%\Lib\10.0.26100.0\ucrt\x64
-set LIB=%LIB%;%WIN10_KIT%\Lib\10.0.26100.0\um\x64
+set LIB=%LIB%;%WIN10_KIT%\Lib\%WIN10_KIT_VER%\ucrt\x64
+set LIB=%LIB%;%WIN10_KIT%\Lib\%WIN10_KIT_VER%\um\x64
 
 set Qt6_DIR=%QT_DIR%\lib\cmake\Qt6
 set CMAKE_PREFIX_PATH=%QT_DIR%
@@ -60,7 +74,7 @@ cmake .. -G Ninja ^
     -DCMAKE_PREFIX_PATH="%CMAKE_PREFIX_PATH%" ^
     -DCMAKE_C_COMPILER="%MSVC_ROOT%\bin\Hostx64\x64\cl.exe" ^
     -DCMAKE_CXX_COMPILER="%MSVC_ROOT%\bin\Hostx64\x64\cl.exe" ^
-    -DCMAKE_MT="%WIN10_KIT%\bin\10.0.26100.0\x64\mt.exe"
+    -DCMAKE_MT="%WIN10_KIT%\bin\%WIN10_KIT_VER%\x64\mt.exe"
 if %ERRORLEVEL% neq 0 (
     echo ERROR: CMake configuration failed
     pause
@@ -119,7 +133,7 @@ REM -- Code Signing (optional) -------------------
 echo.
 echo [SIGN] Signing executables...
 set SIGNTOOL=
-if exist "%WIN10_KIT%\bin\10.0.26100.0\x64\signtool.exe" set SIGNTOOL=%WIN10_KIT%\bin\10.0.26100.0\x64\signtool.exe
+if exist "%WIN10_KIT%\bin\%WIN10_KIT_VER%\x64\signtool.exe" set SIGNTOOL=%WIN10_KIT%\bin\%WIN10_KIT_VER%\x64\signtool.exe
 if not defined SIGNTOOL for /f "delims=" %%i in ('where signtool 2^>nul') do set SIGNTOOL=%%i
 if defined SIGNTOOL (
     "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\DiskRaptor.exe"
@@ -164,15 +178,4 @@ if exist "%MAKENSIS%" (
     echo  Install NSIS from https://nsis.sourceforge.io to create setup.exe
 )
 
-REM -- Create zip package --
-echo.
-echo [EXTRA] Creating zip package...
-if exist "dist\DiskRaptor-%VERSION%-win64.zip" del "dist\DiskRaptor-%VERSION%-win64.zip"
-powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath 'dist\DiskRaptor-%VERSION%-win64.zip' -CompressionLevel Optimal"
-if %ERRORLEVEL% equ 0 (
-    echo  OK - dist\DiskRaptor-%VERSION%-win64.zip
-) else (
-    echo  WARNING: zip creation failed
-)
-echo.
 pause

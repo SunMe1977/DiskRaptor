@@ -39,9 +39,9 @@
 
     /** Run the empty folder scan */
     async run(loader, scanPath) {
-      var body = this.panel.querySelector("#empty-folders-body");
-      var status = this.panel.querySelector(".module-status");
-      var results = this.panel.querySelector(".module-results");
+      const body = this.panel.querySelector("#empty-folders-body");
+      const status = this.panel.querySelector(".module-status");
+      const results = this.panel.querySelector(".module-results");
       body.innerHTML = "";
       status.textContent = "Scanning…";
       results.style.display = "none";
@@ -52,24 +52,24 @@
       }
 
       // Walk all nodes and find empty directories
-      var empty = [];
-      var dirIndices = {};
-      for (var i = 0; i < loader.allNodes.length; i++) {
-        var n = loader.allNodes[i];
+      const empty = [];
+      const dirIndices = {};
+      for (let i = 0; i < loader.allNodes.length; i++) {
+        const n = loader.allNodes[i];
         if (n && n.node_type === "Directory") {
           dirIndices[i] = true;
         }
       }
       // Count children per parent
-      var childCount = {};
-      for (var i = 1; i < loader.allNodes.length; i++) {
-        var n = loader.allNodes[i];
+      const childCount = {};
+      for (let i = 1; i < loader.allNodes.length; i++) {
+        const n = loader.allNodes[i];
         if (n) {
           childCount[n.parent] = (childCount[n.parent] || 0) + 1;
         }
       }
       // Find directories with 0 children
-      for (var idx in dirIndices) {
+      for (const idx in dirIndices) {
         if (!childCount[idx]) {
           empty.push(loader.allNodes[parseInt(idx)]);
         }
@@ -85,8 +85,8 @@
       results.style.display = "block";
 
       empty.forEach(function (node) {
-        var tr = document.createElement("tr");
-        var td = document.createElement("td");
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
         td.style.cssText = "padding:3px 8px;border-bottom:1px solid var(--border-light);font-family:var(--font-mono);font-size:11px;cursor:pointer";
         td.textContent = node.name || "(unnamed)";
         td.title = "Empty directory";

@@ -74,18 +74,18 @@ class DupScanner {
       return;
     }
 
-    var self = this;
-    var poll = setInterval(async function() {
+    const self = this;
+    const poll = setInterval(async function() {
       if (!self._running) { clearInterval(poll); return; }
       try {
-        var stats = await window.__TAURI__.invoke("get_dup_stats", {});
+        const stats = await window.__TAURI__.invoke("get_dup_stats", {});
         if (stats) {
           self._updateProgress(stats);
           if (stats.phase === 3) {
             clearInterval(poll);
             self.overlay.style.display = "none";
             try {
-              var data = await window.__TAURI__.invoke("get_dup_result", {});
+              const data = await window.__TAURI__.invoke("get_dup_result", {});
               if (data && data.groups) {
                 self._showResults(data);
               }
@@ -105,8 +105,8 @@ class DupScanner {
     this._running = false;
     await window.__TAURI__.invoke("cancel_dup_scan", {}).catch(function(){});
     // Poll for result until available (thread may still be cleaning up)
-    var data = null;
-    for (var ci = 0; ci < 30; ci++) {
+    let data = null;
+    for (let ci = 0; ci < 30; ci++) {
       await new Promise(function(r) { setTimeout(r, 100); });
       try {
         data = await window.__TAURI__.invoke("get_dup_result", {}).catch(function(){return null;});
@@ -124,38 +124,38 @@ class DupScanner {
   }
 
   _updateProgress(stats) {
-    var files = document.getElementById("dup-progress-files");
-    var groups = document.getElementById("dup-progress-groups");
-    var wasted = document.getElementById("dup-progress-wasted");
-    var status = document.getElementById("dup-progress-status");
-    var bar = document.getElementById("dup-progress-bar");
-    var file = document.getElementById("dup-progress-file");
+    const files = document.getElementById("dup-progress-files");
+    const groups = document.getElementById("dup-progress-groups");
+    const wasted = document.getElementById("dup-progress-wasted");
+    const status = document.getElementById("dup-progress-status");
+    const bar = document.getElementById("dup-progress-bar");
+    const file = document.getElementById("dup-progress-file");
 
     if (files) files.textContent = (stats.filesScanned || 0).toLocaleString();
     if (groups) groups.textContent = (stats.groups || 0).toLocaleString();
     if (wasted) wasted.textContent = this._fmtSize(stats.wastedBytes || 0);
     if (file) file.textContent = stats.currentFile || "";
     if (status) {
-      var t = window.__ || function(s){return s;};
+      const t = window.__ || function(s){return s;};
       if (stats.phase === 3) status.textContent = t("dup.processing");
       else if (stats.phase === 2) status.textContent = t("dup.hashing");
       else status.textContent = t("dup.scanning");
     }
     // Animated bar (indeterminate progress)
     if (bar) {
-      var pct = Math.min(95, (stats.filesScanned || 0) / 10000 * 100);
+      const pct = Math.min(95, (stats.filesScanned || 0) / 10000 * 100);
       bar.style.width = pct + "%";
     }
   }
 
   _showResults(data, cancelled) {
-    var list = document.getElementById("dup-groups-list");
-    var summary = document.getElementById("dup-summary");
+    const list = document.getElementById("dup-groups-list");
+    const summary = document.getElementById("dup-summary");
     list.innerHTML = "";
 
-    var groups = data.groups || [];
-    var t = window.__ || function(s){return s;};
-    var headerText = groups.length + " groups \u00B7 " + this._fmtSize(data.wastedBytes || 0) + " reclaimable";
+    const groups = data.groups || [];
+    const t = window.__ || function(s){return s;};
+    let headerText = groups.length + " groups \u00B7 " + this._fmtSize(data.wastedBytes || 0) + " reclaimable";
     if (cancelled && groups.length > 0) {
       headerText = "⚠ " + t("dup.cancelled") + " \u2014 " + headerText + " (partial)";
     } else if (cancelled) {
@@ -172,7 +172,7 @@ class DupScanner {
     if (summary) summary.textContent = headerText;
 
     // Add delete selected button
-    var toolbar = document.createElement("div");
+    const toolbar = document.createElement("div");
     toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);";
     toolbar.innerHTML = `
       <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete</span>
@@ -180,26 +180,26 @@ class DupScanner {
     `;
     list.appendChild(toolbar);
 
-    var self = this;
-    var checkStates = {}; // groupIndex -> set of file indices to delete
-    var totalChecked = 0;
+    const self = this;
+    const checkStates = {}; // groupIndex -> set of file indices to delete
+    let totalChecked = 0;
 
     function updateSelectedCount() {
-      var el = document.getElementById("dup-selected-count");
+      const el = document.getElementById("dup-selected-count");
       if (el) el.textContent = totalChecked;
     }
 
     groups.forEach(function(g, gi) {
       // Pre-select all except the first file (keep one copy)
-      var preSelected = [];
-      for (var fi = 1; fi < g.files.length; fi++) preSelected.push(fi);
+      const preSelected = [];
+      for (let fi = 1; fi < g.files.length; fi++) preSelected.push(fi);
       checkStates[gi] = new Set(preSelected);
       totalChecked += preSelected.length;
 
-      var card = document.createElement("div");
+      const card = document.createElement("div");
       card.style.cssText = "margin-bottom:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;opacity:0;transform:translateY(10px);transition:opacity 0.3s,transform 0.3s;";
 
-      var header = document.createElement("div");
+      const header = document.createElement("div");
       header.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg-tertiary);cursor:pointer;user-select:none;";
       header.innerHTML = `
         <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-primary);font-weight:500;"><input type="checkbox" id="selall-${gi}" style="width:14px;height:14px;cursor:pointer;accent-color:#f85149;"> \uD83D\uDCC1 ${g.count} copies \u00B7 ${g.sizeHuman || self._fmtSize(g.size)} each</span>
@@ -207,16 +207,16 @@ class DupScanner {
       `;
       card.appendChild(header);
       // Select-all checkbox in header
-      var selAll = header.querySelector("input");
+      const selAll = header.querySelector("input");
       selAll.checked = true; // all except first are selected by default
       selAll.onclick = function(e) {
         e.stopPropagation();
-        var checked = selAll.checked;
+        const checked = selAll.checked;
         checkStates[gi] = new Set();
         totalChecked = 0;
         // Recalculate total and update checkboxes
         g.files.forEach(function(fp, fi) {
-          var cb = body.querySelectorAll('input[type="checkbox"]')[fi];
+          const cb = body.querySelectorAll('input[type="checkbox"]')[fi];
           if (cb) {
             if (checked && fi > 0) { // don't select first (keep one)
               cb.checked = true;
@@ -227,19 +227,19 @@ class DupScanner {
           }
         });
         if (checked) {
-          for (var fi = 1; fi < g.files.length; fi++) checkStates[gi].add(fi);
+          for (let fi = 1; fi < g.files.length; fi++) checkStates[gi].add(fi);
         }
         totalChecked = 0;
-        for (var sg in checkStates) totalChecked += checkStates[sg].size;
+        for (const sg in checkStates) totalChecked += checkStates[sg].size;
         updateSelectedCount();
       };
 
-      var body = document.createElement("div");
+      const body = document.createElement("div");
       body.style.cssText = "padding:4px 0;background:var(--bg-secondary);";
 
       (g.files || []).forEach(function(fp, fi) {
-        var checked = preSelected.indexOf(fi) >= 0;
-        var row = document.createElement("div");
+        const checked = preSelected.indexOf(fi) >= 0;
+        const row = document.createElement("div");
         row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:0;font-size:12px;color:var(--text-secondary);transition:background 0.15s;";
         row.innerHTML = `
           <input type="checkbox" ${checked ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;accent-color:#f85149;flex-shrink:0;">
@@ -248,7 +248,7 @@ class DupScanner {
           <span style="color:var(--text-muted);font-size:10px;">${self._fmtSize(g.size)}</span>
         `;
         
-        var cb = row.querySelector('input');
+        const cb = row.querySelector('input');
         cb.onchange = function() {
           if (cb.checked) {
             checkStates[gi].add(fi);
@@ -275,7 +275,7 @@ class DupScanner {
       card.appendChild(body);
 
       // Toggle expand
-      var expanded = true;
+      let expanded = true;
       header.onclick = function() {
         expanded = !expanded;
         body.style.display = expanded ? "block" : "none";
@@ -296,11 +296,11 @@ class DupScanner {
     updateSelectedCount();
 
     // Delete button handler
-    var self2 = this;
+    const self2 = this;
     document.getElementById("dup-delete-btn").onclick = function() {
-      var toDelete = [];
+      const toDelete = [];
       groups.forEach(function(g, gi) {
-        var selected = checkStates[gi];
+        const selected = checkStates[gi];
         if (!selected) return;
         selected.forEach(function(fi) {
           if (g.files[fi]) toDelete.push(g.files[fi]);
@@ -315,7 +315,7 @@ class DupScanner {
       if (!confirm("Move " + toDelete.length + " duplicate files to Trash?")) return;
 
       // Move one by one with status updates
-      var delBtn = document.getElementById("dup-delete-btn");
+      const delBtn = document.getElementById("dup-delete-btn");
       delBtn.disabled = true;
       delBtn.textContent = "Moving to Trash...";
 
@@ -342,9 +342,9 @@ class DupScanner {
 
   _fmtSize(bytes) {
     if (!bytes || bytes <= 0) return "0 B";
-    var units = ["B", "KB", "MB", "GB", "TB"];
-    var i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    var v = bytes / Math.pow(1024, i);
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const v = bytes / Math.pow(1024, i);
     return (i === 0 ? v : v.toFixed(1)) + " " + units[i];
   }
 }

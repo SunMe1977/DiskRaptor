@@ -12,14 +12,14 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     // ── Vertical Splitter ────────────────────────────────────
-    var vSplit = document.getElementById("v-splitter");
-    var leftCol = document.getElementById("left-column");
-    var mainLayout = document.getElementById("main-layout");
+    const vSplit = document.getElementById("v-splitter");
+    const leftCol = document.getElementById("left-column");
+    const mainLayout = document.getElementById("main-layout");
 
     if (vSplit && leftCol && mainLayout) {
-      var vDragging = false;
-      var vStartX = 0;
-      var vStartWidth = 0;
+      let vDragging = false;
+      let vStartX = 0;
+      let vStartWidth = 0;
 
       vSplit.addEventListener("mousedown", function (e) {
         vDragging = true;
@@ -32,8 +32,8 @@
 
       document.addEventListener("mousemove", function (e) {
         if (!vDragging) return;
-        var dx = e.clientX - vStartX;
-        var newWidth = vStartWidth + dx;
+        const dx = e.clientX - vStartX;
+        const newWidth = vStartWidth + dx;
         newWidth = Math.max(
           200,
           Math.min(newWidth, mainLayout.offsetWidth - 300),
@@ -59,14 +59,14 @@
     }
 
     // ── Horizontal Splitter ──────────────────────────────────
-    var hSplit = document.getElementById("h-splitter");
-    var diagPanel = document.getElementById("diagram-panel");
-    var treePanel = document.getElementById("tree-panel");
+    const hSplit = document.getElementById("h-splitter");
+    const diagPanel = document.getElementById("diagram-panel");
+    const treePanel = document.getElementById("tree-panel");
 
     if (hSplit && diagPanel && leftCol) {
-      var hDragging = false;
-      var hStartY = 0;
-      var hStartHeight = 0;
+      let hDragging = false;
+      let hStartY = 0;
+      let hStartHeight = 0;
 
       hSplit.addEventListener("mousedown", function (e) {
         hDragging = true;
@@ -79,8 +79,8 @@
 
       document.addEventListener("mousemove", function (e) {
         if (!hDragging) return;
-        var dy = e.clientY - hStartY;
-        var newHeight = hStartHeight + dy;
+        const dy = e.clientY - hStartY;
+        const newHeight = hStartHeight + dy;
         newHeight = Math.max(
           80,
           Math.min(newHeight, leftCol.offsetHeight - 80),
@@ -114,14 +114,14 @@
     }
 
     // ── Topfiles Splitter (between Selection and Top 50) ────
-    var tfSplit = document.getElementById("tf-splitter");
-    var topfilesCard = document.getElementById("topfiles-card");
-    var detailPanel = document.getElementById("detail-panel");
+    const tfSplit = document.getElementById("tf-splitter");
+    const topfilesCard = document.getElementById("topfiles-card");
+    const detailPanel = document.getElementById("detail-panel");
 
     if (tfSplit && topfilesCard && detailPanel) {
-      var tfDragging = false;
-      var tfStartY = 0;
-      var tfStartHeight = 0;
+      let tfDragging = false;
+      let tfStartY = 0;
+      let tfStartHeight = 0;
 
       tfSplit.addEventListener("mousedown", function (e) {
         tfDragging = true;
@@ -137,10 +137,10 @@
       document.addEventListener("mousemove", function (e) {
         if (!tfDragging) return;
         // Invert: drag down = topfiles larger, drag up = smaller
-        var dy = tfStartY - e.clientY;
-        var newHeight = tfStartHeight + dy;
+        const dy = tfStartY - e.clientY;
+        const newHeight = tfStartHeight + dy;
         // Clamp between 60px and available space minus 200px for stats
-        var maxH = Math.max(60, detailPanel.offsetHeight - 220);
+        const maxH = Math.max(60, detailPanel.offsetHeight - 220);
         newHeight = Math.max(60, Math.min(newHeight, maxH));
         topfilesCard.style.flex = "none";
         topfilesCard.style.height = newHeight + "px";

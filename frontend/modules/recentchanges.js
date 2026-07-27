@@ -47,11 +47,11 @@
     }
 
     async run(loader, scanPath) {
-      var daysSelect = this.panel.querySelector(".module-days");
-      var maxDays = parseInt(daysSelect ? daysSelect.value : 7);
-      var body = this.panel.querySelector("#recent-changes-body");
-      var status = this.panel.querySelector(".module-status");
-      var results = this.panel.querySelector(".module-results");
+      const daysSelect = this.panel.querySelector(".module-days");
+      const maxDays = parseInt(daysSelect ? daysSelect.value : 7);
+      const body = this.panel.querySelector("#recent-changes-body");
+      const status = this.panel.querySelector(".module-status");
+      const results = this.panel.querySelector(".module-results");
       body.innerHTML = "";
       status.textContent = "Scanning…";
       results.style.display = "none";
@@ -62,11 +62,11 @@
       }
 
       // Collect all file nodes (files only, not directories)
-      var files = [];
-      var cutoff = Date.now() - maxDays * 86400000;
+      const files = [];
+      const cutoff = Date.now() - maxDays * 86400000;
 
-      for (var i = 0; i < loader.allNodes.length; i++) {
-        var n = loader.allNodes[i];
+      for (let i = 0; i < loader.allNodes.length; i++) {
+        const n = loader.allNodes[i];
         if (n && n.node_type !== "Directory") {
           // We don't have timestamps in tree nodes, so we use a heuristic:
           // files in deep paths tend to be more recently modified
@@ -79,7 +79,7 @@
 
       // Sort by size descending (as proxy for "recent" since we lack timestamps)
       files.sort(function (a, b) { return (b.size || 0) - (a.size || 0); });
-      var recent = files.slice(0, 100);
+      const recent = files.slice(0, 100);
 
       this.results = recent;
       if (recent.length === 0) {
@@ -91,14 +91,14 @@
       results.style.display = "block";
 
       recent.forEach(function (node) {
-        var tr = document.createElement("tr");
-        var td1 = document.createElement("td");
+        const tr = document.createElement("tr");
+        const td1 = document.createElement("td");
         td1.style.cssText = "padding:3px 8px;border-bottom:1px solid var(--border-light);font-family:var(--font-mono);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;cursor:pointer";
         td1.textContent = node.name || "?";
         td1.title = "Size: " + (node.size_human || node.size || "?");
         tr.appendChild(td1);
 
-        var td2 = document.createElement("td");
+        const td2 = document.createElement("td");
         td2.style.cssText = "padding:3px 8px;border-bottom:1px solid var(--border-light);text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--accent-orange);font-weight:600";
         td2.textContent = node.size > 0 ? ((node.size / 1024 / 1024).toFixed(1) + " MB") : "?";
         tr.appendChild(td2);

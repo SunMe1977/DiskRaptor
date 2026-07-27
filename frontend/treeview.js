@@ -33,14 +33,14 @@ class TreeView {
 
   /** Listen for diagram "jump in tree" clicks */
   _initSortControls() {
-    var self = this;
+    const self = this;
     // Default sort: size desc
     document.querySelectorAll(".tree-col-sort").forEach(function(btn) {
       if (btn.dataset.col === "size") {
         btn.classList.add("sort-desc");
       }
       btn.addEventListener("click", function() {
-        var col = this.dataset.col;
+        const col = this.dataset.col;
         if (self.sortBy === col) {
           self.sortDesc = !self.sortDesc;
         } else {
@@ -57,8 +57,8 @@ class TreeView {
   }
 
   _initFilter() {
-    var self = this;
-    var el = document.getElementById("tree-filter");
+    const self = this;
+    const el = document.getElementById("tree-filter");
     if (!el) return;
     el.addEventListener("input", function() {
       self._filterText = this.value.toLowerCase().trim();
@@ -67,7 +67,7 @@ class TreeView {
   }
 
   _initTypeFilters() {
-    var self = this;
+    const self = this;
     document.querySelectorAll(".type-filter").forEach(function(btn) {
       btn.addEventListener("click", function() {
         document.querySelectorAll(".type-filter").forEach(function(b) { b.classList.remove("active"); });
@@ -79,15 +79,15 @@ class TreeView {
   }
 
   _initKeyboard() {
-    var self = this;
+    const self = this;
     document.addEventListener("keydown", function(e) {
       // Only handle when tree is visible and not typing in filter
-      var filter = document.getElementById("tree-filter");
+      const filter = document.getElementById("tree-filter");
       if (filter && document.activeElement === filter) return;
       if (self.visibleNodes.length === 0) return;
-      var cur = self.selectedIndex;
+      let cur = self.selectedIndex;
       if (cur === null || cur === undefined) cur = self.visibleNodes[0];
-      var idx = self.visibleNodes.indexOf(cur);
+      let idx = self.visibleNodes.indexOf(cur);
       if (idx === -1) idx = 0;
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -99,13 +99,13 @@ class TreeView {
         self.select(self.visibleNodes[idx]);
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        var node = self.loader.getNode(cur);
+        const node = self.loader.getNode(cur);
         if (node && (node.node_type === "Directory" || node.node_type === 0)) {
           self.toggleExpand(cur);
         }
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        var node = self.loader.getNode(cur);
+        const node = self.loader.getNode(cur);
         if (node && self.expanded.has(cur)) {
           self.toggleExpand(cur);
         } else if (node && node.parent !== 4294967295) {
@@ -119,34 +119,34 @@ class TreeView {
   }
 
   _initDiagramJump() {
-    var self = this;
+    const self = this;
     window.addEventListener("diagram-jump-to-path", async function (e) {
-      var fullPath = e.detail && e.detail.path;
+      const fullPath = e.detail && e.detail.path;
       if (!fullPath || !self.loader || !self.loader.allNodes) {
         console.warn("Jump: no loader data yet");
         return;
       }
-      var scanPath = document.getElementById("scan-path");
+      const scanPath = document.getElementById("scan-path");
       if (!scanPath || !scanPath.value) {
         console.warn("Jump: no scan path");
         return;
       }
-      var root = scanPath.value.replace(/[\\/]+$/, "");
-      var fullNorm = fullPath.replace(new RegExp("/", "g"), "\\");
-      var rootNorm = root.replace(new RegExp("/", "g"), "\\");
+      const root = scanPath.value.replace(/[\\/]+$/, "");
+      const fullNorm = fullPath.replace(new RegExp("/", "g"), "\\");
+      const rootNorm = root.replace(new RegExp("/", "g"), "\\");
       if (fullNorm.toUpperCase().indexOf(rootNorm.toUpperCase()) !== 0) {
         console.warn("Jump: path mismatch", fullPath, "vs", root);
         return;
       }
-      var rel = fullNorm.substring(rootNorm.length).replace(/^[\\/]/, "");
+      const rel = fullNorm.substring(rootNorm.length).replace(/^[\\/]/, "");
       if (!rel) return; // clicking root
-      var parts = rel.split(/[\\/]+/);
+      const parts = rel.split(/[\\/]+/);
       if (parts.length === 0) return;
 
-      var currentIdx = 0;
-      var found = true;
-      for (var pi = 0; pi < parts.length; pi++) {
-        var seg = parts[pi];
+      let currentIdx = 0;
+      let found = true;
+      for (let pi = 0; pi < parts.length; pi++) {
+        const seg = parts[pi];
         if (!seg) continue;
 
         // Mark as expanded
@@ -155,9 +155,9 @@ class TreeView {
         }
 
         // First, scan all loaded nodes manually (more thorough than getChildrenIndices)
-        var match = -1;
-        for (var ni = 0; ni < self.loader.allNodes.length; ni++) {
-          var n = self.loader.allNodes[ni];
+        let match = -1;
+        for (let ni = 0; ni < self.loader.allNodes.length; ni++) {
+          const n = self.loader.allNodes[ni];
           if (n && n.parent === currentIdx && n.name === seg) {
             match = ni;
             break;
@@ -166,9 +166,9 @@ class TreeView {
 
         // If not found, try getChildrenIndices
         if (match === -1) {
-          var children = self.loader.getChildrenIndices(currentIdx);
-          for (var ci = 0; ci < children.length; ci++) {
-            var n = self.loader.getNode(children[ci]);
+          const children = self.loader.getChildrenIndices(currentIdx);
+          for (let ci = 0; ci < children.length; ci++) {
+            const n = self.loader.getNode(children[ci]);
             if (n && n.name === seg) {
               match = children[ci];
               break;
@@ -179,14 +179,14 @@ class TreeView {
         // If still not found, fetch from backend
         if (match === -1) {
           try {
-            var rawKids = await self.loader.fetchChildren(currentIdx);
+            const rawKids = await self.loader.fetchChildren(currentIdx);
             if (rawKids && rawKids.length > 0) {
-              for (var ri = 0; ri < rawKids.length; ri++) {
+              for (let ri = 0; ri < rawKids.length; ri++) {
                 if (rawKids[ri].name === seg) {
-                  var newIdx = self.loader.allNodes.length;
+                  const newIdx = self.loader.allNodes.length;
                   rawKids[ri]._arenaIndex = newIdx;
                   self.loader.allNodes.push(rawKids[ri]);
-                  var existing = self.loader.parentMap.get(currentIdx) || [];
+                  const existing = self.loader.parentMap.get(currentIdx) || [];
                   existing.push(newIdx);
                   self.loader.parentMap.set(currentIdx, existing);
                   match = newIdx;
@@ -210,8 +210,8 @@ class TreeView {
       if (found) {
         await self.rebuild();
         self.select(currentIdx);
-        var sb = document.querySelector(".status-bar");
-        var t = window.__ || function(s){return s;};
+        const sb = document.querySelector(".status-bar");
+        const t = window.__ || function(s){return s;};
         if (sb) sb.textContent = t("status.jumped").replace("{path}", fullPath);
       } else {
         console.warn("Jump: could not find path in tree:", fullPath);
@@ -258,14 +258,14 @@ class TreeView {
     document.body.appendChild(this._ctxMenu);
 
     // Show context menu on right-click
-    var self = this;
-    var scrollEl = document.getElementById("tree-scroll");
+    const self = this;
+    const scrollEl = document.getElementById("tree-scroll");
     if (scrollEl) {
       scrollEl.addEventListener("contextmenu", function(e) {
-        var row = e.target.closest(".tree-row");
+        const row = e.target.closest(".tree-row");
         if (!row) return;
         e.preventDefault();
-        var arenaIdx = parseInt(row.dataset.index);
+        const arenaIdx = parseInt(row.dataset.index);
         if (isNaN(arenaIdx)) return;
         self._ctxMenu._arenaIdx = arenaIdx;
         self._ctxMenu.style.display = "block";
@@ -310,15 +310,15 @@ class TreeView {
     if (!path) return;
     const name = node.name || "?";
     const isDir = node.node_type === "Directory" || node.node_type === 0;
-    var t = window.__ || function(s){return s;};
+    const t = window.__ || function(s){return s;};
     if (!confirm((isDir ? t("confirm.move_trash_folder") : t("confirm.move_trash_file")) + path)) return;
     try {
-      var res = await window.__TAURI__.invoke("delete_path", { path: path });
+      const res = await window.__TAURI__.invoke("delete_path", { path: path });
       if (res && res.success === false) {
         alert("Failed: " + (res.error || "unknown error"));
         return;
       }
-      var t = window.__ || function(s){return s;};
+      const t = window.__ || function(s){return s;};
       document.querySelector(".status-bar").textContent = t("status.moved_to_trash").replace("{name}", name);
       this._removeNodeFromTree(arenaIdx);
       await this.rebuild();
@@ -328,32 +328,32 @@ class TreeView {
   }
 
   _removeNodeFromTree(arenaIdx) {
-    var node = this.loader.getNode(arenaIdx);
+    const node = this.loader.getNode(arenaIdx);
     if (!node) return;
-    var parent = node.parent;
+    const parent = node.parent;
 
-    var toRemove = [arenaIdx];
-    var i = 0;
+    const toRemove = [arenaIdx];
+    let i = 0;
     while (i < toRemove.length) {
-      var children = this.loader.getChildrenIndices(toRemove[i]);
-      for (var ci = 0; ci < children.length; ci++) {
+      const children = this.loader.getChildrenIndices(toRemove[i]);
+      for (let ci = 0; ci < children.length; ci++) {
         toRemove.push(children[ci]);
       }
       i++;
     }
 
-    for (var ri = 0; ri < toRemove.length; ri++) {
-      var idx = toRemove[ri];
+    for (let ri = 0; ri < toRemove.length; ri++) {
+      const idx = toRemove[ri];
       this.loader.allNodes[idx] = null;
       this.expanded.delete(idx);
       this.loader.parentMap.delete(idx);
     }
 
     if (parent !== 4294967295) {
-      var siblings = this.loader.parentMap.get(parent);
+      const siblings = this.loader.parentMap.get(parent);
       if (siblings) {
-        var filtered = [];
-        for (var si = 0; si < siblings.length; si++) {
+        const filtered = [];
+        for (let si = 0; si < siblings.length; si++) {
           if (toRemove.indexOf(siblings[si]) === -1) filtered.push(siblings[si]);
         }
         this.loader.parentMap.set(parent, filtered);
@@ -391,7 +391,7 @@ class TreeView {
     if (!path) return;
     try {
       await navigator.clipboard.writeText(path);
-      var t = window.__ || function(s){return s;};
+      const t = window.__ || function(s){return s;};
       document.querySelector(".status-bar").textContent = t("status.copied").replace("{path}", path);
     } catch (e) {
       console.warn("Copy failed:", e);
@@ -401,8 +401,8 @@ class TreeView {
   async _handleScanHere(arenaIdx) {
     const path = this._buildPath(arenaIdx);
     if (!path) return;
-    var sp = document.getElementById("scan-path");
-    var btn = document.getElementById("btn-scan");
+    const sp = document.getElementById("scan-path");
+    const btn = document.getElementById("btn-scan");
     if (sp && btn) {
       sp.value = path;
       btn.click();
@@ -412,10 +412,10 @@ class TreeView {
   async _handleCopySize(arenaIdx) {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
-    var sizeStr = this._formatSize(node.size);
+    const sizeStr = this._formatSize(node.size);
     try {
       await navigator.clipboard.writeText(sizeStr);
-      var t = window.__ || function(s){return s;};
+      const t = window.__ || function(s){return s;};
       document.querySelector(".status-bar").textContent = t("status.copied").replace("{path}", sizeStr);
     } catch(e) {}
   }
@@ -481,19 +481,19 @@ class TreeView {
   _placeContextMenu(x, y) {
     const menu = this._ctxMenu;
     if (!menu) return;
-    var menuW = menu.offsetWidth || 220;
-    var menuH = menu.offsetHeight || 220;
-    var vw = window.innerWidth || document.documentElement.clientWidth;
-    var vh = window.innerHeight || document.documentElement.clientHeight;
-    var left = Math.max(8, Math.min(x, vw - menuW - 8));
-    var top = Math.max(8, Math.min(y, vh - menuH - 8));
+    const menuW = menu.offsetWidth || 220;
+    const menuH = menu.offsetHeight || 220;
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    const left = Math.max(8, Math.min(x, vw - menuW - 8));
+    const top = Math.max(8, Math.min(y, vh - menuH - 8));
     menu.style.left = left + "px";
     menu.style.top = top + "px";
   }
 
   async rebuild() {
-    var scrollEl = document.getElementById("tree-scroll");
-    var savedScroll = scrollEl ? scrollEl.scrollTop : 0;
+    const scrollEl = document.getElementById("tree-scroll");
+    const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
 
     this.visibleNodes = [];
     try {
@@ -519,7 +519,7 @@ class TreeView {
     // Restore scroll position
     if (scrollEl && savedScroll > 0) scrollEl.scrollTop = savedScroll;
 
-    var t = window.__ || function(s){return s;};
+    const t = window.__ || function(s){return s;};
     const nc = document.getElementById("node-count");
     if (nc) nc.textContent = t("tree.shown").replace("{n}", totalItems.toLocaleString());
 
@@ -533,7 +533,7 @@ class TreeView {
     if (!node) return;
 
     // Apply filter: show node if name matches OR it's an ancestor of a match
-    var filterMatch = true;
+    let filterMatch = true;
     if (this._filterText) {
       filterMatch = (node.name || "").toLowerCase().indexOf(this._filterText) !== -1;
       if (!filterMatch && depth > 0) {
@@ -545,10 +545,10 @@ class TreeView {
 
     // File type filter
     if (this._typeFilter && this._typeFilter !== "all" && !isDir) {
-      var ext = (node.name || "").toLowerCase();
-      var dot = ext.lastIndexOf(".");
+      let ext = (node.name || "").toLowerCase();
+      const dot = ext.lastIndexOf(".");
       ext = dot >= 0 ? ext.substring(dot + 1) : "";
-      var exts = this._typeFilter.split("|");
+      const exts = this._typeFilter.split("|");
       if (exts.indexOf(ext) === -1) return;
     }
 
@@ -585,7 +585,7 @@ class TreeView {
         const na = this.loader.getNode(a);
         const nb = this.loader.getNode(b);
         if (!na || !nb) return 0;
-        var cmp = 0;
+        let cmp = 0;
         if (this.sortBy === "name") {
           cmp = (na.name || "").localeCompare(nb.name || "");
         } else if (this.sortBy === "pct") {
@@ -609,11 +609,11 @@ class TreeView {
   }
 
   _hasMatchingDescendant(arenaIdx) {
-    var filter = this._filterText;
+    const filter = this._filterText;
     if (!filter) return true;
-    var children = this.loader.getChildrenIndices(arenaIdx);
-    for (var ci = 0; ci < children.length; ci++) {
-      var child = this.loader.getNode(children[ci]);
+    const children = this.loader.getChildrenIndices(arenaIdx);
+    for (let ci = 0; ci < children.length; ci++) {
+      const child = this.loader.getNode(children[ci]);
       if (!child) continue;
       if ((child.name || "").toLowerCase().indexOf(filter) !== -1) return true;
       if (this._hasMatchingDescendant(children[ci])) return true;
@@ -725,14 +725,14 @@ class TreeView {
     el.appendChild(toggle);
 
     // Icon: fallback emoji, then replace with real Windows icon from IconCache
-    var iconEl = document.createElement("span");
+    const iconEl = document.createElement("span");
     iconEl.className = "icon";
     iconEl.style.cssText =
       "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;";
     iconEl.textContent = isDir ? "📁" : this._fileIcon(node.name || "");
     el.appendChild(iconEl);
     if (window.__ICON_CACHE__) {
-      var iconKey = isDir ? "__folder__" : node.name || "file";
+      const iconKey = isDir ? "__folder__" : node.name || "file";
       window.__ICON_CACHE__
         .getIcon(iconKey, isDir)
         .then(function (iconResult) {
@@ -741,7 +741,7 @@ class TreeView {
             iconResult.indexOf("data:") === 0
           ) {
             iconEl.innerHTML = "";
-            var img = document.createElement("img");
+            const img = document.createElement("img");
             img.src = iconResult;
             img.style.cssText = "width:16px;height:16px;display:block;";
             iconEl.appendChild(img);
@@ -799,8 +799,8 @@ class TreeView {
     const dateEl = document.createElement("span");
     dateEl.className = "node-date";
     if (node.mtime && node.mtime > 0) {
-      var d = new Date((node.mtime) * 1000);
-      var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const d = new Date((node.mtime) * 1000);
+      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
       dateEl.textContent = d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
     } else {
       dateEl.textContent = "—";
@@ -843,16 +843,16 @@ class TreeView {
       ? "Directory"
       : "File";
     // Enable action buttons and attach click handlers
-    var path = this._buildPath(this.selectedIndex);
-    var self = this;
+    const path = this._buildPath(this.selectedIndex);
+    const self = this;
     document.querySelectorAll(".sel-action").forEach(function (btn) {
       btn.disabled = false;
       btn._path = path;
       btn._nodeIdx = self.selectedIndex;
       // Replace click handler
       btn.onclick = function (e) {
-        var action = this.dataset.action;
-        var idx = this._nodeIdx;
+        const action = this.dataset.action;
+        const idx = this._nodeIdx;
         if (action === "explorer") self._handleExplorer(idx);
         else if (action === "terminal") self._handleTerminal(idx);
         else if (action === "properties") self._handleProperties(idx);
@@ -863,7 +863,7 @@ class TreeView {
   }
 
   _fileIcon(name) {
-    var ext = name.lastIndexOf(".") >= 0 ? name.substring(name.lastIndexOf(".")).toLowerCase() : "";
+    const ext = name.lastIndexOf(".") >= 0 ? name.substring(name.lastIndexOf(".")).toLowerCase() : "";
     if (/\.(jpg|jpeg|png|gif|bmp|webp|svg|ico|heic|avif)$/i.test(ext)) return "🖼️";
     if (/\.(mp4|mov|avi|mkv|wmv|flv|webm|m4v)$/i.test(ext)) return "🎬";
     if (/\.(mp3|wav|flac|ogg|aac|m4a|wma)$/i.test(ext)) return "🎵";

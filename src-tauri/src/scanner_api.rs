@@ -289,20 +289,14 @@ fn make_json_error(msg: &str) -> *mut c_char {
         .unwrap()
         .into_raw()
 }
-/// Simple hash of first 4KB of a file (XXH3-like)
+/// Weak hash of first 4KB of a file using xxhash3
 fn quick_hash(path: &std::path::Path) -> u64 {
     use std::io::Read;
     if let Ok(mut f) = std::fs::File::open(path) {
         let mut buf = [0u8; 4096];
         let n = f.read(&mut buf).unwrap_or(0);
         if n > 0 {
-            let mut h: u64 = (n as u64).wrapping_mul(0x9E3779B97F4A7C15);
-            for &b in &buf[..n] {
-                h = h.wrapping_add(b as u64);
-                h = h.wrapping_mul(0x9E3779B97F4A7C15);
-                h ^= h >> 31;
-            }
-            return h;
+            return xxhash_rust::xxh3::xxh3_64(&buf[..n]);
         }
     }
     0

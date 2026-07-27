@@ -26,7 +26,7 @@ class IconCache {
   }
 
   async getIcon(path, isDir) {
-    var key = isDir
+    const key = isDir
       ? "__folder__"
       : (path.split(".").pop() || "file").toLowerCase();
     if (this.cache.has(key)) return this.cache.get(key);
@@ -39,17 +39,17 @@ class IconCache {
       );
     }
 
-    var pending = [];
+    const pending = [];
     this.pending.set(key, pending);
 
     try {
-      var result = await this._loadIcon(path, isDir);
+      const result = await this._loadIcon(path, isDir);
       pending.forEach(function (r) {
         r[0](result);
       });
       return result;
     } catch (e) {
-      var fallback = this._getFallback(key);
+      const fallback = this._getFallback(key);
       // Resolve with fallback so callers get something
       pending.forEach(function (r) {
         r[0](fallback);
@@ -64,7 +64,7 @@ class IconCache {
     if (!window.__TAURI__ || !window.__TAURI__.invoke)
       throw new Error("No invoke");
 
-    var base64 = await window.__TAURI__.invoke("get_icon", {
+    const base64 = await window.__TAURI__.invoke("get_icon", {
       path: path,
       isDir: isDir,
     });
@@ -74,23 +74,23 @@ class IconCache {
       );
 
     // Decode base64 to RGBA pixel data
-    var binaryStr = atob(base64);
-    var len = Math.min(binaryStr.length, 1024); // 16*16*4 = 1024
+    const binaryStr = atob(base64);
+    const len = Math.min(binaryStr.length, 1024); // 16*16*4 = 1024
 
     // Create canvas and draw icon
-    var canvas = document.createElement("canvas");
+    const canvas = document.createElement("canvas");
     canvas.width = 16;
     canvas.height = 16;
-    var ctx = canvas.getContext("2d");
-    var imageData = ctx.createImageData(16, 16);
+    const ctx = canvas.getContext("2d");
+    const imageData = ctx.createImageData(16, 16);
 
-    for (var i = 0; i < len; i++) {
+    for (let i = 0; i < len; i++) {
       imageData.data[i] = binaryStr.charCodeAt(i);
     }
     ctx.putImageData(imageData, 0, 0);
 
-    var dataUri = canvas.toDataURL();
-    var key = isDir
+    const dataUri = canvas.toDataURL();
+    const key = isDir
       ? "__folder__"
       : (path.split(".").pop() || "file").toLowerCase();
     this.cache.set(key, dataUri);

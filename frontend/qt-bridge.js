@@ -13,14 +13,14 @@
 (function () {
   "use strict";
 
-  var bridge = null;
-  var bridgeReady = false;
-  var isQtMode = false;
-  var initStartedAt = Date.now();
-  var maxInitWaitMs = 60000;
-  var initRetryTimer = null;
-  var pendingInvokes = [];
-  var tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
+  let bridge = null;
+  let bridgeReady = false;
+  let isQtMode = false;
+  const initStartedAt = Date.now();
+  const maxInitWaitMs = 60000;
+  let initRetryTimer = null;
+  const pendingInvokes = [];
+  const tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
     ? window.__TAURI__.invoke
     : null;
 
@@ -30,8 +30,8 @@
       return;
     }
 
-    var hasQWebChannel = typeof QWebChannel !== "undefined";
-    var hasQtTransport =
+    const hasQWebChannel = typeof QWebChannel !== "undefined";
+    const hasQtTransport =
       typeof qt !== "undefined" &&
       qt &&
       qt.webChannelTransport;
@@ -102,7 +102,7 @@
   }
 
   function flushPending() {
-    var q = pendingInvokes;
+    const q = pendingInvokes;
     pendingInvokes = [];
     q.forEach(function (fn) {
       try { fn(); } catch (e) { console.error("[DiskRaptor] Pending invoke error:", e); }
@@ -119,7 +119,7 @@
     // String — try to parse as JSON
     if (typeof raw === 'string') {
       try {
-        var p = JSON.parse(raw);
+        const p = JSON.parse(raw);
         if (p && p.success) {
           // p.data might be object or string
           if (p.data && typeof p.data === 'object') {
@@ -170,11 +170,11 @@
             return;
           }
           try {
-            var prom = bridge.invoke(cmd, args || {});
+            const prom = bridge.invoke(cmd, args || {});
             if (prom && typeof prom.then === 'function') {
               prom.then(function(result) {
                 try {
-                  var parsed = JSON.parse(result);
+                  const parsed = JSON.parse(result);
                   if (parsed && typeof parsed === "object" && Object.prototype.hasOwnProperty.call(parsed, "data")) {
                     resolve(parsed.data);
                   } else {
@@ -186,7 +186,7 @@
               }).catch(function(e) { reject(e); });
             } else {
               try {
-                var parsedSync = JSON.parse(prom);
+                const parsedSync = JSON.parse(prom);
                 if (parsedSync && typeof parsedSync === "object" && Object.prototype.hasOwnProperty.call(parsedSync, "data")) {
                   resolve(parsedSync.data);
                 } else {
@@ -224,7 +224,7 @@
   }
 
   // ── Event system ───────────────────────────────────────────
-  var eventListeners = {};
+  const eventListeners = {};
 
   function listen(eventName, callback) {
     if (!eventListeners[eventName]) {
@@ -234,7 +234,7 @@
   }
 
   function emit(eventName, payload) {
-    var listeners = eventListeners[eventName] || [];
+    const listeners = eventListeners[eventName] || [];
     listeners.forEach(function (cb) {
       try {
         cb({ payload: payload, event: eventName });
