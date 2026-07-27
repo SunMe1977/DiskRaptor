@@ -11,7 +11,10 @@ if [ -f ".env" ]; then
   set +a
 fi
 
-VERSION="1.0.0"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VERSION="$(node -p "require('${SCRIPT_DIR}/package.json').version" 2>/dev/null)"
+[ -z "$VERSION" ] && VERSION="$(grep -o '"version": "[^"]*"' "${SCRIPT_DIR}/package.json" | cut -d'"' -f4)"
+[ -z "$VERSION" ] && VERSION="0.0.2"
 IDENTIFIER="diskraptor"
 APP_NAME="DiskRaptor"
 TEAM_ID="7TK444BCPC"

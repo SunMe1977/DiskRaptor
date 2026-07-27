@@ -74,6 +74,7 @@ DiskRaptor-windows.zip
 *.zip
 
 # ── DEB package build directory ────────
+# deb/ is stale — CI and build.sh recreate it from scratch
 deb/
 
 

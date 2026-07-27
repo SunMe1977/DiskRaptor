@@ -4,7 +4,8 @@ title DiskRaptor Release Upload
 
 setlocal enabledelayedexpansion
 
-set VERSION=0.0.2
+for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "try { (Get-Content package.json | ConvertFrom-Json).version } catch { '' }" 2^>nul`) do set VERSION=%%v
+if "%VERSION%"=="" set VERSION=0.0.2
 set TAG=v%VERSION%
 
 echo ==========================================

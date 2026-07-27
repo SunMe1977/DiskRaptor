@@ -3,7 +3,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VERSION="$(grep -o '^VERSION="[^"]*"' "$SCRIPT_DIR/build.sh" 2>/dev/null | sed 's/^VERSION="//;s/"//' || echo "0.0.2")"
+VERSION="$(node -p "require('${SCRIPT_DIR}/package.json').version" 2>/dev/null)"
+[ -z "$VERSION" ] && VERSION="$(grep -o '"version": "[^"]*"' "${SCRIPT_DIR}/package.json" | cut -d'"' -f4)"
+[ -z "$VERSION" ] && VERSION="0.0.2"
 TAG="v$VERSION"
 GH_REPO="SunMe1977/DiskRaptor"
 API="https://api.github.com"

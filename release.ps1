@@ -1,5 +1,5 @@
 param()
-$VERSION = "0.0.2"
+$VERSION = try { (Get-Content package.json -Raw | ConvertFrom-Json).version } catch { "0.0.2" }
 $TAG = "v$VERSION"
 
 Write-Host "=========================================="

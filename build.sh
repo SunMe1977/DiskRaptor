@@ -35,7 +35,31 @@ case "$OS" in
   CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
   *)        echo "Unknown OS: $OS"; exit 1 ;;
 esac
-VERSION="1.0.0"
+VERSION="$(node -p "require('$(dirname "$0")/package.json').version" 2>/dev/null)"
+[ -z "$VERSION" ] && VERSION="$(grep -o '"version": "[^"]*"' "$(dirname "$0")/package.json" | cut -d'"' -f4)"
+[ -z "$VERSION" ] && VERSION="0.0.2"
+
+# ── Version consistency check ──────────────────────────────────
+ROOT="$(dirname "$0")"
+MISMATCH=0
+check_version() {
+  local file="$1" label="$2" val
+  val="$(sed -n "$3" "$ROOT/$file" 2>/dev/null | head -1)"
+  if [ -n "$val" ] && [ "$val" != "$VERSION" ]; then
+    echo "  ⚠ $label: expected $VERSION, got $val ($file)"
+    MISMATCH=$((MISMATCH + 1))
+  fi
+}
+check_version "src-tauri/Cargo.toml"         "Cargo.toml"           's/.*version = "\([^"]*\)".*/\1/p'
+check_version "qt-app/CMakeLists.txt"         "CMakeLists.txt (Qt)"  's/.*project(DiskRaptor VERSION \([0-9.]*\)).*/\1/p'
+check_version "qt-app/src/main.cpp"           "main.cpp"             's/.*setApplicationVersion("\([^"]*\)").*/\1/p'
+check_version "vcpkg.json"                    "vcpkg.json"           's/.*"version": "\([^"]*\)".*/\1/p'
+check_version "installer/nsis/DiskRaptor.nsi" "DiskRaptor.nsi"       's/.*PRODUCT_VERSION "\([^"]*\)".*/\1/p'
+check_version "modulesPro/duplicateScan/duplicate_scan.cpp" "duplicate_scan.cpp" 's/.*g_moduleVersion = "\([^"]*\)".*/\1/p'
+if [ "$MISMATCH" -gt 0 ]; then
+  echo "  Update these files to match package.json version $VERSION"
+fi
+echo ""
 
 # ── Tool paths (override via env vars) ──────────────────────────
 : "${QT_DIR:=/usr/local/opt/qt}"                  # macOS Homebrew default

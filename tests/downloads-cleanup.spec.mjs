@@ -1,6 +1,7 @@
 /**
  * DiskRaptor Downloads Cleanup UI Test
- * Launches the app, scans Downloads, and verifies the cleanup panel appears.
+ * Creates a temp directory with test files, scans it, and verifies the cleanup panel.
+ * No real user files are touched.
  *
  * Usage: node tests/downloads-cleanup.spec.mjs
  *
@@ -202,15 +203,26 @@ async function main() {
     process.exit(1);
   }
 
+  // Create temp directory with test files
+  const tmpDir = fs.mkdtempSync("/tmp/diskraptor-test-downloads-");
+  console.log(`\nTemp dir: ${tmpDir}`);
+  const testFiles = [
+    "old_backup.tar.gz",
+    "duplicate_setup.exe",
+    "temp_cache.zip",
+    "large_log.txt",
+  ];
+  for (const f of testFiles) {
+    fs.writeFileSync(path.join(tmpDir, f), "test content for " + f);
+  }
+  console.log(`  Created ${testFiles.length} test files`);
+
   // Click "Scan Downloads"
-  console.log("\nClicking Scan Downloads...");
-  await jsExpr(cdp, "document.getElementById('btn-tools').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))");
-  await sleep(300);
-  await jsExpr(
-    cdp,
-    `document.querySelector('.tools-item[data-action="scan-downloads"]').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))`,
-  );
-  console.log("  Scan Downloads clicked");
+  console.log("\nSetting scan path and scanning...");
+  await jsExpr(cdp, `document.getElementById('scan-path').value = '${tmpDir}'`);
+  await sleep(200);
+  await jsExpr(cdp, "document.getElementById('btn-scan').click()");
+  console.log("  Scan triggered");
 
   // Wait for progress overlay
   console.log("\nWaiting for scan progress...");
@@ -341,14 +353,52 @@ async function main() {
     );
     assert("Select All toggles checkboxes", beforeState !== afterState);
 
-    // Test Close button
-    await jsExpr(cdp, "document.getElementById('cleanup-close').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))");
+// Test Close button (before Move to Trash, which triggers re-scan)
+    console.log("\nTesting Close button...");
+    await jsExpr(cdp, "document.getElementById('cleanup-close').click()");
     await sleep(300);
-    const panelHidden = await jsExpr(
+    const closeHidden = await jsExpr(
       cdp,
       `(document.getElementById('cleanup-panel')?.style?.display || '') === 'none'`,
     );
-    assert("Close button hides panel", panelHidden);
+    assert("Close button hides panel", closeHidden);
+    // Re-show panel for remaining tests
+    await jsExpr(cdp, "var p = document.getElementById('cleanup-panel'); if(p) p.style.display = '';");
+    await sleep(200);
+
+    // Test Move to Trash — accept confirm dialog, verify panel hides
+    console.log("\nTesting Move to Trash...");
+    // Ensure all checkboxes are checked so we delete all found files
+    await jsExpr(cdp, "document.getElementById('cleanup-select-all').click()");
+    await sleep(100);
+    // Re-check they're all checked
+    const allChecked = await jsExpr(
+      cdp,
+      `Array.from(document.querySelectorAll('#cleanup-panel .cleanup-item input[type="checkbox"]')).every(cb => cb.checked)`,
+    );
+    if (!allChecked) {
+      await jsExpr(cdp, "document.getElementById('cleanup-select-all').click()");
+      await sleep(100);
+    }
+    // Capture file count before delete
+    const delCount = await jsExpr(
+      cdp,
+      `document.querySelectorAll('#cleanup-panel .cleanup-item input[type="checkbox"]:checked').length`,
+    );
+    assert("Files checked for deletion", delCount > 0, `count=${delCount}`);
+
+    // Override confirm to auto-accept, then click Move to Trash
+    await jsExpr(cdp, "window.confirm = function(){ return true }");
+    await sleep(100);
+    await jsExpr(cdp, "document.getElementById('cleanup-move-trash').click()");
+    await sleep(1500);
+
+    // Verify panel was hidden after successful deletion
+    const panelHiddenAfterDelete = await jsExpr(
+      cdp,
+      `(document.getElementById('cleanup-panel')?.style?.display || '') === 'none'`,
+    );
+    assert("Move to Trash hides panel after deletion", panelHiddenAfterDelete);
   } else {
     const statusText = await jsExpr(
       cdp,
@@ -357,9 +407,13 @@ async function main() {
     assert("Cleanup panel appeared", false, `status="${statusText}"`);
     console.log("  Possible reasons:");
     console.log("    - Rust scanner library not found (run via 'diskraptor' wrapper)");
-    console.log("    - No cleanable files in Downloads folder");
-    console.log("    - Scan path doesn't contain 'download'");
+    console.log("    - Temp directory scan failed - no file tree nodes found");
+    console.log("    - Scan path doesn't contain 'download' in its name");
   }
+
+  // Clean up temp directory
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  console.log(`  Temp dir cleaned: ${tmpDir}`);
 
   // Summary
   console.log(`\n=== RESULTS ===`);
@@ -378,6 +432,7 @@ async function main() {
 
 main().catch((err) => {
   console.error(`\nError: ${err.message}`);
+  try { execSync("rm -rf /tmp/diskraptor-test-downloads-* 2>/dev/null", { stdio: "ignore" }); } catch {}
   killAll();
   process.exit(1);
 });
