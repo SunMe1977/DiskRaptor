@@ -588,49 +588,78 @@
           const stb = document.querySelector(".status-bar");
           if (stb)
             stb.textContent = "Analyzing Downloads for cleanup...";
+          const cleanable = [];
+          const seen = {};
           const nodes = loader.allNodes || [];
           let count = 0;
           for (let cni = 0; cni < nodes.length; cni++)
             if (nodes[cni]) count++;
-          if (count < 2) {
-            if (stb) stb.textContent = "Cleanup: not enough data";
-            return;
-          }
-          const cleanable = [];
-          const seen = {};
-          for (let cni = 0; cni < nodes.length; cni++) {
-            const cn = nodes[cni];
-            if (!cn || cn.node_type === 0 || cn.node_type === "Directory")
-              continue;
-            const cname = (cn.name || "").toLowerCase();
-            const cext =
-              cname.lastIndexOf(".") >= 0
-                ? cname.substring(cname.lastIndexOf("."))
-                : "";
-            const csize = cn.size || 0;
-            const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(
-              cext,
-            );
-            const isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
-            const isOld =
-              cn.mtime &&
-              cn.mtime > 0 &&
-              Date.now() / 1000 - cn.mtime > 60 * 86400;
-            if (isCleanable || isDup || (isOld && csize > 1048576)) {
-              const displayName = cn.name || "?";
-              const reason = isDup
-                ? "duplicate"
-                : isOld
-                  ? "old"
-                  : "installer";
-              if (seen[displayName]) continue;
-              seen[displayName] = true;
-              cleanable.push({
-                name: displayName,
-                size: csize,
-                reason: reason,
-                mtime: cn.mtime,
-              });
+          if (count >= 2) {
+            for (let cni = 0; cni < nodes.length; cni++) {
+              const cn = nodes[cni];
+              if (!cn || cn.node_type === 0 || cn.node_type === "Directory")
+                continue;
+              const cname = (cn.name || "").toLowerCase();
+              const cext =
+                cname.lastIndexOf(".") >= 0
+                  ? cname.substring(cname.lastIndexOf("."))
+                  : "";
+              const csize = cn.size || 0;
+              const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(
+                cext,
+              );
+              const isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
+              const isOld =
+                cn.mtime &&
+                cn.mtime > 0 &&
+                Date.now() / 1000 - cn.mtime > 60 * 86400;
+              if (isCleanable || isDup || (isOld && csize > 1048576)) {
+                const displayName = cn.name || "?";
+                const reason = isDup
+                  ? "duplicate"
+                  : isOld
+                    ? "old"
+                    : "installer";
+                if (seen[displayName]) continue;
+                seen[displayName] = true;
+                cleanable.push({
+                  name: displayName,
+                  size: csize,
+                  reason: reason,
+                  mtime: cn.mtime,
+                });
+              }
+            }
+          } else {
+            const topFiles = state.currentStats && state.currentStats.top_files;
+            if (topFiles && Array.isArray(topFiles)) {
+              const rootPath = (scanPath.value || "").replace(/[\\/]+$/, "");
+              for (let fi = 0; fi < topFiles.length; fi++) {
+                const tf = topFiles[fi];
+                const fullPath = typeof tf === "string" ? tf : (tf.path || "");
+                const tsize = typeof tf === "string" ? 0 : (tf.size || 0);
+                const fname = fullPath.replace(rootPath + "/", "").replace(rootPath + "\\", "");
+                if (!fname) continue;
+                const cname = fname.toLowerCase();
+                const cext =
+                  cname.lastIndexOf(".") >= 0
+                    ? cname.substring(cname.lastIndexOf("."))
+                    : "";
+                const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(
+                  cext,
+                );
+                const isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
+                if (isCleanable || isDup) {
+                  if (seen[fname]) continue;
+                  seen[fname] = true;
+                  cleanable.push({
+                    name: fname,
+                    size: tsize || 0,
+                    reason: isDup ? "duplicate" : "installer",
+                    mtime: 0,
+                  });
+                }
+              }
             }
           }
           if (cleanable.length === 0) return;
