@@ -1,0 +1,544 @@
+﻿<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' qrc: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' qrc:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.github.com; font-src 'self' data:;">
+        <title>DiskRaptor</title>
+</title>        <link rel="icon" type="image/x-icon" href="../src-tauri/icons/icon.ico" />
+        <link rel="stylesheet" href="style.css" />
+        <!-- Galaxy View scripts - pre-loaded for reliability -->
+        <script src="galaxyview/config.js"></script>
+        <script src="galaxyview/spatial-index.js"></script>
+        <script src="galaxyview/data-mapper.js"></script>
+        <script src="galaxyview/animation.js"></script>
+        <script src="galaxyview/effects.js"></script>
+        <script src="galaxyview/interaction.js"></script>
+        <script src="galaxyview/lod.js"></script>
+        <script src="galaxyview/timeline.js"></script>
+        <script src="galaxyview/live-scan.js"></script>
+        <script src="galaxyview/insights.js"></script>
+        <script src="galaxyview/plugin-api.js"></script>
+        <script src="galaxyview.js"></script>
+    </head>
+    <body>
+        <header id="toolbar">
+            <div class="toolbar-left">
+                <h1 class="logo">
+                    <span class="logo-icon">🦖</span> <span data-i18n="toolbar.title">DiskRaptor</span>
+                </h1>
+            </div>
+            <div class="toolbar-center">
+                <div id="drive-selector" class="drive-dropdown-wrap">
+                    <button id="btn-drive" class="drive-trigger">💽 <span id="drive-selected">/</span> ▾</button>
+                    <div id="drive-menu" class="drive-menu"></div>
+                </div>
+                <div style="position:relative;flex:1;display:flex;">
+                    <input
+                        type="text"
+                        id="scan-path"
+                        data-i18n-placeholder="scan.path.placeholder"
+                        placeholder="Select or type a directory path..."
+                        value=""
+                        style="flex:1;"
+                    />
+                    <button id="btn-fav" title="Bookmark this path" style="padding:4px 8px;font-size:14px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">☆</button>
+                    <div id="fav-menu" class="fav-dropdown"></div>
+                </div>
+                <button id="btn-browse" data-i18n="btn.browse">📁 Browse</button>
+                <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
+                <button id="btn-rescan" disabled title="Rescan same directory">🔄</button>
+                <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
+            </div>
+            <div class="toolbar-right">
+                <div class="tools-dropdown-wrap">
+                    <button id="btn-tools" class="icon-btn" title="Tools">🔧</button>
+                    <div id="tools-menu" class="tools-dropdown">
+                        <div class="tools-item" data-action="scan-downloads" data-i18n="tools.scan_downloads">📥 Scan Downloads</div>
+                        <div class="tools-item" data-action="scan-trash" data-i18n="tools.scan_trash">🗑️ Scan Trash</div>
+                        <div class="tools-item" data-action="trash-recovery">♻️ Trash Recovery</div>
+                        <div class="tools-item" data-action="find-files">🔎 Find Files</div>
+                        <div class="tools-item" data-action="empty-folders">📂 Empty Folders</div>
+                        <div class="tools-item" data-action="cleanup-downloads">🧹 Downloads Cleanup</div>
+                        <div class="tools-item" data-action="duplicates" data-i18n="tools.find_duplicates">🔍 Find Duplicates</div>
+                        <div class="tools-sep"></div>
+                        <div class="tools-item" data-action="export-html">📄 Export HTML Report</div>
+                        <div class="tools-item" data-action="settings">⚙️ Preferences</div>
+                        <div class="tools-item" data-action="clear-scan">🗑️ Clear Scan</div>
+                        <div class="tools-item" data-action="trash" data-i18n="tools.empty_trash">🗑️ Empty Trash</div>
+                    </div>
+                </div>
+                <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
+                <div class="lang-dropdown-wrap">
+                    <button id="btn-lang" class="icon-btn" title="Language">🌐</button>
+                    <div id="lang-menu" class="lang-dropdown">
+                        <div class="lang-search">
+                            <input type="text" id="lang-filter" placeholder="🔍 Search language..." />
+                        </div>
+                        <div id="lang-list" class="lang-list"></div>
+                    </div>
+                </div>
+                <button
+                    id="btn-theme"
+                    class="icon-btn"
+                    data-i18n-title="theme.toggle.dark"
+                    title="Switch to dark mode"
+                >
+                    ☾
+                </button>
+            </div>
+        </header>
+
+        <div id="main-layout">
+            <div id="left-column">
+                <!-- Welcome placeholder (shown before first scan) -->
+                <div id="welcome-placeholder" class="welcome-placeholder">
+                    <div class="welcome-content">
+                        <div class="welcome-icon" style="font-size:48px;margin-bottom:12px;">🚀</div>
+                        <h2 class="welcome-title" style="font-size:20px;margin:0 0 6px 0;color:var(--text-primary);">
+                            DiskRaptor
+                        </h2>
+                        <p class="welcome-subtitle" style="font-size:13px;color:var(--text-secondary);margin:0 0 12px 0;">
+                            Ultra-fast disk space analyzer
+                        </p>
+                        <div id="welcome-volumes" style="width:100%;max-width:400px;margin:0 auto 16px;text-align:left;"></div>
+                        <button id="welcome-scan-btn" class="welcome-scan-btn" style="padding:12px 28px;font-size:15px;font-weight:600;color:#fff;background:linear-gradient(135deg,#238636,#2ea043);border:none;border-radius:8px;cursor:pointer;box-shadow:0 4px 16px rgba(35,134,54,0.3);transition:transform 0.15s;">
+                            <span style="font-size:18px;">⚡</span>
+                            <span>Start Scan</span>
+                        </button>
+                        <div style="margin-top:20px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+                            <button id="welcome-browse-btn" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+                                📂 Browse Folder
+                            </button>
+                            <button id="welcome-about-btn" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+                                ℹ️ About DiskRaptor
+                            </button>
+                        </div>
+                        <div style="margin-top:20px;font-size:13px;color:var(--text-secondary);text-align:center;">
+                            <div style="font-size:22px;letter-spacing:2px;margin-bottom:4px;cursor:pointer;" onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor'}).catch(function(){})">
+                                ⭐⭐⭐⭐⭐
+                            </div>
+                            <div>
+                                <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor'}).catch(function(){})">
+                                    Please star ✨
+                                </span>
+                                <span style="margin:0 6px;color:var(--text-muted);">·</span>
+                                <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor/fork'}).catch(function(){})">
+                                    🍴 Fork
+                                </span>
+                            </div>
+                            <div style="margin-top:2px;font-size:11px;color:var(--text-muted);">:==)</div>
+                        </div>
+                        <button class="welcome-close" id="welcome-close" title="Close" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:16px;cursor:pointer;padding:4px 8px;">✖</button>
+                    </div>
+                </div>
+
+                <!-- Tree on top -->
+                <section id="tree-panel">
+                    <div class="panel-header">
+                        <h2 data-i18n="tree.title">Directory Tree</h2>
+                        <span id="node-count" class="badge">0 <span data-i18n="tree.nodes">nodes</span></span>
+                        <div id="type-filters" style="display:flex;gap:2px;margin-left:8px;flex-shrink:0;">
+                            <button class="type-filter active" data-ext="all" title="All">📁</button>
+                            <button class="type-filter" data-ext="jpg|jpeg|png|gif|webp|svg" title="Images">🖼️</button>
+                            <button class="type-filter" data-ext="mp4|mov|avi|mkv|wmv" title="Videos">🎬</button>
+                            <button class="type-filter" data-ext="mp3|wav|flac|aac|ogg" title="Audio">🎵</button>
+                            <button class="type-filter" data-ext="zip|tar|gz|bz2|7z|rar|dmg|iso" title="Archives">🗜️</button>
+                            <button class="type-filter" data-ext="pdf" title="PDF">📕</button>
+                        </div>
+                        <input id="tree-filter" type="text" placeholder="🔍 Filter..." style="margin-left:auto;width:120px;padding:3px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);outline:none;">
+                    </div>
+                    <div id="tree-container">
+                        <div id="tree-header" class="tree-header">
+                            <span class="tree-col-sort" data-col="name" style="flex:1;min-width:100px;padding-left:48px;">Name<span class="sort-arrow"></span><span class="col-resize" data-col="name"></span></span>
+                            <span class="tree-col-sort" data-col="pct" style="width:60px;text-align:right;">%<span class="sort-arrow"></span><span class="col-resize" data-col="pct"></span></span>
+                            <span class="tree-col-sort" data-col="size" style="width:80px;text-align:right;">Size<span class="sort-arrow"></span><span class="col-resize" data-col="size"></span></span>
+                            <span class="tree-col-sort" data-col="files" style="width:70px;text-align:right;">Files<span class="sort-arrow"></span><span class="col-resize" data-col="files"></span></span>
+                            <span class="tree-col-sort" data-col="dirs" style="width:70px;text-align:right;">Dirs<span class="sort-arrow"></span></span>
+                            <span class="tree-col-sort" data-col="date" style="width:80px;text-align:right;">Date<span class="sort-arrow"></span></span>
+                        </div>
+                        <div id="tree-scroll">
+                            <div id="tree-viewport"></div>
+                        </div>
+                    </div>
+                    <div id="tree-status" class="status-bar" data-i18n="tree.ready">Ready</div>
+                </section>
+
+                <!-- Horizontal splitter between tree and diagram -->
+                <div id="h-splitter"></div>
+
+                <!-- Diagram below tree -->
+                <div id="diagram-panel">
+                    <div class="panel-header" id="diagram-header">
+                        <h3 id="diagram-title" data-i18n="diagram.top50">Top 50 Files</h3>
+                        <div class="diagram-controls">
+                            <button class="diagram-mode active" data-mode="pie" data-i18n="diagram.pie">
+                                Pie
+                            </button>
+                            <button class="diagram-mode" data-mode="treemap" data-i18n="diagram.treemap">
+                                Treemap
+                            </button>
+                            <button class="diagram-mode" data-mode="bar" data-i18n="diagram.bar">
+                                Bars
+                            </button>
+                            <button class="diagram-mode" data-mode="galaxy" data-i18n="diagram.galaxy">
+                                🌌 Galaxy
+                            </button>
+                            <span class="zoom-sep"></span>
+                            <span class="theme-btn" data-theme="default" title="Default" style="background:#58a6ff;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
+                            <span class="theme-btn" data-theme="forest" title="Forest" style="background:#2d6a4f;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
+                            <span class="theme-btn" data-theme="desert" title="Desert" style="background:#d4a373;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
+                            <span class="theme-btn" data-theme="ice" title="Ice" style="background:#a8d8ea;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
+                            <span class="theme-btn" data-theme="fairy" title="Fairy" style="background:#f8bbd0;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
+                            <button class="zoom-btn" data-zoom="0.2" title="20%">20%</button>
+                            <button class="zoom-btn" data-zoom="0.5" title="50%">50%</button>
+                            <button class="zoom-btn active" data-zoom="1" title="100% (Actual Size)">100%</button>
+                            <button class="zoom-btn" data-zoom="fit" title="Fit to View">Fit</button>
+                            <span id="zoom-label" class="zoom-label">100%</span>
+                        </div>
+                    </div>
+                    <div id="diagram-container"></div>
+                    <div id="galaxy-container" style="display:none;position:absolute;top:40px;left:0;right:0;bottom:0;overflow:hidden"></div>
+                </div>
+            </div>
+
+            <!-- Vertical splitter between left column and detail panel -->
+            <div id="v-splitter"></div>
+
+            <aside id="detail-panel">
+                <div class="card collapsible">
+                    <h3 class="card-header" data-i18n="stats.title">Scan Summary <span class="collapse-arrow">▼</span></h3>
+                    <div id="stats-content" class="card-body">
+                        <div class="stat-row">
+                            <span class="stat-label" data-i18n="stats.files">Files</span
+                            ><span id="stat-files" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label" data-i18n="stats.directories">Directories</span
+                            ><span id="stat-dirs" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label" data-i18n="stats.total_size">Total Size</span
+                            ><span id="stat-size" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label" data-i18n="stats.scan_time">Scan Time</span
+                            ><span id="stat-time" class="stat-value">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card collapsible">
+                    <h3 class="card-header" data-i18n="sel.title">Selection <span class="collapse-arrow">▼</span></h3>
+                    <div id="selection-content" class="card-body">
+                        <div class="stat-row">
+                            <span class="stat-label"
+                                ><span class="stat-icon">📄</span> <span data-i18n="sel.name">Name</span></span
+                            ><span id="sel-name" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label"
+                                ><span class="stat-icon">💾</span> <span data-i18n="sel.size">Size</span></span
+                            ><span id="sel-size" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label"
+                                ><span class="stat-icon">📂</span> <span data-i18n="sel.files">Files</span></span
+                            ><span id="sel-files" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label"
+                                ><span class="stat-icon">🏷️</span> <span data-i18n="sel.type">Type</span></span
+                            ><span id="sel-type" class="stat-value">-</span>
+                        </div>
+                        <div
+                            class="flex-row flex-wrap"
+                            style="gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light);"
+                        >
+                            <button
+                                class="sel-action"
+                                data-action="explorer"
+                                data-i18n-title="action.explorer"
+                                title="Open in Explorer"
+                                disabled
+                            >
+                                📂
+                            </button>
+                            <button
+                                class="sel-action"
+                                data-action="terminal"
+                                data-i18n-title="action.terminal"
+                                title="Open Terminal"
+                                disabled
+                            >
+                                💻
+                            </button>
+                            <button
+                                class="sel-action"
+                                data-action="properties"
+                                data-i18n-title="action.properties"
+                                title="Properties"
+                                disabled
+                            >
+                                ⚙️
+                            </button>
+                            <button
+                                class="sel-action"
+                                data-action="copy"
+                                data-i18n-title="action.copy_path"
+                                title="Copy Path"
+                                disabled
+                            >
+                                📋
+                            </button>
+                            <button
+                                class="sel-action"
+                                data-action="trash"
+                                title="Move to Trash"
+                                disabled
+                                style="color: var(--accent-red)"
+                            >
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Resizable splitter for topfiles -->
+                <div id="tf-splitter"></div>
+                <div class="card" id="topfiles-card">
+                    <h3 data-i18n="diagram.top50">Top 50 Files</h3>
+                    <div id="topfiles-container">
+                        <table id="topfiles-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th data-i18n="sel.name">Path</th>
+                                    <th data-i18n="sel.size">Size</th>
+                                    <th style="width: 40px" data-i18n="action.delete">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="topfiles-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <div id="progress-overlay">
+            <div class="progress-card">
+                <div class="progress-header">
+                    <div class="spinner"></div>
+                    <p id="progress-status" data-i18n="progress.scanning">Scanning directory...</p>
+                    <p id="progress-path"></p>
+                </div>
+                <div class="progress-metrics">
+                    <div class="progress-stat">
+                        <span class="stat-icon">📄</span>
+                        <span class="stat-val" id="progress-files">0</span>
+                        <span class="stat-lbl">Files</span>
+                    </div>
+                    <div class="progress-stat">
+                        <span class="stat-icon">📁</span>
+                        <span class="stat-val" id="progress-dirs">0</span>
+                        <span class="stat-lbl">Directories</span>
+                    </div>
+                    <div class="progress-stat">
+                        <span class="stat-icon">⚡</span>
+                        <span class="stat-val" id="progress-speed-val">—</span>
+                        <span class="stat-lbl">files/sec</span>
+                    </div>
+                    <div class="progress-stat timer-stat">
+                        <span class="stat-icon">⏱</span>
+                        <span class="stat-val timer-val" id="progress-elapsed-val">00:00</span>
+                        <span class="stat-lbl">elapsed</span>
+                    </div>
+                    <div class="progress-stat eta-stat">
+                        <span class="stat-icon">⏳</span>
+                        <span class="stat-val eta-val" id="progress-eta-val">--:--</span>
+                        <span class="stat-lbl">ETA</span>
+                    </div>
+                </div>
+                <div id="progress-dir" class="progress-dir"></div>
+                <div style="padding:0 24px;margin-bottom:8px;">
+                    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-bottom:2px;">
+                        <span id="progress-pct-text">0%</span>
+                    </div>
+                    <div style="width:100%;height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;">
+                        <div id="progress-pct-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#3fb950,#2ea043);border-radius:2px;transition:width 0.3s;"></div>
+                    </div>
+                </div>
+                <div class="speed-chart-wrap">
+                    <canvas id="speed-chart" style="width:100%;max-width:480px;height:60px;"></canvas>
+                </div>
+                <div id="progress-raw" style="display:none"></div>
+                <p id="progress-engine" class="progress-engine">
+                    ⚡ Scanning...
+                </p>
+                <div class="progress-actions">
+                    <button id="progress-cancel" class="progress-btn">✖ Cancel Scan</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tip-overlay" class="overlay-base" style="display:none;">
+            <div class="overlay-card" style="text-align:center;">
+                <div style="font-size:40px;margin-bottom:12px;">🦖</div>
+                <h3 style="margin:0 0 8px 0;font-size:16px;color:var(--text-primary);">Welcome to DiskRaptor!</h3>
+                <div style="font-size:12px;color:var(--text-secondary);text-align:left;line-height:1.8;">
+                    <p>🚀 <b>Quick start:</b> Click <b>Start Scan</b> or type a path and press <b>Enter</b></p>
+                    <p>⌨️ <b>Shortcuts:</b> <kbd>Ctrl+Enter</kbd> Scan · <kbd>Ctrl+O</kbd> Browse · <kbd>Ctrl+F</kbd> Filter tree</p>
+                    <p>🔧 <b>Tools:</b> Find duplicates, recover trash, search files — check the 🔧 menu</p>
+                    <p>🌐 <b>Language:</b> Click the 🌐 button to switch languages</p>
+                </div>
+                <div style="margin-top:12px;">
+                    <label style="font-size:11px;color:var(--text-muted);cursor:pointer;">
+                        <input type="checkbox" id="tip-dont-show"> Don't show again
+                    </label>
+                </div>
+                <button id="tip-close" style="margin-top:12px;padding:8px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Got it!</button>
+            </div>
+        </div>
+
+        <div id="settings-overlay" class="overlay-base" style="display:none;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);">
+            <div class="overlay-card" style="max-width:360px;">
+                <h3 style="margin:0 0 16px 0;font-size:16px;color:var(--text-primary);" data-i18n="settings.title">⚙️ Preferences</h3>
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.default_path">Default scan path</label>
+                    <input id="settings-default-path" type="text" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.theme">Theme</label>
+                    <select id="settings-theme" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
+                        <option value="auto" data-i18n="settings.theme_auto">System</option>
+                        <option value="dark" data-i18n="settings.theme_dark">Dark</option>
+                        <option value="light" data-i18n="settings.theme_light">Light</option>
+                    </select>
+                </div>
+                <div class="flex-row" style="gap:8px;justify-content:flex-end;">
+                    <button id="settings-close" class="btn-secondary" data-i18n="settings.cancel">Cancel</button>
+                    <button id="settings-save" class="btn-primary" data-i18n="settings.save">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="about-overlay">
+            <div class="about-card">
+                <div class="about-bg"></div>
+                <div class="about-content">
+                    <div class="about-logo">
+                        <img src="../images/logo6_original.png" alt="DiskRaptor" onerror="this.style.display='none'" />
+                    </div>
+                    <h2>DiskRaptor</h2>
+                    <p class="about-version"><span data-i18n="about.version">Version</span> 1.0.0</p>
+                    <p class="about-desc" data-i18n="about.desc">Ultra-fast disk space analyzer</p>
+                    <div class="about-tabs flex-row" style="gap:0;margin:12px 0 8px;border-bottom:2px solid var(--border);width:100%;">
+                        <button class="about-tab active" data-tab="about">📋 About</button>
+                        <button class="about-tab" data-tab="changelog">📜 Changelog</button>
+                        <button class="about-tab" data-tab="credits">🙏 Credits</button>
+                    </div>
+                    <div id="about-tab-about" class="about-tab-content">
+                        <p class="about-tech">⚡ Rust + Qt 6 WebEngine · jwalk · walkdir</p>
+                        <div class="about-divider"></div>
+                        <p class="about-author">created by</p>
+                        <p class="about-name">Hansjoerg Hofer</p>
+                        <div class="about-divider"></div>
+                        <p class="about-links">
+                            <a onclick="window.__TAURI__.invoke('open_url',{url:'mailto:support@diskraptor.com'}).catch(function(){})" class="about-link" title="support@diskraptor.com">📧 support@diskraptor.com</a>
+                            <a onclick="window.__TAURI__.invoke('open_url',{url:'https://diskraptor.com'}).catch(function(){})" class="about-link">🌐 diskraptor.com</a>
+                            <a onclick="window.__TAURI__.invoke('open_url',{url:'https://github.com/SunMe1977/DiskRaptor'}).catch(function(){})" class="about-link">🐙 GitHub</a>
+                        </p>
+                        <p id="about-update-check" style="font-size:11px;color:var(--text-muted);cursor:pointer;margin:8px 0 0;" onclick="window.__checkUpdate()">🔍 Check for Updates</p>
+                    </div>
+                    <div id="about-tab-changelog" class="about-tab-content" style="display:none;">
+                        <div style="font-size:11px;text-align:left;max-height:160px;overflow-y:auto;padding:4px 8px;color:var(--text-secondary);line-height:1.6;">
+                            <b>v1.0.0</b> — File age view, HTML export, empty folders, multi-path scan<br>
+                            <b>v0.0.8</b> — jwalk scanner, i18n, trash recovery, find files, type filter, keyboard nav, drag-drop, CDP tests<br>
+                            <b>v0.0.7</b> — Duplicate scanner, file icons, progress ETA, settings dialog, bookmarks, collapsible panels<br>
+                            <b>v0.0.6</b> — Galaxy 3D view, Move to Trash, export CSV, clear scan, cancel feedback<br>
+                            <b>v0.0.5</b> — Drive selector, collapsible cards, favorites, double-click toggle<br>
+                            <b>v0.0.4</b> — Dark/light theme, resizable splitters, context menus<br>
+                            <b>v0.0.3</b> — Tree view with virtual scrolling, pie chart, bar chart<br>
+                            <b>v0.0.2</b> — Basic scan with progress, stats panel<br>
+                            <b>v0.0.1</b> — Initial prototype
+                        </div>
+                    </div>
+                    <div id="about-tab-credits" class="about-tab-content" style="display:none;">
+                        <div style="font-size:11px;text-align:center;color:var(--text-secondary);line-height:1.8;">
+                            <p>🦀 <b>Rust</b> — Scanner engine</p>
+                            <p>⚡ <b>Qt 6</b> — GUI framework</p>
+                            <p>🌐 <b>Qt WebEngine</b> — Frontend rendering</p>
+                            <p>📦 <b>jwalk</b> — Parallel directory walking</p>
+                            <p>🔍 <b>serde / serde_json</b> — Serialization</p>
+                            <p>🗺️ <b>walkdir</b> — Cross-platform directory walking</p>
+                            <p>🌍 <b>Qt Linguist</b> — i18n framework</p>
+                        </div>
+                    </div>
+                    <div class="about-divider"></div>
+                    <p class="about-copy">© 2026 DiskRaptor</p>
+                    <button id="btn-about-close" class="primary" data-i18n="about.done">✓ Done</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RAM status bar at the bottom of the page -->
+        <div id="ram-bar" class="ram-bar-bottom">
+            <div class="ram-section">
+                <span class="ram-label">📊 App</span>
+                <div class="ram-bar-track">
+                    <div id="ram-app-fill" class="ram-bar-fill-app" style="width:0%"></div>
+                </div>
+                <span id="ram-app-text" class="ram-value">—</span>
+            </div>
+            <div class="ram-section">
+                <span class="ram-label">💻 System</span>
+                <div class="ram-bar-track">
+                    <div id="ram-sys-fill" class="ram-bar-fill-sys" style="width:0%"></div>
+                </div>
+                <span id="ram-sys-text" class="ram-value">—</span>
+            </div>
+        </div>
+
+        <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+        <script src="qt-bridge.js"></script>
+        <script src="i18n.js"></script>
+        <script src="toast.js"></script>
+        <script src="iconcache.js"></script>
+        <script src="virtualscroll.js"></script>
+        <script src="chunkloader.js"></script>
+        <script src="treeview.js"></script>
+        <script src="topfiles.js"></script>
+        <script src="stats.js"></script>
+        <script src="diagrams.js"></script>
+        <script src="dupscanner.js"></script>
+        <script src="trashrecovery.js"></script>
+        <script src="splitter.js"></script>
+        <script src="app-modules/theme.js"></script>
+        <script src="app-modules/favorites.js"></script>
+        <script src="app-modules/drives.js"></script>
+        <script src="app-modules/scan.js"></script>
+        <script src="app-modules/tools.js"></script>
+        <script src="app-modules/export.js"></script>
+        <script src="app-modules/settings.js"></script>
+        <script src="app.js"></script>
+        <script>
+            // If Tauri bridge isn't ready after 12s, show a hint
+            var stuckTimer = setTimeout(function () {
+                if (typeof window.__TAURI__?.invoke !== "function") {
+                    var sb = document.querySelector(".status-bar");
+                    if (sb && sb.textContent === "Ready") {
+                        sb.textContent =
+                            "App is stuck - check console for errors";
+                        sb.style.color = "#f85149";
+                    }
+                }
+            }, 12000);
+            var clearStuck = function () {
+                clearTimeout(stuckTimer);
+            };
+            if (window.__TAURI__?.invoke) clearStuck();
+            else
+                document.addEventListener("tauri-bridge-ready", clearStuck, {
+                    once: true,
+                });
+        </script>
+    </body>
+</html>
