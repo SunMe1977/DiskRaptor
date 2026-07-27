@@ -21,7 +21,26 @@ FileOpsHandler::FileOpsHandler(QObject *parent)
 
 QString FileOpsHandler::deletePath(const QString &path)
 {
-#ifdef Q_OS_MACOS
+    QString nativePath = QDir::toNativeSeparators(path);
+#ifdef Q_OS_WIN
+    // Use SHFileOperationW to move to Recycle Bin
+    SHFILEOPSTRUCTW op = {};
+    std::wstring wPath = nativePath.toStdWString();
+    // SHFileOperation requires double-null-terminated string
+    std::vector<wchar_t> buf(wPath.begin(), wPath.end());
+    buf.push_back(L'\0');
+    buf.push_back(L'\0');
+    op.hwnd = nullptr;
+    op.wFunc = FO_DELETE;
+    op.pFrom = buf.data();
+    op.pTo = nullptr;
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI;
+    int result = SHFileOperationW(&op);
+    if (result != 0 || op.fAnyOperationsAborted) {
+        return resultToJson(false, QVariant(), "Failed to move to Trash: " + path + " (error: " + QString::number(result) + ")");
+    }
+    return resultToJson(true);
+#elif defined(Q_OS_MACOS)
     QString posixPath = QDir::fromNativeSeparators(path);
     QString escaped = QString(posixPath).replace("\\", "\\\\").replace("\"", "\\\"");
     QProcess proc;
@@ -41,7 +60,7 @@ QString FileOpsHandler::deletePath(const QString &path)
         ok = QFile::remove(path);
     }
     if (!ok) {
-        return resultToJson(false, QVariant(), "Failed to delete: " + path);
+        return resultToJson(false, QVariant(), "Failed to move to Trash: " + path);
     }
     return resultToJson(true);
 #endif
