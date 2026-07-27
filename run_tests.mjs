@@ -37,6 +37,7 @@ const ALL_TESTS = [
   { name: "Trash Recovery",file: "test_trash_recovery_ui.mjs", port: 9219 },
   { name: "Bridge/Tauri",  file: "test_bridge_ui.mjs",  port: 9220 },
   { name: "Integration",   file: "test_integration_ui.mjs", port: 9221 },
+  { name: "Cleanup",       file: "test_cleanup_ui.mjs",    port: 9222 },
 ];
 
 function printBanner() {
