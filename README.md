@@ -149,7 +149,7 @@ cd src-tauri && cargo test
 for f in frontend/*.js; do node --check "$f"; done
 
 # Full UI test via CDP (requires Qt WebEngine debug port)
-node test_ui.mjs
+node tests/test_ui.mjs
 ```
 
 ---

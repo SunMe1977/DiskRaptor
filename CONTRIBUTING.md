@@ -38,7 +38,7 @@ cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor dist/DiskRaptor.app/Con
 cd src-tauri && cargo run --example scanner_test -- /tmp
 
 # UI test (launches app with CDP)
-node test_ui.mjs
+node tests/test_ui.mjs
 
 # JavaScript syntax check
 for f in frontend/*.js; do node --check "$f"; done

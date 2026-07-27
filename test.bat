@@ -16,18 +16,18 @@ if "%1"=="--quick" goto :quick
 if "%1"=="--list" goto :list
 if "%1"=="--help" goto :help
 
-echo Using unified runner: run_tests.mjs
+echo Using unified runner: tests/run_tests.mjs
 echo.
-node run_tests.mjs %*
+node tests/run_tests.mjs %*
 if !errorlevel! neq 0 exit /b !errorlevel!
 goto :eof
 
 :quick
-node run_tests.mjs --quick
+node tests/run_tests.mjs --quick
 exit /b
 
 :list
-node run_tests.mjs --list
+node tests/run_tests.mjs --list
 exit /b
 
 :help
@@ -41,6 +41,6 @@ echo.
 echo Examples:
 echo   test.bat                    # Run all 22 cross-platform tests
 echo   test.bat --quick            # Quick smoke test
-echo   test.bat test_scan_ui.mjs   # Run a specific test
+echo   test.bat test_scan_ui.mjs   # Run a specific test (in tests/)
 echo.
 exit /b

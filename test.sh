@@ -20,19 +20,19 @@ fi
 
 case "${1:-}" in
   --quick)
-    node run_tests.mjs --quick
+    node tests/run_tests.mjs --quick
     exit $?
     ;;
   --list)
-    node run_tests.mjs --list
+    node tests/run_tests.mjs --list
     exit $?
     ;;
   --help|-h)
-    node run_tests.mjs --help
+    node tests/run_tests.mjs --help
     exit 0
     ;;
 esac
 
-echo "Using unified runner: run_tests.mjs"
+echo "Using unified runner: tests/run_tests.mjs"
 echo ""
-node run_tests.mjs "$@"
+node tests/run_tests.mjs "$@"
