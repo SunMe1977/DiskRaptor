@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ========================================
-echo  DiskRaptor -- Run All Windows UI Tests
+echo  DiskRaptor -- Cross-Platform Test Suite
 echo ========================================
 echo.
 
@@ -12,75 +12,35 @@ if not exist "dist\DiskRaptor.exe" (
   exit /b 1
 )
 
-echo Binary: dist\DiskRaptor.exe
-echo Frontend: dist\frontend\
+if "%1"=="--quick" goto :quick
+if "%1"=="--list" goto :list
+if "%1"=="--help" goto :help
+
+echo Using unified runner: run_tests.mjs
 echo.
+node run_tests.mjs %*
+if !errorlevel! neq 0 exit /b !errorlevel!
+goto :eof
 
-set "TESTS="
-set TESTS=!TESTS! test_scan.mjs
-set TESTS=!TESTS! test_rescan.mjs
-set TESTS=!TESTS! test_welcome.mjs
-set TESTS=!TESTS! test_settings.mjs
-set TESTS=!TESTS! test_tree.mjs
-set TESTS=!TESTS! test_topfiles.mjs
-set TESTS=!TESTS! test_theme.mjs
-set TESTS=!TESTS! test_export.mjs
-set TESTS=!TESTS! test_favorites.mjs
-set TESTS=!TESTS! test_filters.mjs
-set TESTS=!TESTS! test_trash.mjs
-set TESTS=!TESTS! test_ui_all.mjs
-set TESTS=!TESTS! test_find.mjs
-set TESTS=!TESTS! test_duplicates.mjs
-set TESTS=!TESTS! test_trash_recovery.mjs
-set TESTS=!TESTS! test_i18n.mjs
-set TESTS=!TESTS! test_tauri.mjs
-set TESTS=!TESTS! test_fileops.mjs
-set TESTS=!TESTS! test_galaxy.mjs
-set TESTS=!TESTS! test_progress.mjs
-set TESTS=!TESTS! test_context_menu.mjs
-set TESTS=!TESTS! tests\downloads-cleanup.spec.mjs
+:quick
+node run_tests.mjs --quick
+exit /b
 
-set PASSED=0
-set FAILED=0
-set SKIPPED=0
-set RESULTS=
+:list
+node run_tests.mjs --list
+exit /b
 
-for %%t in (%TESTS%) do (
-  echo ----------------------------------------
-  echo Running: %%t
-  echo ----------------------------------------
-  if exist "%%t" (
-    node "%%t"
-    if !errorlevel! equ 0 (
-      echo   PASSED: %%t
-      set /a PASSED+=1
-    ) else (
-      echo   FAILED: %%t exit_code=!errorlevel!
-      set /a FAILED+=1
-      set "RESULTS=!RESULTS!FAIL: %%t\n"
-    )
-  ) else (
-    echo   SKIPPED: %%t not found
-    set /a SKIPPED+=1
-  )
-  echo.
-  timeout /t 2 /nobreak >nul
-)
-
-echo ========================================
-echo  RESULTS
-echo ========================================
-echo   Passed: !PASSED!
-echo   Failed: !FAILED!
-echo   Skipped: !SKIPPED!
-echo   Total:  19
+:help
+echo Usage: test.bat [options] [test-name...]
 echo.
-if not "!RESULTS!"=="" (
-  echo --- Failed Tests ---
-  echo !RESULTS!
-)
-
-if !FAILED! gtr 0 (
-  exit /b 1
-)
-echo All tests passed!
+echo Options:
+echo   --quick     Run a quick smoke test subset
+echo   --list      List all available tests
+echo   --help      Show this help
+echo.
+echo Examples:
+echo   test.bat                    # Run all 22 cross-platform tests
+echo   test.bat --quick            # Quick smoke test
+echo   test.bat test_scan_ui.mjs   # Run a specific test
+echo.
+exit /b
