@@ -5,10 +5,14 @@
   "description": "Ultra-fast disk space analyzer",
   "scripts": {
     "test:ui": "node test_ui.mjs",
+    "test:ui:playwright": "node tests/downloads-cleanup.spec.mjs",
     "test:scanner": "cd src-tauri && cargo run --example scanner_test -- /tmp",
     "test:lint": "for f in frontend/*.js; do node --check \"$f\"; done"
   },
   "dependencies": {
     "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.52.0"
   }
 }
