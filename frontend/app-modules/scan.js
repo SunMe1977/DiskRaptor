@@ -594,6 +594,18 @@
           let count = 0;
           for (let cni = 0; cni < nodes.length; cni++)
             if (nodes[cni]) count++;
+          function getNodeRelPath(node, allNodes) {
+            const parts = [];
+            let cur = node;
+            for (;;) {
+              parts.unshift(cur.name || "");
+              if (cur.parent === 4294967295 || cur.parent === undefined) break;
+              cur = allNodes[cur.parent];
+              if (!cur) break;
+            }
+            parts.shift();
+            return parts.join("/");
+          }
           if (count >= 2) {
             for (let cni = 0; cni < nodes.length; cni++) {
               const cn = nodes[cni];
@@ -614,18 +626,17 @@
                 cn.mtime > 0 &&
                 Date.now() / 1000 - cn.mtime > 60 * 86400;
               if (isCleanable || isDup || (isOld && csize > 1048576)) {
-                const displayName = cn.name || "?";
-                const reason = isDup
-                  ? "duplicate"
-                  : isOld
-                    ? "old"
-                    : "installer";
-                if (seen[displayName]) continue;
-                seen[displayName] = true;
+                const relPath = getNodeRelPath(cn, nodes);
+                if (seen[relPath]) continue;
+                seen[relPath] = true;
                 cleanable.push({
-                  name: displayName,
+                  name: relPath,
                   size: csize,
-                  reason: reason,
+                  reason: isDup
+                    ? "duplicate"
+                    : isOld
+                      ? "old"
+                      : "installer",
                   mtime: cn.mtime,
                 });
               }
@@ -662,7 +673,10 @@
               }
             }
           }
-          if (cleanable.length === 0) return;
+          if (cleanable.length === 0) {
+            if (stb) stb.textContent = "No cleanable files found in Downloads";
+            return;
+          }
           cleanable.sort(function (a, b) {
             return b.size - a.size;
           });

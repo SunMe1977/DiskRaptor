@@ -274,10 +274,14 @@ class TopFilesPanel {
                   const sb = document.querySelector(".status-bar");
                   if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", p);
                   row.remove();
+                  const st = window.app && window.app.state && window.app.state.currentStats;
+                  if (st && Array.isArray(st.top_files)) {
+                    st.top_files = st.top_files.filter(function (f) {
+                      return (typeof f === "string" ? f : (f.path || "")) !== p;
+                    });
+                  }
+                  if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
                 })
-                .catch(function (err) {
-                  alert("Failed: " + err);
-                });
             }
           }.bind(this);
         }.bind(this)(entry.path, tr);
