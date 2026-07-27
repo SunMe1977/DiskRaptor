@@ -13,6 +13,7 @@
 #include <QVector>
 #include <QPair>
 #include <QThread>
+#include <QTimer>
 #include <QAtomicInteger>
 
 class ScannerHandler : public QObject
@@ -34,6 +35,9 @@ public:
 
 signals:
     void eventEmitted(const QString &event, const QVariant &payload);
+
+private slots:
+    void onProgressTick();
 
 private:
     // Scan state
@@ -64,6 +68,8 @@ private:
     FnIsRunning       m_drIsRunning       = nullptr;
     FnFindDuplicates  m_drFindDuplicates  = nullptr;
     FnFreeString  m_drFreeString  = nullptr;
+
+    QTimer *m_progressTimer = nullptr;
 
     bool loadRustLibrary();
     void unloadRustLibrary();

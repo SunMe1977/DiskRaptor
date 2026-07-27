@@ -268,18 +268,40 @@
         callback();
         return;
       }
-      let checkCount = 0;
+      const scripts = [
+        "galaxyview/config.js",
+        "galaxyview/spatial-index.js",
+        "galaxyview/data-mapper.js",
+        "galaxyview/animation.js",
+        "galaxyview/effects.js",
+        "galaxyview/interaction.js",
+        "galaxyview/lod.js",
+        "galaxyview/timeline.js",
+        "galaxyview/live-scan.js",
+        "galaxyview/insights.js",
+        "galaxyview/plugin-api.js",
+        "galaxyview.js",
+      ];
+      let loaded = 0;
+      scripts.forEach(function (src) {
+        var s = document.createElement("script");
+        s.src = src;
+        s.onload = function () {
+          loaded++;
+          if (loaded === scripts.length) check();
+        };
+        s.onerror = function () {
+          console.error("Failed to load galaxy script:", src);
+        };
+        document.head.appendChild(s);
+      });
       function check() {
-        checkCount++;
         if (window.GalaxyView && window.GalaxyView.GalaxyView) {
           callback();
-        } else if (checkCount < 200) {
-          setTimeout(check, 50);
         } else {
-          console.error("Galaxy scripts not loaded after 10s");
+          setTimeout(check, 50);
         }
       }
-      check();
     }
 
     function _feedGalaxyView() {

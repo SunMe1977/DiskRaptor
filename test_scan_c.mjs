@@ -100,7 +100,7 @@ async function main() {
   // Set scan path to C:\
   console.log(`\nScanning ${SCAN_PATH}...`);
   await jsExpr(cdp, `document.getElementById('scan-path').value = ${JSON.stringify(SCAN_PATH)}`);
-  await jsExpr(cdp, `document.getElementById('btn-scan').click()`);
+  await jsExpr(cdp, `document.getElementById('btn-scan').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))`);
 
   // Monitor progress
   let overlayShown = false;

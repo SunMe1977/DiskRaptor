@@ -231,6 +231,10 @@
       eventListeners[eventName] = [];
     }
     eventListeners[eventName].push(callback);
+    return function () {
+      var idx = eventListeners[eventName].indexOf(callback);
+      if (idx !== -1) eventListeners[eventName].splice(idx, 1);
+    };
   }
 
   function emit(eventName, payload) {

@@ -239,7 +239,7 @@ async function main() {
       if (btn) btn.classList.add('active');
 
       // 1) Try app's regular mode switch path
-      if (btn) btn.click();
+      if (btn) btn.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));
 
       // 2) Ensure containers match galaxy mode intent
       var gc = document.getElementById('galaxy-container');

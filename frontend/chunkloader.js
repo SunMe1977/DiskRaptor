@@ -61,19 +61,61 @@ class ChunkLoader {
     this._scanReject = savedReject;
     this.scanId = scanId;
 
+    let scanDone = false;
+    const unlisten =
+      typeof window.__TAURI__.event !== "undefined"
+        ? window.__TAURI__.event.listen("scan:progress", function (evt) {
+            const p = evt.payload;
+            if (
+              p &&
+              (p.is_running === false || p.phase === 3)
+            ) {
+              scanDone = true;
+            }
+          })
+        : null;
+
     try {
-      // Poll for completion (max 100 iterations = ~30s safety)
+      // Wait for scan completion (max 100 iterations = ~30s safety)
       for (let pollIter = 0; pollIter < 100; pollIter++) {
+        if (scanDone) {
+          const result = await self
+            ._invoke("get_scan_result", { scanId: scanId })
+            .catch(function () {
+              return null;
+            });
+          if (result) {
+            self.totalNodes = result.root_info.total_nodes;
+            self.totalChunks = result.root_info.total_chunks;
+            self.allNodes = new Array(self.totalNodes);
+
+            if (self.totalChunks > 0) {
+              await self.loadChunk(0);
+              self._preloadRemainingChunks();
+            }
+
+            if (self._scanResolve) {
+              self._scanResolve(result);
+            }
+            if (unlisten) unlisten();
+            return;
+          }
+        }
+
         const prog = await self
           ._invoke("get_scan_progress", { scanId: scanId })
           .catch(function () {
             return null;
           });
-        if (!prog) {
-          continue;
-        }
-        if (prog && !prog.is_running && prog.phase !== 3) {
-          throw new Error(prog.error || "Scan did not complete successfully.");
+        if (prog && prog.is_running !== undefined) {
+          if (!prog.is_running && prog.phase !== 3) {
+            if (unlisten) unlisten();
+            throw new Error(prog.error || "Scan did not complete successfully.");
+          }
+          if (!prog.is_running || prog.phase === 3) {
+            scanDone = true;
+            continue;
+          }
         }
 
         const result = await self
@@ -97,6 +139,7 @@ class ChunkLoader {
           if (self._scanResolve) {
             self._scanResolve(result);
           }
+          if (unlisten) unlisten();
           return;
         }
         await new Promise(function (r) {
