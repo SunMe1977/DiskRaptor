@@ -5,6 +5,7 @@
 #include <QString>
 #include <QVariant>
 #include <QVariantMap>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonDocument>
 

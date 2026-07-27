@@ -181,7 +181,7 @@ async function main() {
 
   // Start a small scan
   await jsExpr(cdp, `document.getElementById('scan-path').value = ${JSON.stringify(SCAN_PATH)}; 'ok'`);
-  await jsExpr(cdp, `document.getElementById('btn-scan').click(); 'clicked'`);
+  await jsExpr(cdp, `document.getElementById('btn-scan').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); 'clicked'`);
   console.log("✓ Scan started");
 
   // Wait for overlay to appear
