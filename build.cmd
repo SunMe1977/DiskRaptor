@@ -9,7 +9,8 @@ echo.
 
 setlocal
 
-set VERSION=1.0.0
+for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "try { (Get-Content package.json | ConvertFrom-Json).version } catch { '' }" 2^>nul`) do set VERSION=%%v
+if "%VERSION%"=="" set VERSION=0.0.2
 
 REM -- Override paths via env vars: DISKRAptor_MSVC_ROOT, DISKRAptor_WIN10_KIT, DISKRAptor_WIN10_KIT_VER, DISKRAptor_QT_DIR, DISKRAptor_CMAKE_DIR, DISKRAptor_NINJA_DIR
 

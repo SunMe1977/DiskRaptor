@@ -294,10 +294,13 @@ jobs:
           cd dist && zip -r ../DiskRaptor-linux-x64.zip .
           cd ..
           VERSION="${GITHUB_REF_NAME#v}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.'; then
+            VERSION="$(node -p "require('./package.json').version" 2>/dev/null || echo "0.0.2")"
+          fi
           mkdir -p deb/DEBIAN
-          cat > deb/DEBIAN/control << 'CONTROL'
+          cat > deb/DEBIAN/control << CONTROL
           Package: diskraptor
-          Version: 0.0.2
+          Version: ${VERSION}
           Section: utils
           Priority: optional
           Architecture: amd64
@@ -352,10 +355,13 @@ jobs:
           cd dist && zip -r ../DiskRaptor-linux-arm64.zip .
           cd ..
           VERSION="${GITHUB_REF_NAME#v}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.'; then
+            VERSION="$(node -p "require('./package.json').version" 2>/dev/null || echo "0.0.2")"
+          fi
           mkdir -p deb/DEBIAN
-          cat > deb/DEBIAN/control << 'CONTROL'
+          cat > deb/DEBIAN/control << CONTROL
           Package: diskraptor
-          Version: 0.0.2
+          Version: ${VERSION}
           Section: utils
           Priority: optional
           Architecture: arm64
