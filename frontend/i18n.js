@@ -1731,7 +1731,7 @@
     setLocale(currentLocale);
   }
 
-  console.log(
+  console.debug(
     `[i18n] Detected locale: ${detectLocale()}, selected: ${currentLocale} → ${resolvedLocale}`,
   );
 })();

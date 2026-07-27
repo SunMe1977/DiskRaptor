@@ -43,7 +43,7 @@
         isQtMode = true;
         new QWebChannel(qt.webChannelTransport, function (channel) {
           bridge = channel.objects.bridge;
-          console.log("[DiskRaptor] Qt WebChannel bridge connected");
+          console.debug("[DiskRaptor] Qt WebChannel bridge connected");
 
           // Wire backend events after bridge is available.
           try {
@@ -53,7 +53,7 @@
               });
             }
           } catch (e) {
-            console.log("[DiskRaptor] Event signal not available:", e.message);
+            console.debug("[DiskRaptor] Event signal not available:", e.message);
           }
 
           // Signal ready
@@ -284,5 +284,5 @@
     init();
   }
 
-  console.log("[DiskRaptor] Qt WebChannel bridge loaded");
+  console.debug("[DiskRaptor] Qt WebChannel bridge loaded");
 })();
