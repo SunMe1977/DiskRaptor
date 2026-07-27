@@ -1,0 +1,23 @@
+{
+  "env": {
+    "browser": true,
+    "es2021": true
+  },
+  "globals": {
+    "QWebChannel": "readonly",
+    "qt": "readonly",
+    "GalaxyView": "readonly",
+    "ChunkLoader": "readonly",
+    "TreeView": "readonly",
+    "DiagramRenderer": "readonly",
+    "StatsPanel": "readonly",
+    "TopFilesPanel": "readonly"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "args": "none", "vars": "local" }],
+    "no-undef": "error",
+    "no-var": "off",
+    "prefer-const": "warn",
+    "no-console": "off"
+  }
+}
