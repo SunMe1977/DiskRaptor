@@ -2102,6 +2102,9 @@ body.light-theme #about-overlay {
     height: 28px;
     font-size: 14px;
   }
+  .toolbar-right .btn-label {
+    display: none;
+  }
   .about-card {
     min-width: 280px;
     max-width: 85vw;
@@ -2170,6 +2173,9 @@ body.light-theme #about-overlay {
     width: 28px;
     height: 28px;
     font-size: 14px;
+  }
+  .toolbar-right .btn-label {
+    display: none;
   }
   #main-layout {
     flex-direction: column;

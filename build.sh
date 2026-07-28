@@ -101,23 +101,18 @@ build_mas_pkg() {
 
   # Embed provisioning profile (required for TestFlight & App Store)
   local PROFILE_SRC=""
-  for f in ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision; do
-    [ -f "$f" ] || continue
-    if security cms -D -i "$f" 2>/dev/null | grep -q "MAC_APP_STORE"; then
-      PROFILE_SRC="$f"
-      break
-    fi
-  done
-  if [ -z "$PROFILE_SRC" ]; then
-    # Fallback: try the first Mac provisioning profile
-    for f in ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision; do
+  for ext in mobileprovision provisionprofile; do
+    for f in ~/Library/MobileDevice/Provisioning\ Profiles/*."$ext"; do
       [ -f "$f" ] || continue
-      if security cms -D -i "$f" 2>/dev/null | grep -q "Mac App Store\|MacAppStore\|macappstore"; then
+      DECODED=$(security cms -D -i "$f" 2>/dev/null)
+      APPID=$(echo "$DECODED" | plutil -p - 2>/dev/null | grep "application-identifier" | head -1)
+      if echo "$APPID" | grep -q "${APPLE_TEAM_ID:-7TK444BCPC}"; then
+        echo "  Found profile: $(echo "$DECODED" | plutil -p - 2>/dev/null | grep '"Name"' | head -1 | sed 's/.*=> "\(.*\)"/\1/')"
         PROFILE_SRC="$f"
-        break
+        break 2
       fi
     done
-  fi
+  done
   if [ -n "$PROFILE_SRC" ]; then
     cp "$PROFILE_SRC" "$APP_DST/Contents/embedded.provisionprofile"
     echo "  Provisioning profile embedded: $(basename "$PROFILE_SRC")"

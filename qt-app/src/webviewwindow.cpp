@@ -151,6 +151,8 @@ void MainWindow::setupMenuBar()
     connect(findFiles, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=find-files]');if(el)el.click();"); });
     auto *emptyFolders = toolsMenu->addAction(tr("Empty Folders…"));
     connect(emptyFolders, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=empty-folders]');if(el)el.click();"); });
+    auto *cleanupDl = toolsMenu->addAction(tr("Downloads Cleanup"));
+    connect(cleanupDl, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=cleanup-downloads]');if(el)el.click();"); });
     auto *findDupes = toolsMenu->addAction(tr("Find Duplicate Files…"));
     findDupes->setShortcut(QKeySequence("Ctrl+D"));
     connect(findDupes, &QAction::triggered, this, &MainWindow::onFindDuplicates);
