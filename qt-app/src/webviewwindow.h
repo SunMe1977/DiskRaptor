@@ -1,11 +1,6 @@
-// DiskRaptor — Main Window with QtWebEngine
-// Scanner operations are handled via Rust DLL through IpcBridge.
 #pragma once
 
 #include <QMainWindow>
-#include <QWebEngineView>
-#include <QWebEnginePage>
-#include <QWebChannel>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMenu>
@@ -22,24 +17,7 @@
 #include <QDesktopServices>
 
 #include "ipcbridge.h"
-
-// WebView that opens target=_blank and new-window links in the system browser
-class WebView : public QWebEngineView
-{
-    Q_OBJECT
-public:
-    using QWebEngineView::QWebEngineView;
-protected:
-    QWebEngineView *createWindow(QWebEnginePage::WebWindowType type) override
-    {
-        auto *dummy = new QWebEngineView();
-        connect(dummy, &QWebEngineView::urlChanged, this, [](const QUrl &url) {
-            QDesktopServices::openUrl(url);
-        });
-        QTimer::singleShot(0, dummy, &QObject::deleteLater);
-        return dummy;
-    }
-};
+#include "wkwebview_wrapper.h"
 
 class MainWindow : public QMainWindow
 {
@@ -49,8 +27,9 @@ public:
     explicit MainWindow(const QString &frontendPath, QWidget *parent = nullptr);
     ~MainWindow() override;
 
+    WKWebViewWrapper *webView() const { return m_webView; }
+
 private slots:
-    // Menu action slots
     void onViewPie();
     void onViewGalaxy();
     void onViewTreemap();
@@ -67,25 +46,20 @@ protected:
 private:
     void setupUI();
     void setupMenuBar();
-    void setupWebEngine(const QString &frontendPath);
-
-    // Helper: run JS in the webview
+    void setupWebView(const QString &frontendPath);
     void runJS(const QString &js);
     void setupTrayIcon();
+    QString handleInvoke(const QString &cmd, const QVariantMap &args);
 
-    // UI elements
-    WebView *m_webView = nullptr;
-    QWebChannel *m_webChannel = nullptr;
+    WKWebViewWrapper *m_webView = nullptr;
     IpcBridge *m_ipcBridge = nullptr;
 
     QLabel *m_statusLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;
 
-    // System tray
     QSystemTrayIcon *m_trayIcon = nullptr;
     QMenu *m_trayMenu = nullptr;
 
-    // Menu items
     QMenu *m_viewMenu = nullptr;
     QAction *m_viewPieAction = nullptr;
     QAction *m_viewGalaxyAction = nullptr;

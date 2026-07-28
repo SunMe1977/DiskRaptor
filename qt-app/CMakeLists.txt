@@ -1,20 +1,36 @@
-﻿# DiskRaptor Qt 6 + QtWebEngine
-cmake_minimum_required(VERSION 3.20)
-project(DiskRaptor VERSION 1.0.1 DESCRIPTION "Ultra-fast disk space analyzer — Qt 6 Edition" LANGUAGES CXX)
+﻿cmake_minimum_required(VERSION 3.20)
+project(DiskRaptor VERSION 1.0.1 DESCRIPTION "Ultra-fast disk space analyzer" LANGUAGES CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebEngineWidgets WebChannel Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 
-# Minimal Qt modules needed — exclude Qml, Quick, OpenGL, etc.
-
-set(SOURCES src/main.cpp src/webviewwindow.cpp src/ipcbridge.cpp src/platform_utils.cpp src/modules/module_loader.cpp
-  src/commands/file_ops.cpp src/commands/system.cpp src/commands/settings.cpp src/commands/scanner.cpp)
-set(HEADERS src/webviewwindow.h src/ipcbridge.h src/platform_utils.h src/modules/module_loader.h
-  src/commands/file_ops.h src/commands/system.h src/commands/settings.h src/commands/scanner.h)
+set(SOURCES
+  src/main.cpp
+  src/webviewwindow.cpp
+  src/ipcbridge.cpp
+  src/platform_utils.cpp
+  src/modules/module_loader.cpp
+  src/commands/file_ops.cpp
+  src/commands/system.cpp
+  src/commands/settings.cpp
+  src/commands/scanner.cpp
+  src/wkwebview_wrapper.mm
+  src/cdp_server.cpp)
+set(HEADERS
+  src/webviewwindow.h
+  src/ipcbridge.h
+  src/platform_utils.h
+  src/modules/module_loader.h
+  src/commands/file_ops.h
+  src/commands/system.h
+  src/commands/settings.h
+  src/commands/scanner.h
+  src/wkwebview_wrapper.h
+  src/cdp_server.h)
 set(RESOURCES resources/resources.qrc)
 
 if(WIN32)
@@ -29,8 +45,14 @@ endif()
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${RESOURCES})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
-  Qt6::Core Qt6::Gui Qt6::Widgets Qt6::WebEngineWidgets Qt6::WebChannel Qt6::Network
+  Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network
   ${CMAKE_DL_LIBS})
+
+if(APPLE)
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    "-framework WebKit"
+    "-framework Cocoa")
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -46,15 +68,12 @@ elseif(APPLE)
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_ICON_FILE "icon.icns")
-  # Copy .icns into the bundle Resources
   add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/../images/icon.icns"
       "$<TARGET_FILE_DIR:${PROJECT_NAME}>/../Resources/icon.icns"
     COMMENT "Copying icon.icns into app bundle...")
 endif()
 
-# Copy frontend + modules + Rust scanner library after build
-# ── Post-build: deploy frontend, modules, Rust scanner lib, and Qt runtime ─────
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/../frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/frontend")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -82,7 +101,6 @@ else()
   message(WARNING "Rust scanner library not found at ${RUST_SCANNER_SRC} — tree scan will fall back to flat mode")
 endif()
 
-# Deploy Qt6 runtime DLLs via windeployqt (Windows only)
 if(WIN32)
   find_program(WINDEPLOYQT_EXECUTABLE
     NAMES windeployqt.exe
@@ -106,7 +124,6 @@ if(WIN32)
   endif()
 endif()
 
-# ── Launcher (no Qt deps, Win32 only) ─────────────────────────────
 if(WIN32)
   add_executable(DiskRaptorLauncher WIN32 src/launcher.cpp ${CMAKE_BINARY_DIR}/launcher-icon.rc)
   target_link_libraries(DiskRaptorLauncher PRIVATE
@@ -116,14 +133,11 @@ if(WIN32)
   install(TARGETS DiskRaptorLauncher RUNTIME DESTINATION bin)
 endif()
 
-# ── Install ──────────────────────────────────────────────────────
-# Install core binary - platform agnostic
 install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin
   BUNDLE DESTINATION bin)
 
 if(WIN32)
-  # Install core DLLs (windeployqt output) — exclude WebEngine + avoid recursion
   install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
     DESTINATION bin
     FILES_MATCHING
@@ -138,7 +152,6 @@ if(WIN32)
       PATTERN "build_*" EXCLUDE
   )
 
-  # Install plugin subdirectories (exclude QML/WebEngine)
   install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/platforms/" DESTINATION bin/platforms OPTIONAL)
   install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles/" DESTINATION bin/styles OPTIONAL)
   install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/imageformats/" DESTINATION bin/imageformats OPTIONAL)
@@ -150,7 +163,6 @@ if(WIN32)
   install(DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>/translations/" DESTINATION bin/translations OPTIONAL)
 endif()
 
-# Install frontend
 install(DIRECTORY ../frontend/ DESTINATION share/${PROJECT_NAME}/frontend)
 
 if(UNIX AND NOT APPLE)
@@ -158,12 +170,10 @@ if(UNIX AND NOT APPLE)
   install(FILES ${CMAKE_SOURCE_DIR}/../images/128x128@2x.png DESTINATION share/icons/hicolor/128x128/apps RENAME diskraptor.png)
 endif()
 
-# ── CPack ────────────────────────────────────────────────────────
-# IMPORTANT: set CPack variables BEFORE include(CPack) — CPack reads them at include time
 set(CPACK_PACKAGE_NAME "DiskRaptor")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_FILE_NAME "DiskRaptor_${PROJECT_VERSION}_amd64")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "DiskRaptor Team")
 include(CPack)
 
-message(STATUS "DiskRaptor ${PROJECT_VERSION} — Qt ${Qt6_VERSION}")
+message(STATUS "DiskRaptor ${PROJECT_VERSION}")

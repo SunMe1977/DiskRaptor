@@ -1,10 +1,4 @@
-﻿// DiskRaptor Qt 6 + QtWebEngine
-// Main entry point â€” no GTK, no WebKitGTK, no GLib
-
-#include <QApplication>
-#include <QtWebEngineWidgets/qtwebenginewidgetsglobal.h>
-#include <QWebEngineSettings>
-#include <QWebEngineProfile>
+﻿#include <QApplication>
 #include <QDir>
 #include <QStandardPaths>
 #include <QMessageBox>
@@ -17,13 +11,9 @@
 #endif
 
 #include "webviewwindow.h"
-#include "ipcbridge.h"
 #include "platform_utils.h"
+#include "cdp_server.h"
 
-// ── Admin check at startup ──────────────────────────────────
-// Logs admin status but lets the app start regardless.
-// Users can right-click → If not running as admin, ask the user whether to elevate.
-// Passes DISKraptor_CDP_PORT as command-line argument to preserve it.
 static bool EnsureAdmin(int argc, char *argv[])
 {
 #ifdef Q_OS_WIN
@@ -43,7 +33,7 @@ static bool EnsureAdmin(int argc, char *argv[])
     } else {
         qDebug() << "[DiskRaptor] NOT running as Administrator (some paths may be inaccessible)";
     }
-    return true; // Always continue, no elevation prompt
+    return true;
 #else
     return true;
 #endif
@@ -51,37 +41,12 @@ static bool EnsureAdmin(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-    // Qt WebEngine is initialized automatically when QApplication is created
-    // No manual QtWebEngine::initialize() needed in Qt 6.5+
-
-    // Enable remote debugging for Playwright tests via env var or --cdp-port arg
-    QByteArray cdpPort = qgetenv("DISKraptor_CDP_PORT");
-    for (int i = 1; i < argc; i++) {
-        QString arg = QString::fromLocal8Bit(argv[i]);
-        if (arg.startsWith("--cdp-port=")) {
-            cdpPort = arg.mid(QString("--cdp-port=").length()).toUtf8();
-            break;
-        }
+    if (!EnsureAdmin(argc, argv)) {
+        return 0;
     }
-    bool isTestMode = !cdpPort.isEmpty();
-
-    // Ask user if they want to run as Administrator (skip in CDP/test mode)
-    if (!isTestMode && !EnsureAdmin(argc, argv)) {
-        return 0; // User chose to restart as admin; exit this instance
-    }
-
-    if (!cdpPort.isEmpty()) {
-        qputenv("QTWEBENGINE_REMOTE_DEBUGGING", cdpPort);
-    }
-
-    // macOS 26+ workaround: disable MachPortRendezvous which crashes in Chromium
-#ifdef Q_OS_MACOS
-    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-features=UseMachPortRendezvous");
-#endif
 
     QApplication app(argc, argv);
 
-    // Set up runtime environment — needs QApplication initialized
     PlatformUtils::setupRuntimeEnvironment();
     app.setApplicationName("DiskRaptor");
     app.setApplicationVersion("1.0.0");
@@ -90,22 +55,6 @@ int main(int argc, char *argv[])
     app.setDesktopFileName("diskraptor");
 #endif
 
-    // â”€â”€ WebEngine configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    auto *profile = QWebEngineProfile::defaultProfile();
-    auto *settings = profile->settings();
-    settings->setAttribute(QWebEngineSettings::WebGLEnabled, true);
-    settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
-    settings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, false);
-    settings->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
-    settings->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
-    settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
-    settings->setAttribute(QWebEngineSettings::LocalStorageEnabled, true);
-
-    profile->setHttpCacheType(QWebEngineProfile::MemoryHttpCache);
-    profile->setPersistentStoragePath(
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/webengine");
-
-    // â”€â”€ Find frontend directory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     QString frontendPath;
     QStringList searchPaths = {
         QDir::currentPath(),
@@ -118,14 +67,11 @@ int main(int argc, char *argv[])
         QApplication::applicationDirPath() + "/../share/DiskRaptor/frontend",
         QDir::currentPath() + "/share/DiskRaptor/frontend",
         QDir::currentPath() + "/../share/DiskRaptor/frontend",
-        // Linux FHS paths for deb/rpm packages
         QApplication::applicationDirPath() + "/../share/diskraptor/frontend",
-        // Explicit /usr paths for when binary path resolution doesn't work
         "/usr/share/DiskRaptor/frontend",
         "/usr/share/diskraptor/frontend",
         "/usr/local/share/DiskRaptor/frontend",
         "/usr/local/share/diskraptor/frontend",
-        // When installed to /opt
         "/opt/DiskRaptor/frontend",
         "/opt/diskraptor/frontend",
     };
@@ -147,12 +93,9 @@ int main(int argc, char *argv[])
 
     qDebug() << "[DiskRaptor] Frontend:" << frontendPath;
 
-    // â”€â”€ Create main window â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     MainWindow window(frontendPath);
     window.setWindowTitle("DiskRaptor " + app.applicationVersion());
     QIcon appIcon;
-    // Try loading from filesystem first (works on all platforms)
-    // Icon file is always named 128x128@2x.png on all platforms for simplicity
     QString iconFile = "128x128@2x.png";
     QStringList iconPaths = {
         QApplication::applicationDirPath() + "/images/" + iconFile,
@@ -164,7 +107,6 @@ int main(int argc, char *argv[])
         QDir::currentPath() + "/images/" + iconFile,
         frontendPath + "/../images/" + iconFile,
 #ifdef Q_OS_LINUX
-        // Flatpak / Snap paths
         "/app/share/icons/hicolor/128x128/apps/diskraptor.png",
         "/usr/local/share/icons/hicolor/128x128/apps/diskraptor.png",
         "/usr/share/icons/hicolor/128x128/apps/diskraptor.png",
@@ -196,6 +138,17 @@ int main(int argc, char *argv[])
     window.showMaximized();
 
     qDebug() << "[DiskRaptor] Started successfully";
+
+    // Start CDP server for Playwright tests (if DISKraptor_CDP_PORT is set)
+    QByteArray cdpPortEnv = qgetenv("DISKraptor_CDP_PORT");
+    CdpServer *cdpServer = nullptr;
+    if (!cdpPortEnv.isEmpty()) {
+        bool ok = false;
+        quint16 port = cdpPortEnv.toUShort(&ok);
+        if (ok && port > 0) {
+            cdpServer = new CdpServer(window.webView(), port, frontendPath, &app);
+        }
+    }
 
     return app.exec();
 }

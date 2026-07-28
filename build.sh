@@ -101,13 +101,13 @@ build_mas_pkg() {
 
   # Embed provisioning profile (required for TestFlight & App Store)
   local PROFILE_SRC=""
+  local SIGN_FP=$(security find-certificate -c "3rd Party Mac Developer Application" -p 2>/dev/null | openssl x509 -inform pem -sha1 -fingerprint -noout 2>/dev/null)
   for ext in mobileprovision provisionprofile; do
     for f in ~/Library/MobileDevice/Provisioning\ Profiles/*."$ext"; do
       [ -f "$f" ] || continue
-      DECODED=$(security cms -D -i "$f" 2>/dev/null)
-      APPID=$(echo "$DECODED" | plutil -p - 2>/dev/null | grep "application-identifier" | head -1)
-      if echo "$APPID" | grep -q "${APPLE_TEAM_ID:-7TK444BCPC}"; then
-        echo "  Found profile: $(echo "$DECODED" | plutil -p - 2>/dev/null | grep '"Name"' | head -1 | sed 's/.*=> "\(.*\)"/\1/')"
+      security cms -D -i "$f" 2>/dev/null > /tmp/_pp_match.plist
+      local FP=$(/usr/libexec/PlistBuddy -c "Print :DeveloperCertificates:0" /tmp/_pp_match.plist 2>/dev/null | openssl x509 -inform der -sha1 -fingerprint -noout 2>/dev/null)
+      if [ "$FP" = "$SIGN_FP" ]; then
         PROFILE_SRC="$f"
         break 2
       fi
@@ -708,6 +708,14 @@ EOF
           fi
         done
       fi
+
+      # ── Remove unused plugin dirs ──
+      for dir in platforminputcontexts sqldrivers; do
+        if [ -d "$APP/Contents/PlugIns/$dir" ]; then
+          echo "  Removing unused plugins: $dir"
+          rm -rf "$APP/Contents/PlugIns/$dir"
+        fi
+      done
     else
       echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
     fi

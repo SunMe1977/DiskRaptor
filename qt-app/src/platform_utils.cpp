@@ -112,7 +112,6 @@ bool PlatformUtils::setupRuntimeEnvironment()
     QString runtimeDir = findRuntimeDir();
 
     if (runtimeDir.isEmpty()) {
-        qDebug() << "[DiskRaptor] Runtime directory not found (no runtime/Qt6WebEngineCore.dll)";
         return false;
     }
 

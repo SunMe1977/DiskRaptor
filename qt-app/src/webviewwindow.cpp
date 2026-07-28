@@ -1,5 +1,3 @@
-// DiskRaptor — Main Window implementation
-// Scanner is now a Rust DLL loaded by IpcBridge — no C++ scanner object needed.
 #include "webviewwindow.h"
 #include <QMessageBox>
 #include <QTimer>
@@ -7,6 +5,8 @@
 #include <QTextStream>
 #include <QApplication>
 #include <QSettings>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     : QMainWindow(parent), m_frontendPath(frontendPath)
@@ -14,7 +14,14 @@ MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
     setupUI();
     setupMenuBar();
     setupTrayIcon();
-    setupWebEngine(frontendPath);
+
+    m_ipcBridge = new IpcBridge(this);
+
+    connect(m_ipcBridge, &IpcBridge::eventEmitted, this, [this](const QString &event, const QVariant &payload) {
+        m_webView->postEvent(event, payload);
+    });
+
+    setupWebView(frontendPath);
 
     m_statusLabel = new QLabel("Ready");
     statusBar()->addWidget(m_statusLabel, 1);
@@ -30,7 +37,6 @@ MainWindow::MainWindow(const QString &frontendPath, QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    // Rust scanner cancellation is handled through IpcBridge destructor
     qDebug() << "[DiskRaptor] Shutdown";
 }
 
@@ -41,9 +47,11 @@ void MainWindow::setupUI()
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // WebView fills the entire window (frontend handles its own toolbar)
-    m_webView = new WebView();
+    m_webView = new WKWebViewWrapper();
     m_webView->setMinimumSize(800, 400);
+    m_webView->setInvokeHandler([this](const QString &cmd, const QVariantMap &args) {
+        return handleInvoke(cmd, args);
+    });
     mainLayout->addWidget(m_webView, 1);
 
     setCentralWidget(centralWidget);
@@ -51,13 +59,11 @@ void MainWindow::setupUI()
 
 void MainWindow::setupMenuBar()
 {
-    // ── File Menu ──────────────────────────────────────
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     auto *exitAction = fileMenu->addAction(tr("E&xit"));
     exitAction->setShortcut(QKeySequence("Ctrl+Q"));
     connect(exitAction, &QAction::triggered, this, &QMainWindow::close);
 
-    // ── View Menu ──────────────────────────────────────
     m_viewMenu = menuBar()->addMenu(tr("&View"));
 
     m_viewPieAction = m_viewMenu->addAction(tr("Pie Chart"));
@@ -74,15 +80,11 @@ void MainWindow::setupMenuBar()
 
     m_viewMenu->addSeparator();
 
-    // Language submenu
     auto *langMenu = m_viewMenu->addMenu(tr("&Language"));
     auto *langAuto = langMenu->addAction(QString::fromUtf8("🌐 Auto (System)"));
     langAuto->setData("auto");
-    connect(langAuto, &QAction::triggered, this, [this]() {
-        onLanguageChanged("auto");
-    });
+    connect(langAuto, &QAction::triggered, this, [this]() { onLanguageChanged("auto"); });
 
-    // Common languages
     struct LangEntry { QString code; QString label; };
     QList<LangEntry> langs = {
         {"en", QString::fromUtf8("English")},
@@ -106,7 +108,6 @@ void MainWindow::setupMenuBar()
         });
     }
 
-    // Theme submenu
     auto *themeMenu = m_viewMenu->addMenu(tr("&Theme"));
     auto *themeDark = themeMenu->addAction(tr("Dark"));
     themeDark->setCheckable(true);
@@ -121,7 +122,6 @@ void MainWindow::setupMenuBar()
 
     themeMenu->addSeparator();
 
-    // Diagram color themes (chart/treemap/bar palettes)
     struct ThemeEntry { QString id; QString label; };
     QList<ThemeEntry> diagramThemes = {
         {"default", QString::fromUtf8("🔵 Default — Ocean Depths")},
@@ -139,7 +139,6 @@ void MainWindow::setupMenuBar()
         });
     }
 
-    // ── Tools Menu ─────────────────────────────────────
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     auto *scanDl = toolsMenu->addAction(tr("Scan Downloads"));
     connect(scanDl, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=scan-downloads]');if(el)el.click();"); });
@@ -169,9 +168,7 @@ void MainWindow::setupMenuBar()
     emptyTrash->setShortcut(QKeySequence("Ctrl+Delete"));
     connect(emptyTrash, &QAction::triggered, this, [this]() { runJS("var el=document.querySelector('.tools-item[data-action=trash]');if(el)el.click();"); });
 
-    // ── Help Menu ──────────────────────────────────────
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
-    // Skip update check if installed from Mac App Store (set by build script)
     bool fromMacAppStore = QSettings(QCoreApplication::applicationDirPath() + "/../Info.plist",
       QSettings::NativeFormat).value("DiskRaptorDisableUpdates", false).toBool();
     if (!fromMacAppStore) {
@@ -186,24 +183,14 @@ void MainWindow::setupMenuBar()
     connect(aboutAct, &QAction::triggered, this, &MainWindow::onAbout);
 }
 
-void MainWindow::setupWebEngine(const QString &frontendPath)
+void MainWindow::setupWebView(const QString &frontendPath)
 {
-    // IpcBridge now loads the Rust scanner DLL internally
-    m_ipcBridge = new IpcBridge(this);
-
-    m_webChannel = new QWebChannel(this);
-    m_webChannel->registerObject("bridge", m_ipcBridge);
-    m_webView->page()->setWebChannel(m_webChannel);
-
-    // Disable browser's built-in right-click context menu
-    m_webView->setContextMenuPolicy(Qt::NoContextMenu);
-
     QString indexPath = QDir(frontendPath).filePath("index.html");
     QString url = QUrl::fromLocalFile(indexPath).toString();
     qDebug() << "[DiskRaptor] Loading:" << url;
-    m_webView->load(QUrl(url));
+    m_webView->loadURL(QUrl(url));
 
-    connect(m_webView, &QWebEngineView::loadFinished, this, [this](bool ok) {
+    connect(m_webView, &WKWebViewWrapper::loadFinished, this, [this](bool ok) {
         if (ok) {
             qDebug() << "[DiskRaptor] Frontend loaded successfully";
             m_statusLabel->setText("Frontend loaded");
@@ -212,8 +199,6 @@ void MainWindow::setupWebEngine(const QString &frontendPath)
             m_statusLabel->setText("Frontend load failed!");
         }
     });
-
-    m_webView->page()->setBackgroundColor(QColor("#0d1117"));
 }
 
 void MainWindow::setupTrayIcon()
@@ -247,7 +232,6 @@ void MainWindow::setupTrayIcon()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    // Actually quit the application
     event->accept();
     qApp->quit();
 }
@@ -264,10 +248,13 @@ void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
 
 void MainWindow::runJS(const QString &js)
 {
-    m_webView->page()->runJavaScript(js);
+    m_webView->evaluateJS(js);
 }
 
-// ── Menu Action Slots ───────────────────────────────────────────
+QString MainWindow::handleInvoke(const QString &cmd, const QVariantMap &args)
+{
+    return m_ipcBridge->invoke(cmd, args);
+}
 
 void MainWindow::onViewPie()
 {
@@ -363,7 +350,7 @@ void MainWindow::onThemeChanged(const QString &theme)
         "}"
         "document.body.classList.toggle('light-theme', isLight);"
         "btn.textContent = isLight ? '\\u2600' : '\\u263E';"
-        "btn.title = isLight ? 'Switch to dark mode' : 'Switch to light mode';"
+        "btn.title = isLight ? 'Switch to dark mode' : 'Switch to dark mode';"
         "try {"
         "  var o = {}; o['theme'] = '%1';"
         "  window.__TAURI__.invoke('save_settings', o);"
