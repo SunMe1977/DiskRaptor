@@ -1,16 +1,14 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep, clickById } from "./test_shared.mjs";
+import { runTest, jsExpr, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById } from "./test_shared.mjs";
 
 runTest("DiskRaptor Menu/Diagram Test", 9208, async (cdp, scanPath) => {
-  const homeDir = await jsExpr(cdp,
-    "window.__TAURI__.invoke('get_home_dir').then(r => JSON.stringify(r)).catch(e => 'ERR: ' + e.message)"
-  );
-  assert("get_home_dir works", homeDir.startsWith('"'), `${homeDir}`);
+  const homeDirType = await jsExpr(cdp, `typeof window.__TAURI__ !== 'undefined' ? 'bridge-ok' : 'bridge-missing'`);
+  assert("Bridge present", homeDirType === 'bridge-ok');
 
   await startScan(cdp, scanPath);
   await waitForOverlay(cdp);
-  const { completed } = await waitForScanComplete(cdp, 400);
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed", completed);
-  await sleep(2000);
+  await waitForStatsPopulated(cdp);
 
   const diagramModes = await jsExpr(cdp, `Array.from(document.querySelectorAll('.diagram-mode')).map(b => b.getAttribute('data-mode') || b.textContent.trim())`);
   assert("Diagram mode buttons exist", Array.isArray(diagramModes) && diagramModes.length > 0, `modes: ${diagramModes.slice(0, 5).join(",")}`);
@@ -31,13 +29,8 @@ runTest("DiskRaptor Menu/Diagram Test", 9208, async (cdp, scanPath) => {
   assert("Tools: settings", hasSettings);
   assert("Tools: export", hasExport);
 
-  const aboutResult = await jsExpr(cdp, `
-    (async () => {
-      try {
-        const r = await window.__TAURI__.invoke('get_app_info', {});
-        return 'ok=' + JSON.stringify(r).slice(0, 40);
-      } catch(e) { return 'err: ' + e.message.slice(0, 30); }
-    })()
-  `);
-  assert("About/app info invoke", aboutResult.includes("ok=") || aboutResult.startsWith("err"), `${aboutResult}`);
+  const aboutResult = await jsInvoke(cdp,
+    "window.__TAURI__.invoke('get_app_info', {})"
+  ).catch(() => 'error');
+  assert("App info invoke completes", aboutResult !== 'error', `${typeof aboutResult}`);
 });

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execSync, spawn } from "child_process";
 import * as fs from "fs";
+import * as http from "http";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
@@ -67,6 +68,33 @@ function checkBinary() {
   console.log(`  Binary:  ${EXE_PATH}`);
   console.log(`  Frontend: ${path.join(DIST_DIR, "frontend")}\\`);
   console.log();
+}
+
+function cdpFetch(url) {
+  return new Promise((resolve, reject) => {
+    http.get(url, (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); } catch { reject(new Error(data)); }
+      });
+    }).on("error", reject);
+  });
+}
+
+function waitForPortFree(port, timeout = 5000) {
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const poll = () => {
+      cdpFetch(`http://127.0.0.1:${port}/json/list`)
+        .then(() => {
+          if (Date.now() - start < timeout) setTimeout(poll, 100);
+          else resolve();
+        })
+        .catch(() => resolve());
+    };
+    poll();
+  });
 }
 
 function printUsage() {
@@ -181,7 +209,7 @@ async function main() {
       results.push({ name: test.name, file: test.file, status: "FAIL" });
     }
 
-    await new Promise((r) => setTimeout(r, 2000));
+    await waitForPortFree(test.port, 5000);
   }
 
   console.log();

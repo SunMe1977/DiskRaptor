@@ -1,13 +1,14 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Context Menu Test", 9206, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   await waitForOverlay(cdp);
-  const { completed } = await waitForScanComplete(cdp, 400);
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed for context menu", completed);
-  await sleep(3000);
+  await waitForStatsPopulated(cdp);
+  const treeReady = await waitForTreeReady(cdp);
 
-  const hasTreeNode = await jsExpr(cdp, `document.querySelector('.tree-row') ? 'found' : 'not-found'`);
+  const hasTreeNode = treeReady ? 'found' : await jsExpr(cdp, `document.querySelector('.tree-row') ? 'found' : 'not-found'`);
   assert("Tree node exists for context menu", hasTreeNode === "found");
 
   if (hasTreeNode === "found") {

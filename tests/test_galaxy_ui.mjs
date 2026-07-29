@@ -1,11 +1,11 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep, clickById } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, sleep, clickById } from "./test_shared.mjs";
 
 runTest("DiskRaptor Galaxy View Test", 9207, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   await waitForOverlay(cdp);
-  const { completed } = await waitForScanComplete(cdp, 400);
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed for galaxy", completed);
-  await sleep(2000);
+  await waitForStatsPopulated(cdp);
 
   const galaxyContainer = await jsExpr(cdp, `document.getElementById('galaxy-container') ? 'found' : 'not-found'`);
   assert("Galaxy container exists", galaxyContainer === "found");

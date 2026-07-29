@@ -1,13 +1,14 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor File Operations Test", 9215, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   await waitForOverlay(cdp);
-  const { completed } = await waitForScanComplete(cdp, 400);
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed for file ops", completed);
-  await sleep(3000);
+  await waitForStatsPopulated(cdp);
+  const treeReady = await waitForTreeReady(cdp);
 
-  const hasTreeNode = await jsExpr(cdp, `document.querySelector('.tree-row') ? 'found' : 'not-found'`);
+  const hasTreeNode = treeReady ? 'found' : await jsExpr(cdp, `document.querySelector('.tree-row') ? 'found' : 'not-found'`);
   if (hasTreeNode === "found") {
     await jsExpr(cdp, `document.querySelector('.tree-row').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); 'clicked'`);
     await sleep(500);
@@ -40,23 +41,13 @@ runTest("DiskRaptor File Operations Test", 9215, async (cdp, scanPath) => {
     assert("Tree node for context menu", false, "no tree rows found");
   }
 
-  const copyInvoke = await jsExpr(cdp, `
-    (async () => {
-      try {
-        const r = await window.__TAURI__.invoke('copy_path', { from: '/tmp/src.txt', to: '/tmp/dst.txt' });
-        return 'ok=' + JSON.stringify(r).slice(0, 40);
-      } catch(e) { return 'err: ' + e.message.slice(0, 30); }
-    })()
-  `);
-  assert("copy_path Tauri invoke", copyInvoke.includes("ok=") || copyInvoke.includes("err"), `${copyInvoke}`);
+  const copyInvoke = await jsInvoke(cdp,
+    "window.__TAURI__.invoke('copy_path', { from: '/tmp/src.txt', to: '/tmp/dst.txt' })"
+  ).catch(() => 'error');
+  assert("copy_path invoke completes", copyInvoke !== 'error', `${typeof copyInvoke}`);
 
-  const propsInvoke = await jsExpr(cdp, `
-    (async () => {
-      try {
-        const r = await window.__TAURI__.invoke('get_properties', { path: '/' });
-        return 'ok=' + JSON.stringify(r).slice(0, 40);
-      } catch(e) { return 'err: ' + e.message.slice(0, 30); }
-    })()
-  `);
-  assert("get_properties Tauri invoke", propsInvoke.includes("ok=") || propsInvoke.includes("err"), `${propsInvoke}`);
+  const propsInvoke = await jsInvoke(cdp,
+    "window.__TAURI__.invoke('get_properties', { path: '/' })"
+  ).catch(() => 'error');
+  assert("get_properties invoke completes", propsInvoke !== 'error', `${typeof propsInvoke}`);
 });

@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, jsInvoke, assert, clickById, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Trash Recovery Test", 9219, async (cdp) => {
   await clickById(cdp, "btn-tools", 300);
@@ -14,15 +14,10 @@ runTest("DiskRaptor Trash Recovery Test", 9219, async (cdp) => {
   `);
   assert("Trash Recovery panel rendered", trashPanel === "panel-found", `${trashPanel}`);
 
-  const trashList = await jsExpr(cdp, `
-    (async () => {
-      try {
-        const r = await window.__TAURI__.invoke('list_trash', {});
-        return 'ok-' + JSON.stringify(r).slice(0, 60);
-      } catch(e) { return 'err-' + e.message.slice(0, 40); }
-    })()
-  `);
-  assert("list_trash Tauri invoke", trashList.startsWith("ok") || trashList.startsWith("err"), `${trashList}`);
+  const trashList = await jsInvoke(cdp,
+    "window.__TAURI__.invoke('list_trash', {})"
+  ).catch(() => 'error');
+  assert("list_trash invoke completes", trashList !== 'error', `${typeof trashList}`);
 
   const restoreInvoke = await jsExpr(cdp, `
     (async () => {

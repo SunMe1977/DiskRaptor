@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep, clickById } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, sleep, clickById } from "./test_shared.mjs";
 
 runTest("DiskRaptor Favorites Test", 9210, async (cdp, scanPath) => {
   const favBtn = await jsExpr(cdp, `
@@ -13,14 +13,9 @@ runTest("DiskRaptor Favorites Test", 9210, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   const overlayShown = await waitForOverlay(cdp);
   assert("Scan overlay appeared", overlayShown);
-  let completed = false;
-  for (let i = 0; i < 120; i++) {
-    await sleep(500);
-    const ov = await jsExpr(cdp, `document.getElementById('progress-overlay')?.classList.contains('active')`);
-    if (ov !== true) { await sleep(1000); completed = true; break; }
-  }
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed for favorites", completed);
-  await sleep(2000);
+  await waitForStatsPopulated(cdp);
 
   await clickById(cdp, "btn-fav", 500);
   const favMenuVisible = await jsExpr(cdp, `
