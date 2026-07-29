@@ -1,11 +1,12 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForTreeReady, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Tree View Test", 9203, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   await waitForOverlay(cdp);
-  const { completed } = await waitForScanComplete(cdp, 400);
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed", completed);
-  await sleep(3000);
+  const treeReady = await waitForTreeReady(cdp);
+  assert("Tree ready", treeReady);
 
   const treeViewport = await jsExpr(cdp, `document.getElementById('tree-viewport') ? 'found' : 'not-found'`);
   assert("Tree viewport exists", treeViewport === "found");

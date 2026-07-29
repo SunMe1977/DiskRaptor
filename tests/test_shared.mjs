@@ -22,6 +22,20 @@ export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+export async function waitFor(condition, { timeout = 10000, interval = 100, label = "" } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const result = typeof condition === "function" ? await condition() : condition;
+    if (result) {
+      if (label) console.log(`  waitFor(${label}): resolved after ${Date.now() - start}ms`);
+      return true;
+    }
+    await sleep(interval);
+  }
+  if (label) console.log(`  waitFor(${label}): timed out after ${timeout}ms`);
+  return false;
+}
+
 export function cdpFetch(url) {
   return new Promise((resolve, reject) => {
     http.get(url, (res) => {
@@ -88,6 +102,31 @@ export async function jsExpr(cdp, expr) {
   return cdpVal(r);
 }
 
+let _invokeId = 0;
+
+export async function jsInvoke(cdp, expr) {
+  const id = '__iv_' + (++_invokeId);
+  await cdp.send("Runtime.evaluate", {
+    expression: `${expr}.then(r => { window['${id}'] = r; }).catch(e => { window['${id}'] = '__err:' + String(e.message || e); })`,
+    returnByValue: false,
+    awaitPromise: false,
+  });
+  for (let i = 0; i < 100; i++) {
+    await sleep(50);
+    const r = await cdp.send("Runtime.evaluate", {
+      expression: `window['${id}']`,
+      returnByValue: true,
+      awaitPromise: false,
+    });
+    const val = cdpVal(r);
+    if (val !== undefined && val !== null) {
+      if (typeof val === 'string' && val.startsWith('__err:')) throw new Error(val.slice(6));
+      return val;
+    }
+  }
+  throw new Error(`Invoke timeout: ${expr.slice(0, 60)}`);
+}
+
 export function getExtraEnv(port) {
   const env = { ...process.env, DISKraptor_CDP_PORT: String(port) };
   if (IS_LINUX) {
@@ -113,7 +152,7 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
 
   let wsUrl = null;
   for (let i = 0; i < 60; i++) {
-    await sleep(500);
+    await sleep(200);
     try {
       const pages = await cdpFetch(`http://127.0.0.1:${port}/json/list`);
       if (Array.isArray(pages) && pages.length > 0 && pages[0].webSocketDebuggerUrl) {
@@ -132,20 +171,18 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
   console.log("  CDP connected");
 
   let bridgeOk = false;
-  for (let i = 0; i < 30; i++) {
-    const val = await jsExpr(cdp,
-      "!!(window.__TAURI__ && typeof window.__TAURI__.invoke === 'function' && window.__TAURI__.__qtBridgeReady)"
-    );
+  for (let i = 0; i < 60; i++) {
+    const val = await jsExpr(cdp, `!!(window.__TAURI__ && typeof window.__TAURI__.invoke === 'function' && window.__TAURI__.__qtBridgeReady)`);
     if (val === true) { bridgeOk = true; break; }
-    await sleep(500);
+    await sleep(200);
   }
   if (!bridgeOk) {
     const state = await jsExpr(cdp, `JSON.stringify({
       title: document.title,
+      url: document.location?.href || '',
       hasTauri: typeof window.__TAURI__ !== 'undefined',
       hasInvoke: typeof window.__TAURI__?.invoke === 'function',
-      ready: window.__TAURI__?.__qtBridgeReady || false,
-      statusBar: document.querySelector('.status-bar')?.textContent || ''
+      ready: window.__TAURI__?.__qtBridgeReady || false
     })`);
     console.log(`  Bridge state: ${state}`);
     throw new Error("Bridge not ready");
@@ -196,34 +233,60 @@ export async function startScan(cdp, scanPath) {
   await clickById(cdp, "btn-scan");
 }
 
-export async function waitForOverlay(cdp, timeout = 60) {
-  for (let i = 0; i < timeout; i++) {
-    await sleep(500);
+export async function waitForOverlay(cdp, timeoutMs = 30000) {
+  const limit = Math.ceil(timeoutMs / 100);
+  for (let i = 0; i < limit; i++) {
+    await sleep(100);
     const o = await jsExpr(cdp, `document.getElementById('progress-overlay')?.classList.contains('active')`);
     if (o === true) return true;
   }
   return false;
 }
 
-export async function waitForScanComplete(cdp, timeout = 600) {
-  let maxFiles = 0;
-  for (let i = 0; i < timeout; i++) {
-    await sleep(500);
+export async function waitForStatsPopulated(cdp, timeoutMs = 10000) {
+  return waitFor(async () => {
+    const m = await jsExpr(cdp, `({
+      files: (document.getElementById('stat-files')?.textContent || '0').replace(/,/g, ''),
+      dirs: (document.getElementById('stat-dirs')?.textContent || '0').replace(/,/g, ''),
+      size: (document.getElementById('stat-size')?.textContent || '')
+    })`);
+    const files = parseInt(m?.files) || 0;
+    const dirs = parseInt(m?.dirs) || 0;
+    return files > 0 && dirs > 0 && m?.size !== "" && m?.size !== "—";
+  }, { timeout: timeoutMs, label: "stats" });
+}
+
+export async function waitForTreeReady(cdp, timeoutMs = 10000) {
+  return waitFor(async () => {
+    const count = await jsExpr(cdp, `document.querySelectorAll('.tree-row')?.length || 0`);
+    return count > 0;
+  }, { timeout: timeoutMs, label: "tree" });
+}
+
+export async function waitForScanComplete(cdp, timeoutMs = 120000) {
+  const now = Date.now();
+  let lastFiles = -1;
+  while (Date.now() - now < timeoutMs) {
+    await sleep(100);
     try {
-      const json = await jsExpr(cdp, `JSON.stringify({
+      const m = await jsExpr(cdp, `({
         files: (document.getElementById('progress-files')?.textContent || '0').replace(/,/g, ''),
         ov: document.getElementById('progress-overlay')?.classList.contains('active'),
-        st: document.querySelector('.status-bar')?.textContent || ''
+        ovExists: !!document.getElementById('progress-overlay'),
+        st: document.querySelector('.status-bar')?.textContent || '',
+        treeRows: document.querySelectorAll('.tree-row')?.length || 0
       })`);
-      const m = JSON.parse(json || "{}");
+      if (!m) continue;
       const files = parseInt(m.files) || 0;
-      if (files > maxFiles) maxFiles = files;
-      if (!m.ov && maxFiles > 0) return { completed: true, maxFiles };
-      if (m.st?.includes("Complete")) return { completed: true, maxFiles };
-      if (m.st?.includes("Error")) return { completed: false, maxFiles, error: m.st };
+      if (files > lastFiles) lastFiles = files;
+      const ovHidden = !m.ov || !m.ovExists;
+      if (ovHidden && (lastFiles > 0 || m.st?.includes("Complete") || m.treeRows > 0))
+        return { completed: true, maxFiles: lastFiles };
+      if (m.st?.includes("Complete")) return { completed: true, maxFiles: lastFiles };
+      if (m.st?.includes("Error")) return { completed: false, maxFiles: lastFiles, error: m.st };
     } catch {}
   }
-  return { completed: false, maxFiles };
+  return { completed: false, maxFiles: lastFiles > 0 ? lastFiles : 0 };
 }
 
 export async function cleanup(cdp, exitCode = 0) {

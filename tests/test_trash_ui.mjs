@@ -1,12 +1,12 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep, clickById } from "./test_shared.mjs";
+import { runTest, jsExpr, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, sleep, clickById } from "./test_shared.mjs";
 
 runTest("DiskRaptor Trash Test", 9218, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   const overlayShown = await waitForOverlay(cdp);
   assert("Scan overlay appeared", overlayShown);
-  const { completed } = await waitForScanComplete(cdp, 400);
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed", completed);
-  await sleep(2000);
+  await waitForStatsPopulated(cdp);
 
   await clickById(cdp, "btn-tools", 500);
 
@@ -42,23 +42,13 @@ runTest("DiskRaptor Trash Test", 9218, async (cdp, scanPath) => {
   assert("Trash menu item clicked", trashClickResult === "clicked-trash", `${trashClickResult}`);
   await sleep(500);
 
-  const emptyTrashResult = await jsExpr(cdp, `
-    (async () => {
-      try {
-        await window.__TAURI__.invoke('empty_trash', {});
-        return 'invoke-ok';
-      } catch(e) { return 'invoke-err: ' + e.message.slice(0, 50); }
-    })()
-  `);
-  assert("empty_trash invoke dispatched", emptyTrashResult.startsWith("invoke"), `${emptyTrashResult}`);
+  const emptyTrashResult = await jsInvoke(cdp,
+    "window.__TAURI__.invoke('empty_trash', {})"
+  ).catch(() => 'error');
+  assert("empty_trash invoke completes", emptyTrashResult !== 'error', `${typeof emptyTrashResult}`);
 
-  const listTrashResult = await jsExpr(cdp, `
-    (async () => {
-      try {
-        const result = await window.__TAURI__.invoke('list_trash', {});
-        return 'ok-' + JSON.stringify(result).slice(0, 60);
-      } catch(e) { return 'err-' + e.message.slice(0, 50); }
-    })()
-  `);
-  assert("list_trash invoke dispatched", listTrashResult.startsWith("ok") || listTrashResult.startsWith("err"), `${listTrashResult}`);
+  const listTrashResult = await jsInvoke(cdp,
+    "window.__TAURI__.invoke('list_trash', {})"
+  ).catch(() => 'error');
+  assert("list_trash invoke completes", listTrashResult !== 'error', `${typeof listTrashResult}`);
 });

@@ -1,11 +1,11 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Filters Test", 9211, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   await waitForOverlay(cdp);
-  const { completed } = await waitForScanComplete(cdp, 400);
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed for filters", completed);
-  await sleep(2000);
+  await waitForStatsPopulated(cdp);
 
   const treeFilter = await jsExpr(cdp, `
     (function() {

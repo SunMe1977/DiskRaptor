@@ -1,11 +1,11 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep, clickById } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById } from "./test_shared.mjs";
 
 runTest("DiskRaptor Theme Test", 9205, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   await waitForOverlay(cdp);
   const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed for theme test", completed);
-  await sleep(2000);
+  await waitForStatsPopulated(cdp);
 
   const initialTheme = await jsExpr(cdp, `document.getElementById('btn-theme')?.textContent || ''`);
   assert("Theme button visible", initialTheme !== "", `text="${initialTheme}"`);

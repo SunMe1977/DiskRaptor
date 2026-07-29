@@ -1,11 +1,11 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
 
 runTest("DiskRaptor Top Files Panel Test", 9204, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
   await waitForOverlay(cdp);
-  const { completed } = await waitForScanComplete(cdp, 400);
+  const { completed } = await waitForScanComplete(cdp);
   assert("Scan completed for topfiles", completed);
-  await sleep(3000);
+  await waitForStatsPopulated(cdp);
 
   const topFilesCard = await jsExpr(cdp, `document.getElementById('topfiles-card') ? 'found' : 'not-found'`);
   assert("Top files card exists", topFilesCard === "found");

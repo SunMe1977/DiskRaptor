@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Progress Overlay Test", 9216, async (cdp, scanPath) => {
   await jsExpr(cdp, `document.getElementById('scan-path').value = ${JSON.stringify(scanPath)}; 'set'`);
@@ -16,26 +16,27 @@ runTest("DiskRaptor Progress Overlay Test", 9216, async (cdp, scanPath) => {
   const overlayAppeared = await waitForOverlay(cdp);
   assert("Progress overlay appears during scan", overlayAppeared);
 
-  const progressElements = await jsExpr(cdp, `
-    (function() {
-      const els = {
-        files: !!document.getElementById('progress-files'),
-        dirs: !!document.getElementById('progress-dirs'),
-        speed: !!document.getElementById('progress-speed-val'),
-        elapsed: !!document.getElementById('progress-elapsed-val'),
-        eta: !!document.getElementById('progress-eta-val'),
-        pct: !!document.getElementById('progress-pct-text'),
-        status: !!document.getElementById('progress-status'),
-        path: !!document.getElementById('progress-path'),
-      };
-      return JSON.stringify(els);
-    })()
-  `);
-  assert("Progress elements found", progressElements.includes('"files":true'), `${progressElements}`);
+  const progressElements = await jsExpr(cdp, `({
+    files: !!document.getElementById('progress-files'),
+    dirs: !!document.getElementById('progress-dirs'),
+    speed: !!document.getElementById('progress-speed-val'),
+    elapsed: !!document.getElementById('progress-elapsed-val'),
+    eta: !!document.getElementById('progress-eta-val'),
+    pct: !!document.getElementById('progress-pct-text'),
+    status: !!document.getElementById('progress-status'),
+    path: !!document.getElementById('progress-path'),
+  })`);
+  assert("Progress files element found", progressElements?.files === true);
 
   if (overlayAppeared) {
     const filesBefore = await jsExpr(cdp, `parseInt((document.getElementById('progress-files')?.textContent || '0').replace(/,/g, ''))`);
-    await sleep(3000);
+    await jsExpr(cdp, `(async () => {
+      for (let i = 0; i < 100; i++) {
+        await new Promise(r => setTimeout(r, 50));
+        const v = parseInt((document.getElementById('progress-files')?.textContent || '0').replace(/,/g, '')) || 0;
+        if (v > ${filesBefore}) return;
+      }
+    })()`);
     const filesAfter = await jsExpr(cdp, `parseInt((document.getElementById('progress-files')?.textContent || '0').replace(/,/g, ''))`);
     assert("Progress counter increments", filesAfter >= filesBefore, `before=${filesBefore} after=${filesAfter}`);
   }
@@ -49,16 +50,7 @@ runTest("DiskRaptor Progress Overlay Test", 9216, async (cdp, scanPath) => {
   const etaVal = await jsExpr(cdp, `document.getElementById('progress-eta-val')?.textContent || 'no-eta'`);
   assert("ETA display shows value", etaVal !== "no-eta", `eta=${etaVal}`);
 
-  for (let i = 0; i < 300; i++) {
-    await sleep(500);
-    try {
-      const json = await jsExpr(cdp, `JSON.stringify({files: (document.getElementById('progress-files')?.textContent || '0').replace(/,/g, ''), ov: document.getElementById('progress-overlay')?.classList.contains('active')})`);
-      const m = JSON.parse(json || "{}");
-      const files = parseInt(m.files) || 0;
-      if (!m.ov && files > 0) break;
-    } catch {}
-  }
-  await sleep(2000);
+  await waitForScanComplete(cdp);
 
   const overlayHiddenAfter = await jsExpr(cdp, `
     (function() {
