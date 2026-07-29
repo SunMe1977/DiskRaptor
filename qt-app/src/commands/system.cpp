@@ -219,17 +219,22 @@ QString SystemHandler::emptyTrash()
 QString SystemHandler::listTrash()
 {
     QJsonArray items;
+#ifdef Q_OS_MACOS
     QString trashPath = QDir::homePath() + "/.Trash";
+#elif defined(Q_OS_LINUX)
+    QString trashPath = QDir::homePath() + "/.local/share/Trash/files";
+#elif defined(Q_OS_WIN)
+    // Windows Recycle Bin is virtual; list via shell
+    QDir trashPath(QDir::homePath() + "/../Recycle.Bin");
+    if (!trashPath.exists()) trashPath.setPath(QDir::rootPath() + "/$Recycle.Bin");
+    return resultToJson(true, QJsonDocument(items).toJson(QJsonDocument::Compact));
+#else
+    QString trashPath = QDir::homePath() + "/.Trash";
+#endif
     QDir trashDir(trashPath);
     if (!trashDir.exists()) {
         return resultToJson(true, QJsonDocument(items).toJson(QJsonDocument::Compact));
     }
-    QHash<QString, QString> origPaths;
-    QProcess mdls;
-    mdls.start("bash", {"-c", "mdls -name kMDItemFSLabel -name kMDItemFSCreationDate -name kMDItemWhereFroms " + trashPath + "/* 2>/dev/null | grep -B1 \"kMDItemWhereFroms\" | grep -v \"kMDItemWhereFroms\" | grep -v \"^--$\" | sed 's/.*\\\\/([^/]*)\\\\):.*/\\\\1/' || true"});
-    mdls.waitForFinished(3000);
-    QString mdlsOut = QString::fromUtf8(mdls.readAllStandardOutput());
-
     for (const QFileInfo &fi : trashDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
         QJsonObject item;
         item["name"] = fi.fileName();

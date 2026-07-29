@@ -14,6 +14,10 @@
 #include <shellapi.h>
 #endif
 
+#ifdef __cplusplus
+extern "C" bool macosMoveToTrash(const char *path);
+#endif
+
 FileOpsHandler::FileOpsHandler(QObject *parent)
     : QObject(parent)
 {
@@ -41,17 +45,24 @@ QString FileOpsHandler::deletePath(const QString &path)
     }
     return resultToJson(true);
 #elif defined(Q_OS_MACOS)
-    QString posixPath = QDir::fromNativeSeparators(path);
-    QString escaped = QString(posixPath).replace("\\", "\\\\").replace("\"", "\\\"");
+    if (macosMoveToTrash(QDir::fromNativeSeparators(path).toUtf8().constData()))
+        return resultToJson(true);
+    // Fallback: try AppleScript
+    QString escaped = QString(path).replace("\\", "\\\\").replace("\"", "\\\"");
     QProcess proc;
     proc.start("osascript", {"-e", "tell app \"Finder\" to delete POSIX file \"" + escaped + "\""});
     proc.waitForFinished(10000);
-    if (proc.exitCode() != 0) {
-        QString err = QString::fromUtf8(proc.readAllStandardError()).trimmed();
-        return resultToJson(false, QVariant(), "Failed to move to Trash: " + path + " (" + err + ")");
-    }
-    return resultToJson(true);
+    if (proc.exitCode() == 0)
+        return resultToJson(true);
+    QString err = QString::fromUtf8(proc.readAllStandardError()).trimmed();
+    return resultToJson(false, QVariant(), "Failed to move to Trash: " + path + " (" + err + ")");
 #else
+    // Linux: try gio trash first, fallback to permanent delete
+    QProcess proc;
+    proc.start("gio", {"trash", path});
+    proc.waitForFinished(5000);
+    if (proc.exitCode() == 0)
+        return resultToJson(true);
     QDir dir(path);
     bool ok = false;
     if (QFileInfo(path).isDir()) {
