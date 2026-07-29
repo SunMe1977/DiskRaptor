@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QMetaType>
+#include <QDebug>
 
 // ── Message handler that forwards WKScriptMessage to C++ wrapper ─
 @interface DRMessageHandler : NSObject <WKScriptMessageHandler>
@@ -241,4 +242,24 @@ void WKWebViewWrapper::resizeEvent(QResizeEvent *event)
     QWidget::resizeEvent(event);
     WKWebView *webView = (__bridge WKWebView *)m_webView;
     webView.frame = NSMakeRect(0, 0, width(), height());
+}
+
+// ── Native macOS Trash via NSFileManager (more reliable than AppleScript) ──
+extern "C" bool macosMoveToTrash(const char *path)
+{
+    @autoreleasepool {
+        NSString *nsPath = [NSString stringWithUTF8String:path];
+        if (!nsPath) return false;
+        NSURL *url = [NSURL fileURLWithPath:nsPath];
+        if (!url) return false;
+        NSURL *resultURL = nil;
+        NSError *error = nil;
+        BOOL ok = [[NSFileManager defaultManager] trashItemAtURL:url
+                                                resultingItemURL:&resultURL
+                                                           error:&error];
+        if (!ok && error) {
+            qWarning() << "[Trash] NSFileManager failed:" << QString::fromNSString(error.localizedDescription);
+        }
+        return (bool)ok;
+    }
 }

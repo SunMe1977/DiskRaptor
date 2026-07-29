@@ -137,8 +137,8 @@ echo "[7] Create signed PKG..."
 productbuild --component "$APP_DST" /Applications --sign "$INSTALLER_CERT" --keychain "$KC" --identifier "diskraptor" --version "$VERSION" "$PKG"
 
 echo "[8] Upload..."
-API_KEY="${APPLE_API_KEY:-${APPLE_API_KEY_ID:-PAWX8HDNG4}}"
-API_ISSUER="${APPLE_API_ISSUER:-1782f6bd-09a4-4e82-84b5-9adbb9e1003b}"
+API_KEY="${APPLE_API_KEY:-${APPLE_API_KEY_ID:-}}"
+API_ISSUER="${APPLE_API_ISSUER:-}"
 if [ -z "$API_KEY" ] || [ -z "$API_ISSUER" ]; then
   echo "  SKIP upload: APPLE_API_KEY and APPLE_API_ISSUER not set in .env"
 else
