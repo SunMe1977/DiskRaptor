@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
 
     PlatformUtils::setupRuntimeEnvironment();
     app.setApplicationName("DiskRaptor");
-    app.setApplicationVersion("1.0.0");
+    app.setApplicationVersion("1.0.2");
     app.setOrganizationName("DiskRaptor");
 #ifdef Q_OS_LINUX
     app.setDesktopFileName("diskraptor");

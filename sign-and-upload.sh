@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 [ -f ".env" ] && { set -a; . ./.env; set +a; }
 
-VERSION="${VERSION:-$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.1")}"
+VERSION="${VERSION:-$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.2")}"
 APP="dist/DiskRaptor.app"
 APP_DST="dist-mas/DiskRaptor.app"
 PKG="dist-mas/DiskRaptor-$VERSION-mas.pkg"
