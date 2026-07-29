@@ -139,12 +139,13 @@ void WKWebViewWrapper::evaluateJSWithCallback(const QString &js, int cdpId, std:
     m_pendingEval[cdpId] = std::move(callback);
     QString wrapped = QStringLiteral(
         "(function(){"
+        "  function __s(v){return v!==null&&typeof v==='object'?JSON.stringify(v):String(v);}"
         "  var __r=%1;"
         "  if(__r&&typeof __r.then==='function'){"
-        "    __r.then(function(v){console.log('__eval_ok__:%2:'+JSON.stringify(v));},"
-        "             function(e){console.log('__eval_err__:%2:'+JSON.stringify(String(e)));});"
+        "    __r.then(function(v){console.log('__eval_ok__:%2:'+__s(v));},"
+        "             function(e){console.log('__eval_err__:%2:'+String(e));});"
         "  }else{"
-        "    console.log('__eval_ok__:%2:'+JSON.stringify(__r));"
+        "    console.log('__eval_ok__:%2:'+__s(__r));"
         "  }"
         "})();"
     ).arg(js, QString::number(cdpId));
