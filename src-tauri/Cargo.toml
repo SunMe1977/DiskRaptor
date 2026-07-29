@@ -1,6 +1,6 @@
 [package]
 name = "diskraptor"
-version = "1.0.1"
+version = "1.0.2"
 description = "Ultra-fast directory scanner - Rust scanner DLL for DiskRaptor Qt app"
 authors = ["DiskRaptor Team"]
 edition = "2021"
