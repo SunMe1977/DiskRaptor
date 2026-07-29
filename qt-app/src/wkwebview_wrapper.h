@@ -19,10 +19,14 @@ public:
     void loadURL(const QUrl &url);
     void evaluateJS(const QString &js);
     void evaluateJSWithCallback(const QString &js, std::function<void(const QString &)> callback);
+    void evaluateJSWithCallback(const QString &js, int cdpId, std::function<void(const QString &)> callback);
     void postEvent(const QString &event, const QVariant &payload);
 
     void setInvokeHandler(InvokeHandler handler);
     void handleMessage(const QString &id, const QString &cmd, const QVariantMap &args);
+    QString invokeSync(const QString &cmd, const QVariantMap &args);
+
+    void onEvalResult(int cdpId, const QString &value, bool error);
 
 signals:
     void loadFinished(bool ok);
@@ -32,6 +36,7 @@ protected:
 
 private:
     QMap<int, std::function<void(const QString &)>> m_jsCallbacks;
+    QMap<int, std::function<void(const QString &)>> m_pendingEval;
     int m_jsCallbackId = 0;
     void *m_webView = nullptr;
     void *m_controller = nullptr;

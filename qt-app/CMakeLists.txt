@@ -1,12 +1,19 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(DiskRaptor VERSION 1.0.1 DESCRIPTION "Ultra-fast disk space analyzer" LANGUAGES CXX OBJCXX)
+project(DiskRaptor VERSION 1.0.1 DESCRIPTION "Ultra-fast disk space analyzer" LANGUAGES CXX)
+if(APPLE)
+  enable_language(OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
+if(APPLE)
+  find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
+else()
+  find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebEngineWidgets WebChannel Network)
+endif()
 
 set(SOURCES
   src/main.cpp
@@ -18,8 +25,12 @@ set(SOURCES
   src/commands/system.cpp
   src/commands/settings.cpp
   src/commands/scanner.cpp
-  src/wkwebview_wrapper.mm
   src/cdp_server.cpp)
+if(APPLE)
+  list(APPEND SOURCES src/wkwebview_wrapper.mm)
+else()
+  list(APPEND SOURCES src/wkwebview_wrapper.cpp)
+endif()
 set(HEADERS
   src/webviewwindow.h
   src/ipcbridge.h
@@ -29,8 +40,8 @@ set(HEADERS
   src/commands/system.h
   src/commands/settings.h
   src/commands/scanner.h
-  src/wkwebview_wrapper.h
-  src/cdp_server.h)
+  src/cdp_server.h
+  src/wkwebview_wrapper.h)
 set(RESOURCES resources/resources.qrc)
 
 if(WIN32)
@@ -47,6 +58,10 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${RESOURCES})
 target_link_libraries(${PROJECT_NAME} PRIVATE
   Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network
   ${CMAKE_DL_LIBS})
+if(NOT APPLE)
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    Qt6::WebEngineWidgets Qt6::WebChannel)
+endif()
 
 if(APPLE)
   target_link_libraries(${PROJECT_NAME} PRIVATE
