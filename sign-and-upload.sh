@@ -116,16 +116,20 @@ find_profile ~/Library/MobileDevice/Provisioning\ Profiles ~/Downloads || true
 echo "[2] Strip quarantine attributes..."
 xattr -cr "$APP_DST"
 
+echo "[2b] Remove QtWebEngineCore (MAS rejection: uses private APIs — we use WKWebView)..."
+rm -rf "$APP_DST/Contents/Frameworks/QtWebEngineCore.framework"
+rm -rf "$APP_DST/Contents/Frameworks/QtPdf.framework" "$APP_DST/Contents/Frameworks/QtPdfQuick.framework"
+rm -rf "$APP_DST/Contents/Resources/qml/QtWebEngine" "$APP_DST/Contents/Resources/qml/QtWebChannel"
+rm -rf "$APP_DST/Contents/Resources/qml/QtPdf"
+rm -rf "$APP_DST/Contents/PlugIns/webengine" "$APP_DST/Contents/PlugIns/sqldrivers"
+rm -f "$APP_DST"/Contents/Resources/qtwebengine_*
+rm -f "$APP_DST"/Contents/Frameworks/QtWebEngineCore*
+find "$APP_DST/Contents" -type d -empty -delete 2>/dev/null || true
+
 echo "[3] Sign inner dylibs..."
 find "$APP_DST/Contents" -type f -name "*.dylib" -print0 | xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$CERT" --keychain "$KC" "{}" || true
 
-echo "[4] Sign QtWebEngineProcess (innermost, with sandbox)..."
-WEP="$APP_DST/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
-if [ -d "$WEP" ]; then
-  codesign --force --options=runtime --entitlements "$ENT" --sign "$CERT" --keychain "$KC" "$WEP"
-else
-  echo "  WARNING: QtWebEngineProcess.app not found at $WEP"
-fi
+echo "[4] QtWebEngineProcess already removed (WKWebView — no private APIs)"
 
 echo "[5] Sign all frameworks..."
 find "$APP_DST/Contents" -type d -name "*.framework" -print0 | xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$CERT" --keychain "$KC" "{}" || true
