@@ -116,9 +116,10 @@ find_profile ~/Library/MobileDevice/Provisioning\ Profiles ~/Downloads || true
 echo "[2] Strip quarantine attributes..."
 xattr -cr "$APP_DST"
 
-echo "[2b] Remove QtWebEngineCore (MAS rejection: uses private APIs — we use WKWebView)..."
+echo "[2b] Remove QtWebEngineCore + unused frameworks (MAS rejection: private APIs)..."
 rm -rf "$APP_DST/Contents/Frameworks/QtWebEngineCore.framework"
 rm -rf "$APP_DST/Contents/Frameworks/QtPdf.framework" "$APP_DST/Contents/Frameworks/QtPdfQuick.framework"
+rm -rf "$APP_DST/Contents/Frameworks/QtSql.framework"
 rm -rf "$APP_DST/Contents/Resources/qml/QtWebEngine" "$APP_DST/Contents/Resources/qml/QtWebChannel"
 rm -rf "$APP_DST/Contents/Resources/qml/QtPdf"
 rm -rf "$APP_DST/Contents/PlugIns/webengine" "$APP_DST/Contents/PlugIns/sqldrivers"
