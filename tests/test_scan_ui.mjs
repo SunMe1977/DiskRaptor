@@ -4,7 +4,7 @@ runTest("DiskRaptor Scan Test", 9200, async (cdp, scanPath) => {
   const homeDir = await jsExpr(cdp,
     "window.__TAURI__.invoke('get_home_dir').then(r => JSON.stringify(r)).catch(e => 'ERR: ' + e.message)"
   );
-  assert("get_home_dir works", homeDir.startsWith('"'), `${homeDir}`);
+  assert("get_home_dir works", homeDir && homeDir.startsWith('"'), `${homeDir}`);
 
   await startScan(cdp, scanPath);
   const overlayShown = await waitForOverlay(cdp);

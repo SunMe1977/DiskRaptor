@@ -216,6 +216,26 @@ void WKWebViewWrapper::handleMessage(const QString &id, const QString &cmd,
     ).arg(id, escaped));
 }
 
+QString WKWebViewWrapper::invokeSync(const QString &cmd, const QVariantMap &args)
+{
+    if (!m_invokeHandler)
+        return QStringLiteral("{\"success\":false,\"error\":\"No handler\"}");
+    return m_invokeHandler(cmd, args);
+}
+
+void WKWebViewWrapper::evaluateJSWithCallback(const QString &js, int cdpId, std::function<void(const QString &)> callback)
+{
+    Q_UNUSED(cdpId);
+    evaluateJSWithCallback(js, std::move(callback));
+}
+
+void WKWebViewWrapper::onEvalResult(int cdpId, const QString &value, bool error)
+{
+    Q_UNUSED(cdpId);
+    Q_UNUSED(value);
+    Q_UNUSED(error);
+}
+
 void WKWebViewWrapper::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);

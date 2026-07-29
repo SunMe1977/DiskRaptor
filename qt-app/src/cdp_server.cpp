@@ -214,20 +214,13 @@ void CdpServer::handleCdpMessage(QTcpSocket *socket, const QJsonObject &msg)
     if (method == "Runtime.evaluate") {
         QJsonObject params = msg["params"].toObject();
         QString expression = params["expression"].toString();
-        bool awaitPromise = params["awaitPromise"].toBool(false);
 
         if (!m_webView) {
             sendCdpError(socket, id, "No webview");
             return;
         }
 
-        if (!awaitPromise) {
-            m_webView->evaluateJS(expression);
-            QJsonObject result;
-            result["result"] = QJsonValue::Null;
-            sendCdpResponse(socket, id, result);
-        } else {
-            m_webView->evaluateJSWithCallback(expression, [this, socket, id](const QString &value) {
+        m_webView->evaluateJSWithCallback(expression, id, [this, socket, id](const QString &value) {
                 QJsonObject innerResult;
                 if (value == "true" || value == "false") {
                     innerResult["type"] = "boolean";
@@ -265,7 +258,6 @@ void CdpServer::handleCdpMessage(QTcpSocket *socket, const QJsonObject &msg)
                 resultObj["result"] = innerResult;
                 sendCdpResponse(socket, id, resultObj);
             });
-        }
         return;
     }
 
