@@ -19,6 +19,7 @@ release/
 # ── Node ────────────────────────────
 node_modules/
 frontend/lib/
+package-lock.json
 
 # ── IDE ─────────────────────────────
 .vscode/
@@ -66,6 +67,7 @@ developer.key
 
 # ── Generated / sensitive ───────────
 raw/
+src-tauri/gen/schemas/
 release-assets/
 install/
 setup.nsi
