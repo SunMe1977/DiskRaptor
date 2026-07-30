@@ -296,11 +296,14 @@ fi
 echo "  Building Tauri app (native arch)..."
 cd src-tauri
 case "$PLATFORM" in
-  macos)   BUNDLES="app" ;;
-  linux)   BUNDLES="deb" ;;
+  macos)   BUNDLES="app,dmg" ;;
+  linux)   BUNDLES="deb,appimage" ;;
   windows) BUNDLES="nsis" ;;
+  *)       echo "Unknown platform '$PLATFORM', defaulting to native bundle"; BUNDLES="" ;;
 esac
-npx tauri build --bundles "$BUNDLES" --ci 2>&1
+BUNDLE_ARGS=""
+[ -n "$BUNDLES" ] && BUNDLE_ARGS="--bundles $BUNDLES"
+npx tauri build $BUNDLE_ARGS --ci 2>&1
 cd ..
 
 # Also build scanner library for backward compat
