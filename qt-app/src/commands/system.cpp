@@ -12,6 +12,10 @@
 #include <QFileDialog>
 #include <QTimer>
 #include <QCoreApplication>
+
+#ifdef __cplusplus
+extern "C" const char *macosListTrash();
+#endif
 #include <QDirIterator>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -218,10 +222,14 @@ QString SystemHandler::emptyTrash()
 
 QString SystemHandler::listTrash()
 {
-    QJsonArray items;
 #ifdef Q_OS_MACOS
-    QString trashPath = QDir::homePath() + "/.Trash";
-#elif defined(Q_OS_LINUX)
+    const char *json = macosListTrash();
+    QString result = QString::fromUtf8(json);
+    free(const_cast<char *>(json));
+    return resultToJson(true, QJsonDocument::fromJson(result.toUtf8()).array());
+#else
+    QJsonArray items;
+#if defined(Q_OS_LINUX)
     QString trashPath = QDir::homePath() + "/.local/share/Trash/files";
 #elif defined(Q_OS_WIN)
     // Windows Recycle Bin is virtual; list via shell
@@ -249,6 +257,7 @@ QString SystemHandler::listTrash()
         items.append(item);
     }
     return resultToJson(true, QJsonDocument(items).toJson(QJsonDocument::Compact));
+#endif
 }
 
 QString SystemHandler::restoreTrash(const QString &trashPath)

@@ -705,6 +705,31 @@
       showWelcome: showWelcome,
     });
 
+    // ── CDP eval polling (for automated testing) ─────────
+    (function startCdpEvalPoller() {
+      var polling = false;
+      async function poll() {
+        if (polling) return;
+        polling = true;
+        try {
+          while (true) {
+            var item = await window.__TAURI__.invoke("__cdp_poll_eval");
+            if (!item) break;
+            try {
+              var result = JSON.stringify(eval(item.expression));
+              await window.__TAURI__.invoke("__cdp_result", { key: item.id, value: result });
+            } catch (e) {
+              await window.__TAURI__.invoke("__cdp_result", { key: item.id, value: "__err:" + String(e.message || e) });
+            }
+          }
+        } catch (e) {
+          console.debug("[CDP] poll error:", e);
+        }
+        polling = false;
+      }
+      setInterval(poll, 100);
+    })();
+
     console.debug("DiskRaptor ready.");
   }
 

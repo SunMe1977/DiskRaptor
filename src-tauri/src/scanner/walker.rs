@@ -173,7 +173,7 @@ mod platform {
         let mut iter_count = 0u64;
         let mut path_buf = String::with_capacity(4096);
 
-        for entry_result in WalkDir::new(root_path).follow_links(config.follow_symlinks).sort(false) {
+        for entry_result in WalkDir::new(root_path).follow_links(config.follow_symlinks).sort(false).parallelism(jwalk::Parallelism::RayonNewPool(4)) {
             if arena.nodes.len() > 20_000_000 {
                 break;
             }
@@ -217,7 +217,7 @@ mod platform {
                 continue;
             }
 
-            let file_name = entry.file_name().to_string_lossy().into_owned();
+            let file_name = entry.file_name().to_string_lossy();
 
             let is_dir = entry.file_type().is_dir();
             let parent = os_path
@@ -226,7 +226,6 @@ mod platform {
                 .unwrap_or_else(|| root_path.into());
             let pi = *ptix.get(&parent).unwrap_or(&root_idx);
 
-            let fname = file_name.clone(); // keep a copy for file_types
             if is_dir {
                 dirs_found += 1;
                 if skip_dirs.iter().any(|sd| path_buf.contains(sd.as_str())) {
@@ -238,7 +237,7 @@ mod platform {
                     arena.nodes[pi as usize].depth + 1
                 };
             let ci = arena.alloc(TreeNode {
-                name: fname,
+                name: file_name.into_owned(),
                 size: 0,
                 file_count: 0,
                 dir_count: 1,
@@ -258,14 +257,18 @@ mod platform {
                 ptix.insert(path_buf.clone(), ci);
             } else {
                 files_found += 1;
-                let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                let meta = entry.metadata();
+                let sz = meta.as_ref().map(|m| m.len()).unwrap_or(0);
                 bytes_found += sz;
                 let depth = if pi == root_idx {
                     1
                 } else {
                     arena.nodes[pi as usize].depth + 1
                 };
-                let mtime = entry.metadata().map(|m| m.modified().map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()).unwrap_or(0)).unwrap_or(0);
+                let mtime = meta.as_ref()
+                    .map(|m| m.modified().map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()).unwrap_or(0))
+                    .unwrap_or(0);
+                let fname = file_name.into_owned();
                 let ci = arena.alloc(TreeNode {
                     name: fname.clone(),
                     size: sz,

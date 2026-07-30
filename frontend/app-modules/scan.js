@@ -619,6 +619,20 @@
         function showCleanupPanel() {
           const spv = (scanPath && scanPath.value) || "";
           if (spv.toLowerCase().indexOf("download") < 0) return;
+
+          const isMac = /mac/i.test(navigator.platform || "");
+          const isWin = /win/i.test(navigator.platform || "");
+
+          const installerExt =
+            (isMac ? "dmg|pkg|mpkg|dmgpart|toast|" : "") +
+            (isWin ? "exe|msi|msp|msu|cab|application|vhd|" : "") +
+            (!isWin ? "deb|rpm|appimage|flatpakref|snap|flatpak|run|" : "") +
+            "iso|img|zip|tar|gz|bz2|xz|7z|rar|zst";
+          const tempExt = "log|tmp|temp|cache|bak|swp|swo|ds_store|thumbs|db";
+          const reInstaller = new RegExp("\\.(?:" + installerExt + ")$", "i");
+          const reTemp = new RegExp("\\.(?:" + tempExt + ")$", "i");
+          const reDup = /\(\d+\)\.[a-z0-9]+$/i;
+
           const cleanable = [];
           const seen = {};
           const nodes = loader.allNodes || [];
@@ -644,14 +658,19 @@
               const cname = (cn.name || "").toLowerCase();
               const cext = cname.lastIndexOf(".") >= 0 ? cname.substring(cname.lastIndexOf(".")) : "";
               const csize = cn.size || 0;
-              const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(cext);
-              const isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
+              const isInstaller = reInstaller.test(cext);
+              const isTemp = reTemp.test(cext);
+              const isDup = reDup.test(cname);
               const isOld = cn.mtime && cn.mtime > 0 && Date.now() / 1000 - cn.mtime > 60 * 86400;
-              if (isCleanable || isDup || (isOld && csize > 1048576)) {
+              if (isInstaller || isTemp || isDup || (isOld && csize > 1048576)) {
                 const relPath = getNodeRelPath(cn, nodes);
                 if (seen[relPath]) continue;
                 seen[relPath] = true;
-                cleanable.push({ name: relPath, size: csize, reason: isDup ? "duplicate" : isOld ? "old" : "installer", mtime: cn.mtime });
+                let reason = "installer";
+                if (isDup) reason = "duplicate";
+                else if (isTemp) reason = "temp";
+                else if (isOld) reason = "old";
+                cleanable.push({ name: relPath, size: csize, reason: reason, mtime: cn.mtime });
               }
             }
           } else {
@@ -666,12 +685,16 @@
                 if (!fname) continue;
                 const cname = fname.toLowerCase();
                 const cext = cname.lastIndexOf(".") >= 0 ? cname.substring(cname.lastIndexOf(".")) : "";
-                const isCleanable = /\.(dmg|zip|tar|gz|bz2|7z|rar|exe|msi|pkg|iso)$/i.test(cext);
-                const isDup = /\(\d+\)\.[a-z0-9]+$/i.test(cname);
-                if (isCleanable || isDup) {
+                const isInstaller = reInstaller.test(cext);
+                const isTemp = reTemp.test(cext);
+                const isDup = reDup.test(cname);
+                if (isInstaller || isTemp || isDup) {
                   if (seen[fname]) continue;
                   seen[fname] = true;
-                  cleanable.push({ name: fname, size: tsize || 0, reason: isDup ? "duplicate" : "installer", mtime: 0 });
+                  let reason = "installer";
+                  if (isDup) reason = "duplicate";
+                  else if (isTemp) reason = "temp";
+                  cleanable.push({ name: fname, size: tsize || 0, reason: reason, mtime: 0 });
                 }
               }
             }
@@ -699,7 +722,7 @@
           var listHtml = '<div style="flex:1;overflow-y:auto;padding:6px 0;">';
           for (var ci = 0; ci < Math.min(cleanable.length, 200); ci++) {
             var item = cleanable[ci];
-            var badge = item.reason === "duplicate" ? "\uD83D\uDD01" : item.reason === "old" ? "\u23F3" : "\uD83D\uDCE6";
+            var badge = item.reason === "duplicate" ? "\uD83D\uDD01" : item.reason === "old" ? "\u23F3" : item.reason === "temp" ? "\uD83D\uDDD1\uFE0F" : "\uD83D\uDCE6";
             var escName = item.name.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
             var fullPath = (scanPath.value || "").replace(/[\\/]+$/, "") + "/" + escName;
             var sizeStr = (function (b) { var u = ["B", "KB", "MB", "GB"]; var i = Math.min(Math.floor(Math.log(b || 1) / Math.log(1024)), 3); return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i]; })(item.size);
