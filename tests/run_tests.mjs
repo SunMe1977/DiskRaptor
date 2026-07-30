@@ -17,10 +17,15 @@ const DIST_DIR = path.join(PROJECT_ROOT, "dist");
 const BIN_NAME = IS_WIN ? "DiskRaptor.exe" : "DiskRaptor";
 const BIN_PATH = path.join(DIST_DIR, BIN_NAME);
 const MAC_PATH = path.join(DIST_DIR, "DiskRaptor.app", "Contents", "MacOS", "DiskRaptor");
-const TAURI_RELEASE_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "release", "diskraptor");
-const TAURI_DEBUG_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "debug", "diskraptor");
+const TAURI_BIN_NAME = IS_WIN ? "diskraptor.exe" : "diskraptor";
+const TAURI_RELEASE_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "release", TAURI_BIN_NAME);
+const TAURI_DEBUG_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "debug", TAURI_BIN_NAME);
+const TAURI_RELEASE_ALT_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "release", "diskraptor");
+const TAURI_DEBUG_ALT_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "debug", "diskraptor");
 const EXE_PATH = fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
                 fs.existsSync(TAURI_DEBUG_PATH) ? TAURI_DEBUG_PATH :
+                fs.existsSync(TAURI_RELEASE_ALT_PATH) ? TAURI_RELEASE_ALT_PATH :
+                fs.existsSync(TAURI_DEBUG_ALT_PATH) ? TAURI_DEBUG_ALT_PATH :
                 (IS_MAC ? MAC_PATH : BIN_PATH);
 
 const ALL_TESTS = [

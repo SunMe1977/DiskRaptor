@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert } from "./test_shared.mjs";
 
 runTest("DiskRaptor i18n/Language Test", 9214, async (cdp) => {
   const hasT = await jsExpr(cdp, `typeof window.__ === 'function' ? 'found' : 'not-found'`);
@@ -8,7 +8,7 @@ runTest("DiskRaptor i18n/Language Test", 9214, async (cdp) => {
   const langBtn = await jsExpr(cdp, `document.getElementById('btn-lang') ? 'found' : 'not-found'`);
   assert("Language button in toolbar", langBtn === "found");
 
-  const currentLang = await jsExpr(cdp, `document.documentElement lang || document.documentElement.getAttribute('lang') || 'no-lang-attr'`);
+  const currentLang = await jsExpr(cdp, `document.documentElement.lang || document.documentElement.getAttribute('lang') || 'no-lang-attr'`);
   assert("HTML lang attribute set", currentLang !== "no-lang-attr", `lang=${currentLang}`);
 
   if (hasI18N === "found") {
@@ -21,16 +21,6 @@ runTest("DiskRaptor i18n/Language Test", 9214, async (cdp) => {
     `);
     assert("i18n languages available", i18nKeys.includes("languages="), `${i18nKeys}`);
   }
-
-  await clickById(cdp, "btn-lang", 300);
-
-  const langMenuItems = await jsExpr(cdp, `
-    Array.from(document.querySelectorAll('#lang-menu a, #lang-menu [data-lang], #lang-menu .lang-option')).map(el => ({
-      text: el.textContent.trim().slice(0, 10),
-      lang: el.getAttribute('data-lang') || el.getAttribute('data-lang-code') || el.id || ''
-    }))
-  `);
-  assert("Language menu items", true, `count=${Array.isArray(langMenuItems) ? langMenuItems.length : 0}`);
 
   const tFunction = await jsExpr(cdp, `
     (typeof __ === 'function') ? __('btn.scan') :

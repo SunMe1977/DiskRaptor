@@ -6,10 +6,26 @@ echo  DiskRaptor -- Cross-Platform Test Suite
 echo ========================================
 echo.
 
-if not exist "dist\DiskRaptor.exe" (
-  echo ERROR: Binary not found: dist\DiskRaptor.exe
-  echo Run 'build.bat' first
+set "DIST_EXE=%~dp0dist\DiskRaptor.exe"
+set "TAURI_RELEASE=%~dp0src-tauri\target\release\diskraptor.exe"
+set "TAURI_DEBUG=%~dp0src-tauri\target\debug\diskraptor.exe"
+
+if not exist "%DIST_EXE%" if not exist "%TAURI_RELEASE%" if not exist "%TAURI_DEBUG%" (
+  echo ERROR: No runnable application binary found.
+  echo Expected one of:
+  echo   dist\DiskRaptor.exe
+  echo   src-tauri\target\release\diskraptor.exe
+  echo   src-tauri\target\debug\diskraptor.exe
+  echo Run 'cargo build --release --bin diskraptor' or 'build.sh' first
   exit /b 1
+)
+
+if exist "%TAURI_RELEASE%" (
+  echo Using Tauri binary: %TAURI_RELEASE%
+) else if exist "%TAURI_DEBUG%" (
+  echo Using Tauri binary: %TAURI_DEBUG%
+) else (
+  echo Using dist binary: %DIST_EXE%
 )
 
 if "%1"=="--quick" goto :quick

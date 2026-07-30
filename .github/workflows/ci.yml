@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: for f in frontend/*.js; do node --check "$f"; done
       - run: for f in frontend/app-modules/*.js; do node --check "$f"; done
       - run: for f in frontend/galaxyview/*.js; do node --check "$f"; done
@@ -37,44 +37,75 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm ci
+          node-version: 22
+      - run: npm install --no-audit --no-fund
       - run: npx eslint frontend/ frontend/app-modules/ frontend/galaxyview/
 
   test:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
     needs: [rust, js, lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Install deps
+      - name: Install JS dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev qt6-webchannel-dev \
-            libgl1-mesa-dev ninja-build cmake xvfb
-      - name: Build Rust scanner
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
-      - name: Build Qt app
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev pkg-config xvfb
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install pkg-config
+      - name: Build Tauri app
+        shell: bash
         run: |
-          cmake -B qt-app/build -G Ninja -DCMAKE_BUILD_TYPE=Release qt-app
-          cmake --build qt-app/build --config Release
-      - name: Stage dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cmd /c build.cmd
+          else
+            ./build.sh
+          fi
+      - name: Install built app
+        shell: bash
         run: |
-          mkdir -p dist/frontend dist/images
-          cp qt-app/build/DiskRaptor dist/
-          cp src-tauri/target/release/libdiskraptor_scanner.so dist/ 2>/dev/null || true
-          cp -r frontend/* dist/frontend/
-          cp -r images/* dist/images/
-      - name: Run UI tests
-        run: |
-          npm ci
-          timeout 120 xvfb-run -a node tests/run_tests.mjs --quick 2>&1 || echo "Tests exited ($?)"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            if compgen -G "src-tauri/target/release/bundle/deb/*.deb" > /dev/null; then
+              sudo apt-get install -y ./src-tauri/target/release/bundle/deb/*.deb
+            fi
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            mkdir -p "$HOME/Applications"
+            if [ -d "src-tauri/target/release/bundle/macos/DiskRaptor.app" ]; then
+              cp -R "src-tauri/target/release/bundle/macos/DiskRaptor.app" "$HOME/Applications/"
+            elif [ -d "dist/DiskRaptor.app" ]; then
+              cp -R "dist/DiskRaptor.app" "$HOME/Applications/"
+            fi
+          else
+            mkdir -p "$LOCALAPPDATA\\DiskRaptor"
+            if [ -f "src-tauri/target/release/diskraptor.exe" ]; then
+              cp "src-tauri/target/release/diskraptor.exe" "$LOCALAPPDATA\\DiskRaptor\\"
+            fi
+          fi
+      - name: Run UI tests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: xvfb-run -a bash test.sh --quick
+      - name: Run UI tests (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash test.sh --quick
+      - name: Run UI tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmd /c test.bat --quick
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -82,82 +113,23 @@ jobs:
     needs: [test]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-      - name: Install Qt6 + build deps
+      - name: Install JS dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Linux dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qt6-base-dev qt6-webengine-dev qt6-webchannel-dev \
-            libgl1-mesa-dev ninja-build cmake dpkg-dev fakeroot
-      - name: Build Rust scanner
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
-      - name: Build Qt app
-        run: |
-          cmake -B qt-app/build -G Ninja -DCMAKE_BUILD_TYPE=Release qt-app
-          cmake --build qt-app/build --config Release
-      - name: Stage dist
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          mkdir -p dist/frontend dist/images
-          cp qt-app/build/DiskRaptor dist/
-          cp src-tauri/target/release/libdiskraptor_scanner.so dist/ 2>/dev/null || true
-          cp -r frontend/* dist/frontend/
-          cp -r images/* dist/images/
-      - name: Package .deb
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          DEB_DIR="deb"
-          rm -rf "$DEB_DIR"
-          mkdir -p "$DEB_DIR/DEBIAN" "$DEB_DIR/usr/bin" "$DEB_DIR/usr/lib/diskraptor" \
-                   "$DEB_DIR/usr/share/applications" \
-                   "$DEB_DIR/usr/share/icons/hicolor/128x128/apps" \
-                   "$DEB_DIR/usr/share/icons/hicolor/256x256/apps" \
-                   "$DEB_DIR/usr/share/diskraptor"
-          cat > "$DEB_DIR/DEBIAN/control" <<EOF
-          Package: diskraptor
-          Version: $VERSION
-          Section: utils
-          Priority: optional
-          Architecture: amd64
-          Depends: libc6 (>= 2.31), libstdc++6 (>= 10), libgcc-s1 (>= 10)
-          Maintainer: DiskRaptor Team
-          Description: Ultra-fast disk space analyzer with virtual tree view, pie chart, and live progress.
-           Scans millions of files using a parallel Rust engine.
-          EOF
-          cat > "$DEB_DIR/DEBIAN/postinst" << 'EOF'
-          #!/bin/bash
-          set -e
-          if command -v update-desktop-database &>/dev/null; then update-desktop-database 2>/dev/null || true; fi
-          if command -v gtk-update-icon-cache &>/dev/null; then gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true; fi
-          EOF
-          chmod 755 "$DEB_DIR/DEBIAN/postinst"
-          cat > "$DEB_DIR/usr/bin/diskraptor" << 'EOF'
-          #!/bin/bash
-          export LD_LIBRARY_PATH="/usr/lib/diskraptor:\$LD_LIBRARY_PATH"
-          exec /usr/bin/DiskRaptor "\$@"
-          EOF
-          chmod 755 "$DEB_DIR/usr/bin/diskraptor"
-          cp dist/DiskRaptor "$DEB_DIR/usr/bin/" && chmod 755 "$DEB_DIR/usr/bin/DiskRaptor"
-          cp dist/libdiskraptor_scanner.so "$DEB_DIR/usr/lib/diskraptor/" 2>/dev/null || true
-          cp -r dist/frontend "$DEB_DIR/usr/share/diskraptor/"
-          cp -r dist/images "$DEB_DIR/usr/share/diskraptor/" 2>/dev/null || true
-          cat > "$DEB_DIR/usr/share/applications/diskraptor.desktop" << 'EOF'
-          [Desktop Entry]
-          Name=DiskRaptor
-          Comment=Ultra-fast disk space analyzer
-          Exec=diskraptor
-          Icon=diskraptor
-          Terminal=false
-          Type=Application
-          Categories=Utility;System;FileTools;
-          StartupNotify=true
-          EOF
-          if [ -f images/256x256@2x.png ]; then cp images/256x256@2x.png "$DEB_DIR/usr/share/icons/hicolor/256x256/apps/diskraptor.png"; fi
-          if [ -f images/128x128@2x.png ]; then cp images/128x128@2x.png "$DEB_DIR/usr/share/icons/hicolor/128x128/apps/diskraptor.png"; fi
-          fakeroot dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-${VERSION}-amd64.deb"
-          echo "DEB: dist/DiskRaptor-${VERSION}-amd64.deb"
-      - name: Upload .deb to release
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
+      - name: Build Tauri app
+        run: ./build.sh
+      - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.deb
+          files: |
+            src-tauri/target/release/bundle/**/*
+            dist/**/*
