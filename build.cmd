@@ -66,7 +66,7 @@ REM -- Step 2: Bundle Tauri app -------------------
 echo.
 echo [2/3] Bundling Tauri app...
 cd /d "%~dp0"
-call npx tauri build --bundles app --ci
+call npx tauri build --bundles nsis --ci
 if %ERRORLEVEL% neq 0 (
     echo ERROR: Tauri build failed
     pause
