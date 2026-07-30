@@ -295,7 +295,12 @@ fi
 
 echo "  Building Tauri app (native arch)..."
 cd src-tauri
-npx tauri build --bundles app --ci 2>&1
+case "$PLATFORM" in
+  macos)   BUNDLES="app" ;;
+  linux)   BUNDLES="deb" ;;
+  windows) BUNDLES="nsis" ;;
+esac
+npx tauri build --bundles "$BUNDLES" --ci 2>&1
 cd ..
 
 # Also build scanner library for backward compat
