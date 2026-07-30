@@ -746,8 +746,8 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
 
                             if let Some(w) = app.get_webview_window("main") {
                                 let ejs = format!(
-                                    "try{{var r=eval({});var s=JSON.stringify(r);var x=new XMLHttpRequest();x.open('POST','http://127.0.0.1:{}/cdp_result',true);x.setRequestHeader('Content-Type','text/plain');x.send(JSON.stringify({{id:'{}',value:s}}));}}catch(e){{}}",
-                                    serde_json::Value::String(expr.to_string()), _cdp_port, cdp_id
+                                    "try{{var r=eval({});var s=JSON.stringify(r);window['{}']=s;var x=new XMLHttpRequest();x.open('POST','http://127.0.0.1:{}/cdp_result',true);x.setRequestHeader('Content-Type','text/plain');x.send(JSON.stringify({{id:'{}',value:s}}));}}catch(e){{window['{}']='__err:'+String(e.message||e);}}",
+                                    serde_json::Value::String(expr.to_string()), cdp_id, _cdp_port, cdp_id, cdp_id
                                 );
                                 let _ = w.eval(&ejs).ok();
                             }

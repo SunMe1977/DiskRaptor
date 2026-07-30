@@ -9,12 +9,13 @@ echo " DiskRaptor -- Cross-Platform Test Suite"
 echo "========================================"
 echo ""
 
-BINARY="dist/DiskRaptor"
-FRONTEND="dist/frontend"
+# Check for binary in various locations
+BINARY="src-tauri/target/release/diskraptor"
+MAC_BUNDLE="src-tauri/target/release/bundle/macos/DiskRaptor.app/Contents/MacOS/DiskRaptor"
 
-if [ ! -f "$BINARY" ] && [ ! -f "dist/DiskRaptor.app/Contents/MacOS/DiskRaptor" ]; then
-  echo "ERROR: Binary not found in dist/"
-  echo "Run 'bash build.sh' first"
+if [ ! -f "$BINARY" ] && [ ! -f "$MAC_BUNDLE" ]; then
+  echo "ERROR: Binary not found"
+  echo "Run 'bash build.sh' first (or 'cd src-tauri && npx tauri build --bundles app')"
   exit 1
 fi
 

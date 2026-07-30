@@ -18,7 +18,8 @@
         "height": 860,
         "minWidth": 1024,
         "minHeight": 600,
-        "center": true
+        "center": true,
+        "fullscreen": true
       }
     ],
     "security": {
