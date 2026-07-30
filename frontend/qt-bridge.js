@@ -3,13 +3,16 @@
 
   var bridgeReady = false;
   var isWkMode = false;
+  var isTauriV2 = false;
   var pendingInvokes = [];
   var callIdCounter = 0;
   var pendingCalls = {};
   if (!window.__TAURI__) window.__TAURI__ = {};
   var tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
     ? window.__TAURI__.invoke
-    : null;
+    : (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === "function")
+      ? window.__TAURI__.core.invoke
+      : null;
 
   // ── Initialize WKWebView message handler ────────────────────
   function init() {
@@ -28,11 +31,25 @@
       return;
     }
 
-    // Fallback: original Tauri IPC
+    // Fallback: original Tauri IPC (v1 or v2)
     if (typeof tauriInvoke === "function") {
       console.debug("[DiskRaptor] Using Tauri IPC fallback");
+      isTauriV2 = !!(window.__TAURI__ && window.__TAURI__.core);
       bridgeReady = true;
       if (!window.__TAURI__) window.__TAURI__ = {};
+      window.__TAURI__.__qtBridgeReady = true;
+      window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
+      flushPending();
+      return;
+    }
+
+    // Check for Tauri v2 core.invoke (withGlobalTauri: true)
+    if (window.__TAURI__ && window.__TAURI__.core &&
+        typeof window.__TAURI__.core.invoke === "function") {
+      console.debug("[DiskRaptor] Using Tauri v2 IPC");
+      isTauriV2 = true;
+      tauriInvoke = window.__TAURI__.core.invoke;
+      bridgeReady = true;
       window.__TAURI__.__qtBridgeReady = true;
       window.dispatchEvent(new CustomEvent("tauri-bridge-ready"));
       flushPending();
@@ -103,7 +120,10 @@
         }
 
         if (typeof tauriInvoke === "function") {
-          tauriInvoke(cmd, args).then(resolve).catch(reject);
+          tauriInvoke(cmd, args).then(function(r) {
+            if (r && typeof r === "object" && "data" in r) { resolve(r.data); }
+            else { resolve(r); }
+          }).catch(reject);
         } else {
           reject(new Error("No IPC bridge available: " + cmd));
         }
