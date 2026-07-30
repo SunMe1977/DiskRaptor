@@ -34,6 +34,10 @@
     try {
       await Promise.race([bridgeReady, timeout]);
       if (statusBar) statusBar.textContent = "Backend connected";
+      try {
+        const w = window.__TAURI__.window.getCurrentWindow();
+        await w.maximize();
+      } catch (_) {}
     } catch (err) {
       console.error("Tauri backend not connected:", err);
       if (statusBar)
