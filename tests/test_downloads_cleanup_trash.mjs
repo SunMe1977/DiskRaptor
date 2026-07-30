@@ -35,6 +35,47 @@ runTest("DiskRaptor Downloads Cleanup Test", 9230, async (cdp) => {
   allRelPaths.push(dirFile);
   console.log(`  Created ${allRelPaths.length} test files`);
 
+  // Test scan commands first (while files exist)
+  console.log("\n  Testing scan commands...");
+  const scanResult = await jsInvokeSafe(cdp, `window.__TAURI__.invoke('start_scan', ${JSON.stringify({path: tmpDir, follow_symlinks: false, timeout_secs: 30})})`);
+  assert("start_scan returns status", scanResult && scanResult.status === "started", `${JSON.stringify(scanResult)}`);
+
+  await sleep(5000);
+  const progress = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_scan_progress', {})");
+  assert("get_scan_progress returns data", progress && (progress.files_found > 0 || progress.phase === 3), `${JSON.stringify(progress).slice(0, 100)}`);
+  console.log(`  Scan progress: ${JSON.stringify(progress).slice(0, 120)}`);
+
+  const result = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_scan_result', {})");
+  assert("get_scan_result returns stats", result && result.stats, `${JSON.stringify(result).slice(0, 100)}`);
+  console.log(`  Scan result: ${JSON.stringify(result?.stats).slice(0, 150)}`);
+
+  const stats = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_stats', {})");
+  assert("get_stats returns data", stats && stats.total_files > 0, `files=${stats?.total_files}`);
+
+  // Test system commands
+  console.log("\n  Testing system commands...");
+  const home = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_home_dir', {})");
+  assert("get_home_dir", typeof home === 'string' && home.length > 0);
+
+  const drives = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('list_drives', {})");
+  assert("list_drives returns array", Array.isArray(drives));
+
+  const mem = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_memory_info', {})");
+  assert("get_memory_info", mem && mem.total_bytes > 0);
+
+  // Test settings round-trip
+  console.log("\n  Testing settings...");
+  const testSettings = { theme: "dark", lang: "en" };
+  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('save_settings', ${JSON.stringify(testSettings)})`);
+  const loaded = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('load_settings', {})");
+  assert("save/load settings", loaded && loaded.theme === "dark", `${JSON.stringify(loaded)}`);
+
+  // Test file ops commands (no-op, just check no throw)
+  console.log("\n  Testing file ops commands...");
+  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('open_explorer', {path: ${JSON.stringify(tmpDir)}})`).catch(() => {});
+  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('open_terminal', {path: ${JSON.stringify(tmpDir)}})`).catch(() => {});
+  await jsInvokeSafe(cdp, "window.__TAURI__.invoke('open_url', {url: 'https://example.com'})").catch(() => {});
+
   // Test delete_path (move to trash) via IPC
   console.log("\n  Testing delete_path...");
   let ok = 0, fail = 0;
@@ -67,49 +108,6 @@ runTest("DiskRaptor Downloads Cleanup Test", 9230, async (cdp) => {
   } catch (e) {
     console.log(`  list_trash error: ${e.message}`);
   }
-
-  // Test system commands
-  console.log("\n  Testing system commands...");
-  const home = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_home_dir', {})");
-  assert("get_home_dir", typeof home === 'string' && home.length > 0);
-
-  const drives = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('list_drives', {})");
-  assert("list_drives returns array", Array.isArray(drives));
-
-  const mem = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_memory_info', {})");
-  assert("get_memory_info", mem && mem.total > 0);
-
-  // Test settings round-trip
-  console.log("\n  Testing settings...");
-  const testSettings = { theme: "dark", lang: "en" };
-  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('save_settings', {settings: ${JSON.stringify(testSettings)}})`);
-  const loaded = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('load_settings', {})");
-  assert("save/load settings", loaded && loaded.theme === "dark", `${JSON.stringify(loaded)}`);
-
-  // Test file ops commands (no-op, just check no throw)
-  console.log("\n  Testing file ops commands...");
-  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('open_explorer', {path: ${JSON.stringify(tmpDir)}})`).catch(() => {});
-  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('open_terminal', {path: ${JSON.stringify(tmpDir)}})`).catch(() => {});
-  await jsInvokeSafe(cdp, "window.__TAURI__.invoke('open_url', {url: 'https://example.com'})").catch(() => {});
-
-  // Test scan commands
-  console.log("\n  Testing scan commands...");
-  const scanResult = await jsInvokeSafe(cdp, `window.__TAURI__.invoke('start_scan', ${JSON.stringify({path: tmpDir, follow_symlinks: false, timeout_secs: 30})})`);
-  assert("start_scan returns status", scanResult && scanResult.status === "started", `${JSON.stringify(scanResult)}`);
-
-  // Wait for scan to complete
-  await sleep(5000);
-  const progress = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_scan_progress', {})");
-  assert("get_scan_progress returns data", progress && (progress.files_found > 0 || progress.phase === 3), `${JSON.stringify(progress).slice(0, 100)}`);
-  console.log(`  Scan progress: ${JSON.stringify(progress).slice(0, 120)}`);
-
-  const result = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_scan_result', {})");
-  assert("get_scan_result returns stats", result && result.stats, `${JSON.stringify(result).slice(0, 100)}`);
-  console.log(`  Scan result: ${JSON.stringify(result?.stats).slice(0, 150)}`);
-
-  // Test get_stats
-  const stats = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_stats', {})");
-  assert("get_stats returns data", stats && stats.total_files > 0, `files=${stats?.total_files}`);
 
   // Clean up
   fs.rmSync(tmpDir, { recursive: true, force: true });

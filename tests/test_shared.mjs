@@ -15,10 +15,15 @@ export const DIST_DIR = path.resolve("dist");
 export const BIN_NAME = IS_WIN ? "DiskRaptor.exe" : "DiskRaptor";
 export const EXE_PATH = path.join(DIST_DIR, BIN_NAME);
 export const MAC_APP_PATH = path.join(DIST_DIR, "DiskRaptor.app", "Contents", "MacOS", "DiskRaptor");
-export const TAURI_DEBUG_PATH = path.resolve("src-tauri", "target", "debug", "diskraptor");
-export const TAURI_RELEASE_PATH = path.resolve("src-tauri", "target", "release", "diskraptor");
+export const TAURI_BIN_NAME = IS_WIN ? "diskraptor.exe" : "diskraptor";
+export const TAURI_DEBUG_PATH = path.resolve("src-tauri", "target", "debug", TAURI_BIN_NAME);
+export const TAURI_RELEASE_PATH = path.resolve("src-tauri", "target", "release", TAURI_BIN_NAME);
+export const TAURI_DEBUG_ALT_PATH = path.resolve("src-tauri", "target", "debug", "diskraptor");
+export const TAURI_RELEASE_ALT_PATH = path.resolve("src-tauri", "target", "release", "diskraptor");
 export const BIN_PATH = fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
                        fs.existsSync(TAURI_DEBUG_PATH) ? TAURI_DEBUG_PATH :
+                       fs.existsSync(TAURI_RELEASE_ALT_PATH) ? TAURI_RELEASE_ALT_PATH :
+                       fs.existsSync(TAURI_DEBUG_ALT_PATH) ? TAURI_DEBUG_ALT_PATH :
                        (IS_MAC ? MAC_APP_PATH : EXE_PATH);
 export const DEFAULT_SCAN_PATH = IS_WIN ? os.homedir() : "/tmp";
 export const DEFAULT_CDP_PORT = parseInt(process.env.DISKraptor_CDP_PORT) || 9222;
@@ -91,6 +96,7 @@ export function cdpVal(r) {
 export function killAll() {
   if (IS_WIN) {
     try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore" }); } catch {}
+    try { execSync("taskkill /F /IM diskraptor.exe 2>nul", { stdio: "ignore" }); } catch {}
     try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore" }); } catch {}
   } else {
     try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch {}
