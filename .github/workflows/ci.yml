@@ -74,62 +74,15 @@ jobs:
           else
             ./build.sh
           fi
-      - name: Install built app
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            if compgen -G "src-tauri/target/release/bundle/deb/*.deb" > /dev/null; then
-              sudo apt-get install -y ./src-tauri/target/release/bundle/deb/*.deb
-            fi
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            mkdir -p "$HOME/Applications"
-            if [ -d "src-tauri/target/release/bundle/macos/DiskRaptor.app" ]; then
-              cp -R "src-tauri/target/release/bundle/macos/DiskRaptor.app" "$HOME/Applications/"
-            elif [ -d "dist/DiskRaptor.app" ]; then
-              cp -R "dist/DiskRaptor.app" "$HOME/Applications/"
-            fi
-          else
-            mkdir -p "$LOCALAPPDATA\\DiskRaptor"
-            if [ -f "src-tauri/target/release/diskraptor.exe" ]; then
-              cp "src-tauri/target/release/diskraptor.exe" "$LOCALAPPDATA\\DiskRaptor\\"
-            fi
-          fi
       - name: Run UI tests (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: xvfb-run -a bash test.sh --quick
+        run: xvfb-run -a bash test.sh
       - name: Run UI tests (macOS)
         if: runner.os == 'macOS'
         shell: bash
-        run: bash test.sh --quick
+        run: bash test.sh
       - name: Run UI tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cmd /c test.bat --quick
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    needs: [test]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-      - name: Install JS dependencies
-        run: npm install --no-audit --no-fund
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
-      - name: Build Tauri app
-        run: ./build.sh
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            src-tauri/target/release/bundle/**/*
-            dist/**/*
+        run: cmd /c test.bat
