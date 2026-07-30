@@ -2,14 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key><string>DiskRaptor</string>
+    <key>CFBundleExecutable</key><string>diskraptor</string>
     <key>CFBundleIdentifier</key><string>diskraptor</string>
     <key>CFBundleName</key><string>DiskRaptor</string>
     <key>CFBundleVersion</key><string>VERSION_PLACEHOLDER</string>
     <key>CFBundleShortVersionString</key><string>VERSION_PLACEHOLDER</string>
     <key>CFBundleIconFile</key><string>icon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSDesktopFolderUsageDescription</key><string>DiskRaptor needs access to your Desktop to scan files.</string>
+    <key>NSDocumentsFolderUsageDescription</key><string>DiskRaptor needs access to your Documents to scan files.</string>
+    <key>NSDownloadsFolderUsageDescription</key><string>DiskRaptor needs access to your Downloads to scan files.</string>
+    <key>NSNetworkVolumesUsageDescription</key><string>DiskRaptor can scan network volumes.</string>
+    <key>NSRemovableVolumesUsageDescription</key><string>DiskRaptor can scan removable volumes.</string>
+    <key>ITSAppUsesNonExemptEncryption</key><false/>
+    <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict>
 </plist>

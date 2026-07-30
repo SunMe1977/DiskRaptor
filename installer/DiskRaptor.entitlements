@@ -2,17 +2,28 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>com.apple.security.cs.disable-executable-page-protection</key>
-    <true/>
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
+    <!-- Full file system access (required for scanning any directory the user selects) -->
     <key>com.apple.security.files.all</key>
     <true/>
+
+    <!-- Read-write access to user-selected files -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- Outbound network access -->
     <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Required by WebKit/WebView for JavaScript JIT compilation -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Required by WebKit to load system WebKit frameworks -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Required by WebKit for JIT and W^X memory regions -->
+    <key>com.apple.security.cs.disable-executable-page-protection</key>
     <true/>
 </dict>
 </plist>

@@ -74,12 +74,11 @@ fn delete_path(path: String) -> JsonResult {
     }
     #[cfg(target_os = "macos")]
     {
-        let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
-        if let Ok(s) = std::process::Command::new("osascript")
-            .args(["-e", &format!("tell app \"Finder\" to delete POSIX file \"{}\"", escaped)])
-            .status()
-        {
-            if s.success() { return JsonResult::ok_empty(); }
+        if let Some(home) = dirs::home_dir() {
+            let fname = std::path::Path::new(&path).file_name().and_then(|n| n.to_str()).unwrap_or("file");
+            let dest = home.join(".Trash").join(fname);
+            let _ = std::fs::rename(&path, &dest);
+            if dest.exists() { return JsonResult::ok_empty(); }
         }
     }
     #[cfg(target_os = "linux")]
@@ -103,7 +102,17 @@ fn delete_permanent(path: String) -> JsonResult {
 #[tauri::command]
 fn open_explorer(path: String) -> JsonResult {
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("open").args(["-R", &path]).status(); }
+    {
+        use objc2_foundation::NSString;
+        use objc2_app_kit::NSWorkspace;
+
+        let ws = NSWorkspace::sharedWorkspace();
+        let ns_path = NSString::from_str(&path);
+        let empty = NSString::from_str("");
+        if ws.selectFile_inFileViewerRootedAtPath(Some(&ns_path), &empty) {
+            return JsonResult::ok_empty();
+        }
+    }
     #[cfg(target_os = "windows")]
     { let _ = std::process::Command::new("explorer").args(["/select,", &path]).status(); }
     #[cfg(target_os = "linux")]
@@ -121,7 +130,25 @@ fn open_terminal(path: String) -> JsonResult {
         dir.parent().and_then(|p| p.to_str()).unwrap_or(&path)
     };
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("open").args(["-a", "Terminal", dir_str]).status(); }
+    {
+        use std::io::Write;
+        use objc2_foundation::{NSString, NSURL};
+        use objc2_app_kit::NSWorkspace;
+
+        let tmp = std::env::temp_dir().join(format!("diskraptor_{}.command", std::process::id()));
+        let content = format!("#!/bin/bash\ncd \"{}\"\nexec \"$SHELL\"\n", dir_str.replace('"', "\\\""));
+        if let Ok(mut f) = std::fs::File::create(&tmp) {
+            let _ = f.write_all(content.as_bytes());
+            let _ = f.sync_all();
+        }
+        let _ = std::fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755));
+
+        let ws = NSWorkspace::sharedWorkspace();
+        let url = NSURL::fileURLWithPath(&NSString::from_str(tmp.to_str().unwrap_or("")));
+        if ws.openURL(&url) {
+            return JsonResult::ok_empty();
+        }
+    }
     #[cfg(target_os = "windows")]
     { let _ = std::process::Command::new("cmd").args(["/k", "cd", "/d", dir_str]).status(); }
     #[cfg(target_os = "linux")]
@@ -202,7 +229,19 @@ fn get_process_memory() -> JsonResult {
 #[tauri::command]
 fn empty_trash() -> JsonResult {
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("osascript").args(["-e", "tell app \"Finder\" to empty trash"]).status(); }
+    {
+        if let Some(home) = dirs::home_dir() {
+            let trash = home.join(".Trash");
+            if let Ok(entries) = std::fs::read_dir(&trash) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let name = entry.file_name();
+                    if name.to_string_lossy().starts_with('.') { continue; }
+                    let _ = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+                }
+            }
+        }
+    }
     #[cfg(target_os = "linux")]
     {
         let _ = std::process::Command::new("gio").args(["trash", "--empty"]).status();
@@ -250,17 +289,23 @@ fn list_trash_linux() -> Vec<serde_json::Value> {
 
 #[cfg(target_os = "macos")]
 fn list_trash_macos() -> Vec<serde_json::Value> {
-    let output = std::process::Command::new("python3")
-        .args(["-c", "import os,json; t=os.path.expanduser('~/.Trash'); print(json.dumps([{'name':f,'path':os.path.join(t,f)} for f in os.listdir(t) if not f.startswith('.')]))"])
-        .output();
-    if let Ok(out) = output {
-        if let Ok(s) = String::from_utf8(out.stdout) {
-            if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(&s.trim()) {
-                return items;
-            }
+    let trash_dir = dirs::home_dir().unwrap_or_default().join(".Trash");
+    let mut items = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&trash_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') { continue; }
+            let meta = entry.metadata().ok();
+            items.push(serde_json::json!({
+                "name": name,
+                "path": entry.path().to_string_lossy(),
+                "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),
+                "is_dir": meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+                "deleted_at": "",
+            }));
         }
     }
-    Vec::new()
+    items
 }
 
 #[tauri::command]

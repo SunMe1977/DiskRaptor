@@ -2,7 +2,7 @@ Unicode true
 ManifestDPIAware true
 
 !define PRODUCT_NAME "DiskRaptor"
-!define PRODUCT_VERSION "1.0.3"
+!define PRODUCT_VERSION "1.0.4"
 !define PRODUCT_PUBLISHER "DiskRaptor"
 !define PRODUCT_WEB_SITE "https://github.com/SunMe1977/DiskRaptor"
 

@@ -110,14 +110,16 @@ build_mas_pkg() {
   local TEAM_ID="${APPLE_TEAM_ID:-}"
   local SIGN_FP=$(security find-certificate -c "3rd Party Mac Developer Application" -p 2>/dev/null | openssl x509 -inform pem -sha1 -fingerprint -noout 2>/dev/null)
   for ext in mobileprovision provisionprofile; do
-    for f in ~/Library/MobileDevice/Provisioning\ Profiles/*."$ext"; do
-      [ -f "$f" ] || continue
-      security cms -D -i "$f" 2>/dev/null > /tmp/_pp_match.plist
-      local FP=$(/usr/libexec/PlistBuddy -c "Print :DeveloperCertificates:0" /tmp/_pp_match.plist 2>/dev/null | openssl x509 -inform der -sha1 -fingerprint -noout 2>/dev/null)
-      if [ "$FP" = "$SIGN_FP" ]; then
-        PROFILE_SRC="$f"
-        break 2
-      fi
+    for dir in ~/Library/MobileDevice/Provisioning\ Profiles ~/Downloads; do
+      for f in "$dir"/*."$ext"; do
+        [ -f "$f" ] || continue
+        security cms -D -i "$f" 2>/dev/null > /tmp/_pp_match.plist
+        local FP=$(/usr/libexec/PlistBuddy -c "Print :DeveloperCertificates:0" /tmp/_pp_match.plist 2>/dev/null | openssl x509 -inform der -sha1 -fingerprint -noout 2>/dev/null)
+        if [ "$FP" = "$SIGN_FP" ]; then
+          PROFILE_SRC="$f"
+          break 3
+        fi
+      done
     done
   done
   if [ -n "$PROFILE_SRC" ]; then
@@ -299,23 +301,39 @@ cp -r src-tauri/icons frontend/ 2>/dev/null || true
 cp -r modulesPro frontend/ 2>/dev/null || true
 echo "  OK"
 
-echo "  Building Tauri app (native arch)..."
+echo "  Building Tauri app..."
 cd src-tauri
-case "$PLATFORM" in
-  macos)   BUNDLES="app,dmg" ;;
-  linux)   BUNDLES="deb,appimage" ;;
-  windows) BUNDLES="nsis" ;;
-  *)       echo "Unknown platform '$PLATFORM', defaulting to native bundle"; BUNDLES="" ;;
-esac
-BUNDLE_ARGS=""
-[ -n "$BUNDLES" ] && BUNDLE_ARGS="--bundles $BUNDLES"
-npx tauri build $BUNDLE_ARGS --ci 2>&1
-cd ..
 
-# Also build scanner library for backward compat
-echo "  Building scanner library..."
-cd src-tauri
-cargo build --release -p diskraptor_scanner 2>/dev/null || true
+case "$PLATFORM" in
+  macos)
+    rustup target add aarch64-apple-darwin 2>/dev/null || true
+    echo "  Building x86_64 binary..."
+    cargo build --release --target x86_64-apple-darwin -p diskraptor 2>&1
+    echo "  Building x86_64 scanner dylib..."
+    cargo build --release --target x86_64-apple-darwin -p diskraptor --lib 2>&1
+    if [ "$ARCHS" = "x86_64 arm64" ]; then
+      echo "  Building arm64 binary..."
+      cargo build --release --target aarch64-apple-darwin -p diskraptor 2>&1
+      echo "  Building arm64 scanner dylib..."
+      cargo build --release --target aarch64-apple-darwin -p diskraptor --lib 2>&1
+      echo "  Creating universal binary..."
+      lipo -create -output target/release/diskraptor \
+        target/x86_64-apple-darwin/release/diskraptor \
+        target/aarch64-apple-darwin/release/diskraptor 2>&1
+      echo "  Creating universal scanner dylib..."
+      lipo -create -output target/release/libdiskraptor_scanner.dylib \
+        target/x86_64-apple-darwin/release/libdiskraptor_scanner.dylib \
+        target/aarch64-apple-darwin/release/libdiskraptor_scanner.dylib 2>&1
+    fi
+    ;;
+  linux)
+    cargo build --release -p diskraptor 2>&1
+    ;;
+  windows)
+    cargo build --release -p diskraptor 2>&1
+    ;;
+esac
+
 cd ..
 
 # ?????? Package ????????????????????????????????????????????????????????????????????????????????????????????????????????????
@@ -342,7 +360,15 @@ case "$PLATFORM" in
     # Resources (frontend)
     cp -r frontend "$APP/Contents/Resources/"
 
-    # Rust scanner dylib (kept for backward compat, now bundled inside Tauri binary)
+    # Rust scanner dylib — ensure universal if not already created in build step
+    if [ ! -f "src-tauri/target/release/libdiskraptor_scanner.dylib" ] && \
+       [ "$ARCHS" = "x86_64 arm64" ] && \
+       [ -f "src-tauri/target/aarch64-apple-darwin/release/libdiskraptor_scanner.dylib" ]; then
+      echo "  Creating universal scanner dylib..."
+      lipo -create -output src-tauri/target/release/libdiskraptor_scanner.dylib \
+        src-tauri/target/x86_64-apple-darwin/release/libdiskraptor_scanner.dylib \
+        src-tauri/target/aarch64-apple-darwin/release/libdiskraptor_scanner.dylib 2>&1
+    fi
     if [ -f "src-tauri/target/release/libdiskraptor_scanner.dylib" ]; then
       cp "src-tauri/target/release/libdiskraptor_scanner.dylib" "$APP/Contents/MacOS/"
     fi
@@ -403,7 +429,7 @@ case "$PLATFORM" in
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key><string>DiskRaptor</string>
+    <key>CFBundleExecutable</key><string>diskraptor</string>
     <key>CFBundleIdentifier</key><string>diskraptor</string>
     <key>CFBundleName</key><string>DiskRaptor</string>
     <key>CFBundleVersion</key><string>0.0.8</string>
