@@ -17,7 +17,11 @@ const DIST_DIR = path.join(PROJECT_ROOT, "dist");
 const BIN_NAME = IS_WIN ? "DiskRaptor.exe" : "DiskRaptor";
 const BIN_PATH = path.join(DIST_DIR, BIN_NAME);
 const MAC_PATH = path.join(DIST_DIR, "DiskRaptor.app", "Contents", "MacOS", "DiskRaptor");
-const EXE_PATH = IS_MAC ? MAC_PATH : BIN_PATH;
+const TAURI_RELEASE_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "release", "diskraptor");
+const TAURI_DEBUG_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "debug", "diskraptor");
+const EXE_PATH = fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
+                fs.existsSync(TAURI_DEBUG_PATH) ? TAURI_DEBUG_PATH :
+                (IS_MAC ? MAC_PATH : BIN_PATH);
 
 const ALL_TESTS = [
   { name: "Scan",          file: "test_scan_ui.mjs",    port: 9200 },
@@ -43,6 +47,7 @@ const ALL_TESTS = [
   { name: "Bridge/Tauri",  file: "test_bridge_ui.mjs",  port: 9220 },
   { name: "Integration",   file: "test_integration_ui.mjs", port: 9221 },
   { name: "Cleanup",       file: "test_cleanup_ui.mjs",    port: 9222 },
+  { name: "Downloads-Trash",file: "test_downloads_cleanup_trash.mjs", port: 9230 },
 ];
 
 function printBanner() {
@@ -56,17 +61,14 @@ function printBanner() {
 
 function checkBinary() {
   if (!fs.existsSync(EXE_PATH)) {
-    console.error(`ERROR: Binary not found: ${EXE_PATH}`);
-    console.error("Run 'build.bat' or 'build.sh' first");
-    process.exit(1);
-  }
-  if (!fs.existsSync(path.join(DIST_DIR, "frontend"))) {
-    console.error(`ERROR: Frontend not found: ${path.join(DIST_DIR, "frontend")}`);
-    console.error("Run 'build.bat' or 'build.sh' first");
-    process.exit(1);
+    if (!fs.existsSync(TAURI_RELEASE_PATH)) {
+      console.error(`ERROR: Binary not found at ${EXE_PATH} or ${TAURI_RELEASE_PATH}`);
+      console.error("Run 'npm run build' or 'bash build.sh' first");
+      process.exit(1);
+    }
   }
   console.log(`  Binary:  ${EXE_PATH}`);
-  console.log(`  Frontend: ${path.join(DIST_DIR, "frontend")}\\`);
+  console.log(`  Frontend: embedded in binary`);
   console.log();
 }
 

@@ -10,11 +10,16 @@ export const IS_WIN = PLATFORM === "win32";
 export const IS_MAC = PLATFORM === "darwin";
 export const IS_LINUX = PLATFORM === "linux";
 
+export const PROJECT_ROOT = path.resolve(".");
 export const DIST_DIR = path.resolve("dist");
 export const BIN_NAME = IS_WIN ? "DiskRaptor.exe" : "DiskRaptor";
 export const EXE_PATH = path.join(DIST_DIR, BIN_NAME);
 export const MAC_APP_PATH = path.join(DIST_DIR, "DiskRaptor.app", "Contents", "MacOS", "DiskRaptor");
-export const BIN_PATH = IS_MAC ? MAC_APP_PATH : EXE_PATH;
+export const TAURI_DEBUG_PATH = path.resolve("src-tauri", "target", "debug", "diskraptor");
+export const TAURI_RELEASE_PATH = path.resolve("src-tauri", "target", "release", "diskraptor");
+export const BIN_PATH = fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
+                       fs.existsSync(TAURI_DEBUG_PATH) ? TAURI_DEBUG_PATH :
+                       (IS_MAC ? MAC_APP_PATH : EXE_PATH);
 export const DEFAULT_SCAN_PATH = IS_WIN ? os.homedir() : "/tmp";
 export const DEFAULT_CDP_PORT = parseInt(process.env.DISKraptor_CDP_PORT) || 9222;
 
@@ -90,6 +95,7 @@ export function killAll() {
   } else {
     try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch {}
     try { execSync("pkill -9 QtWebEngineProcess 2>/dev/null", { stdio: "ignore" }); } catch {}
+    try { execSync("pkill -9 diskraptor 2>/dev/null", { stdio: "ignore" }); } catch {}
   }
 }
 
@@ -142,8 +148,9 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
   if (!fs.existsSync(BIN_PATH)) throw new Error(`Missing binary: ${BIN_PATH}`);
   console.log(`  Binary: ${BIN_PATH}`);
 
+  const isTauri = BIN_PATH === TAURI_DEBUG_PATH || BIN_PATH === TAURI_RELEASE_PATH;
   const child = spawn(BIN_PATH, [], {
-    cwd: DIST_DIR,
+    cwd: isTauri ? path.resolve("src-tauri") : DIST_DIR,
     env: getExtraEnv(port),
     detached: true,
     stdio: "ignore",
@@ -171,23 +178,29 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
   console.log("  CDP connected");
 
   let bridgeOk = false;
-  for (let i = 0; i < 60; i++) {
-    const val = await jsExpr(cdp, `!!(window.__TAURI__ && typeof window.__TAURI__.invoke === 'function' && window.__TAURI__.__qtBridgeReady)`);
-    if (val === true) { bridgeOk = true; break; }
-    await sleep(200);
+  if (isTauri) {
+    // Tauri mode: __TAURI__ is injected by Tauri's preload, ready immediately
+    bridgeOk = true;
+    console.log("  Tauri mode: bridge ready");
+  } else {
+    for (let i = 0; i < 60; i++) {
+      const val = await jsExpr(cdp, `!!(window.__TAURI__ && typeof window.__TAURI__.invoke === 'function' && window.__TAURI__.__qtBridgeReady)`);
+      if (val === true) { bridgeOk = true; break; }
+      await sleep(200);
+    }
+    if (!bridgeOk) {
+      const state = await jsExpr(cdp, `JSON.stringify({
+        title: document.title,
+        url: document.location?.href || '',
+        hasTauri: typeof window.__TAURI__ !== 'undefined',
+        hasInvoke: typeof window.__TAURI__?.invoke === 'function',
+        ready: window.__TAURI__?.__qtBridgeReady || false
+      })`);
+      console.log(`  Bridge state: ${state}`);
+      throw new Error("Bridge not ready");
+    }
+    console.log("  Bridge ready");
   }
-  if (!bridgeOk) {
-    const state = await jsExpr(cdp, `JSON.stringify({
-      title: document.title,
-      url: document.location?.href || '',
-      hasTauri: typeof window.__TAURI__ !== 'undefined',
-      hasInvoke: typeof window.__TAURI__?.invoke === 'function',
-      ready: window.__TAURI__?.__qtBridgeReady || false
-    })`);
-    console.log(`  Bridge state: ${state}`);
-    throw new Error("Bridge not ready");
-  }
-  console.log("  Bridge ready");
 
   return { cdp, child };
 }

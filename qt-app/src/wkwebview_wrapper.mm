@@ -263,3 +263,52 @@ extern "C" bool macosMoveToTrash(const char *path)
         return (bool)ok;
     }
 }
+
+extern "C" const char *macosListTrash()
+{
+    @autoreleasepool {
+        NSURL *trashURL = [[NSFileManager defaultManager] URLForDirectory:NSTrashDirectory
+                                                                 inDomain:NSUserDomainMask
+                                                        appropriateForURL:nil
+                                                                   create:NO
+                                                                    error:nil];
+        if (!trashURL) return strdup("[]");
+
+        NSArray<NSURL *> *contents = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:trashURL
+                                                                   includingPropertiesForKeys:@[NSURLFileSizeKey, NSURLContentModificationDateKey, NSURLIsDirectoryKey]
+                                                                                      options:0
+                                                                                        error:nil];
+        if (!contents) return strdup("[]");
+
+        NSMutableArray *items = [NSMutableArray array];
+        for (NSURL *fileURL in contents) {
+            NSString *name = [fileURL lastPathComponent];
+            if (!name || [name hasPrefix:@"."]) continue;
+
+            NSNumber *fileSize = nil;
+            [fileURL getResourceValue:&fileSize forKey:NSURLFileSizeKey error:nil];
+
+            NSDate *modDate = nil;
+            [fileURL getResourceValue:&modDate forKey:NSURLContentModificationDateKey error:nil];
+
+            NSNumber *isDir = nil;
+            [fileURL getResourceValue:&isDir forKey:NSURLIsDirectoryKey error:nil];
+
+            NSDictionary *item = @{
+                @"name": name,
+                @"path": [fileURL path],
+                @"size": fileSize ?: @(0),
+                @"is_dir": isDir ?: @(NO),
+                @"deleted_at": modDate ? [[NSISO8601DateFormatter new] stringFromDate:modDate] : @"",
+            };
+            [items addObject:item];
+        }
+
+        NSError *jsonErr = nil;
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:items options:0 error:&jsonErr];
+        if (!jsonData) return strdup("[]");
+
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        return strdup([jsonStr UTF8String]);
+    }
+}

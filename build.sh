@@ -84,6 +84,12 @@ build_mas_pkg() {
   local DIST_CERT="${APPLE_DIST_CERT:-${SIGNING_IDENTITY:-}}"
   local ENTITLEMENTS="installer/DiskRaptor-MAS.entitlements"
 
+  # Ensure Tauri app is built
+  if [ ! -d "$APP_SRC" ]; then
+    echo "  ERROR: $APP_SRC not found. Run main build first."
+    return 1
+  fi
+
   echo ""
   echo "--- MAS Build ---"
   echo "[MAS] Preparing .app bundle..."
@@ -101,6 +107,7 @@ build_mas_pkg() {
 
   # Embed provisioning profile (required for TestFlight & App Store)
   local PROFILE_SRC=""
+  local TEAM_ID="${APPLE_TEAM_ID:-}"
   local SIGN_FP=$(security find-certificate -c "3rd Party Mac Developer Application" -p 2>/dev/null | openssl x509 -inform pem -sha1 -fingerprint -noout 2>/dev/null)
   for ext in mobileprovision provisionprofile; do
     for f in ~/Library/MobileDevice/Provisioning\ Profiles/*."$ext"; do
@@ -241,7 +248,7 @@ fi
 
 # ?????? Quick tool checks (fast, no brew) ???????????????????????????
 echo "[1] Checking tools..."
-for cmd in cmake ninja node rustc cargo git; do
+for cmd in node rustc cargo git; do
   LOC=""
   LOC="$(which $cmd 2>/dev/null || true)"
   if [ -z "$LOC" ]; then
@@ -259,73 +266,16 @@ for cmd in cmake ninja node rustc cargo git; do
 done
 echo "  All tools present"
 
-# ?????? Platform-specific deps ????????????????????????????????????????????????????????????
+# Tauri build dependencies check
 case "$PLATFORM" in
   macos)
-    QT_PREFIX=""
-    # Prefer highest Qt version (6.12 > 6.10)
-    for d in "$HOME/Qt"/6.12*/macos "$HOME/Qt"/6.11*/macos "$HOME/Qt"/6.10*/macos "$HOME/Qt"/6.9*/macos "$HOME/Qt"/6.8*/macos /usr/local/opt/qt@6 /opt/homebrew/opt/qt@6; do
-      [ -d "$d" ] && QT_PREFIX="$d" && break
-    done
-    # Verify Qt 6.5+ (minimum for Qt WebEngine)
-    if [ -n "$QT_PREFIX" ]; then
-      QT_VER=$(otool -L "$QT_PREFIX/lib/QtCore.framework/QtCore" 2>/dev/null | grep "compatibility version" | head -1 | grep -oE 'version [0-9]+\.[0-9]+' | head -1 | cut -d' ' -f2)
-      if [ -n "$QT_VER" ] && [ "$(echo "$QT_VER" | cut -d. -f1)" -lt 6 ]; then
-        echo "  ERROR: Qt 6.0+ required (found Qt $QT_VER at $QT_PREFIX)"
-        exit 1
-      fi
-    fi
-    if [ -z "$QT_PREFIX" ]; then
-      QT_PREFIX="$(brew --prefix qt@6 2>/dev/null || true)"
-    fi
-    # Optionally auto-install Qt and modules when QT not found
-    if [ ! -d "$QT_PREFIX/lib/cmake/Qt6" ] && [ "${AUTO_INSTALL_QT:-0}" = "1" ]; then
-      echo "  QT not found — AUTO_INSTALL_QT=1 set. Installing Qt and common modules via Homebrew..."
-      if ! command -v brew &>/dev/null; then
-        echo "  ERROR: Homebrew not found. Install Homebrew or unset AUTO_INSTALL_QT.";
-        exit 1
-      fi
-      brew update || true
-      brew install qt@6 qtsvg qtvirtualkeyboard qtwebengine qtwebchannel qtpositioning || true
-      QT_PREFIX="$(brew --prefix qt@6 2>/dev/null || true)"
-    fi
-    # Allow overriding QT_PREFIX from the environment if Homebrew prefix differs
-    if [ -n "${QT_PREFIX_OVERRIDE:-}" ]; then
-      QT_PREFIX="$QT_PREFIX_OVERRIDE"
-    fi
-    if [ ! -d "$QT_PREFIX/lib/cmake/Qt6" ]; then
-      echo "  Qt6 not found at $QT_PREFIX. Install with: brew install qt@6"
-      exit 1
-    fi
-    QT_CMAKE_DIR="$QT_PREFIX/lib/cmake/Qt6"
-    echo "  Qt6_DIR: $QT_CMAKE_DIR"
-    # Respect explicit override for QML dir
-    QML_DIR="${QT_QML_DIR:-}"
-    # Try to detect QML directory (qmake is the next reliable source)
-    if [ -z "$QML_DIR" ] && command -v qmake &>/dev/null; then
-      QML_DIR=$(qmake -query QT_INSTALL_QML 2>/dev/null || true)
-    fi
-    # Fallback common locations
-    for d in "$QT_PREFIX/qml" "$QT_PREFIX/lib/qml" "$QT_PREFIX/Resources/qml" "/usr/local/opt/qt@6/qml" "/opt/homebrew/opt/qt@6/qml"; do
-      [ -d "$d" ] && QML_DIR="$d" && break
-    done
-    echo "  QML_DIR: ${QML_DIR:-<not found>}"
+    echo "  Platform: macOS"
     ;;
   linux)
-    QT_CMAKE_DIR=""
-    for p in /usr/lib/x86_64-linux-gnu/cmake/Qt6 /usr/lib/cmake/Qt6 /usr/lib/aarch64-linux-gnu/cmake/Qt6; do
-      [ -d "$p" ] && QT_CMAKE_DIR="$p" && break
-    done
-    if [ -z "$QT_CMAKE_DIR" ]; then
-      echo "  Qt6 cmake not found. Install: sudo apt install qt6-base-dev qt6-webengine-dev"
-      exit 1
-    fi
-    QT_PREFIX="$(dirname "$(dirname "$QT_CMAKE_DIR")")"
-    echo "  Qt6_DIR: $QT_CMAKE_DIR"
+    echo "  Platform: Linux — ensure webkit2gtk is installed: sudo apt-get install libwebkit2gtk-4.1-dev"
     ;;
   windows)
-    echo "  Run build.cmd from cmd.exe for Windows builds"
-    exit 0
+    echo "  Platform: Windows — ensure WebView2 runtime is available (built into Win 10+)"
     ;;
 esac
 
@@ -336,48 +286,23 @@ echo "[2] Building..."
 # Detect architectures for universal binary
 ARCHS="x86_64"
 if [ "$PLATFORM" = "macos" ]; then
-  # Check if Qt supports arm64 (universal Qt from qt.io)
-  QT_ARCHS=$(lipo -info "$QT_PREFIX/lib/QtCore.framework/Versions/A/QtCore" 2>/dev/null | grep -i "architecture" | sed 's/.*are: //;s/.*is architecture: //')
-  if echo "$QT_ARCHS" | grep -q "arm64"; then
+  # Check if we can build for arm64 (Apple Silicon)
+  if rustc --print cfg --target aarch64-apple-darwin 2>/dev/null | grep -q "target_os"; then
     ARCHS="x86_64 arm64"
-    echo "  Detected universal Qt ($QT_ARCHS) — building universal binary"
-  else
-    echo "  Warning: Qt is x86_64 only. For arm64 support, install universal Qt from qt.io"
+    echo "  Building universal binary (x86_64 + arm64)"
   fi
 fi
 
-echo "  Rust scanner..."
+echo "  Building Tauri app (native arch)..."
 cd src-tauri
-if echo "$ARCHS" | grep -q "arm64"; then
-  rustup target add aarch64-apple-darwin 2>/dev/null || true
-  cargo build --release --target x86_64-apple-darwin
-  cargo build --release --target aarch64-apple-darwin
-  mkdir -p target/universal
-  lipo -create -output target/universal/libdiskraptor_scanner.dylib \
-    target/x86_64-apple-darwin/release/libdiskraptor_scanner.dylib \
-    target/aarch64-apple-darwin/release/libdiskraptor_scanner.dylib
-  cp target/universal/libdiskraptor_scanner.dylib target/release/
-else
-  cargo build --release
-fi
+npx tauri build --bundles app --ci 2>&1
 cd ..
 
-echo "  Qt app..."
-cd qt-app
-mkdir -p build
-cd build
-ARCH_FLAGS=""
-if echo "$ARCHS" | grep -q "arm64"; then
-  ARCH_FLAGS="-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
-fi
-cmake .. -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DQt6_DIR="$QT_CMAKE_DIR" \
-  -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
-  -DCMAKE_INSTALL_RPATH="\$ORIGIN" \
-  $ARCH_FLAGS 2>&1
-cmake --build . --config Release 2>&1
-cd ../..
+# Also build scanner library for backward compat
+echo "  Building scanner library..."
+cd src-tauri
+cargo build --release -p diskraptor_scanner 2>/dev/null || true
+cd ..
 
 # ?????? Package ????????????????????????????????????????????????????????????????????????????????????????????????????????????
 echo ""
@@ -391,22 +316,19 @@ case "$PLATFORM" in
     APP="dist/DiskRaptor.app"
     mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-    # Binary
-    if [ -f "qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor" ]; then
-      cp "qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor" "$APP/Contents/MacOS/"
-    elif [ -f "qt-app/build/DiskRaptor" ]; then
-      cp "qt-app/build/DiskRaptor" "$APP/Contents/MacOS/"
-    else
-      echo "  ERROR: DiskRaptor binary not found in qt-app/build/"
-      echo "  Qt build may have failed. Check output above."
+    # Binary (Tauri)
+    TAURI_BIN="src-tauri/target/release/diskraptor"
+    if [ ! -f "$TAURI_BIN" ]; then
+      echo "  ERROR: Tauri binary not found at $TAURI_BIN"
+      echo "  Tauri build may have failed. Check output above."
       exit 1
     fi
+    cp "$TAURI_BIN" "$APP/Contents/MacOS/"
 
-    # Resources
+    # Resources (frontend)
     cp -r frontend "$APP/Contents/Resources/"
-    cp -r images "$APP/Contents/Resources/" 2>/dev/null || true
 
-    # Rust scanner
+    # Rust scanner dylib (kept for backward compat, now bundled inside Tauri binary)
     if [ -f "src-tauri/target/release/libdiskraptor_scanner.dylib" ]; then
       cp "src-tauri/target/release/libdiskraptor_scanner.dylib" "$APP/Contents/MacOS/"
     fi
@@ -512,213 +434,7 @@ EOF
       CODESIGN_IDENTITY="-"
     fi
 
-    # Deploy Qt frameworks using macdeployqt (handles rpath, plugins, WebEngine)
-    MACDEPLOYQT=""
-    for p in "$QT_PREFIX/bin/macdeployqt" "/Users/hjh/Qt/6.12.0/macos/bin/macdeployqt" "/usr/local/opt/qt@6/bin/macdeployqt" "/opt/homebrew/opt/qt@6/bin/macdeployqt" "$(which macdeployqt 2>/dev/null || true)"; do
-      [ -x "$p" ] && MACDEPLOYQT="$p" && break
-    done
-    if [ -n "$MACDEPLOYQT" ]; then
-      echo "  Deploying Qt frameworks with macdeployqt..."
-      if [ -n "${QML_DIR:-}" ] && [ -d "$QML_DIR" ]; then
-        "$MACDEPLOYQT" "$APP" -verbose=1 -qmldir="$QML_DIR" -no-strip -no-codesign 2>&1 || true
-      else
-        "$MACDEPLOYQT" "$APP" -verbose=1 -no-strip -no-codesign 2>&1 || true
-      fi
-      echo "  macdeployqt done"
-
-      # ── Bundle QtSvg (needed by imageformat/iconengine plugins, not auto-deployed by macdeployqt) ──
-      for fw in QtSvg QtSvgWidgets; do
-        SRC_FW=""
-        for p in /usr/local/opt/qtsvg/lib/${fw}.framework /opt/homebrew/opt/qtsvg/lib/${fw}.framework /usr/local/Cellar/qtsvg/*/lib/${fw}.framework /opt/homebrew/Cellar/qtsvg/*/lib/${fw}.framework; do
-          [ -d "$p" ] && SRC_FW="$p" && break
-        done
-        if [ -d "$SRC_FW" ] && [ ! -d "$APP/Contents/Frameworks/${fw}.framework" ]; then
-          echo "  Copying ${fw}.framework..."
-          ditto "$SRC_FW" "$APP/Contents/Frameworks/${fw}.framework"
-        fi
-      done
-
-      # ── Bundle missing Qt frameworks not deployed by macdeployqt ──
-      QT_BASE_LIB="${QT_PREFIX}/lib"
-      for fw in QtDBus QtQmlMeta QtQmlModels QtQmlWorkerScript QtQuickWidgets; do
-        SRC_FW="$QT_BASE_LIB/${fw}.framework"
-        if [ -d "$SRC_FW" ] && [ ! -d "$APP/Contents/Frameworks/${fw}.framework" ]; then
-          echo "  Copying ${fw}.framework..."
-          ditto "$SRC_FW" "$APP/Contents/Frameworks/${fw}.framework"
-        fi
-      done
-
-      # ── Fix shorthand framework references ──
-      # QtWebEngineCore and some other frameworks reference other Qt frameworks
-      # as "@executable_path/../Frameworks/Name" without ".framework/Versions/A/Name".
-      # macOS dyld should expand this automatically, but in practice it doesn't
-      # always work. Fix by expanding to full framework paths.
-      fix_shorthand_refs() {
-        local fw_dir="$APP/Contents/Frameworks"
-        find "$fw_dir" \( -name "*.dylib" -o -name "Qt*" -path "*/Versions/A/*" \) -type f 2>/dev/null | while IFS= read -r dylib; do
-          file "$dylib" 2>/dev/null | grep -q "Mach-O" || continue
-          otool -L "$dylib" 2>/dev/null | tail -n +2 | while IFS= read -r line; do
-            dep=$(echo "$line" | awk '{print $1}')
-            case "$dep" in
-              @executable_path/../Frameworks/*)
-                if ! echo "$dep" | grep -q "\.framework"; then
-                  dep_name=$(basename "$dep")
-                  if [ -d "$fw_dir/${dep_name}.framework" ]; then
-                    install_name_tool -change "$dep" \
-                      "@executable_path/../Frameworks/${dep_name}.framework/Versions/A/${dep_name}" \
-                      "$dylib" 2>/dev/null || true
-                  fi
-                fi
-                ;;
-            esac
-          done
-        done
-      }
-      fix_shorthand_refs
-
-      # ── Fix QtWebEngineProcess.app: symlink frameworks/dylibs into its Frameworks dir ──
-      # QtWebEngineProcess is a helper app inside QtWebEngineCore.framework. When it
-      # loads Qt frameworks, @executable_path resolves to the helper app's own MacOS/
-      # directory, not the main app's. We need to symlink all needed files into the
-      # helper app's Frameworks directory.
-      fix_webengine_process() {
-        local WEP_DIR="$APP/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
-        local WEP_FW="$WEP_DIR/Contents/Frameworks"
-        local WEP_EXEC="$WEP_DIR/Contents/MacOS/QtWebEngineProcess"
-        if [ ! -d "$WEP_DIR" ]; then return; fi
-        mkdir -p "$WEP_FW"
-        # Symlink dylibs from main app Frameworks (excluding QtWebEngineCore to avoid recursion)
-        for dylib in "$APP/Contents/Frameworks/"*.dylib; do
-          [ -f "$dylib" ] || continue
-          name=$(basename "$dylib")
-          [ ! -e "$WEP_FW/$name" ] && ln -sf "../../../../../../../$name" "$WEP_FW/$name" 2>/dev/null || true
-        done
-        # Symlink Qt frameworks (excluding QtWebEngineCore to avoid infinite recursion)
-        for fw_dir in "$APP/Contents/Frameworks/"Qt*.framework; do
-          [ -d "$fw_dir" ] || continue
-          name=$(basename "$fw_dir")
-          [ "$name" = "QtWebEngineCore.framework" ] && continue
-          [ ! -e "$WEP_FW/$name" ] && ln -sf "../../../../../../../$name" "$WEP_FW/$name" 2>/dev/null || true
-        done
-        # Change WEP references from @executable_path/../Frameworks/ to @rpath/
-        # with the rpath pointing to main app's Frameworks via @loader_path
-        if [ -f "$WEP_EXEC" ]; then
-          otool -L "$WEP_EXEC" 2>/dev/null | tail -n +2 | while IFS= read -r line; do
-            dep=$(echo "$line" | awk '{print $1}')
-            case "$dep" in
-              @executable_path/../Frameworks/*.framework/*)
-                new_dep="@rpath/$(basename "$dep").framework/Versions/A/$(basename "$dep")"
-                install_name_tool -change "$dep" "$new_dep" "$WEP_EXEC" 2>/dev/null || true
-                ;;
-              @executable_path/../Frameworks/*)
-                dep_name=$(basename "$dep")
-                if [ -d "$APP/Contents/Frameworks/${dep_name}.framework" ]; then
-                  new_dep="@rpath/${dep_name}.framework/Versions/A/${dep_name}"
-                  install_name_tool -change "$dep" "$new_dep" "$WEP_EXEC" 2>/dev/null || true
-                fi
-                ;;
-              /usr/local/opt/*/lib/*.framework/Versions/A/*)
-                # macdeployqt sets absolute Homebrew paths in WEP; fix to @rpath
-                fw_name=$(echo "$dep" | sed 's|.*/\(Qt[^/]*\)\.framework/.*|\1|')
-                new_dep="@rpath/${fw_name}.framework/Versions/A/${fw_name}"
-                install_name_tool -change "$dep" "$new_dep" "$WEP_EXEC" 2>/dev/null || true
-                ;;
-            esac
-          done
-        fi
-      }
-      fix_webengine_process
-
-      # ── Remove Homebrew @rpath from main binary ──
-      # Prevents duplicate class loading from both bundled and system Qt
-      MAIN_BIN="$APP/Contents/MacOS/DiskRaptor"
-      if [ -f "$MAIN_BIN" ]; then
-        otool -l "$MAIN_BIN" 2>/dev/null | grep -A2 "LC_RPATH" | grep "path" | while IFS= read -r line; do
-          rpath=$(echo "$line" | sed -n 's/.*path //p')
-          if echo "$rpath" | grep -qE "/usr/local/opt/qt|/opt/homebrew/opt/qt"; then
-            install_name_tool -delete_rpath "$rpath" "$MAIN_BIN" 2>/dev/null || true
-            echo "  Removed Homebrew rpath: $rpath"
-          fi
-        done
-      fi
-
-      # ── Fix all absolute Homebrew references to use bundled paths ──
-      # macdeployqt and the copied frameworks may still reference Homebrew
-      # absolute paths. Fix them all to use @executable_path/../Frameworks/.
-      fix_absolute_refs() {
-        local fw_dir="$APP/Contents/Frameworks"
-        # Fix dylib files
-        find "$fw_dir" -name "*.dylib" -type f | while IFS= read -r dylib; do
-          file "$dylib" 2>/dev/null | grep -q "Mach-O" || continue
-          otool -L "$dylib" 2>/dev/null | tail -n +2 | while IFS= read -r line; do
-            dep=$(echo "$line" | awk '{print $1}')
-            dep_name=$(basename "$dep")
-            case "$dep" in
-              @loader_path/../lib*)
-                [ -f "$fw_dir/$dep_name" ] && install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$dylib" 2>/dev/null || true
-                ;;
-              /usr/local/opt/*/lib/*.framework/Versions/A/*)
-                fw=$(echo "$dep_name" | sed 's/\.framework.*//')
-                [ -d "$fw_dir/${fw}.framework" ] && install_name_tool -change "$dep" "@executable_path/../Frameworks/${fw}.framework/Versions/A/${fw}" "$dylib" 2>/dev/null || true
-                ;;
-              /usr/local/opt/*)
-                if [ -f "$fw_dir/$dep_name" ]; then
-                  install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$dylib" 2>/dev/null || true
-                elif [ -d "$fw_dir/${dep_name%.dylib}.framework" ]; then
-                  fw="${dep_name%.dylib}"
-                  install_name_tool -change "$dep" "@executable_path/../Frameworks/${fw}.framework/Versions/A/${fw}" "$dylib" 2>/dev/null || true
-                fi
-                ;;
-            esac
-          done
-        done
-        # Fix Qt framework binaries too
-        find "$fw_dir" -name "Qt*" -path "*/Versions/A/*" -type f 2>/dev/null | while IFS= read -r dylib; do
-          file "$dylib" 2>/dev/null | grep -q "Mach-O" || continue
-          otool -L "$dylib" 2>/dev/null | tail -n +2 | while IFS= read -r line; do
-            dep=$(echo "$line" | awk '{print $1}')
-            case "$dep" in
-              /usr/local/opt/*/lib/*.framework/Versions/A/*)
-                fw_name=$(echo "$dep" | sed 's|.*/\(Qt[^/]*\)\.framework/.*|\1|')
-                new_ref="@executable_path/../Frameworks/${fw_name}.framework/Versions/A/${fw_name}"
-                install_name_tool -change "$dep" "$new_ref" "$dylib" 2>/dev/null || true
-                ;;
-            esac
-          done
-        done
-      }
-      fix_absolute_refs
-
-      # ── Remove unused plugin dirs that pull in missing frameworks ──
-      for dir in platforminputcontexts; do
-        if [ -d "$APP/Contents/PlugIns/$dir" ]; then
-          echo "  Removing unused plugins: $dir"
-          rm -rf "$APP/Contents/PlugIns/$dir"
-        fi
-      done
-
-      # ── Remove unnecessary QML modules that cause missing-framework errors ──
-      QML_DEPLOY_DIR="$APP/Contents/Resources/qml"
-      if [ -d "$QML_DEPLOY_DIR" ]; then
-        for mod in QtLocation QtMultimedia QtStateMachine Qt3D QtQuick3D QtQuickTimeline QtVirtualKeyboard QtSpatialAudio; do
-          mod_path="$QML_DEPLOY_DIR/$mod"
-          if [ -d "$mod_path" ]; then
-            echo "  Removing unused QML module: $mod"
-            rm -rf "$mod_path"
-          fi
-        done
-      fi
-
-      # ── Remove unused plugin dirs ──
-      for dir in platforminputcontexts sqldrivers; do
-        if [ -d "$APP/Contents/PlugIns/$dir" ]; then
-          echo "  Removing unused plugins: $dir"
-          rm -rf "$APP/Contents/PlugIns/$dir"
-        fi
-      done
-    else
-      echo "  WARNING: macdeployqt not found ??? Qt frameworks may be missing"
-    fi
+    # No Qt deployment needed — Tauri app is self-contained
 
     # ── Create temporary signing keychain to avoid GUI password prompts ──
     SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
@@ -753,27 +469,12 @@ EOF
 
     # ── Sign with developer certificate, fall back to ad-hoc ──
 
-    # Helper: sign QtWebEngineProcess.app explicitly (--deep misses nested .app bundles)
-    sign_webengine_helper() {
-      local SIGN_ID="$1"
-      local WEP="$APP/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
-      if [ -d "$WEP" ]; then
-        echo "  Signing QtWebEngineProcess.app..."
-        codesign --force --options=runtime \
-          --entitlements "$ENTITLEMENTS" \
-          --sign "$SIGN_ID" \
-          --keychain "$SIGN_KEYCHAIN" \
-          "$WEP" 2>&1 || true
-      fi
-    }
-
     # Sign with developer certificate if available, fall back to ad-hoc
     if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
       ID_ACCESSIBLE=true
       security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$CODESIGN_IDENTITY" || ID_ACCESSIBLE=false
       if [ "$ID_ACCESSIBLE" = true ]; then
         echo "  Signing with: $CODESIGN_IDENTITY"
-        sign_webengine_helper "$CODESIGN_IDENTITY"
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign "$CODESIGN_IDENTITY" \
@@ -781,7 +482,6 @@ EOF
           "$APP" 2>&1 || true
       else
         echo "  Signing cert not accessible — ad-hoc signing"
-        sign_webengine_helper "-"
         codesign --deep --force --options=runtime \
           --entitlements "$ENTITLEMENTS" \
           --sign - \
@@ -790,7 +490,6 @@ EOF
       fi
     else
       echo "  No developer cert found — ad-hoc signing"
-      sign_webengine_helper "-"
       codesign --deep --force --options=runtime \
         --entitlements "$ENTITLEMENTS" \
         --sign - \
