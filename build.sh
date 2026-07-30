@@ -293,6 +293,12 @@ if [ "$PLATFORM" = "macos" ]; then
   fi
 fi
 
+echo "  Copying assets to frontend/..."
+cp -r images frontend/ 2>/dev/null || true
+cp -r src-tauri/icons frontend/ 2>/dev/null || true
+cp -r modulesPro frontend/ 2>/dev/null || true
+echo "  OK"
+
 echo "  Building Tauri app (native arch)..."
 cd src-tauri
 case "$PLATFORM" in

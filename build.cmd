@@ -62,9 +62,18 @@ if %ERRORLEVEL% neq 0 (
 )
 echo OK
 
-REM -- Step 2: Bundle Tauri app -------------------
+REM -- Step 2: Copy assets into frontend for Tauri bundle
 echo.
-echo [2/3] Bundling Tauri app...
+echo [2/4] Copying assets to frontend/...
+cd /d "%~dp0"
+if exist images xcopy /e /i /y images frontend\images\ >nul 2>nul
+if exist src-tauri\icons xcopy /e /i /y src-tauri\icons frontend\icons\ >nul 2>nul
+if exist modulesPro xcopy /e /i /y modulesPro frontend\modulesPro\ >nul 2>nul
+echo  OK
+
+REM -- Step 3: Bundle Tauri app -------------------
+echo.
+echo [3/4] Bundling Tauri app...
 cd /d "%~dp0"
 call npx tauri build --bundles nsis --ci
 if %ERRORLEVEL% neq 0 (
@@ -76,7 +85,7 @@ echo OK
 
 REM -- Step 3: Create dist package --------------
 echo.
-echo [3/3] Packaging dist...
+echo [4/4] Packaging dist...
 cd /d "%~dp0"
 if exist dist rmdir /s /q dist
 mkdir dist
@@ -117,30 +126,19 @@ echo.
 echo  EXE: dist\DiskRaptor.exe
 echo.
 
-REM -- Create NSIS installer if makensis is available
-set MAKENSIS=
-if not exist "%MAKENSIS%" set MAKENSIS=%ProgramFiles%\NSIS\makensis.exe
-if not exist "%MAKENSIS%" set MAKENSIS=%ProgramFiles(x86)%\NSIS\makensis.exe
-if not exist "%MAKENSIS%" for /f "delims=" %%i in ('where makensis 2^>nul') do set MAKENSIS=%%i
-if exist "%MAKENSIS%" (
-    echo [EXTRA] Creating NSIS installer...
-    cd /d "%~dp0installer\nsis"
-    "%MAKENSIS%" DiskRaptor.nsi
-    if %ERRORLEVEL% equ 0 (
-        copy DiskRaptor_*.exe "%~dp0dist\" >nul
-        echo  OK - NSIS installer created
-        if defined SIGNTOOL (
-            echo  [SIGN] Signing installer...
-            "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\DiskRaptor_*.exe"
-            echo  OK - Installer signed
-        )
-    ) else (
-        echo  WARNING: NSIS installer creation failed
+REM -- Copy Tauri-generated NSIS installer to dist/
+echo.
+echo [EXTRA] Copying Tauri NSIS installer to dist/...
+set TAURI_NSIS=src-tauri\target\release\bundle\nsis\DiskRaptor_%VERSION%_x64-setup.exe
+if exist "%TAURI_NSIS%" (
+    copy "%TAURI_NSIS%" "dist\DiskRaptor_%VERSION%_Setup.exe" >nul
+    if defined SIGNTOOL (
+        echo  [SIGN] Signing installer...
+        "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "dist\DiskRaptor_%VERSION%_Setup.exe"
     )
-    cd /d "%~dp0"
+    echo  OK - NSIS installer copied to dist\
 ) else (
-    echo  NSIS not found - skipping installer creation
-    echo  Install NSIS from https://nsis.sourceforge.io to create setup.exe
+    echo  WARNING: Tauri NSIS installer not found at %TAURI_NSIS%
 )
 
 pause
