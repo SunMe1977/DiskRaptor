@@ -300,7 +300,10 @@ echo "  Building Tauri app ($([ -n "$TAURI_TARGET" ] && echo 'universal' || echo
 # so a stale app can never be launched by mistake.
 rm -rf src-tauri/target/release/bundle src-tauri/target/debug/bundle src-tauri/target/universal-apple-darwin/release/bundle 2>/dev/null || true
 cd src-tauri
-npx tauri build --bundles app --ci $TAURI_TARGET 2>&1
+# `app` bundle only exists on macOS; on Linux we only need the raw binary.
+TAURI_BUNDLES="app"
+[ "$PLATFORM" = "linux" ] && TAURI_BUNDLES="--no-bundle"
+npx tauri build --bundles "$TAURI_BUNDLES" --ci $TAURI_TARGET 2>&1 || true
 cd ..
 
 # Also build scanner library for backward compat
@@ -505,13 +508,13 @@ case "$PLATFORM" in
     echo "  Bundling..."
     mkdir -p dist/lib
 
-    # Binary (check it exists)
-    if [ ! -f qt-app/build/DiskRaptor ]; then
-      echo "  ERROR: Binary not found at qt-app/build/DiskRaptor"
-      echo "  Qt build may have failed. Check output above."
+    # Binary: Tauri build is self-contained (Qt app removed)
+    if [ ! -f src-tauri/target/release/diskraptor ]; then
+      echo "  ERROR: Tauri binary not found at src-tauri/target/release/diskraptor"
+      echo "  Tauri build may have failed. Check output above."
       exit 1
     fi
-    cp qt-app/build/DiskRaptor dist/
+    cp src-tauri/target/release/diskraptor dist/DiskRaptor
 
     # Frontend + Images
     cp -r frontend dist/
@@ -522,21 +525,6 @@ case "$PLATFORM" in
     if [ -f src-tauri/target/release/libdiskraptor_scanner.so ]; then
       cp src-tauri/target/release/libdiskraptor_scanner.so dist/
     fi
-
-    # Bundle Qt libraries
-    echo "  Bundling Qt libraries..."
-    for lib in Core Gui Widgets Network OpenGL Positioning PrintSupport Qml Quick Svg WebChannel WebEngineCore WebEngineWidgets; do
-      for f in $QT_PREFIX/libQt6${lib}.so*; do
-        [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true
-      done
-    done
-
-    # Bundle additional required libs
-    for lib in libicudata.so.* libicui18n.so.* libicuuc.so.* libpcre2-16.so.* libdouble-conversion.so.* libzstd.so.* libmd4c.so.* libfreetype.so.* libharfbuzz.so.* libpng16.so.* libjpeg.so.* libglib-2.0.so.* libgio-2.0.so.* libgobject-2.0.so.* libdrm.so.* libxkbcommon.so.* libxcb.so.* libxcb-xkb.so.* libxcb-image.so.* libxcb-render.so.* libxcb-shm.so.* libxcb-keysyms.so.* libxcb-xfixes.so.* libxcb-xinput.so.* libxcb-randr.so.* libxcb-shape.so.* libxcb-sync.so.* libxcb-xinerama.so.* libxcb-present.so.* libxcb-dri3.so.* libxshmfence.so.* libX11.so.* libX11-xcb.so.* libXi.so.* libXrandr.so.* libXrender.so.* libXext.so.* libXfixes.so.* libXcursor.so.* libXdamage.so.* libXcomposite.so.* libXinerama.so.* libXtst.so.* libfontconfig.so.* libEGL.so.* libGL.so.* libgbm.so.* libwayland-client.so.* libwayland-server.so.* libwayland-egl.so.*; do
-      for f in /usr/lib/x86_64-linux-gnu/$lib /usr/lib/$lib; do
-        [ -f "$f" ] && cp -n "$f" dist/lib/ 2>/dev/null || true
-      done
-    done
 
     echo "  Creating .deb package..."
     DEB_DIR="deb"
@@ -555,7 +543,7 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libc6 (>= 2.31), libstdc++6 (>= 10), libgcc-s1 (>= 10)
+Depends: libc6 (>= 2.31), libstdc++6 (>= 10), libgcc-s1 (>= 10), libwebkit2gtk-4.1-0, libgtk-3-0, libayatana-appindicator3-1, librsvg2-2
 Maintainer: DiskRaptor Team
 Description: Ultra-fast disk space analyzer with virtual tree view, pie chart, and live progress.
  Scans millions of files using a parallel Rust engine.
@@ -611,7 +599,7 @@ DESKTOP
       ffmpeg -y -i images/logo6_original.png -vf "scale=128:128" "$DEB_DIR/usr/share/icons/hicolor/128x128/apps/diskraptor.png" 2>/dev/null || true
     fi
 
-    # Bundle Qt libraries into DEB
+    # Bundle Qt libraries into DEB (skipped: Qt removed, Tauri is self-contained)
     cp -r dist/lib/*.so* "$DEB_DIR/usr/lib/diskraptor/" 2>/dev/null || true
 
     # Rust scanner library
