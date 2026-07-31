@@ -36,7 +36,7 @@ static uint64_t xxh3_64(const uint8_t* data, size_t len) {
 // ── Internal state ───────────────────────────────────────────
 static std::mutex g_mutex;
 static std::string g_moduleName = "duplicateScan";
-static std::string g_moduleVersion = "1.0.6";
+static std::string g_moduleVersion = "1.0.7";
 static std::atomic<bool> g_initialized{false};
 static std::atomic<bool> g_cancelled{false};
 static std::atomic<ModulePhase> g_phase{MODULE_PHASE_IDLE};

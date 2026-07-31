@@ -2915,6 +2915,120 @@ body.light-theme .tree-row.selected {
 .smart-admin-btn:hover:not(:disabled) { box-shadow: 0 10px 26px rgba(99, 102, 241, 0.6); }
 .smart-admin-btn:disabled { opacity: 0.6; cursor: default; }
 
+/* ── Clean Browser Tools ─────────────────────────────────────── */
+.browser-card { width: 640px; }
+.browser-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.browser-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #e6edf3;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+.browser-btn.ghost {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.browser-btn.ghost:hover { background: rgba(255, 255, 255, 0.13); }
+.browser-btn.danger {
+  margin-left: auto;
+  background: linear-gradient(135deg, #da3633, #f85149);
+  box-shadow: 0 8px 24px rgba(248, 81, 73, 0.4);
+}
+.browser-btn.danger:hover:not(:disabled) { box-shadow: 0 12px 32px rgba(248, 81, 73, 0.55); transform: translateY(-1px); }
+.browser-btn:disabled { opacity: 0.5; cursor: default; }
+.browser-list {
+  max-height: 420px;
+  overflow-y: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+}
+.browser-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) 1fr 1fr 0.9fr;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: default;
+  color: #e6edf3;
+  font-size: 12.5px;
+  transition: background 0.12s;
+}
+.browser-row:last-child { border-bottom: none; }
+.browser-row:hover { background: rgba(255, 255, 255, 0.05); }
+.browser-row.browser-row-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(24, 27, 45, 0.97);
+  color: #8b949e;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  cursor: default;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+.browser-check {
+  width: 15px;
+  height: 15px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.browser-name {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.browser-icon-wrap {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.browser-icon,
+.browser-emoji {
+  position: absolute;
+  inset: 0;
+  width: 20px;
+  height: 20px;
+  font-size: 15px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 4px;
+  object-fit: contain;
+}
+.browser-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browser-part {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  min-width: 0;
+}
+.browser-size { font-family: monospace; color: #9aa4b2; }
+.browser-size.cookie { color: #7ee787; }
+.browser-size.cache { color: #79c0ff; }
+.browser-total { font-family: monospace; font-weight: 700; color: #e6edf3; text-align: right; }
+
 /* S.M.A.R.T. — CrystalDiskInfo-style report */
 .smart-banner {
   --glow: rgba(63, 185, 80, 0.55);

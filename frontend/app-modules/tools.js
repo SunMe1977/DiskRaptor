@@ -361,6 +361,8 @@
         return;
       } else if (action === "smart-tools") {
         openSmartTools();
+      } else if (action === "browser-tools") {
+        openBrowserTools();
       } else if (action === "trash-recovery") {
         if (!window.__trashRecovery)
           window.__trashRecovery = new TrashRecovery();
@@ -397,6 +399,13 @@
     const u = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 4);
     return (b / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0) + " " + u[i];
+  }
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   }
   function fmtHours(h) {
     if (!h) return "—";
@@ -499,14 +508,6 @@
           scanBtn.textContent = "Scan Health";
         });
     });
-
-    function esc(s) {
-      return String(s)
-        .replace(/&/g, "&amp;")
-        .replace(/"/g, "&quot;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-    }
 
     function renderSmartResult(r) {
       if (!r) {
@@ -656,5 +657,257 @@
         }
       }
     }
+  }
+
+  // ── Clean Browser Tools overlay ─────────────────────────────
+  function fmtSize(b) {
+    if (!b || b <= 0) return "0 B";
+    const gb = b / (1024 * 1024 * 1024);
+    if (gb >= 1) return gb.toFixed(2) + " GB";
+    const mb = b / (1024 * 1024);
+    if (mb >= 1) return mb.toFixed(1) + " MB";
+    return Math.round(b / 1024) + " KB";
+  }
+
+  function openBrowserTools() {
+    const old = document.getElementById("browser-overlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "browser-overlay";
+    overlay.className = "smart-overlay";
+    overlay.innerHTML =
+      '<div class="smart-card browser-card">' +
+      '<div class="smart-header">' +
+      '<span class="smart-title">\uD83E\uDDF9 Clean Browser Tools</span>' +
+      '<button class="smart-close" id="browser-close" title="Close">\u2715</button>' +
+      "</div>" +
+      '<div class="smart-body">' +
+      '<div class="browser-toolbar">' +
+      '<button class="browser-btn ghost" id="browser-refresh">\u27F3 Refresh</button>' +
+      '<button class="browser-btn ghost" id="browser-select-all">Select All</button>' +
+      '<button class="browser-btn ghost" id="browser-select-none">Select None</button>' +
+      '<button class="browser-btn ghost" id="browser-select-cookies">Select All Cookies</button>' +
+      '<button class="browser-btn ghost" id="browser-select-caches">Select All Caches</button>' +
+      '<button class="browser-btn danger" id="browser-clean">\uD83D\uDDD1\uFE0F Clean Selected</button>' +
+      "</div>" +
+      '<div class="smart-status" id="browser-status"></div>' +
+      '<div class="browser-list" id="browser-list"></div>' +
+      "</div>" +
+      "</div>";
+    document.body.appendChild(overlay);
+
+    const closeBtn = overlay.querySelector("#browser-close");
+    const refreshBtn = overlay.querySelector("#browser-refresh");
+    const selectAllBtn = overlay.querySelector("#browser-select-all");
+    const selectNoneBtn = overlay.querySelector("#browser-select-none");
+    const cleanBtn = overlay.querySelector("#browser-clean");
+    const statusEl = overlay.querySelector("#browser-status");
+    const listEl = overlay.querySelector("#browser-list");
+
+    function close() { overlay.remove(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+    function onKey(e) {
+      if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); }
+    }
+    document.addEventListener("keydown", onKey);
+
+    let browsers = [];
+    const browserIconCache = {};
+
+    const BROWSER_EMOJI = {
+      "Google Chrome": "\uD83C\uDF10",
+      "Microsoft Edge": "\uD83C\uDF00",
+      Firefox: "\uD83E\uDD8A",
+      Opera: "\u2B55",
+      "Opera GX": "\uD83C\uDFAE",
+      Brave: "\uD83E\uDD81",
+      Chromium: "\u2699\uFE0F",
+      Vivaldi: "\uD83C\uDFBB",
+      "Yandex Browser": "\uD83E\uDDF2",
+      "Tor Browser": "\uD83E\uDDC5",
+      "Internet Explorer": "\uD83C\uDD38\uFE0F",
+      Waterfox: "\uD83E\uDD8A",
+      "Pale Moon": "\uD83C\uDF19",
+      Maxthon: "\uD83E\uDDED",
+      Arc: "\uD83D\uDD36",
+      "Avast Secure Browser": "\uD83D\uDEE1\uFE0F",
+      "AVG Secure Browser": "\uD83D\uDEE1\uFE0F",
+      CocCoc: "\uD83C\uDF0F",
+      "Epic Privacy Browser": "\uD83D\uDD12",
+      Slimjet: "\uD83D\uDE80",
+    };
+
+    function loadBrowserIcons() {
+      listEl.querySelectorAll(".browser-icon").forEach(function (img) {
+        const exe = img.dataset.exe;
+        if (!exe) return;
+        const wrap = img.parentElement;
+        const emoji = wrap ? wrap.querySelector(".browser-emoji") : null;
+        function apply(src) {
+          if (!src) return;
+          if (emoji) emoji.style.display = "none";
+          img.src = src;
+          img.style.display = "block";
+        }
+        if (browserIconCache[exe]) {
+          apply(browserIconCache[exe]);
+          return;
+        }
+        window.__TAURI__
+          .invoke("get_browser_icon", { exe: exe })
+          .then(function (res) {
+            const src =
+              typeof res === "string" && res.indexOf("data:") === 0
+                ? res
+                : null;
+            if (src) {
+              browserIconCache[exe] = src;
+              apply(src);
+            }
+          })
+          .catch(function () {});
+      });
+    }
+
+    function renderList() {
+      if (browsers.length === 0) {
+        listEl.innerHTML =
+          '<div style="padding:22px;text-align:center;color:#8b949e;font-size:13px;">No installed browsers with cookies/cache found.</div>';
+        return;
+      }
+      let html =
+        '<div class="browser-row browser-row-head">' +
+        '<span class="browser-name">Browser</span>' +
+        '<span class="browser-size">\uD83C\uDF6A Cookies</span>' +
+        '<span class="browser-size">\uD83D\uDCBE Cache</span>' +
+        '<span class="browser-total">Total</span>' +
+        "</div>";
+      for (let i = 0; i < browsers.length; i++) {
+        const b = browsers[i];
+        const emoji = BROWSER_EMOJI[b.name] || "\uD83C\uDF10";
+        html +=
+          '<div class="browser-row">' +
+          '<span class="browser-name">' +
+          '<span class="browser-icon-wrap">' +
+          '<span class="browser-emoji">' + emoji + "</span>" +
+          '<img class="browser-icon" data-exe="' + esc(b.exe || "") + '" alt="" style="display:none;" />' +
+          "</span>" +
+          '<span class="browser-name-text">' + esc(b.name) + "</span>" +
+          "</span>" +
+          '<label class="browser-part" title="Clean cookies for ' + esc(b.name) + '">' +
+          '<input type="checkbox" class="browser-check" data-name="' + esc(b.name) + '" data-part="cookies" />' +
+          '<span class="browser-size cookie">' + fmtSize(b.cookie_size) + "</span>" +
+          "</label>" +
+          '<label class="browser-part" title="Clean cache for ' + esc(b.name) + '">' +
+          '<input type="checkbox" class="browser-check" data-name="' + esc(b.name) + '" data-part="cache" />' +
+          '<span class="browser-size cache">' + fmtSize(b.cache_size) + "</span>" +
+          "</label>" +
+          '<span class="browser-total">' + fmtSize(b.total_size || (b.cookie_size + b.cache_size)) + "</span>" +
+          "</div>";
+      }
+      listEl.innerHTML = html;
+      loadBrowserIcons();
+      cleanBtn.disabled = false;
+    }
+
+    function load() {
+      statusEl.className = "smart-status";
+      statusEl.innerHTML = '<span class="smart-spinner"></span>Scanning browsers\u2026';
+      cleanBtn.disabled = true;
+      window.__TAURI__
+        .invoke("list_browser_data")
+        .then(function (res) {
+          browsers = Array.isArray(res) ? res : (res && res.data ? res.data : []);
+          renderList();
+          statusEl.className = "smart-status";
+          statusEl.textContent =
+            browsers.length + " browser(s) detected. Select browsers to clean their cookies and cache.";
+        })
+        .catch(function (e) {
+          statusEl.className = "smart-status err";
+          statusEl.textContent = "Error: " + (e && e.message ? e.message : e);
+        });
+    }
+
+    refreshBtn.addEventListener("click", load);
+    selectAllBtn.addEventListener("click", function () {
+      listEl.querySelectorAll(".browser-check").forEach(function (c) { c.checked = true; });
+    });
+    selectNoneBtn.addEventListener("click", function () {
+      listEl.querySelectorAll(".browser-check").forEach(function (c) { c.checked = false; });
+    });
+    document
+      .getElementById("browser-select-cookies")
+      .addEventListener("click", function () {
+        listEl
+          .querySelectorAll('.browser-check[data-part="cookies"]')
+          .forEach(function (c) { c.checked = true; });
+      });
+    document
+      .getElementById("browser-select-caches")
+      .addEventListener("click", function () {
+        listEl
+          .querySelectorAll('.browser-check[data-part="cache"]')
+          .forEach(function (c) { c.checked = true; });
+      });
+
+    cleanBtn.addEventListener("click", async function () {
+      const byName = {};
+      listEl.querySelectorAll(".browser-check:checked").forEach(function (c) {
+        const n = c.dataset.name;
+        const part = c.dataset.part;
+        if (!byName[n]) byName[n] = { cookies: false, cache: false };
+        byName[n][part] = true;
+      });
+      const names = Object.keys(byName);
+      if (names.length === 0) {
+        statusEl.className = "smart-status";
+        statusEl.textContent = "Nothing selected. Tick the cookies/cache boxes you want to clean.";
+        return;
+      }
+      const selCount = names.reduce(function (s, n) {
+        return s + (byName[n].cookies ? 1 : 0) + (byName[n].cache ? 1 : 0);
+      }, 0);
+      if (
+        !confirm(
+          "Clean " + selCount + " selection(s) in " + names.length + " browser(s)?\n\nCleaning cookies will sign you out of websites in those browsers.",
+        )
+      )
+        return;
+      cleanBtn.disabled = true;
+      let freed = 0;
+      let failed = 0;
+      for (let i = 0; i < names.length; i++) {
+        const n = names[i];
+        statusEl.innerHTML =
+          '<span class="smart-spinner"></span>Cleaning ' + esc(n) + "\u2026";
+        try {
+          const r = await window.__TAURI__.invoke("clean_browser", {
+            name: n,
+            cookies: byName[n].cookies,
+            cache: byName[n].cache,
+          });
+          freed += (r && r.freed) || 0;
+        } catch (e) {
+          failed++;
+          console.warn("Clean failed:", n, e);
+        }
+      }
+      statusEl.className = "smart-status";
+      if (failed > 0) {
+        statusEl.textContent =
+          "Cleaned " + (names.length - failed) + " browser(s), " + failed + " failed. Freed " + fmtSize(freed) + ".";
+      } else {
+        statusEl.textContent =
+          "Cleaned " + names.length + " browser(s). Freed " + fmtSize(freed) + ".";
+      }
+      load();
+    });
+
+    load();
   }
 })();
