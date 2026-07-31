@@ -40,12 +40,12 @@ case "$PLATFORM" in
     ;;
   Linux*)
     echo "  Platform: Linux"
-    ASSETS="dist/DiskRaptor-$VERSION-amd64.deb"
+    ASSETS="dist/DiskRaptor-$VERSION-linux-amd64.deb"
     ;;
   CYGWIN*|MINGW*|MSYS*)
     echo "  Platform: Windows"
     ASSETS=""
-    for f in dist/DiskRaptor_*_Setup.exe; do [ -f "$f" ] && ASSETS="$ASSETS $f"; done
+    for f in dist/DiskRaptor-*-windows-x64.exe; do [ -f "$f" ] && ASSETS="$ASSETS $f"; done
     ;;
   *)
     echo "Unknown OS: $PLATFORM"

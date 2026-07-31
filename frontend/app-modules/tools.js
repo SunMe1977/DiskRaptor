@@ -359,6 +359,8 @@
           }
         }).catch(function () {});
         return;
+      } else if (action === "smart-tools") {
+        openSmartTools();
       } else if (action === "trash-recovery") {
         if (!window.__trashRecovery)
           window.__trashRecovery = new TrashRecovery();
@@ -382,4 +384,260 @@
       }
     });
   };
+
+  // ── S.M.A.R.T. Tools overlay ─────────────────────────────
+  function fmtBytes(b) {
+    if (!b || b <= 0) return "";
+    const u = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 4);
+    return (b / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0) + " " + u[i];
+  }
+  function fmtHours(h) {
+    if (!h) return "—";
+    const y = Math.floor(h / 8760);
+    const d = Math.floor((h % 8760) / 24);
+    return y > 0 ? y + "y " + d + "d" : d > 0 ? d + "d " + (h % 24) + "h" : h + "h";
+  }
+  function mediaLabel(t) {
+    if (t === 4) return "SSD";
+    if (t === 3) return "HDD";
+    return "Unknown";
+  }
+
+  function openSmartTools() {
+    const old = document.getElementById("smart-overlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "smart-overlay";
+    overlay.className = "smart-overlay";
+    overlay.innerHTML =
+      '<div class="smart-card">' +
+      '<div class="smart-header">' +
+      '<span class="smart-title">\uD83D\uDEE1\uFE0F S.M.A.R.T. Tools</span>' +
+      '<button class="smart-close" id="smart-close" title="Close">\u2715</button>' +
+      "</div>" +
+      '<div class="smart-body">' +
+      '<div class="smart-drive-row">' +
+      '<select class="smart-select" id="smart-drive"><option value="">Loading drives\u2026</option></select>' +
+      '<button class="smart-scan-btn" id="smart-scan" disabled>Scan Health</button>' +
+      "</div>" +
+      '<div class="smart-status" id="smart-status"></div>' +
+      '<div class="smart-result" id="smart-result"></div>' +
+      "</div>" +
+      "</div>";
+    document.body.appendChild(overlay);
+
+    const closeBtn = overlay.querySelector("#smart-close");
+    const select = overlay.querySelector("#smart-drive");
+    const scanBtn = overlay.querySelector("#smart-scan");
+    const statusEl = overlay.querySelector("#smart-status");
+    const resultEl = overlay.querySelector("#smart-result");
+
+    function close() { overlay.remove(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+    function onKey(e) {
+      if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); }
+    }
+    document.addEventListener("keydown", onKey);
+
+    window.__TAURI__
+      .invoke("list_disks")
+      .then(function (res) {
+        const disks = Array.isArray(res) ? res : (res && res.data ? res.data : []);
+        if (!disks || disks.length === 0) {
+          select.innerHTML = '<option value="">No disks found</option>';
+          statusEl.textContent = "No physical disks detected.";
+          return;
+        }
+        select.innerHTML = "";
+        disks.forEach(function (d) {
+          const opt = document.createElement("option");
+          opt.value = String(d.id);
+          const sizeStr = fmtBytes(typeof d.size === "number" ? d.size : 0);
+          opt.textContent =
+            (d.name || "Disk " + d.id) + (sizeStr ? " \u2014 " + sizeStr : "");
+          select.appendChild(opt);
+        });
+        scanBtn.disabled = false;
+      })
+      .catch(function (e) {
+        select.innerHTML = '<option value="">Error</option>';
+        statusEl.textContent = "Could not list drives: " + (e && e.message ? e.message : e);
+      });
+
+    scanBtn.addEventListener("click", function () {
+      const id = select.value;
+      if (!id) return;
+      scanBtn.disabled = true;
+      scanBtn.textContent = "Scanning\u2026";
+      statusEl.className = "smart-status";
+      statusEl.innerHTML = '<span class="smart-spinner"></span>Querying S.M.A.R.T. attributes\u2026';
+      resultEl.innerHTML = "";
+      window.__TAURI__
+        .invoke("get_smart_status", { deviceId: id })
+        .then(function (r) {
+          renderSmartResult(r);
+        })
+        .catch(function (e) {
+          statusEl.className = "smart-status err";
+          statusEl.textContent = "Error: " + (e && e.message ? e.message : e);
+        })
+        .finally(function () {
+          scanBtn.disabled = false;
+          scanBtn.textContent = "Scan Health";
+        });
+    });
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function renderSmartResult(r) {
+      if (!r) {
+        statusEl.className = "smart-status err";
+        statusEl.textContent = "No data returned.";
+        return;
+      }
+      const attrs = Array.isArray(r.attributes) ? r.attributes : [];
+      const statusTxt = r.status || (Number(r.score) >= 85 ? "Healthy" : Number(r.score) >= 55 ? "Warning" : "Critical");
+      const low = statusTxt.toLowerCase();
+      const bannerCls = low === "warning" ? "warn" : low === "critical" || low === "unhealthy" ? "crit" : "";
+      const tempStr = r.temperature_c != null ? Math.round(r.temperature_c) + "\u00B0C" : "\u2014";
+
+      function findAttr(re) {
+        for (let i = 0; i < attrs.length; i++) {
+          if (re.test(attrs[i].name || "")) return attrs[i];
+        }
+        return null;
+      }
+      const wearAttr = findAttr(/wear/i);
+      const powhAttr = findAttr(/power on hours|power_on_hours/i);
+      const cyclesAttr = findAttr(/power cycles/i);
+      const errAttr = findAttr(/uncorrected|media errors/i);
+
+      const wear =
+        r.wear != null ? r.wear : wearAttr ? parseFloat(wearAttr.raw) : null;
+      const powh =
+        r.power_on_hours != null
+          ? r.power_on_hours
+          : powhAttr ? parseInt(powhAttr.raw) || 0 : 0;
+      const cycles = cyclesAttr ? cyclesAttr.raw : null;
+      const uncorrected =
+        (r.read_errors_uncorrected || 0) + (r.write_errors_uncorrected || 0) +
+        (errAttr ? parseInt(errAttr.raw) || 0 : 0);
+
+      const capacityStr = r.capacity ? fmtBytes(r.capacity) : "";
+
+      function cell(label, value) {
+        return (
+          '<div class="smart-info-cell"><div class="c-label">' +
+          esc(label) +
+          '</div><div class="c-value">' +
+          esc(value) +
+          "</div></div>"
+        );
+      }
+      function tile(icon, label, value) {
+        return (
+          '<div class="smart-tile"><div class="tile-label">' +
+          icon +
+          " " +
+          esc(label) +
+          '</div><div class="tile-value">' +
+          esc(value) +
+          "</div></div>"
+        );
+      }
+
+      let tableRows = "";
+      if (attrs.length === 0) {
+        tableRows =
+          '<tr><td colspan="7" style="padding:16px;text-align:center;color:var(--text-muted);">No S.M.A.R.T. attributes available.</td></tr>';
+      } else {
+        for (let ai = 0; ai < attrs.length; ai++) {
+          const a = attrs[ai];
+          const st = String(a.status || "OK").toLowerCase();
+          const dotCls =
+            st === "fail"
+              ? "fail"
+              : st === "warn" || st === "warning"
+                ? "warn"
+                : "ok";
+          const stText =
+            st === "fail" ? "FAIL" : st === "warn" || st === "warning" ? "WARN" : "OK";
+          tableRows +=
+            '<tr>' +
+            '<td class="attr-id">' + esc(a.id != null ? a.id : "\u2014") + "</td>" +
+            '<td class="attr-name">' + esc(a.name || "") + "</td>" +
+            '<td class="attr-num">' + (a.current != null ? esc(a.current) : "\u2014") + "</td>" +
+            '<td class="attr-num">' + (a.worst != null ? esc(a.worst) : "\u2014") + "</td>" +
+            '<td class="attr-num">' + (a.threshold != null ? esc(a.threshold) : "\u2014") + "</td>" +
+            '<td class="attr-raw">' + esc(a.raw || "\u2014") + "</td>" +
+            '<td><span class="attr-status"><span class="attr-dot ' + dotCls + '"></span>' + stText + "</span></td>" +
+            "</tr>";
+        }
+      }
+
+      resultEl.innerHTML =
+        '<div class="smart-banner ' + bannerCls + '">' +
+        '<div class="banner-temp">' + tempStr + "</div>" +
+        '<div class="banner-status">' + esc(statusTxt) + "</div>" +
+        '<div class="banner-score">Health Score ' + (r.score != null ? esc(r.score) : "\u2014") + " / 100</div>" +
+        '<div class="banner-scale"><div class="scale-track"><div class="scale-fill" style="width:' + Math.max(0, Math.min(100, Number(r.score) || 0)) + '%"></div></div></div>' +
+        "</div>" +
+        '<div class="smart-info-grid">' +
+        cell("Model", r.model || "\u2014") +
+        cell("Firmware", r.firmware || "\u2014") +
+        cell("Serial", r.serial || "\u2014") +
+        cell("Interface", r.interface || "\u2014") +
+        cell("Capacity", capacityStr || "\u2014") +
+        cell("Media", mediaLabel(r.media_type)) +
+        "</div>" +
+        '<div class="smart-tiles-row">' +
+        tile("\u26A1", "Wear", wear != null ? wear + "%" : "\u2014") +
+        tile("\u23F1\uFE0F", "Power-On Hours", fmtHours(powh)) +
+        tile("\uD83D\uDD01", "Power Cycles", cycles != null ? cycles : "\u2014") +
+        tile("\u274C", "Uncorrected", uncorrected) +
+        "</div>" +
+        '<div class="smart-table-wrap"><table class="smart-attr-table">' +
+        "<thead><tr><th>ID</th><th>Attribute</th><th>Current</th><th>Worst</th><th>Threshold</th><th>RAW</th><th>Status</th></tr></thead>" +
+        "<tbody>" + tableRows + "</tbody>" +
+        "</table></div>";
+
+      statusEl.className = "smart-status";
+      const missingAttrs =
+        r.temperature_c == null && (r.wear == null || r.percentage_used == null);
+      if (r.source === "wmi" && missingAttrs) {
+        statusEl.innerHTML =
+          "Basic health report only. Run as administrator for the full S.M.A.R.T. attribute table (temperature, power cycles, percentage used). " +
+          '<button class="smart-admin-btn" id="smart-admin-btn">Run as Administrator</button>';
+        const ab = document.getElementById("smart-admin-btn");
+        if (ab) {
+          ab.onclick = function () {
+            ab.disabled = true;
+            ab.textContent = "Restarting\u2026";
+            window.__TAURI__
+              .invoke("restart_as_admin", {})
+              .catch(function () {
+                ab.disabled = false;
+                ab.textContent = "Run as Administrator";
+              });
+          };
+        }
+      } else if (r.source === "wmi") {
+        statusEl.textContent =
+          "Health status retrieved from WMI. Install smartmontools for the full CrystalDiskInfo-style table.";
+      } else {
+        statusEl.textContent = "Scan complete.";
+      }
+    }
+  }
 })();

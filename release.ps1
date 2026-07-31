@@ -27,9 +27,9 @@ Write-Host "  `u{2713} gh CLI authenticated"
 
 # ── Find assets ──
 $ASSETS = @()
-$zip = "dist/DiskRaptor-$VERSION-win64.zip"
+$zip = "dist/DiskRaptor-$VERSION-windows-x64.zip"
 if (Test-Path $zip) { $ASSETS += $zip }
-Get-ChildItem "dist/DiskRaptor_*_Setup.exe" -ErrorAction SilentlyContinue | ForEach-Object { $ASSETS += $_.FullName }
+Get-ChildItem "dist/DiskRaptor-*-windows-x64.exe" -ErrorAction SilentlyContinue | ForEach-Object { $ASSETS += $_.FullName }
 
 # ── Ensure release exists (create if missing) ──
 Write-Host ""

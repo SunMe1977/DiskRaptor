@@ -9,7 +9,7 @@ ManifestDPIAware true
 !include "MUI2.nsh"
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-OutFile "DiskRaptor_${PRODUCT_VERSION}_Setup.exe"
+OutFile "DiskRaptor-${PRODUCT_VERSION}-windows-x64.exe"
 InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
 InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "InstallLocation"
 RequestExecutionLevel admin

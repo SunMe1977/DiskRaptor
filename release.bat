@@ -32,10 +32,10 @@ echo   Yes, gh CLI authenticated
 
 REM -- Find assets --
 set ASSETS=
-if exist "dist\DiskRaptor-%VERSION%-win64.zip" set ASSETS=dist\DiskRaptor-%VERSION%-win64.zip
-dir /b "dist\DiskRaptor_*_Setup.exe" >nul 2>nul
+if exist "dist\DiskRaptor-%VERSION%-windows-x64.zip" set ASSETS=dist\DiskRaptor-%VERSION%-windows-x64.zip
+dir /b "dist\DiskRaptor-*-windows-x64.exe" >nul 2>nul
 if not errorlevel 1 (
-    for /f "delims=" %%f in ('dir /b "dist\DiskRaptor_*_Setup.exe"') do set ASSETS=!ASSETS! dist\%%f
+    for /f "delims=" %%f in ('dir /b "dist\DiskRaptor-*-windows-x64.exe"') do set ASSETS=!ASSETS! dist\%%f
 )
 echo   Assets: !ASSETS!
 
