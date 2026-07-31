@@ -51,7 +51,7 @@ check_version() {
   fi
 }
 check_version "src-tauri/Cargo.toml"         "Cargo.toml"           's/.*version = "\([^"]*\)".*/\1/p'
-check_version "qt-app/CMakeLists.txt"         "CMakeLists.txt (Qt)"  's/.*project(DiskRaptor VERSION \([0-9.]*\)).*/\1/p'
+check_version "qt-app/CMakeLists.txt"         "CMakeLists.txt (Qt)"  's/.*project(DiskRaptor VERSION \([0-9.]*\)[^0-9.].*/\1/p'
 check_version "qt-app/src/main.cpp"           "main.cpp"             's/.*setApplicationVersion("\([^"]*\)").*/\1/p'
 check_version "vcpkg.json"                    "vcpkg.json"           's/.*"version": "\([^"]*\)".*/\1/p'
 check_version "installer/nsis/DiskRaptor.nsi" "DiskRaptor.nsi"       's/.*PRODUCT_VERSION "\([^"]*\)".*/\1/p'
@@ -285,17 +285,22 @@ echo "[2] Building..."
 
 # Detect architectures for universal binary
 ARCHS="x86_64"
+TAURI_TARGET=""
 if [ "$PLATFORM" = "macos" ]; then
   # Check if we can build for arm64 (Apple Silicon)
   if rustc --print cfg --target aarch64-apple-darwin 2>/dev/null | grep -q "target_os"; then
     ARCHS="x86_64 arm64"
+    TAURI_TARGET="--target universal-apple-darwin"
     echo "  Building universal binary (x86_64 + arm64)"
   fi
 fi
 
-echo "  Building Tauri app (native arch)..."
+echo "  Building Tauri app ($([ -n "$TAURI_TARGET" ] && echo 'universal' || echo 'native arch'))..."
+# Remove stale bundles from previous manual `npx tauri build`/`cargo build` runs
+# so a stale app can never be launched by mistake.
+rm -rf src-tauri/target/release/bundle src-tauri/target/debug/bundle src-tauri/target/universal-apple-darwin/release/bundle 2>/dev/null || true
 cd src-tauri
-npx tauri build --bundles app --ci 2>&1
+npx tauri build --bundles app --ci $TAURI_TARGET 2>&1
 cd ..
 
 # Also build scanner library for backward compat
@@ -312,103 +317,46 @@ mkdir -p dist
 
 case "$PLATFORM" in
   macos)
-    echo "  Creating DiskRaptor.app bundle..."
-    APP="dist/DiskRaptor.app"
-    mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-
-    # Binary (Tauri)
-    TAURI_BIN="src-tauri/target/release/diskraptor"
-    if [ ! -f "$TAURI_BIN" ]; then
-      echo "  ERROR: Tauri binary not found at $TAURI_BIN"
+    echo "  Using Tauri-generated app bundle..."
+    TAURI_OUT="src-tauri/target/release"
+    [ -n "$TAURI_TARGET" ] && TAURI_OUT="src-tauri/target/universal-apple-darwin/release"
+    TAURI_APP="$TAURI_OUT/bundle/macos/DiskRaptor.app"
+    if [ ! -d "$TAURI_APP" ]; then
+      echo "  ERROR: Tauri bundle not found at $TAURI_APP"
       echo "  Tauri build may have failed. Check output above."
       exit 1
     fi
-    cp "$TAURI_BIN" "$APP/Contents/MacOS/"
 
-    # Resources (frontend)
-    cp -r frontend "$APP/Contents/Resources/"
+    APP="dist/DiskRaptor.app"
+    cp -R "$TAURI_APP" "$APP"
 
-    # Rust scanner dylib (kept for backward compat, now bundled inside Tauri binary)
-    if [ -f "src-tauri/target/release/libdiskraptor_scanner.dylib" ]; then
-      cp "src-tauri/target/release/libdiskraptor_scanner.dylib" "$APP/Contents/MacOS/"
+    # Remove test-data helper binaries (not part of the shipped app)
+    rm -f "$APP/Contents/MacOS/gen-testdata" "$APP/Contents/MacOS/clean-testdata"
+
+    # Sanity-check the generated Info.plist (guards against ITMS-90049)
+    BUNDLE_ID_PLIST="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+    EXEC_PLIST="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+    echo "  Bundle ID:   ${BUNDLE_ID_PLIST:-<MISSING>}"
+    echo "  Executable:  ${EXEC_PLIST:-<MISSING>}"
+    if [ -z "$BUNDLE_ID_PLIST" ] || [ -z "$EXEC_PLIST" ]; then
+      echo "  ERROR: Generated Info.plist is missing CFBundleIdentifier/CFBundleExecutable."
+      exit 1
+    fi
+    if [ ! -f "$APP/Contents/MacOS/$EXEC_PLIST" ]; then
+      echo "  ERROR: CFBundleExecutable ($EXEC_PLIST) does not match a file in Contents/MacOS/."
+      echo "         This is what triggers ITMS-90049."
+      exit 1
     fi
 
-    # Icon ??? generate .icns from PNG if missing
-    if [ ! -f "images/icon.icns" ] && [ -f "images/logo6_original.png" ]; then
-      echo "  Generating icon.icns from logo6_original.png..."
-      mkdir -p icon_tmp/diskraptor.iconset
-      SRC="images/logo6_original.png"
-      # Generate all required sizes for a complete iconset
-      # macOS requires: 16, 32, 128, 256, 512 + @2x variants (32, 64, 256, 512, 1024)
-      for s in 16 32 128 256 512 1024; do
-        if command -v convert &>/dev/null; then
-          convert "$SRC" -resize ${s}x${s} "icon_tmp/diskraptor.iconset/icon_${s}x${s}.png" 2>/dev/null || true
-        elif command -v ffmpeg &>/dev/null; then
-          ffmpeg -y -i "$SRC" -vf "scale=${s}:${s}" "icon_tmp/diskraptor.iconset/icon_${s}x${s}.png" 2>/dev/null || true
-        elif command -v sips &>/dev/null; then
-          sips -z $s $s "$SRC" --out "icon_tmp/diskraptor.iconset/icon_${s}x${s}.png" 2>/dev/null || true
-        fi
-      done
-      # Create @2x variants (retina) from the larger sizes
-      # 16x16@2x = 32, 32x32@2x = 64, 128x128@2x = 256, 256x256@2x = 512, 512x512@2x = 1024
-      for pair in "16 32" "32 64" "128 256" "256 512" "512 1024"; do
-        base="${pair% *}"
-        retina="${pair#* }"
-        src="icon_tmp/diskraptor.iconset/icon_${retina}x${retina}.png"
-        dst="icon_tmp/diskraptor.iconset/icon_${base}x${base}@2x.png"
-        [ -f "$src" ] && cp "$src" "$dst" 2>/dev/null || true
-      done
-      # Fallback: create missing @2x from base size
-      for base in 16 32 128 256 512; do
-        dst="icon_tmp/diskraptor.iconset/icon_${base}x${base}@2x.png"
-        if [ ! -f "$dst" ]; then
-          src="icon_tmp/diskraptor.iconset/icon_${base}x${base}.png"
-          [ -f "$src" ] && cp "$src" "$dst" 2>/dev/null || true
-        fi
-      done
-      # Build .icns
-      if command -v iconutil &>/dev/null; then
-        iconutil -c icns icon_tmp/diskraptor.iconset -o images/icon.icns 2>/dev/null || true
-        if [ -f "images/icon.icns" ]; then
-          echo "  icon.icns created ($(du -h images/icon.icns | cut -f1))"
-        fi
+    # Verify the binary contains both architectures (App Store warning 91167)
+    if command -v lipo &>/dev/null; then
+      BIN_ARCHS="$(lipo -archs "$APP/Contents/MacOS/$EXEC_PLIST" 2>/dev/null || true)"
+      echo "  Architectures: ${BIN_ARCHS:-<none>}"
+      if [ -z "$BIN_ARCHS" ] || ! echo "$BIN_ARCHS" | grep -qi "arm64"; then
+        echo "  WARNING: Binary is not universal (missing arm64)."
+        echo "           The App Store will warn about this (code 91167)."
       fi
-      rm -rf icon_tmp
     fi
-
-    if [ -f "images/icon.icns" ]; then
-      cp "images/icon.icns" "$APP/Contents/Resources/"
-      echo "  icon.icns copied"
-    else
-      echo "  WARNING: icon.icns not found ??? app icon will be missing"
-    fi
-
-    # Info.plist
-    cat > "$APP/Contents/Info.plist" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key><string>DiskRaptor</string>
-    <key>CFBundleIdentifier</key><string>diskraptor</string>
-    <key>CFBundleName</key><string>DiskRaptor</string>
-    <key>CFBundleVersion</key><string>0.0.8</string>
-    <key>CFBundleShortVersionString</key><string>0.0.8</string>
-    <key>ITSAppUsesNonExemptEncryption</key><false/>
-    <key>CFBundleIconFile</key><string>icon.icns</string>
-    <key>CFBundlePackageType</key><string>APPL</string>
-    <key>LSMinimumSystemVersion</key><string>14.0</string>
-    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
-    <key>NSHighResolutionCapable</key><true/>
-    <key>NSDesktopFolderUsageDescription</key><string>DiskRaptor needs access to your Desktop to scan files.</string>
-    <key>NSDocumentsFolderUsageDescription</key><string>DiskRaptor needs access to your Documents to scan files.</string>
-    <key>NSDownloadsFolderUsageDescription</key><string>DiskRaptor needs access to your Downloads to scan files.</string>
-    <key>NSNetworkVolumesUsageDescription</key><string>DiskRaptor can scan network volumes.</string>
-    <key>NSRemovableVolumesUsageDescription</key><string>DiskRaptor can scan removable volumes.</string>
-    <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
-</dict>
-</plist>
-EOF
 
     # Entitlements (used for hardened runtime)
     ENTITLEMENTS="installer/DiskRaptor.entitlements"

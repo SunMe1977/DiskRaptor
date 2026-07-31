@@ -1,6 +1,6 @@
 [package]
 name = "diskraptor"
-version = "1.0.3"
+version = "1.0.6"
 description = "Ultra-fast disk space analyzer"
 authors = ["DiskRaptor Team"]
 edition = "2021"
@@ -12,14 +12,6 @@ crate-type = ["cdylib", "lib"]
 [[bin]]
 name = "diskraptor"
 path = "src/main.rs"
-
-[[bin]]
-name = "gen-testdata"
-path = "src/bin/gen_testdata.rs"
-
-[[bin]]
-name = "clean-testdata"
-path = "src/bin/clean_testdata.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

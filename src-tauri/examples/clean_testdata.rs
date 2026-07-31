@@ -1,6 +1,6 @@
 // DiskRaptor Test Data Cleanup
 // Fast deletion of test data using raw filesystem operations.
-// Usage: cargo run --release --bin clean-testdata
+// Usage: cargo run --release --example clean-testdata
 
 use std::fs;
 use std::path::PathBuf;

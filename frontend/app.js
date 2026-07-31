@@ -559,39 +559,7 @@
       });
     })();
 
-    // Menu events from Tauri
-    if (window.__TAURI__ && window.__TAURI__.event) {
-      try {
-        ["pie", "treemap"].forEach(function (mode) {
-          window.__TAURI__.event.listen("menu-view-" + mode, function () {
-            document
-              .querySelectorAll(".diagram-mode")
-              .forEach(function (b) {
-                b.classList.remove("active");
-              });
-            const btn = document.querySelector(
-              '.diagram-mode[data-mode="' + mode + '"]',
-            );
-            if (btn) btn.classList.add("active");
-            diagram.setMode(mode);
-          });
-        });
-        window.__TAURI__.event.listen("menu-about", function () {
-          aboutOverlay.classList.add("active");
-        });
-        window.I18N.LANGUAGES.forEach(function (lang) {
-          const eventName = "menu-lang-" + lang.code;
-          window.__TAURI__.event.listen(eventName, function () {
-            window.I18N.setLocale(lang.code);
-          });
-        });
-        window.__TAURI__.event.listen("menu-lang-auto", function () {
-          window.I18N.setLocale("auto");
-        });
-      } catch (e) {
-        console.debug("Menu events not available:", e.message);
-      }
-    }
+    // Menu events from Tauri (handled natively via Rust eval)
 
     window.addEventListener("locale-changed", function () {});
 
