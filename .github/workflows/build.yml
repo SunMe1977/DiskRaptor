@@ -83,7 +83,7 @@ jobs:
         run: |
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1 -ExpandProperty FullName
           if (-not $signtool) { $signtool = Get-ChildItem "C:\Program Files\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1 -ExpandProperty FullName }
-          Get-ChildItem installer\nsis\DiskRaptor_*.exe | ForEach-Object {
+          Get-ChildItem installer\nsis\DiskRaptor-*.exe | ForEach-Object {
             & $signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "$($_.FullName)"
           }
       - uses: actions/upload-artifact@v4
@@ -91,7 +91,7 @@ jobs:
           name: DiskRaptor-windows-x64
           path: |
             DiskRaptor-windows-x64.zip
-            installer\nsis\DiskRaptor_*.exe
+            installer\nsis\DiskRaptor-*.exe
 
   windows-arm64:
     name: Windows ARM64
@@ -317,13 +317,13 @@ jobs:
           # Bundle Qt libs into DEB for self-contained package
           mkdir -p deb/usr/lib/diskraptor
           [ -d dist/lib ] && cp -r dist/lib/*.so* deb/usr/lib/diskraptor/ 2>/dev/null || true
-          fakeroot dpkg-deb --build deb "DiskRaptor_${VERSION}_amd64.deb"
+          fakeroot dpkg-deb --build deb "DiskRaptor-${VERSION}-linux-amd64.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-linux-x64
           path: |
             DiskRaptor-linux-x64.zip
-            DiskRaptor_*_amd64.deb
+            DiskRaptor-*-linux-amd64.deb
 
   linux-arm64:
     name: Linux ARM64
@@ -378,13 +378,13 @@ jobs:
           # Bundle Qt libs into DEB for self-contained package
           mkdir -p deb/usr/lib/diskraptor
           [ -d dist/lib ] && cp -r dist/lib/*.so* deb/usr/lib/diskraptor/ 2>/dev/null || true
-          fakeroot dpkg-deb --build deb "DiskRaptor_${VERSION}_arm64.deb"
+          fakeroot dpkg-deb --build deb "DiskRaptor-${VERSION}-linux-arm64.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: DiskRaptor-linux-arm64
           path: |
             DiskRaptor-linux-arm64.zip
-            DiskRaptor_*_arm64.deb
+            DiskRaptor-*-linux-arm64.deb
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

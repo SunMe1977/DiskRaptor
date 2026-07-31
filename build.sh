@@ -626,17 +626,17 @@ DESKTOP
 
     if command -v dpkg-deb &>/dev/null; then
       if command -v fakeroot &>/dev/null; then
-        fakeroot dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-${VERSION}-amd64.deb"
+        fakeroot dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-${VERSION}-linux-amd64.deb"
       else
-        dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-${VERSION}-amd64.deb"
+        dpkg-deb --build "$DEB_DIR" "dist/DiskRaptor-${VERSION}-linux-amd64.deb"
       fi
-      echo "  DEB: dist/DiskRaptor-${VERSION}-amd64.deb"
+      echo "  DEB: dist/DiskRaptor-${VERSION}-linux-amd64.deb"
     else
       echo "  SKIP DEB: 'dpkg-deb' not installed"
     fi
     echo ""
     echo "  Run: LD_LIBRARY_PATH=dist/lib ./dist/DiskRaptor"
-    echo "  Or install: sudo dpkg -i dist/DiskRaptor-${VERSION}-amd64.deb"
+    echo "  Or install: sudo dpkg -i dist/DiskRaptor-${VERSION}-linux-amd64.deb"
     ;;
 
   windows)

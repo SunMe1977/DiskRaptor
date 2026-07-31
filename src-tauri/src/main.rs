@@ -173,6 +173,477 @@ fn get_volume_stats() -> JsonResult {
     list_drives()
 }
 
+// ── S.M.A.R.T. Tools ────────────────────────────────────────────────
+
+#[cfg(target_os = "windows")]
+fn win_powershell(script: &str) -> Option<String> {
+    let out = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
+        .output()
+        .ok()?;
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn win_powershell_file(path: &std::path::Path) -> Option<String> {
+    let out = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(path)
+        .output()
+        .ok()?;
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        None
+    }
+}
+
+fn run_output(cmd: &str, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new(cmd).args(args).output().ok()?;
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        None
+    }
+}
+
+/// Normalize smartmontools JSON (`smartctl -j -a`) into a common report shape.
+fn smart_from_smartctl(v: &serde_json::Value, device_id: &str) -> Option<serde_json::Value> {
+    let model = v.pointer("/model_name").and_then(|x| x.as_str()).unwrap_or(device_id).to_string();
+    let serial = v.pointer("/serial_number").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let firmware = v.pointer("/firmware_version").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let dev_type = v.pointer("/device/type").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let passed = v.pointer("/smart_status/passed").and_then(|x| x.as_bool()).unwrap_or(false);
+    let temp = v.pointer("/temperature/current").and_then(|x| x.as_u64()).map(|x| x as f64);
+    let powh = v.pointer("/power_on_time/hours").and_then(|x| x.as_u64()).unwrap_or(0);
+    let capacity = v.pointer("/user_capacity/bytes").and_then(|x| x.as_u64()).unwrap_or(0);
+
+    let mut attributes: Vec<serde_json::Value> = Vec::new();
+
+    if dev_type.contains("nvme") {
+        let nvme_fields: &[(&str, &str)] = &[
+            ("02", "Temperature"), ("03", "Available Spare"), ("04", "Available Spare Threshold"),
+            ("05", "Percentage Used"), ("06", "Data Units Read"), ("07", "Data Units Written"),
+            ("08", "Host Read Commands"), ("09", "Host Write Commands"), ("0a", "Controller Busy Time"),
+            ("0b", "Power Cycles"), ("0c", "Power On Hours"), ("0d", "Unsafe Shutdowns"),
+            ("0e", "Media Errors"), ("0f", "Num Err Log Entries"), ("10", "Warning Temp Time"),
+            ("11", "Critical Comp Temp Time"), ("12", "Thermal Sensor 1"), ("13", "Thermal Sensor 2"),
+        ];
+        if let Some(log) = v.pointer("/nvme_smart_health_information_log") {
+            let critical = log.get("critical_warning").and_then(|x| x.as_u64()).unwrap_or(0);
+            for (id, name) in nvme_fields {
+                let key = name.split_whitespace().collect::<Vec<_>>().join("_");
+                let val = log.get(&key).and_then(|x| x.as_u64());
+                attributes.push(serde_json::json!({
+                    "id": id, "name": name,
+                    "current": val, "worst": null, "threshold": null,
+                    "raw": val.map(|x| x.to_string()).unwrap_or_default(),
+                    "status": "OK",
+                }));
+            }
+            attributes.insert(0, serde_json::json!({
+                "id": "01", "name": "Critical Warning",
+                "current": critical, "worst": null, "threshold": null,
+                "raw": critical.to_string(),
+                "status": if critical > 0 { "FAIL" } else { "OK" },
+            }));
+        }
+    } else if let Some(table) = v.pointer("/ata_smart_attributes/table") {
+        if let Some(arr) = table.as_array() {
+            for a in arr {
+                let id = a.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
+                let name = a.get("name").and_then(|x| x.as_str()).unwrap_or("");
+                let val = a.get("value").and_then(|x| x.as_u64());
+                let worst = a.get("worst").and_then(|x| x.as_u64());
+                let thresh = a.get("thresh").and_then(|x| x.as_u64());
+                let raw = a.pointer("/raw/string").and_then(|x| x.as_str()).unwrap_or("");
+                let failed = a.pointer("/flags/failure").and_then(|x| x.as_bool()).unwrap_or(false);
+                attributes.push(serde_json::json!({
+                    "id": format!("{:02X}", id), "name": name,
+                    "current": val, "worst": worst, "threshold": thresh,
+                    "raw": raw, "status": if failed { "FAIL" } else { "OK" },
+                }));
+            }
+        }
+    }
+
+    let (score, status) = if passed { (100u64, "Healthy") } else { (30u64, "Critical") };
+    Some(serde_json::json!({
+        "device_id": device_id,
+        "model": model, "serial": serial, "firmware": firmware,
+        "interface": dev_type.to_uppercase(),
+        "capacity": capacity,
+        "score": score, "status": status,
+        "temperature_c": temp,
+        "power_on_hours": powh,
+        "attributes": attributes,
+        "source": "smartctl",
+    }))
+}
+
+/// Combine OS health status + SMART attributes into a 0-100 score.
+fn smart_health_from_attrs(health: i64, wear: Option<f64>, temp: Option<f64>, read_unc: u64, write_unc: u64) -> (u64, &'static str) {
+    let mut score: f64 = 100.0;
+    match health {
+        1 => score -= 20.0,
+        2 => score -= 60.0,
+        _ => {}
+    }
+    if let Some(w) = wear {
+        if w > 90.0 { score -= 40.0; }
+        else if w > 75.0 { score -= 20.0; }
+        else if w > 50.0 { score -= 8.0; }
+    }
+    if let Some(t) = temp {
+        if t >= 60.0 { score -= 30.0; }
+        else if t >= 50.0 { score -= 10.0; }
+        else if t >= 45.0 { score -= 4.0; }
+    }
+    if read_unc + write_unc > 0 { score -= 15.0; }
+    let score = (score.max(0.0).min(100.0)).round() as u64;
+    let status = if score >= 85 { "Healthy" } else if score >= 55 { "Warning" } else { "Critical" };
+    (score, status)
+}
+
+#[tauri::command]
+fn list_disks() -> JsonResult {
+    #[cfg(target_os = "windows")]
+    {
+        let script = "try { $d = Get-CimInstance -ClassName MSFT_PhysicalDisk -Namespace 'root\\Microsoft\\Windows\\Storage' | Select-Object DeviceId, FriendlyName, MediaType, HealthStatus, OperationalStatus, Size, Model, SerialNumber, BusType, SpindleSpeed, FirmwareVersion; if (-not $d) { '[]'; exit 0 }; @($d) | ConvertTo-Json -Compress } catch { exit 1 }";
+        if let Some(s) = win_powershell(script) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                let arr = if v.is_array() { v } else { serde_json::json!([v]) };
+                let norm: Vec<serde_json::Value> = arr.as_array().map(|a| a.iter().map(|d| {
+                    let id = d["DeviceId"].as_str().unwrap_or("0");
+                    serde_json::json!({
+                        "id": id, "name": d["FriendlyName"],
+                        "media_type": d["MediaType"], "health": d["HealthStatus"],
+                        "size": d["Size"], "model": d["Model"],
+                        "serial": d["SerialNumber"], "bus": d["BusType"],
+                        "firmware": d["FirmwareVersion"],
+                        "status": d["OperationalStatus"],
+                        "device": format!("\\\\.\\PHYSICALDRIVE{}", id),
+                    })
+                }).collect()).unwrap_or_default();
+                return JsonResult::ok(serde_json::json!(norm));
+            }
+        }
+        JsonResult::err("Could not enumerate physical disks")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(s) = run_output("lsblk", &["-J", "-d", "-o", "NAME,MODEL,SIZE,TRAN,SERIAL"]) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                if let Some(devs) = v.pointer("/blockdevices") {
+                    let arr: Vec<serde_json::Value> = devs.as_array().map(|a| a.iter().map(|d| {
+                        let trans = d["TRAN"].as_str().unwrap_or("").to_lowercase();
+                        serde_json::json!({
+                            "id": d["NAME"].as_str().unwrap_or(""),
+                            "name": d["MODEL"].as_str().unwrap_or(""),
+                            "media_type": if trans.contains("nvme") || trans.contains("ssd") { 4 } else { 3 },
+                            "size": d["SIZE"].as_str().unwrap_or(""),
+                            "serial": d["SERIAL"].as_str().unwrap_or(""),
+                            "is_linux_device": true,
+                        })
+                    }).collect()).unwrap_or_default();
+                    return JsonResult::ok(serde_json::json!(arr));
+                }
+            }
+        }
+        JsonResult::err("Could not enumerate block devices")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if run_output("smartctl", &["--version"]).is_some() {
+            let mut disks = Vec::new();
+            for i in 0..8 {
+                if let Some(s) = run_output("smartctl", &["-j", "-i", &format!("disk{}", i)]) {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                        if v.pointer("/model_name").and_then(|m| m.as_str()).is_some() {
+                            let rot = v.pointer("/rotation_rate").and_then(|r| r.as_u64()).unwrap_or(0);
+                            disks.push(serde_json::json!({
+                                "id": format!("disk{}", i),
+                                "name": v.pointer("/model_name").and_then(|m| m.as_str()).unwrap_or(""),
+                                "media_type": if rot == 0 { 4 } else { 3 },
+                                "serial": v.pointer("/serial_number").and_then(|m| m.as_str()).unwrap_or(""),
+                                "is_mac_device": true,
+                            }));
+                        }
+                    }
+                }
+            }
+            if !disks.is_empty() { return JsonResult::ok(serde_json::json!(disks)); }
+        }
+        JsonResult::err("S.M.A.R.T. requires smartmontools (smartctl) on macOS")
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        JsonResult::err("Unsupported platform")
+    }
+}
+
+#[tauri::command]
+fn get_smart_status(device_id: String) -> JsonResult {
+    #[cfg(target_os = "windows")]
+    {
+        // 1) Prefer smartmontools for a full CrystalDiskInfo-style report.
+        if let Some(s) = run_output("smartctl", &["-j", "-a", &format!("\\\\.\\PHYSICALDRIVE{}", device_id)]) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                if let Some(r) = smart_from_smartctl(&v, &device_id) {
+                    return JsonResult::ok(r);
+                }
+            }
+        }
+        // 2) WMI fallback + NVMe SMART passthrough (fills firmware/interface/capacity/temperature).
+        let ps = r#"param()
+$id = "__ID__"
+try {
+  $d = Get-CimInstance -Namespace 'root\Microsoft\Windows\Storage' -ClassName MSFT_PhysicalDisk -Filter "DeviceId = $id"
+  if (-not $d) { Write-Output '{}'; exit 0 }
+
+  $result = [ordered]@{
+    device_id = $d.DeviceId
+    friendly_name = $d.FriendlyName
+    model = $d.Model
+    serial = $d.SerialNumber
+    media_type = $d.MediaType
+    health = [int]($d.HealthStatus)
+    size = $d.Size
+    firmware = $d.FirmwareVersion
+    bus = $d.BusType
+  }
+
+  # NVMe SMART health log via storage protocol passthrough
+  $nvme = $null
+  try {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class NvmeSmart {
+  [DllImport("kernel32.dll", SetLastError = true)]
+  public static extern IntPtr CreateFile(string f, uint a, uint s, IntPtr sa, uint cd, uint fa, IntPtr t);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  public static extern bool DeviceIoControl(IntPtr h, uint c, IntPtr i, uint isz, IntPtr o, uint osz, out uint r, IntPtr ov);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  public static extern bool CloseHandle(IntPtr h);
+  const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000, FS_READ = 1, FS_WRITE = 2, OPEN = 3, NORMAL = 0x80;
+  static uint CTL(uint dev, uint fn, uint m, uint a) { return (dev << 16) | (a << 14) | (fn << 2) | m; }
+  static uint IOCTL_STORAGE_QUERY_PROPERTY = CTL(0x2D, 0x0500, 0, 0);
+  const uint StorageDeviceProtocolSpecificProperty = 50;
+  const uint ProtocolTypeNvme = 3;
+  const uint NVMeDataTypeLogPage = 2;
+  const uint LOG_PAGE_SMART = 0x02;
+  [StructLayout(LayoutKind.Sequential)] struct PROP_QUERY { public uint id; public uint type; public byte extra; }
+  [StructLayout(LayoutKind.Sequential)] struct PROTO { public uint t; public uint dt; public uint rv; public uint rsv; public uint off; public uint len; public uint fix; public uint rsv2; }
+  static ulong U64(byte[] d, int o) { return (ulong)d[o] | ((ulong)d[o + 1] << 8) | ((ulong)d[o + 2] << 16) | ((ulong)d[o + 3] << 24) | ((ulong)d[o + 4] << 32) | ((ulong)d[o + 5] << 40) | ((ulong)d[o + 6] << 48) | ((ulong)d[o + 7] << 56); }
+  public static object GetSmart(string dev) {
+    IntPtr h = CreateFile(dev, GENERIC_READ | GENERIC_WRITE, FS_READ | FS_WRITE, IntPtr.Zero, OPEN, NORMAL, IntPtr.Zero);
+    if (h == (IntPtr)(-1)) return null;
+    try {
+      int qs = Marshal.SizeOf(typeof(PROP_QUERY)) + Marshal.SizeOf(typeof(PROTO));
+      int total = qs + 512;
+      IntPtr buf = Marshal.AllocHGlobal(total);
+      try {
+        Marshal.WriteInt32(buf, 0, (int)StorageDeviceProtocolSpecificProperty);
+        Marshal.WriteInt32(buf, 4, 0);
+        Marshal.WriteInt32(buf, 8, (int)ProtocolTypeNvme);
+        Marshal.WriteInt32(buf, 12, (int)NVMeDataTypeLogPage);
+        Marshal.WriteInt32(buf, 16, (int)LOG_PAGE_SMART);
+        Marshal.WriteInt32(buf, 20, 0);
+        Marshal.WriteInt32(buf, 24, qs);
+        Marshal.WriteInt32(buf, 28, 512);
+        Marshal.WriteInt32(buf, 32, 0);
+        Marshal.WriteInt32(buf, 36, 0);
+        uint ret = 0;
+        if (!DeviceIoControl(h, IOCTL_STORAGE_QUERY_PROPERTY, buf, (uint)total, buf, (uint)total, out ret, IntPtr.Zero)) return null;
+        byte[] d = new byte[512];
+        Marshal.Copy(IntPtr.Add(buf, qs), d, 0, 512);
+        int kelvin = d[1] | (d[2] << 8);
+        return new {
+          temperature_c = kelvin > 0 ? kelvin - 273 : 0,
+          critical_warning = d[0],
+          available_spare = d[3],
+          available_spare_threshold = d[4],
+          percentage_used = d[5],
+          data_units_read = U64(d, 15),
+          data_units_written = U64(d, 23),
+          host_read_commands = U64(d, 31),
+          host_write_commands = U64(d, 39),
+          power_cycles = U64(d, 47),
+          power_on_hours = U64(d, 55),
+          unsafe_shutdowns = U64(d, 63),
+          media_errors = U64(d, 71),
+          num_err_log_entries = U64(d, 79)
+        };
+      } finally { Marshal.FreeHGlobal(buf); }
+    } finally { CloseHandle(h); }
+  }
+}
+"@
+    $nvme = [NvmeSmart]::GetSmart('\\.\PHYSICALDRIVE' + $id)
+  } catch { $nvme = $null }
+
+  # Reliability counters (needs admin) - best effort
+  $rel = @()
+  try {
+    $rel = @($d | Get-CimAssociatedInstance -ResultClassName MSFT_StorageReliabilityCounter | Select-Object Temperature, Wear, PowerOnHours, ReadErrorsTotal, WriteErrorsTotal, ReadErrorsUncorrected, WriteErrorsUncorrected, StartStopCycleCount, LoadUnloadCycleCount)
+  } catch { $rel = @() }
+
+  if ($nvme) {
+    $result.temperature_c = $nvme.temperature_c
+    $result.power_on_hours = $nvme.power_on_hours
+    $result.power_cycles = $nvme.power_cycles
+    $result.percentage_used = $nvme.percentage_used
+    $result.available_spare = $nvme.available_spare
+    $result.available_spare_threshold = $nvme.available_spare_threshold
+    $result.data_units_read = $nvme.data_units_read
+    $result.data_units_written = $nvme.data_units_written
+    $result.host_read_commands = $nvme.host_read_commands
+    $result.host_write_commands = $nvme.host_write_commands
+    $result.unsafe_shutdowns = $nvme.unsafe_shutdowns
+    $result.media_errors = $nvme.media_errors
+    $result.num_err_log_entries = $nvme.num_err_log_entries
+    $result.critical_warning = $nvme.critical_warning
+    $result.nvme = $true
+  } else {
+    $t = @($rel | Measure-Object -Property Temperature -Maximum)
+    $result.temperature_c = if ($t.Count -gt 0 -and $t.Maximum) { [math]::Round($t.Maximum) } else { $null }
+    $w = @($rel | Measure-Object -Property Wear -Maximum)
+    $result.wear = if ($w.Count -gt 0 -and $w.Maximum) { [math]::Round($w.Maximum, 1) } else { $null }
+    $ph = @($rel | Measure-Object -Property PowerOnHours -Sum)
+    $result.power_on_hours = if ($ph.Count -gt 0 -and $ph.Sum) { $ph.Sum } else { 0 }
+    $ru = @($rel | Measure-Object -Property ReadErrorsUncorrected -Sum)
+    $result.read_errors_uncorrected = if ($ru.Count -gt 0 -and $ru.Sum) { $ru.Sum } else { 0 }
+    $wu = @($rel | Measure-Object -Property WriteErrorsUncorrected -Sum)
+    $result.write_errors_uncorrected = if ($wu.Count -gt 0 -and $wu.Sum) { $wu.Sum } else { 0 }
+    $result.nvme = $false
+  }
+
+  $result | ConvertTo-Json -Compress
+  exit 0
+} catch {
+  Write-Output '{}'
+  exit 1
+}
+"#;
+        let ps_path = std::env::temp_dir().join("diskraptor_smart.ps1");
+        let _ = std::fs::write(&ps_path, ps.replace("__ID__", &device_id));
+        let out = win_powershell_file(&ps_path);
+        let _ = std::fs::remove_file(&ps_path);
+        if let Some(s) = out {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                if v.get("device_id").is_some() {
+                    let health = v.get("health").and_then(|x| x.as_i64()).unwrap_or(-1);
+                    let bus = v.get("bus").and_then(|x| x.as_i64()).unwrap_or(0);
+                    let interface = match bus {
+                        17 => "NVMe", 11 => "SATA", 10 => "SAS", 7 => "USB", 3 => "ATA",
+                        8 => "RAID", 9 => "iSCSI", 12 => "SD", 13 => "MMC", 18 => "SCM",
+                        _ => "Unknown",
+                    };
+                    let temp = v.get("temperature_c").and_then(|x| x.as_f64());
+                    let wear = v.get("wear").and_then(|x| x.as_f64());
+                    let powh = v.get("power_on_hours").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let cycles = v.get("power_cycles").and_then(|x| x.as_u64());
+                    let pct_used = v.get("percentage_used").and_then(|x| x.as_u64());
+                    let avail_spare = v.get("available_spare").and_then(|x| x.as_u64());
+                    let du_read = v.get("data_units_read").and_then(|x| x.as_u64());
+                    let du_written = v.get("data_units_written").and_then(|x| x.as_u64());
+                    let unsafe_shutdowns = v.get("unsafe_shutdowns").and_then(|x| x.as_u64());
+                    let media_errors = v.get("media_errors").and_then(|x| x.as_u64());
+                    let num_err = v.get("num_err_log_entries").and_then(|x| x.as_u64());
+                    let critical_warning = v.get("critical_warning").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let is_nvme = v.get("nvme").and_then(|x| x.as_bool()).unwrap_or(false);
+                    let read_u = v.get("read_errors_uncorrected").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let write_u = v.get("write_errors_uncorrected").and_then(|x| x.as_u64()).unwrap_or(0);
+
+                    let (score, status) = smart_health_from_attrs(health, wear, temp, read_u, write_u);
+
+                    let attributes: Vec<serde_json::Value> = if is_nvme {
+                        vec![
+                            serde_json::json!({"id":"01","name":"Critical Warning","current":critical_warning,"worst":null,"threshold":null,"raw":critical_warning.to_string(),"status":if critical_warning > 0 {"FAIL"} else {"OK"}}),
+                            serde_json::json!({"id":"02","name":"Temperature","current":temp.map(|t| t.round() as u64),"worst":null,"threshold":null,"raw":temp.map(|t| format!("{} C", t.round())).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                            serde_json::json!({"id":"03","name":"Available Spare","current":avail_spare,"worst":null,"threshold":null,"raw":avail_spare.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                            serde_json::json!({"id":"05","name":"Percentage Used","current":pct_used,"worst":null,"threshold":null,"raw":pct_used.map(|x| format!("{}%", x)).unwrap_or_else(|| "n/a".into()),"status":if pct_used.unwrap_or(0) >= 90 {"WARN"} else {"OK"}}),
+                            serde_json::json!({"id":"06","name":"Data Units Read","current":du_read,"worst":null,"threshold":null,"raw":du_read.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                            serde_json::json!({"id":"07","name":"Data Units Written","current":du_written,"worst":null,"threshold":null,"raw":du_written.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                            serde_json::json!({"id":"0b","name":"Power Cycles","current":cycles,"worst":null,"threshold":null,"raw":cycles.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                            serde_json::json!({"id":"0c","name":"Power On Hours","current":Some(powh),"worst":null,"threshold":null,"raw":powh.to_string(),"status":"OK"}),
+                            serde_json::json!({"id":"0d","name":"Unsafe Shutdowns","current":unsafe_shutdowns,"worst":null,"threshold":null,"raw":unsafe_shutdowns.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                            serde_json::json!({"id":"0e","name":"Media Errors","current":media_errors,"worst":null,"threshold":null,"raw":media_errors.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":if media_errors.unwrap_or(0) > 0 {"WARN"} else {"OK"}}),
+                            serde_json::json!({"id":"0f","name":"Num Err Log Entries","current":num_err,"worst":null,"threshold":null,"raw":num_err.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                        ]
+                    } else {
+                        vec![
+                            serde_json::json!({"id":"01","name":"Health Status","current":health,"worst":null,"threshold":null,"raw":health.to_string(),"status":if health == 0 {"OK"} else {"WARN"}}),
+                            serde_json::json!({"id":"02","name":"Temperature","current":temp.map(|t| t.round() as u64),"worst":null,"threshold":null,"raw":temp.map(|t| format!("{} C", t.round())).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                            serde_json::json!({"id":"03","name":"Wear Level","current":wear.map(|w| w.round() as u64),"worst":null,"threshold":null,"raw":wear.map(|w| format!("{}%", w.round())).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
+                            serde_json::json!({"id":"04","name":"Power On Hours","current":Some(powh),"worst":null,"threshold":null,"raw":powh.to_string(),"status":"OK"}),
+                            serde_json::json!({"id":"05","name":"Read Errors Uncorrected","current":Some(read_u),"worst":null,"threshold":null,"raw":read_u.to_string(),"status":if read_u > 0 {"WARN"} else {"OK"}}),
+                            serde_json::json!({"id":"06","name":"Write Errors Uncorrected","current":Some(write_u),"worst":null,"threshold":null,"raw":write_u.to_string(),"status":if write_u > 0 {"WARN"} else {"OK"}}),
+                        ]
+                    };
+
+                    return JsonResult::ok(serde_json::json!({
+                        "device_id": v["device_id"].as_str().unwrap_or(&device_id),
+                        "friendly_name": v["friendly_name"].as_str().unwrap_or(""),
+                        "model": v["model"].as_str().unwrap_or(""),
+                        "serial": v["serial"].as_str().unwrap_or(""),
+                        "firmware": v["firmware"].as_str().unwrap_or(""),
+                        "interface": interface,
+                        "media_type": v["media_type"].as_i64().unwrap_or(-1),
+                        "capacity": v["size"].as_u64().unwrap_or(0),
+                        "health": health,
+                        "score": score,
+                        "status": status,
+                        "temperature_c": temp,
+                        "wear": wear,
+                        "power_on_hours": powh,
+                        "power_cycles": cycles,
+                        "percentage_used": pct_used,
+                        "available_spare": avail_spare,
+                        "media_errors": media_errors,
+                        "read_errors_uncorrected": read_u,
+                        "write_errors_uncorrected": write_u,
+                        "attributes": attributes,
+                        "source": if is_nvme { "nvme" } else { "wmi" },
+                    }));
+                }
+            }
+        }
+        JsonResult::err("S.M.A.R.T. data not available for this disk")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(s) = run_output("smartctl", &["-j", "-a", &format!("/dev/{}", device_id)]) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                if let Some(r) = smart_from_smartctl(&v, &device_id) {
+                    return JsonResult::ok(r);
+                }
+            }
+        }
+        JsonResult::err("S.M.A.R.T. data not available (is smartmontools installed?)")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(s) = run_output("smartctl", &["-j", "-a", &device_id]) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                if let Some(r) = smart_from_smartctl(&v, &device_id) {
+                    return JsonResult::ok(r);
+                }
+            }
+        }
+        JsonResult::err("S.M.A.R.T. data not available (is smartmontools installed?)")
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        JsonResult::err("Unsupported platform")
+    }
+}
+
 #[tauri::command]
 fn get_memory_info() -> JsonResult {
     let mut sys = sysinfo::System::new();
@@ -657,6 +1128,8 @@ fn build_native_menu<R: tauri::Runtime>(
         MenuItem::with_id(app, "empty_folders", "Empty Folders…", true, None::<&str>)?;
     let cleanup_dl =
         MenuItem::with_id(app, "cleanup_downloads", "Downloads Cleanup", true, None::<&str>)?;
+    let smart_tools =
+        MenuItem::with_id(app, "smart_tools", "S.M.A.R.T. Tools…", true, None::<&str>)?;
     let find_dupes =
         MenuItem::with_id(app, "find_duplicates", "Find Duplicate Files…", true, Some("CmdOrCtrl+D"))?;
     let export_html =
@@ -676,6 +1149,7 @@ fn build_native_menu<R: tauri::Runtime>(
             &find_files,
             &empty_folders,
             &cleanup_dl,
+            &smart_tools,
             &find_dupes,
             &PredefinedMenuItem::separator(app)?,
             &export_html,
@@ -742,6 +1216,7 @@ fn handle_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str) {
         "find_files" => click(".tools-item[data-action='find-files']"),
         "empty_folders" => click(".tools-item[data-action='empty-folders']"),
         "cleanup_downloads" => click(".tools-item[data-action='cleanup-downloads']"),
+        "smart_tools" => click(".tools-item[data-action='smart-tools']"),
         "find_duplicates" => click("#btn-duplicates"),
         "export_html" => click(".tools-item[data-action='export-html']"),
         "preferences" => click(".tools-item[data-action='settings']"),
@@ -824,6 +1299,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             start_scan, get_scan_progress, get_scan_result,
             get_chunk, cancel_scan, release_scan, get_stats,
             save_settings, load_settings,
+            list_disks, get_smart_status,
             __cdp_result,
         ])
         .run(tauri::generate_context!())

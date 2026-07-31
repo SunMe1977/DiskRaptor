@@ -127,11 +127,11 @@ if exist "%MAKENSIS%" (
     cd /d "%~dp0installer\nsis"
     "%MAKENSIS%" DiskRaptor.nsi
     if %ERRORLEVEL% equ 0 (
-        copy DiskRaptor_*.exe "%~dp0dist\" >nul
+        copy DiskRaptor-*.exe "%~dp0dist\" >nul
         echo  OK - NSIS installer created
         if defined SIGNTOOL (
             echo  [SIGN] Signing installer...
-            "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\DiskRaptor_*.exe"
+            "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\DiskRaptor-*.exe"
             echo  OK - Installer signed
         )
     ) else (
