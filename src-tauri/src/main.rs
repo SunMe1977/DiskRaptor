@@ -40,6 +40,7 @@ struct ScanResultData {
 struct AppState {
     scan: ScanState,
     settings_path: Mutex<std::path::PathBuf>,
+    smart_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, JsonResult)>>,
 }
 
 // ── Helper types ──
@@ -62,6 +63,9 @@ impl JsonResult {
     }
     fn err(msg: impl Into<String>) -> Self {
         Self { success: false, data: None, error: Some(msg.into()) }
+    }
+    fn clone(&self) -> Self {
+        Self { success: self.success, data: self.data.clone(), error: self.error.clone() }
     }
 }
 
@@ -211,6 +215,16 @@ fn run_output(cmd: &str, args: &[&str]) -> Option<String> {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn run_smartctl_linux(device_id: &str) -> Option<String> {
+    // Direct call first (works when user has disk access / is root).
+    if let Some(s) = run_output("smartctl", &["-j", "-a", &format!("/dev/{}", device_id)]) {
+        return Some(s);
+    }
+    // Fall back to pkexec so the polkit dialog elevates smartctl once.
+    run_output("pkexec", &["smartctl", "-j", "-a", &format!("/dev/{}", device_id)])
+}
+
 /// Normalize smartmontools JSON (`smartctl -j -a`) into a common report shape.
 fn smart_from_smartctl(v: &serde_json::Value, device_id: &str) -> Option<serde_json::Value> {
     let model = v.pointer("/model_name").and_then(|x| x.as_str()).unwrap_or(device_id).to_string();
@@ -223,6 +237,12 @@ fn smart_from_smartctl(v: &serde_json::Value, device_id: &str) -> Option<serde_j
     let capacity = v.pointer("/user_capacity/bytes").and_then(|x| x.as_u64()).unwrap_or(0);
 
     let mut attributes: Vec<serde_json::Value> = Vec::new();
+
+    // Devices that report no SMART support (e.g. virtualized SCSI disks)
+    // still expose model/capacity/interface — return a report that says
+    // "not supported" instead of fabricating a health score.
+    let support_available = v.pointer("/smart_support/available").and_then(|x| x.as_bool());
+    let unsupported = support_available == Some(false) && !dev_type.contains("nvme");
 
     if dev_type.contains("nvme") {
         let nvme_fields: &[(&str, &str)] = &[
@@ -271,13 +291,20 @@ fn smart_from_smartctl(v: &serde_json::Value, device_id: &str) -> Option<serde_j
         }
     }
 
-    let (score, status) = if passed { (100u64, "Healthy") } else { (30u64, "Critical") };
+    let (score, status) = if unsupported {
+        (0u64, "Not Supported")
+    } else if passed {
+        (100u64, "Healthy")
+    } else {
+        (30u64, "Critical")
+    };
     Some(serde_json::json!({
         "device_id": device_id,
         "model": model, "serial": serial, "firmware": firmware,
         "interface": dev_type.to_uppercase(),
         "capacity": capacity,
         "score": score, "status": status,
+        "smart_supported": !unsupported,
         "temperature_c": temp,
         "power_on_hours": powh,
         "attributes": attributes,
@@ -310,6 +337,11 @@ fn smart_health_from_attrs(health: i64, wear: Option<f64>, temp: Option<f64>, re
 }
 
 #[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
 fn list_disks() -> JsonResult {
     #[cfg(target_os = "windows")]
     {
@@ -336,19 +368,22 @@ fn list_disks() -> JsonResult {
     }
     #[cfg(target_os = "linux")]
     {
-        if let Some(s) = run_output("lsblk", &["-J", "-d", "-o", "NAME,MODEL,SIZE,TRAN,SERIAL"]) {
+        if let Some(s) = run_output("lsblk", &["-J", "-b", "-d", "-o", "NAME,MODEL,SIZE,TRAN,SERIAL,TYPE"]) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
                 if let Some(devs) = v.pointer("/blockdevices") {
-                    let arr: Vec<serde_json::Value> = devs.as_array().map(|a| a.iter().map(|d| {
-                        let trans = d["TRAN"].as_str().unwrap_or("").to_lowercase();
-                        serde_json::json!({
-                            "id": d["NAME"].as_str().unwrap_or(""),
-                            "name": d["MODEL"].as_str().unwrap_or(""),
+                    let arr: Vec<serde_json::Value> = devs.as_array().map(|a| a.iter().filter_map(|d| {
+                        let dev_type = d["type"].as_str().unwrap_or("");
+                        let name = d["name"].as_str().unwrap_or("");
+                        if dev_type != "disk" || name.starts_with("fd") { return None; }
+                        let trans = d["tran"].as_str().unwrap_or("").to_lowercase();
+                        Some(serde_json::json!({
+                            "id": d["name"].as_str().unwrap_or(""),
+                            "name": d["model"].as_str().unwrap_or(""),
                             "media_type": if trans.contains("nvme") || trans.contains("ssd") { 4 } else { 3 },
-                            "size": d["SIZE"].as_str().unwrap_or(""),
-                            "serial": d["SERIAL"].as_str().unwrap_or(""),
+                            "size": d["size"].as_u64().unwrap_or(0),
+                            "serial": d["serial"].as_str().unwrap_or(""),
                             "is_linux_device": true,
-                        })
+                        }))
                     }).collect()).unwrap_or_default();
                     return JsonResult::ok(serde_json::json!(arr));
                 }
@@ -387,7 +422,7 @@ fn list_disks() -> JsonResult {
 }
 
 #[tauri::command]
-fn get_smart_status(device_id: String) -> JsonResult {
+fn get_smart_status(state: State<AppState>, device_id: String) -> JsonResult {
     #[cfg(target_os = "windows")]
     {
         // 1) Prefer smartmontools for a full CrystalDiskInfo-style report.
@@ -618,14 +653,38 @@ public static class NvmeSmart {
     }
     #[cfg(target_os = "linux")]
     {
-        if let Some(s) = run_output("smartctl", &["-j", "-a", &format!("/dev/{}", device_id)]) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                if let Some(r) = smart_from_smartctl(&v, &device_id) {
-                    return JsonResult::ok(r);
+        // Cache pkexec results (success AND failure) for 5 minutes so we
+        // don't prompt for the admin password on every scan.
+        const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+        {
+            let cache = state.smart_cache.lock().unwrap();
+            if let Some((when, cached)) = cache.get(&device_id) {
+                if when.elapsed() < CACHE_TTL {
+                    return cached.clone();
                 }
             }
         }
-        JsonResult::err("S.M.A.R.T. data not available (is smartmontools installed?)")
+        let result = if let Some(s) = run_smartctl_linux(&device_id) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                smart_from_smartctl(&v, &device_id)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let out = match result {
+            Some(r) => JsonResult::ok(r),
+            None => JsonResult::err(
+                "S.M.A.R.T. data not available (is smartmontools installed, and does this disk support SMART?)",
+            ),
+        };
+        state
+            .smart_cache
+            .lock()
+            .unwrap()
+            .insert(device_id.clone(), (std::time::Instant::now(), out.clone()));
+        out
     }
     #[cfg(target_os = "macos")]
     {
@@ -995,9 +1054,18 @@ fn parse_cdp_value(v: &str) -> serde_json::Value {
 #[tauri::command]
 fn save_settings(state: State<AppState>, settings: serde_json::Value) -> JsonResult {
     let path = state.settings_path.lock().unwrap().clone();
-    if let Ok(json) = serde_json::to_string_pretty(&settings) {
-        if std::fs::write(&path, &json).is_ok() {
-            return JsonResult::ok_empty();
+    let mut merged = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let (Some(obj), Some(updates)) = (merged.as_object_mut(), settings.as_object()) {
+        for (k, v) in updates {
+            obj.insert(k.clone(), v.clone());
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&merged) {
+            if std::fs::write(&path, &json).is_ok() {
+                return JsonResult::ok_empty();
+            }
         }
     }
     JsonResult::err("Failed to save settings")
@@ -1138,6 +1206,7 @@ fn build_native_menu<R: tauri::Runtime>(
         MenuItem::with_id(app, "preferences", "Preferences…", true, None::<&str>)?;
     let clear_scan = MenuItem::with_id(app, "clear_scan", "Clear Scan", true, None::<&str>)?;
     let empty_trash = MenuItem::with_id(app, "empty_trash", "Empty Trash…", true, None::<&str>)?;
+    let exit_app_item = MenuItem::with_id(app, "menu_exit", "Exit", true, Some("CmdOrCtrl+Q"))?;
     let tools_submenu = Submenu::with_items(
         app,
         "Tools",
@@ -1157,6 +1226,8 @@ fn build_native_menu<R: tauri::Runtime>(
             &clear_scan,
             &PredefinedMenuItem::separator(app)?,
             &empty_trash,
+            &PredefinedMenuItem::separator(app)?,
+            &exit_app_item,
         ],
     )?;
 
@@ -1222,6 +1293,10 @@ fn handle_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str) {
         "preferences" => click(".tools-item[data-action='settings']"),
         "clear_scan" => click(".tools-item[data-action='clear-scan']"),
         "empty_trash" => click(".tools-item[data-action='trash']"),
+        "menu_exit" => {
+            app.exit(0);
+            return;
+        }
         "check_updates" => run("if(window.__checkUpdate)window.__checkUpdate();"),
         "settings" => run("var s=document.getElementById('settings-overlay');if(s)s.style.display='flex';"),
         "about" | "about_help" => run("var o=document.getElementById('about-overlay');if(o)o.classList.add('active');"),
@@ -1260,6 +1335,7 @@ fn main() {
                 errors: Mutex::new(Vec::new()),
             },
             settings_path: Mutex::new(settings_path),
+            smart_cache: Mutex::new(std::collections::HashMap::new()),
         })
         .setup(|app| {
             let port: u16 = std::env::var("DISKraptor_CDP_PORT")
@@ -1299,7 +1375,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             start_scan, get_scan_progress, get_scan_result,
             get_chunk, cancel_scan, release_scan, get_stats,
             save_settings, load_settings,
-            list_disks, get_smart_status,
+            list_disks, get_smart_status, exit_app,
             __cdp_result,
         ])
         .run(tauri::generate_context!())

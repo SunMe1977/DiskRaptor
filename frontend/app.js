@@ -75,7 +75,7 @@
       try {
         const o = {};
         o[key] = val;
-        await window.__TAURI__.invoke("save_settings", o);
+        await window.__TAURI__.invoke("save_settings", { settings: o });
       } catch (e) {}
     };
     const getSetting = window.app.getSetting;
@@ -156,9 +156,20 @@
     // ── Welcome placeholder ──────────────────────────────
     const welcomeEl = document.getElementById("welcome-placeholder");
     const welcomeClose = document.getElementById("welcome-close");
+    const welcomeDont = document.getElementById("welcome-dont-show");
     const welcomeScanBtn = document.getElementById("welcome-scan-btn");
     const welcomeBrowseBtn = document.getElementById("welcome-browse-btn");
     const welcomeAboutBtn = document.getElementById("welcome-about-btn");
+
+    // ── Exit button (toolbar) ────────────────────────────
+    const btnExit = document.getElementById("btn-exit");
+    if (btnExit) {
+      btnExit.addEventListener("click", function () {
+        window.__TAURI__
+          .invoke("exit_app")
+          .catch(function (e) { console.warn("Exit failed:", e); });
+      });
+    }
 
     function hideWelcome() {
       if (welcomeEl) welcomeEl.classList.add("hidden");
@@ -169,8 +180,22 @@
     }
 
     if (welcomeClose) {
-      welcomeClose.addEventListener("click", hideWelcome);
+      welcomeClose.addEventListener("click", function () {
+        if (welcomeDont && welcomeDont.checked) {
+          window.__TAURI__
+            .invoke("save_settings", { settings: { welcome_dismissed: true } })
+            .catch(function () {});
+        }
+        hideWelcome();
+      });
     }
+
+    (async function () {
+      try {
+        const s = await window.__TAURI__.invoke("load_settings", {});
+        if (s && s.welcome_dismissed) hideWelcome();
+      } catch (e) {}
+    })();
 
     if (welcomeScanBtn) {
       welcomeScanBtn.addEventListener("click", function () {

@@ -18,7 +18,7 @@
           tipOv.style.display = "none";
           if (tipDont && tipDont.checked) {
             window.__TAURI__
-              .invoke("save_settings", { tips_dismissed: true })
+              .invoke("save_settings", { settings: { tips_dismissed: true } })
               .catch(function () {});
           }
         };
@@ -36,7 +36,7 @@
           const defPath = document.getElementById("settings-default-path")?.value || "";
           const selTheme = document.getElementById("settings-theme")?.value || "auto";
           await window.__TAURI__
-            .invoke("save_settings", { default_scan_path: defPath, theme: selTheme })
+            .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme } })
             .catch(function () {});
           if (selTheme === "light") document.body.classList.add("light-theme");
           else if (selTheme === "dark") document.body.classList.remove("light-theme");

@@ -41,6 +41,8 @@
                 <div class="tools-dropdown-wrap">
                     <button id="btn-tools" class="icon-btn" title="Tools">🔧 <span class="btn-label">Tools</span></button>
                     <div id="tools-menu" class="tools-dropdown">
+                        <div class="tools-item" data-action="exit" title="Close DiskRaptor">⏻ Exit</div>
+                        <div class="tools-sep"></div>
                         <div class="tools-item" data-action="scan-downloads" data-i18n="tools.scan_downloads">📥 Scan Downloads</div>
                         <div class="tools-item" data-action="scan-trash" data-i18n="tools.scan_trash">🗑️ Scan Trash</div>
                         <div class="tools-item" data-action="trash-recovery">♻️ Trash Recovery</div>
@@ -74,6 +76,7 @@
                 >
                     ☾
                 </button>
+                <button id="btn-exit" class="icon-btn" title="Exit DiskRaptor" style="color:#f85149;font-weight:700;">⏻</button>
             </div>
         </header>
 
@@ -118,6 +121,9 @@
                             <div style="margin-top:2px;font-size:11px;color:var(--text-muted);">:==)</div>
                         </div>
                         <button class="welcome-close" id="welcome-close" title="Close" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:16px;cursor:pointer;padding:4px 8px;">✖</button>
+                        <label style="display:block;margin-top:16px;font-size:12px;color:var(--text-muted);cursor:pointer;user-select:none;">
+                            <input type="checkbox" id="welcome-dont-show" style="vertical-align:middle;margin-right:4px;" /> Don't show again
+                        </label>
                     </div>
                 </div>
 

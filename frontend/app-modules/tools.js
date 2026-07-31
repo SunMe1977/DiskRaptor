@@ -381,6 +381,12 @@
         setTimeout(function () {
           item.textContent = "\uD83D\uDDD1\uFE0F Empty Trash";
         }, 3000);
+      } else if (action === "exit") {
+        try {
+          await window.__TAURI__.invoke("exit_app");
+        } catch (e) {
+          console.warn("Exit failed:", e);
+        }
       }
     });
   };
@@ -462,7 +468,9 @@
             (d.name || "Disk " + d.id) + (sizeStr ? " \u2014 " + sizeStr : "");
           select.appendChild(opt);
         });
+        select.value = String(disks[0].id);
         scanBtn.disabled = false;
+        statusEl.textContent = "Select a drive and press Scan Health.";
       })
       .catch(function (e) {
         select.innerHTML = '<option value="">Error</option>';
@@ -507,7 +515,10 @@
         return;
       }
       const attrs = Array.isArray(r.attributes) ? r.attributes : [];
-      const statusTxt = r.status || (Number(r.score) >= 85 ? "Healthy" : Number(r.score) >= 55 ? "Warning" : "Critical");
+      const unsupported = r.smart_supported === false || r.status === "Not Supported";
+      const statusTxt = unsupported
+        ? "S.M.A.R.T. Not Supported"
+        : r.status || (Number(r.score) >= 85 ? "Healthy" : Number(r.score) >= 55 ? "Warning" : "Critical");
       const low = statusTxt.toLowerCase();
       const bannerCls = low === "warning" ? "warn" : low === "critical" || low === "unhealthy" ? "crit" : "";
       const tempStr = r.temperature_c != null ? Math.round(r.temperature_c) + "\u00B0C" : "\u2014";
@@ -613,30 +624,36 @@
         "</table></div>";
 
       statusEl.className = "smart-status";
-      const missingAttrs =
-        r.temperature_c == null && (r.wear == null || r.percentage_used == null);
-      if (r.source === "wmi" && missingAttrs) {
+      if (unsupported) {
         statusEl.innerHTML =
-          "Basic health report only. Run as administrator for the full S.M.A.R.T. attribute table (temperature, power cycles, percentage used). " +
-          '<button class="smart-admin-btn" id="smart-admin-btn">Run as Administrator</button>';
-        const ab = document.getElementById("smart-admin-btn");
-        if (ab) {
-          ab.onclick = function () {
-            ab.disabled = true;
-            ab.textContent = "Restarting\u2026";
-            window.__TAURI__
-              .invoke("restart_as_admin", {})
-              .catch(function () {
-                ab.disabled = false;
-                ab.textContent = "Run as Administrator";
-              });
-          };
-        }
-      } else if (r.source === "wmi") {
-        statusEl.textContent =
-          "Health status retrieved from WMI. Install smartmontools for the full CrystalDiskInfo-style table.";
+          "This drive does not expose S.M.A.R.T. data (common for virtualized/SCSI disks). " +
+          "Basic identification shown below.";
       } else {
-        statusEl.textContent = "Scan complete.";
+        const missingAttrs =
+          r.temperature_c == null && (r.wear == null || r.percentage_used == null);
+        if (r.source === "wmi" && missingAttrs) {
+          statusEl.innerHTML =
+            "Basic health report only. Run as administrator for the full S.M.A.R.T. attribute table (temperature, power cycles, percentage used). " +
+            '<button class="smart-admin-btn" id="smart-admin-btn">Run as Administrator</button>';
+          const ab = document.getElementById("smart-admin-btn");
+          if (ab) {
+            ab.onclick = function () {
+              ab.disabled = true;
+              ab.textContent = "Restarting\u2026";
+              window.__TAURI__
+                .invoke("restart_as_admin", {})
+                .catch(function () {
+                  ab.disabled = false;
+                  ab.textContent = "Run as Administrator";
+                });
+            };
+          }
+        } else if (r.source === "wmi") {
+          statusEl.textContent =
+            "Health status retrieved from WMI. Install smartmontools for the full CrystalDiskInfo-style table.";
+        } else {
+          statusEl.textContent = "Scan complete.";
+        }
       }
     }
   }

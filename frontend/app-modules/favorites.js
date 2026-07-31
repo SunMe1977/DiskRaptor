@@ -15,7 +15,7 @@
 
     async function saveFavorites() {
       await window.__TAURI__
-        .invoke("save_settings", { favorites: favorites })
+        .invoke("save_settings", { settings: { favorites: favorites } })
         .catch(function () {});
     }
 

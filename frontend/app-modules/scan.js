@@ -57,7 +57,7 @@
               )
               .slice(0, 10);
             await window.__TAURI__.invoke("save_settings", {
-              scan_history: hist,
+              settings: { scan_history: hist },
             });
           }
         } catch (e) {}

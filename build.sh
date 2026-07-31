@@ -543,7 +543,7 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libc6 (>= 2.31), libstdc++6 (>= 10), libgcc-s1 (>= 10), libwebkit2gtk-4.1-0, libgtk-3-0, libayatana-appindicator3-1, librsvg2-2
+Depends: libc6 (>= 2.31), libstdc++6 (>= 10), libgcc-s1 (>= 10), libwebkit2gtk-4.1-0, libgtk-3-0, libayatana-appindicator3-1, librsvg2-2, smartmontools
 Maintainer: DiskRaptor Team
 Description: Ultra-fast disk space analyzer with virtual tree view, pie chart, and live progress.
  Scans millions of files using a parallel Rust engine.
