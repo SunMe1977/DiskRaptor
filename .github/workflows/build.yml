@@ -86,7 +86,7 @@ jobs:
           Get-ChildItem installer\nsis\DiskRaptor-*.exe | ForEach-Object {
             & $signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "$($_.FullName)"
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiskRaptor-windows-x64
           path: |
@@ -137,7 +137,7 @@ jobs:
           }
           Copy-Item qt-app\build\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue
           Compress-Archive -Path dist\* -DestinationPath DiskRaptor-windows-arm64.zip -Force
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiskRaptor-windows-arm64
           path: DiskRaptor-windows-arm64.zip
@@ -196,7 +196,7 @@ jobs:
           fi
           cd dist && zip -r "$GITHUB_WORKSPACE/DiskRaptor-macos-x64.zip" DiskRaptor.app && cd ..
           echo "=== Workspace contents ===" && ls -la "$GITHUB_WORKSPACE/" && echo "=== dist contents ===" && ls -la dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiskRaptor-macos-x64
           path: |
@@ -257,7 +257,7 @@ jobs:
           fi
           cd dist && zip -r "$GITHUB_WORKSPACE/DiskRaptor-macos-arm64.zip" DiskRaptor.app && cd ..
           echo "=== Workspace contents ===" && ls -la "$GITHUB_WORKSPACE/" && echo "=== dist contents ===" && ls -la dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiskRaptor-macos-arm64
           path: |
@@ -318,7 +318,7 @@ jobs:
           mkdir -p deb/usr/lib/diskraptor
           [ -d dist/lib ] && cp -r dist/lib/*.so* deb/usr/lib/diskraptor/ 2>/dev/null || true
           fakeroot dpkg-deb --build deb "DiskRaptor-${VERSION}-linux-amd64.deb"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiskRaptor-linux-x64
           path: |
@@ -379,7 +379,7 @@ jobs:
           mkdir -p deb/usr/lib/diskraptor
           [ -d dist/lib ] && cp -r dist/lib/*.so* deb/usr/lib/diskraptor/ 2>/dev/null || true
           fakeroot dpkg-deb --build deb "DiskRaptor-${VERSION}-linux-arm64.deb"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DiskRaptor-linux-arm64
           path: |
