@@ -1,9 +1,9 @@
 // DiskRaptor Test Data Generator
 // Creates empty files at maximum speed for scan performance testing.
-// Usage: cargo run --release --bin gen-testdata [FILE_COUNT]
+// Usage: cargo run --release --example gen-testdata [FILE_COUNT]
 //
 // Default: 1.000.000 files
-// For 100M: cargo run --release --bin gen-testdata 100000000
+// For 100M: cargo run --release --example gen-testdata 100000000
 // Warning: 100M files takes ~2-3 hours and ~100GB of metadata space.
 
 use std::fs;

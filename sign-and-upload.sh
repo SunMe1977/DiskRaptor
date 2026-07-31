@@ -23,6 +23,7 @@ detect_identity() {
 
 CERT="${SIGNING_IDENTITY:-$(detect_identity '3rd Party Mac Developer Application' codesigning)}"
 INSTALLER_CERT="${INSTALLER_IDENTITY:-$(detect_identity '3rd Party Mac Developer Installer' basic)}"
+BUNDLE_ID="${BUNDLE_ID:-diskraptor}"
 
 if [ -z "$CERT" ]; then
   echo "ERROR: No '3rd Party Mac Developer Application' certificate found."
@@ -94,6 +95,8 @@ rm -rf "dist-mas" 2>/dev/null; mkdir -p "dist-mas"
 cp -R "$APP" "$APP_DST"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP_DST/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP_DST/Contents/Info.plist"
+plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$APP_DST/Contents/Info.plist"
+echo "  Bundle ID: $BUNDLE_ID"
 
 SIGN_FP=$(security find-certificate -c "3rd Party Mac Developer Application" -p 2>/dev/null | openssl x509 -inform pem -sha1 -fingerprint -noout 2>/dev/null)
 find_profile() {
@@ -139,7 +142,7 @@ echo "[6] Sign main app..."
 codesign --force --options=runtime --entitlements "$ENT" --sign "$CERT" --keychain "$KC" "$APP_DST"
 
 echo "[7] Create signed PKG..."
-productbuild --component "$APP_DST" /Applications --sign "$INSTALLER_CERT" --keychain "$KC" --identifier "diskraptor" --version "$VERSION" "$PKG"
+productbuild --component "$APP_DST" /Applications --sign "$INSTALLER_CERT" --keychain "$KC" --identifier "$BUNDLE_ID" --version "$VERSION" "$PKG"
 
 echo "[8] Upload..."
 API_KEY="${APPLE_API_KEY:-${APPLE_API_KEY_ID:-PAWX8HDNG4}}"
