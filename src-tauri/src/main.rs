@@ -2146,7 +2146,7 @@ fn main() {
             settings_path: Mutex::new(settings_path),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
         })
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(all(feature = "test-server", debug_assertions))]
             {
                 let port: u16 = std::env::var("DISKraptor_CDP_PORT")
@@ -2154,7 +2154,7 @@ fn main() {
                 if port > 0 {
                     // Inject test DOM structure into main window for tests.
                     // Disabled in release builds to avoid shipping test-only behavior.
-                    if let Some(w) = app.get_webview_window("main") {
+                    if let Some(w) = _app.get_webview_window("main") {
                         let inject_dom = r#"function _cdpI(){
 var b=document.body||document.documentElement;
 if(!b)return setTimeout(_cdpI,50);
@@ -2166,7 +2166,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
                         let _ = w.eval(inject_dom);
                     }
 
-                    let handle = app.handle().clone();
+                    let handle = _app.handle().clone();
                     std::thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(cdp_server(port, handle));
@@ -2175,8 +2175,8 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             }
             #[cfg(target_os = "windows")]
             {
-                if let Some(win) = app.get_webview_window("main") {
-                    if let Ok(menu) = build_native_menu(app.handle()) {
+                if let Some(win) = _app.get_webview_window("main") {
+                    if let Ok(menu) = build_native_menu(_app.handle()) {
                         let _ = win.set_menu(menu);
                     }
                 }
