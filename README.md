@@ -96,6 +96,18 @@ Pre-built binaries are available on the [Releases](https://github.com/SunMe1977/
 | **Windows** | `.exe` (NSIS Installer) |
 | **Linux** | `.deb` (Debian/Ubuntu) |
 
+### Homebrew (macOS & Linux)
+
+Install the cask directly from a local checkout:
+
+```bash
+git clone https://github.com/SunMe1977/DiskRaptor.git
+cd DiskRaptor
+brew install --cask ./Casks/diskraptor.rb
+```
+
+The cask installs the `.dmg` (macOS) or `.deb` (Linux) from the [Releases](https://github.com/SunMe1977/DiskRaptor/releases) page.
+
 ---
 
 ## Build from Source
