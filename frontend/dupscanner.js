@@ -181,11 +181,12 @@ class DupScanner {
     toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);flex-wrap:wrap;gap:6px;";
     toolbar.innerHTML = `
       <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete \u00B7 <span style="color:var(--accent-red);">${this._fmtSize(data.wastedBytes || 0)} reclaimable</span></span>
-      <span style="display:flex;gap:6px;">
+      <span style="display:flex;gap:6px;align-items:center;">
         <button id="dup-select-none" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select None</button>
         <button id="dup-select-all" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select All</button>
         <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,var(--accent-red));border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 <span data-i18n="action.move_selected_to_trash">Move Selected to Trash</span></button>
       </span>
+      <div id="dup-delete-progress" style="display:none;flex-basis:100%;height:6px;border-radius:4px;background:var(--bg-tertiary);overflow:hidden;margin-top:6px;"><div id="dup-delete-progress-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#da3633,#f85149);transition:width 0.2s;"></div></div>
     `;
     list.appendChild(toolbar);
 
@@ -367,6 +368,9 @@ class DupScanner {
       const delBtn = document.getElementById("dup-delete-btn");
       delBtn.disabled = true;
       delBtn.textContent = "Moving to Trash...";
+      const progWrap = document.getElementById("dup-delete-progress");
+      const progFill = document.getElementById("dup-delete-progress-fill");
+      if (progWrap) progWrap.style.display = "block";
 
       const BATCH = 10;
       let done = 0;
@@ -385,9 +389,11 @@ class DupScanner {
         });
         done += batch.length;
         delBtn.textContent = "Moving " + Math.min(done, toDelete.length) + "/" + toDelete.length + "...";
+        if (progFill) progFill.style.width = Math.round((done / toDelete.length) * 100) + "%";
         await deleteBatch(start + BATCH);
       }
       deleteBatch(0).then(function () {
+        if (progWrap) { progWrap.style.display = "none"; if (progFill) progFill.style.width = "0%"; }
         if (failed > 0) {
           delBtn.textContent = "\u26A0 " + done + " moved, " + failed + " failed";
         } else {

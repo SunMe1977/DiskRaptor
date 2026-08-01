@@ -270,6 +270,9 @@
         let zeroCount = 0;
         let scanDone = false;
         let scanError = null;
+        let emaRate = 0;
+        let uiRaf = null;
+        let pendingUi = null;
 
         let _lastProgressRender = 0;
         function onProgress(p) {
@@ -339,70 +342,77 @@
                 : mbPerSec > 30
                   ? "#d29922"
                   : "#8b949e";
-            speedSamples.push({ fps: filesPerSec, bps: bytesPerSec });
-            if (speedSamples.length > maxSamples) speedSamples.shift();
-            drawSpeedChart();
           } else {
             progressSpeedValEl.textContent = "\u2014";
             progressSpeedValEl.style.color = "#8b949e";
           }
 
-          const pctBar = document.getElementById("progress-pct-bar");
-          const pctText = document.getElementById("progress-pct-text");
-          if (pctBar && pctText) {
-            const pct = Math.min(
-              95,
-              Math.max(
-                1,
-                elapsedSecs > 5
-                  ? Math.min(
-                      95,
-                      (filesFound / Math.max(1, filesFound + dirsFound)) *
-                        50 +
-                        (elapsedSecs / 1200) * 50,
-                    )
-                  : (filesFound / 5000) * 20,
-              ),
-            );
-            pctBar.style.width = pct + "%";
-            pctText.textContent = Math.round(pct) + "%";
+          // EMA-smoothed scan rate for a stable ETA (less wild fluctuation).
+          const instRate = elapsedSecs > 0 ? filesFound / elapsedSecs : 0;
+          if (instRate > 0) {
+            emaRate = emaRate === 0 ? instRate : emaRate * 0.8 + instRate * 0.2;
           }
 
-          if (elapsedSecs > 5 && filesFound > 100 && filesFound > prevFilesFound) {
-            const rate = filesFound / elapsedSecs;
-            let remaining =
-              prevFilesFound > 0 && filesFound > prevFilesFound
-                ? (filesFound *
-                    (filesFound / Math.max(1, filesFound - prevFilesFound) -
-                      1)) /
-                  rate
-                : 0;
-            remaining = Math.max(0, Math.min(36000, remaining));
-            if (!isFinite(remaining) || isNaN(remaining)) remaining = 0;
-            const etaM = Math.floor(remaining / 60);
-            const etaS = Math.floor(remaining % 60);
-            const etaEl = document.getElementById("progress-eta-val");
-            if (etaEl)
-              etaEl.textContent =
-                (etaM < 10 ? "0" : "") +
-                etaM +
-                ":" +
-                (etaS < 10 ? "0" : "") +
-                etaS;
+          // Throttle the expensive UI updates (speed chart, % bar, ETA, stats
+          // panel) to once per animation frame so millions of progress events
+          // don't overwhelm the renderer.
+          pendingUi = { filesFound: filesFound, dirsFound: dirsFound, bytesFound: bytesFound, elapsedSecs: elapsedSecs };
+          if (!uiRaf) {
+            uiRaf = requestAnimationFrame(function () {
+              uiRaf = null;
+              const u = pendingUi;
+              pendingUi = null;
+              if (!u) return;
+              if (u.elapsedSecs > 0 && u.filesFound > 0) {
+                const fps = u.filesFound / u.elapsedSecs;
+                const bps = u.bytesFound / u.elapsedSecs;
+                speedSamples.push({ fps: fps, bps: bps });
+                if (speedSamples.length > maxSamples) speedSamples.shift();
+                drawSpeedChart();
+              }
+              const pctBar = document.getElementById("progress-pct-bar");
+              const pctText = document.getElementById("progress-pct-text");
+              if (pctBar && pctText) {
+                const pct = Math.min(95, Math.max(1, u.elapsedSecs > 5
+                  ? Math.min(95, (u.filesFound / Math.max(1, u.filesFound + u.dirsFound)) * 50 + (u.elapsedSecs / 1200) * 50)
+                  : (u.filesFound / 5000) * 20));
+                pctBar.style.width = pct + "%";
+                pctText.textContent = Math.round(pct) + "%";
+              }
+              const ratio = u.filesFound / Math.max(1, u.filesFound + u.dirsFound);
+              if (u.elapsedSecs > 5 && ratio > 0 && emaRate > 0) {
+                const projectedTotal = u.filesFound / ratio;
+                const filesLeft = Math.max(0, projectedTotal - u.filesFound);
+                const remaining = Math.max(0, Math.min(36000, filesLeft / emaRate));
+                if (isFinite(remaining) && !isNaN(remaining)) {
+                  const etaM = Math.floor(remaining / 60);
+                  const etaS = Math.floor(remaining % 60);
+                  const etaEl = document.getElementById("progress-eta-val");
+                  if (etaEl)
+                    etaEl.textContent =
+                      (etaM < 10 ? "0" : "") + etaM + ":" + (etaS < 10 ? "0" : "") + etaS;
+                }
+              }
+              statsPanel.updateLive(u.filesFound, u.dirsFound, u.elapsedSecs);
+            });
           }
-
-          statsPanel.updateLive(filesFound, dirsFound, elapsedSecs);
 
           if (p.error_count > 0 && errDisplay) {
             const errMsg = p.last_error || "";
+            const escErr = String(errMsg.substring(0, 80))
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;");
             errDisplay.innerHTML =
-              '\u26A0 <strong>' +
+              '\uD83D\uDD12 <strong>' +
               p.error_count +
               '</strong> permission denied \u2014 ' +
-              errMsg.substring(0, 80) +
+              escErr +
+              ' <span style="color:var(--text-muted);font-size:11px;">Some folders could not be scanned.</span> ' +
               ' <button class="retry-admin-btn" data-path="' +
               encodeURIComponent(path) +
-              '">Retry as administrator</button>';
+              '">Run with elevated permissions</button>';
             errDisplay.style.display = "block";
             var adminBtn = errDisplay.querySelector(".retry-admin-btn");
             if (adminBtn && !adminBtn._listener) {

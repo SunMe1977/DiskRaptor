@@ -48,6 +48,9 @@ static STATE: LazyLock<ScanState> = LazyLock::new(|| ScanState {
 
 #[no_mangle]
 pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_char {
+    // SAFETY: `json_config` must be a valid, NUL-terminated UTF-8 C string
+    // that remains valid for the duration of this call. The pointer is only
+    // read here and never retained.
     let config_str = match unsafe { CStr::from_ptr(json_config) }.to_str() {
         Ok(s) => s.to_string(),
         Err(e) => return make_json_error(&format!("invalid config UTF-8: {}", e)),
@@ -279,6 +282,10 @@ pub unsafe extern "C" fn dr_free_string(s: *mut c_char) {
     if s.is_null() {
         return;
     }
+    // SAFETY: `s` must be a pointer previously returned by this module via
+    // `CString::into_raw` (e.g. from dr_start_scan / dr_get_result). Calling
+    // from_raw with any other pointer is UB; the null check above covers the
+    // sentinel case only.
     unsafe {
         let _ = CString::from_raw(s);
     }
@@ -306,6 +313,8 @@ fn quick_hash(path: &std::path::Path) -> u64 {
 #[no_mangle]
 pub unsafe extern "C" fn dr_find_duplicates(path: *const c_char) -> *mut c_char {
     use std::collections::HashMap;
+    // SAFETY: `path` must be a valid, NUL-terminated C string that remains
+    // valid for the duration of this call; it is only read, never retained.
     let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();
 
     // Group files by (size, hash) using walkdir

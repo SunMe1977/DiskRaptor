@@ -1567,6 +1567,11 @@ fn request_permissions() -> JsonResult {
 }
 
 #[tauri::command]
+fn is_sandboxed() -> JsonResult {
+    JsonResult::ok(serde_json::json!({ "sandboxed": in_mac_sandbox() }))
+}
+
+#[tauri::command]
 #[cfg(not(feature = "store"))]
 fn check_admin_needed(_path: String) -> JsonResult {
     JsonResult::ok(serde_json::json!(false))
@@ -2248,7 +2253,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             list_downloads_candidates,
             get_memory_info, get_process_memory, get_app_version, get_app_data_dir, get_app_info,
             empty_trash, list_trash, restore_trash,
-            request_permissions, check_admin_needed, restart_as_admin,
+            request_permissions, check_admin_needed, restart_as_admin, is_sandboxed,
             check_for_updates, open_url,
             start_scan, get_scan_progress, get_scan_result,
             get_chunk, cancel_scan, release_scan, get_stats,

@@ -88,6 +88,23 @@
     // ── Theme toggle ───────────────────────────────────────
     await window.app.initTheme(getSetting, setSetting);
 
+    // ── Sandbox notice (macOS App Store build) ─────────────
+    (async function () {
+      try {
+        const r = await window.__TAURI__.invoke("is_sandboxed");
+        if (r && r.sandboxed) {
+          if (window.showToast) {
+            window.showToast(
+              "App Store sandbox: some tools (S.M.A.R.T., trash via Finder) are limited.",
+              "info",
+            );
+          }
+          const sb = document.querySelector(".status-bar");
+          if (sb) sb.textContent = "Running in App Store sandbox mode";
+        }
+      } catch (e) {}
+    })();
+
     const loader = new ChunkLoader();
     window.__loader = loader;
     const treeView = new TreeView("tree-viewport", loader);
