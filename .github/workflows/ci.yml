@@ -72,14 +72,9 @@ jobs:
         run: |
           brew install pkg-config
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
-      - name: Build Tauri app
+      - name: Build Tauri app (test-server)
         shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cmd /c build.cmd
-          else
-            ./build.sh
-          fi
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml --features test-server
       - name: Install built app
         shell: bash
         run: |

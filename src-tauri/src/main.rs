@@ -2147,13 +2147,13 @@ fn main() {
             smart_cache: Mutex::new(std::collections::HashMap::new()),
         })
         .setup(|_app| {
-            #[cfg(all(feature = "test-server", debug_assertions))]
+            #[cfg(feature = "test-server")]
             {
                 let port: u16 = std::env::var("DISKraptor_CDP_PORT")
                     .ok().and_then(|s| s.parse().ok()).unwrap_or(0);
                 if port > 0 {
                     // Inject test DOM structure into main window for tests.
-                    // Disabled in release builds to avoid shipping test-only behavior.
+                    // Only active when DISKraptor_CDP_PORT is explicitly set.
                     if let Some(w) = _app.get_webview_window("main") {
                         let inject_dom = r#"function _cdpI(){
 var b=document.body||document.documentElement;

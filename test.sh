@@ -12,9 +12,9 @@ echo ""
 BINARY="dist/DiskRaptor"
 FRONTEND="dist/frontend"
 
-if [ ! -f "$BINARY" ] && [ ! -f "dist/DiskRaptor.app/Contents/MacOS/DiskRaptor" ]; then
-  echo "ERROR: Binary not found in dist/"
-  echo "Run 'bash build.sh' first"
+if [ ! -f "$BINARY" ] && [ ! -f "dist/DiskRaptor.app/Contents/MacOS/DiskRaptor" ] && [ ! -f "src-tauri/target/release/diskraptor" ] && [ ! -f "src-tauri/target/debug/diskraptor" ]; then
+  echo "ERROR: Binary not found in dist/ or src-tauri/target/{release,debug}/"
+  echo "Run 'bash build.sh' or 'cargo build --release' first"
   exit 1
 fi
 
