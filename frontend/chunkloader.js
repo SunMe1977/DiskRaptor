@@ -19,6 +19,21 @@ class ChunkLoader {
   }
 
   /**
+   * Reset state for a new scan's tree. CRITICAL: clears loadedChunks/parentMap
+   * so a previous scan's chunk indices can't leak into the new tree (which
+   * caused empty trees after switching scans).
+   */
+  prepare(totalNodes, totalChunks, scanId) {
+    this.scanId = scanId;
+    this.totalNodes = totalNodes;
+    this.totalChunks = totalChunks;
+    this.allNodes = new Array(totalNodes);
+    this.loadedChunks = new Set();
+    this.parentMap = new Map();
+    this.loadedCount = 0;
+  }
+
+  /**
    * Load a single chunk of nodes from the backend.
    * @param {number} chunkIndex - The chunk index to load
    */

@@ -609,10 +609,11 @@
           result.root_info.total_chunks > 0 &&
           result.root_info.total_nodes > 0
         ) {
-          loader.totalNodes = result.root_info.total_nodes;
-          loader.totalChunks = result.root_info.total_chunks;
-          loader.allNodes = new Array(loader.totalNodes);
-          loader.scanId = scanId;
+          loader.prepare(
+            result.root_info.total_nodes,
+            result.root_info.total_chunks,
+            scanId,
+          );
 
           try {
             await loader.loadChunk(0);
@@ -694,10 +695,8 @@
               _arenaIndex: 0,
               _children: [],
             };
-            loader.totalNodes = 1;
-            loader.totalChunks = 0;
+            loader.prepare(1, 0, scanId);
             loader.allNodes = [rootNode];
-            loader.scanId = scanId;
             treeView.expanded.add(0);
             try {
               await treeView.rebuild();
@@ -969,10 +968,11 @@
             partial.root_info &&
             partial.root_info.total_chunks > 0
           ) {
-            loader.totalNodes = partial.root_info.total_nodes;
-            loader.totalChunks = partial.root_info.total_chunks;
-            loader.allNodes = new Array(loader.totalNodes);
-            loader.scanId = state.currentScanId;
+            loader.prepare(
+              partial.root_info.total_nodes,
+              partial.root_info.total_chunks,
+              state.currentScanId,
+            );
             try {
               await loader.loadChunk(0);
             } catch (e) {
