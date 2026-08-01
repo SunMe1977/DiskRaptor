@@ -2,7 +2,7 @@
 
 use diskraptor_scanner::scanner;
 use diskraptor_scanner::scanner::tree::TreeChunk;
-use diskraptor_scanner::streaming::chunker::{chunk_tree, make_root_chunk};
+use diskraptor_scanner::streaming::chunker::CHUNK_SIZE;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -31,7 +31,6 @@ struct ScanResultData {
     arena: scanner::tree::TreeNodeArena,
     stats: scanner::tree::ScanStats,
     scan_time_ms: u64,
-    chunks: Vec<TreeChunk>,
     errors: Vec<String>,
 }
 
@@ -73,8 +72,36 @@ impl JsonResult {
 
 // ── File Operations ──
 
+/// Reject dangerous delete targets (filesystem roots, home dir, drive roots).
+fn sanitize_delete_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let p = path.trim();
+    if p.is_empty() {
+        return Err("Empty path".into());
+    }
+    let path = std::path::Path::new(p);
+    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let home = dirs::home_dir().unwrap_or_default();
+    if !home.as_os_str().is_empty() && canonical == home {
+        return Err("Refusing to delete the home directory".into());
+    }
+    if canonical.parent().map(|x| x == canonical).unwrap_or(false) {
+        return Err("Refusing to delete a filesystem root".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if canonical.components().count() == 1 {
+            return Err("Refusing to delete a drive root".into());
+        }
+    }
+    Ok(canonical)
+}
+
 #[tauri::command]
 fn delete_path(path: String) -> JsonResult {
+    let path = match sanitize_delete_path(&path) {
+        Ok(p) => p.to_string_lossy().to_string(),
+        Err(e) => return JsonResult::err(e),
+    };
     if trash::delete(&path).is_ok() {
         return JsonResult::ok_empty();
     }
@@ -104,8 +131,12 @@ fn delete_path(path: String) -> JsonResult {
 
 #[tauri::command]
 async fn delete_permanent(path: String) -> JsonResult {
+    let path = match sanitize_delete_path(&path) {
+        Ok(p) => p,
+        Err(e) => return JsonResult::err(e),
+    };
     tauri::async_runtime::spawn_blocking(move || {
-        let p = std::path::Path::new(&path);
+        let p = &path;
         if p.is_dir() { std::fs::remove_dir_all(p).ok(); }
         else { std::fs::remove_file(p).ok(); }
         JsonResult::ok_empty()
@@ -1697,11 +1728,11 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
         match result {
             Ok(sr) => {
                 let elapsed = sr.stats.scan_time_ms;
-                let chunks = chunk_tree(&sr.arena)
-                    .unwrap_or_else(|_| make_root_chunk(&sr.arena));
+                // NOTE: chunks are built on demand in get_chunk (avoids cloning the
+                // whole arena and doubling peak memory for huge scans).
                 *s.scan.result.lock().unwrap() = Some(ScanResultData {
                     arena: sr.arena, stats: sr.stats, scan_time_ms: elapsed,
-                    chunks, errors: Vec::new(),
+                    errors: Vec::new(),
                 });
             }
             Err(e) => {
@@ -1744,6 +1775,30 @@ fn get_scan_progress(state: State<AppState>) -> JsonResult {
     JsonResult::ok(scan_progress_data(&state))
 }
 
+/// Build a single chunk from the arena on demand (clones only that chunk's nodes).
+fn build_chunk(arena: &scanner::tree::TreeNodeArena, chunk_id: u32) -> Option<TreeChunk> {
+    let total = arena.nodes.len() as u32;
+    let total_chunks = total.div_ceil(CHUNK_SIZE);
+    if chunk_id >= total_chunks {
+        return None;
+    }
+    let start: usize = (chunk_id * CHUNK_SIZE) as usize;
+    let end: usize = (((chunk_id + 1) * CHUNK_SIZE).min(total)) as usize;
+    let mut nodes = Vec::with_capacity(end - start);
+    for idx in start..end {
+        let mut node = arena.nodes[idx].clone();
+        node.chunk_id = chunk_id;
+        nodes.push(node);
+    }
+    Some(TreeChunk {
+        chunk_id,
+        total_chunks,
+        total_nodes: total,
+        start_index: start as u32,
+        nodes,
+    })
+}
+
 #[tauri::command]
 fn get_scan_result(state: State<AppState>) -> JsonResult {
     let g = state.scan.result.lock().unwrap();
@@ -1755,7 +1810,8 @@ fn get_scan_result(state: State<AppState>) -> JsonResult {
             "size_human": format_size(d.stats.total_size),
             "time_human": format!("{:.2}s", d.scan_time_ms as f64 / 1000.0),
         });
-        let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": d.chunks.len()});
+        let total_chunks = (d.arena.len() as u32).div_ceil(CHUNK_SIZE);
+        let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": total_chunks});
         drop(g);
         JsonResult::ok(serde_json::json!({"stats": sj, "root_info": ri, "scan_id": 0, "errors": []}))
     } else {
@@ -1768,8 +1824,8 @@ fn get_scan_result(state: State<AppState>) -> JsonResult {
 fn get_chunk(state: State<AppState>, chunk_index: u32) -> JsonResult {
     let g = state.scan.result.lock().unwrap();
     if let Some(ref d) = *g {
-        if (chunk_index as usize) < d.chunks.len() {
-            if let Ok(json) = serde_json::to_value(&d.chunks[chunk_index as usize]) {
+        if let Some(chunk) = build_chunk(&d.arena, chunk_index) {
+            if let Ok(json) = serde_json::to_value(&chunk) {
                 drop(g);
                 return JsonResult::ok(json);
             }

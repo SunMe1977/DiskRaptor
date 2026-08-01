@@ -12,7 +12,7 @@ setlocal
 for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "try { (Get-Content package.json | ConvertFrom-Json).version } catch { '' }" 2^>nul`) do set VERSION=%%v
 if "%VERSION%"=="" set VERSION=0.0.2
 
-REM -- Override paths via env vars: DISKRAptor_MSVC_ROOT, DISKRAptor_WIN10_KIT, DISKRAptor_WIN10_KIT_VER, DISKRAptor_QT_DIR, DISKRAptor_CMAKE_DIR, DISKRAptor_NINJA_DIR
+REM -- Override paths via env vars: DISKRAptor_MSVC_ROOT, DISKRAptor_WIN10_KIT, DISKRAptor_WIN10_KIT_VER
 
 REM -- Find tool paths (override via environment variables) ------
 set "MSVC_ROOT=%DISKRAptor_MSVC_ROOT%"
@@ -24,19 +24,8 @@ if "%WIN10_KIT%"=="" set "WIN10_KIT=C:\Program Files (x86)\Windows Kits\10"
 set "WIN10_KIT_VER=%DISKRAptor_WIN10_KIT_VER%"
 if "%WIN10_KIT_VER%"=="" set "WIN10_KIT_VER=10.0.26100.0"
 
-set "QT_DIR=%DISKRAptor_QT_DIR%"
-if "%QT_DIR%"=="" set "QT_DIR=C:\Qt\6.10.3\msvc2022_64"
-
-set "CMAKE_DIR=%DISKRAptor_CMAKE_DIR%"
-if "%CMAKE_DIR%"=="" set "CMAKE_DIR=C:\Qt\Tools\CMake_64"
-
-set "NINJA_DIR=%DISKRAptor_NINJA_DIR%"
-if "%NINJA_DIR%"=="" set "NINJA_DIR=C:\Qt\Tools\Ninja"
-
 set PATH=%MSVC_ROOT%\bin\Hostx64\x64;%PATH%
 set PATH=%WIN10_KIT%\bin\%WIN10_KIT_VER%\x64;%PATH%
-set PATH=%CMAKE_DIR%\bin;%PATH%
-set PATH=%NINJA_DIR%;%PATH%
 
 set INCLUDE=%MSVC_ROOT%\include
 set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\%WIN10_KIT_VER%\ucrt
@@ -47,9 +36,6 @@ set INCLUDE=%INCLUDE%;%WIN10_KIT%\Include\%WIN10_KIT_VER%\winrt
 set LIB=%MSVC_ROOT%\lib\x64
 set LIB=%LIB%;%WIN10_KIT%\Lib\%WIN10_KIT_VER%\ucrt\x64
 set LIB=%LIB%;%WIN10_KIT%\Lib\%WIN10_KIT_VER%\um\x64
-
-set Qt6_DIR=%QT_DIR%\lib\cmake\Qt6
-set CMAKE_PREFIX_PATH=%QT_DIR%
 
 REM -- Step 1: Build Rust app --------------------
 echo [1/3] Building Tauri app...
@@ -100,8 +86,6 @@ if exist "%WIN10_KIT%\bin\%WIN10_KIT_VER%\x64\signtool.exe" set SIGNTOOL=%WIN10_
 if not defined SIGNTOOL for /f "delims=" %%i in ('where signtool 2^>nul') do set SIGNTOOL=%%i
 if defined SIGNTOOL (
     "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\DiskRaptor.exe"
-    "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\QtWebEngineProcess.exe"
-    "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\diskraptor_scanner.dll"
     echo  OK - Files signed
 ) else (
     echo  WARNING: signtool not found - skipping code signing

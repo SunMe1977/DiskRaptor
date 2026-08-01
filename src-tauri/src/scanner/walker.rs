@@ -65,12 +65,15 @@ impl TopFilesAccum {
         if size <= *self.min_size.lock() && files.len() >= max_count {
             return;
         }
-        files.push(TopFileEntry {
+        // Binary-search insertion point (list kept sorted descending by size) - O(log n).
+        let idx = files
+            .binary_search_by(|f| f.size.cmp(&size).reverse())
+            .unwrap_or_else(|e| e);
+        files.insert(idx, TopFileEntry {
             path,
             size,
             size_human: format_size(size),
         });
-        files.sort_unstable_by_key(|b| std::cmp::Reverse(b.size));
         if files.len() > max_count {
             files.truncate(max_count);
         }

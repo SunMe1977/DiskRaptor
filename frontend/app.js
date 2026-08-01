@@ -106,20 +106,25 @@
         startW = parseInt(dragCol.style.width) || dragCol.offsetWidth;
         e.preventDefault();
       });
+      let resizeRAF = null;
       document.addEventListener("mousemove", function (e) {
         if (!dragCol) return;
-        const w = Math.max(40, startW + (e.clientX - startX));
-        dragCol.style.width = w + "px";
-        dragCol.style.flex = "none";
-        const colIdx = Array.from(dragCol.parentElement.children).indexOf(
-          dragCol,
-        );
-        if (colIdx >= 0) {
-          document.querySelectorAll(".tree-row").forEach(function (row) {
-            const cell = row.children[colIdx];
-            if (cell) cell.style.width = w - 8 + "px";
-          });
-        }
+        if (resizeRAF) return;
+        resizeRAF = requestAnimationFrame(function () {
+          resizeRAF = null;
+          const w = Math.max(40, startW + (e.clientX - startX));
+          dragCol.style.width = w + "px";
+          dragCol.style.flex = "none";
+          const colIdx = Array.from(dragCol.parentElement.children).indexOf(
+            dragCol,
+          );
+          if (colIdx >= 0) {
+            document.querySelectorAll(".tree-row").forEach(function (row) {
+              const cell = row.children[colIdx];
+              if (cell) cell.style.width = w - 8 + "px";
+            });
+          }
+        });
       });
       document.addEventListener("mouseup", function () {
         dragCol = null;

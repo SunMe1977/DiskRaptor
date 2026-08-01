@@ -1,6 +1,5 @@
 # ── Build artifacts ─────────────────
 target/
-qt-app/build*/
 dist/
 dist-mas/
 release/
@@ -42,19 +41,6 @@ crash*.txt
 *.bat
 !build.cmd
 test-results/
-
-# ── Qt runtime (launcher downloads) ─
-qtwebengine_runtime/
-qtwebengine_*.zip
-
-# ── Pro Modules (closed source) ─────
-modulesPro/*.dll
-modulesPro/*.so
-modulesPro/*.dylib
-modulesPro/*.lib
-modulesPro/*.exp
-modulesPro/*/build/
-modulesPro/build/
 
 # ── Secrets (NEVER commit) ──────────
 .env

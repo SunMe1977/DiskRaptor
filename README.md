@@ -18,29 +18,29 @@ DiskRaptor scans directories using a **parallel jwalk engine** (macOS), **walkdi
 
 ```
 ┌──────────────────────────────┐
-│  Qt 6 WebEngine (C++/QML)    │ ← Window, menus, native file dialogs
+│  Tauri 2 (Rust)              │ ← Window, menus, native dialogs, IPC
 │  ┌────────────────────────┐  │
-│  │  WebEngineView         │  │ ← Chromium renderer hosting the UI
+│  │  System WebView        │  │ ← WKWebView (macOS) / WebView2 (Win) /
+│  │  (frontend/index.html) │  │    WebKitGTK (Linux)
 │  │  ┌──────────────────┐  │  │
 │  │  │  Frontend (JS)    │  │  │ ← DOM-based virtual tree, diagrams,
 │  │  │  app.js, scan.js, │  │  │    galaxy 3D view, i18n
 │  │  │  diagrams.js, ... │  │  │
 │  │  └──────────────────┘  │  │
-│  │         ↕ QWebChannel    │  │ ← Bidirectional JSON bridge
+│  │         ↕ tauri invoke  │  │ ← JSON IPC (Rust commands)
 │  │  ┌──────────────────┐  │  │
-│  │  │  C++ Bridge       │  │  │ ← IpcBridge dispatches commands
-│  │  │  (ipcbridge.cpp)  │  │  │    to scanner, file_ops, settings
+│  │  │  Rust Commands    │  │  │ ← scan, file_ops, settings, trash,
+│  │  │  (main.rs)        │  │  │    SMART, browser cleanup
 │  │  └──────────────────┘  │  │
 │  └────────────────────────┘  │
-│              ↕ FFI (extern C) │ ← C ABI: dr_start_scan, dr_get_progress, ...
+│              ↕ crate         │
 │  ┌────────────────────────┐  │
-│  │  Rust Scanner DLL      │  │ ← Parallel directory walker
-│  │  (diskraptor_scanner)  │  │    compiled as cdylib
+│  │  diskraptor_scanner     │  │ ← Parallel directory walker (Rust)
 │  └────────────────────────┘  │
 └──────────────────────────────┘
 ```
 
-The UI is **pure JavaScript** rendered in Qt WebEngine. Communication with the native layer happens through **QWebChannel** (Qt's built-in IPC) which exposes a `bridge` object with `invoke()` for RPC calls and `eventEmitted` for push events. The Rust scanner is loaded as a dynamic library (`.so`/`.dylib`/`.dll`) at runtime via `QLibrary`. When the Rust library is unavailable, a C++ fallback scanner handles the scan.
+The UI is **pure JavaScript** rendered in the system webview (no bundled Chromium — Tauri uses the OS webview: WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux). Communication with the native layer uses **Tauri's IPC** (`window.__TAURI__.invoke`). The scanner is a Rust crate (`diskraptor_scanner`).
 
 ---
 
@@ -116,8 +116,8 @@ To install as `brew install diskraptor` (no tap, no path), the cask must first b
 
 ### Prerequisites
 - **Rust** (latest stable) -- `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **Qt 6.5+** with WebEngine module
-- **CMake 3.20+** and **Ninja**
+- **Node.js** 18+ (for the Tauri CLI)
+- Linux: **WebKitGTK 4.1** (`sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev`)
 
 ### macOS
 ```bash
@@ -140,15 +140,13 @@ build.cmd
 
 ### Manual Build (all platforms)
 ```bash
-# 1. Build Rust scanner DLL
-cargo build --release --manifest-path src-tauri/Cargo.toml
+# Build the Tauri app
+cd src-tauri
+cargo build --release
+cd ..
 
-# 2. Build Qt app
-cmake -B qt-app/build -G Ninja -DCMAKE_BUILD_TYPE=Release qt-app
-cmake --build qt-app/build --config Release
-
-# 3. Run (or package with build.sh)
-./qt-app/build/DiskRaptor
+# Build the Windows installer (NSIS)
+npx tauri build --bundles nsis --ci
 ```
 
 ---

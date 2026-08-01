@@ -37,11 +37,7 @@ rep() {
 rep "package.json"
 rep "src-tauri/Cargo.toml"
 rep "src-tauri/tauri.conf.json"
-rep "qt-app/CMakeLists.txt"
-rep "qt-app/src/main.cpp"
-rep "vcpkg.json"
 rep "installer/nsis/DiskRaptor.nsi"
-rep "modulesPro/duplicateScan/duplicate_scan.cpp"
 
 # Cargo.lock: only the diskraptor crate entry should change (other crates share
 # version numbers, so do a targeted replacement on that block).

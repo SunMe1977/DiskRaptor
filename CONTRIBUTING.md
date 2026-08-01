@@ -3,8 +3,7 @@
 ## Code Style
 
 - **Rust**: Follow `rustfmt` conventions. Use `cargo fmt` before committing.
-- **C++**: Follow Qt coding style (camelCase methods, PascalCase classes).
-- **JavaScript**: ES6 classes, `var` for legacy compatibility with Qt WebEngine.
+- **JavaScript**: ES6 classes, `var` for legacy compatibility with the embedded webview.
 - **CSS**: Use CSS custom properties (variables) for theming. Avoid inline styles.
 
 ## Pull Request Process
@@ -17,18 +16,14 @@
 ## Development Setup
 
 ```bash
-# Build Rust scanner
+# Build the Tauri app
 cd src-tauri && cargo build --release
 
-# Build Qt app
-cd qt-app && mkdir build && cd build
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build .
+# Build the installer (Windows)
+npx tauri build --bundles nsis --ci
 
-# Update dist app bundle
-cp -r frontend dist/DiskRaptor.app/Contents/Resources/frontend
-cp src-tauri/target/release/libdiskraptor_scanner.dylib dist/DiskRaptor.app/Contents/MacOS/
-cp qt-app/build/DiskRaptor.app/Contents/MacOS/DiskRaptor dist/DiskRaptor.app/Contents/MacOS/
+# Run
+./src-tauri/target/release/diskraptor
 ```
 
 ## Testing

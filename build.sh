@@ -51,27 +51,13 @@ check_version() {
   fi
 }
 check_version "src-tauri/Cargo.toml"         "Cargo.toml"           's/.*version = "\([^"]*\)".*/\1/p'
-check_version "qt-app/CMakeLists.txt"         "CMakeLists.txt (Qt)"  's/.*project(DiskRaptor VERSION \([0-9.]*\)[^0-9.].*/\1/p'
-check_version "qt-app/src/main.cpp"           "main.cpp"             's/.*setApplicationVersion("\([^"]*\)").*/\1/p'
-check_version "vcpkg.json"                    "vcpkg.json"           's/.*"version": "\([^"]*\)".*/\1/p'
 check_version "installer/nsis/DiskRaptor.nsi" "DiskRaptor.nsi"       's/.*PRODUCT_VERSION "\([^"]*\)".*/\1/p'
-check_version "modulesPro/duplicateScan/duplicate_scan.cpp" "duplicate_scan.cpp" 's/.*g_moduleVersion = "\([^"]*\)".*/\1/p'
 if [ "$MISMATCH" -gt 0 ]; then
   echo "  Update these files to match package.json version $VERSION"
 fi
 echo ""
 
 # ── Tool paths (override via env vars) ──────────────────────────
-: "${QT_DIR:=}"
-if [ -z "${QT_DIR}" ]; then
-  for candidate in /opt/homebrew/opt/qt@6 /opt/homebrew/opt/qt /usr/local/opt/qt@6 /usr/local/opt/qt; do
-    if [ -d "$candidate" ]; then
-      QT_DIR="$candidate"
-      break
-    fi
-  done
-fi
-: "${QT_VERSION:=6}"                               # Qt major version
 : "${RUST_TARGET:=release}"                        # release or debug
 : "${SIGNING_IDENTITY:=}"                          # macOS codesign identity
 : "${APPLE_ID:=}"                                  # Apple ID for notarization
@@ -185,16 +171,6 @@ build_mas_pkg() {
       --sign "$DIST_CERT" \
       --keychain ~/Library/Keychains/login.keychain-db \
       "$APP_DST" 2>&1 || true
-    # Re-sign QtWebEngineProcess after --deep (--deep re-signs nested .apps but can strip entitlements)
-    local WEP="$APP_DST/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app"
-    if [ -d "$WEP" ]; then
-      echo "  Re-signing QtWebEngineProcess.app (ensuring sandbox entitlement)..."
-      codesign --force --options=runtime \
-        --entitlements "$ENTITLEMENTS" \
-        --sign "$DIST_CERT" \
-        --keychain ~/Library/Keychains/login.keychain-db \
-        "$WEP" 2>&1 || true
-    fi
     codesign -dvvv "$APP_DST" 2>&1 | head -5 || true
   else
     echo "  WARNING: Distribution cert not accessible ($DIST_CERT)"
