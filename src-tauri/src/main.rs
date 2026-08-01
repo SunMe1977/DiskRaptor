@@ -264,6 +264,7 @@ fn get_volume_stats() -> JsonResult {
 
 /// Enumerate mounted volumes via sysinfo — works without spawning any external
 /// helper, so it survives the macOS App Sandbox (unlike smartctl/system_profiler).
+#[allow(dead_code)]
 fn list_volumes_via_sysinfo() -> Vec<serde_json::Value> {
     let disks_list = sysinfo::Disks::new_with_refreshed_list();
     let mut out = Vec::new();
@@ -622,6 +623,7 @@ fn list_disks() -> JsonResult {
     }
 }
 
+#[allow(dead_code)]
 fn parse_system_profiler_disks(s: &str) -> Vec<serde_json::Value> {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(s) else {
         return Vec::new();
@@ -1025,7 +1027,7 @@ fn browser_paths_windows(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<st
     let appdata = std::env::var("APPDATA").ok()?;
     let base_dir = if def.base == "local" { &local } else { &appdata };
     let base = std::path::PathBuf::from(base_dir).join(def.sub);
-    let (mut cookies, mut cache) = match def.kind {
+    let (cookies, cache) = match def.kind {
         "chrome" | "opera" => (
             vec![
                 base.join("Default").join("Network").join("Cookies"),
