@@ -68,7 +68,9 @@
       try {
         const r = await window.__TAURI__.invoke("load_settings");
         if (r && r[key] !== undefined) return r[key];
-      } catch (e) {}
+      } catch (e) {
+        console.warn("load_settings failed:", e && e.message ? e.message : e);
+      }
       return fallback;
     };
     window.app.setSetting = async function (key, val) {
@@ -76,7 +78,9 @@
         const o = {};
         o[key] = val;
         await window.__TAURI__.invoke("save_settings", { settings: o });
-      } catch (e) {}
+      } catch (e) {
+        console.warn("save_settings failed:", e && e.message ? e.message : e);
+      }
     };
     const getSetting = window.app.getSetting;
     const setSetting = window.app.setSetting;
@@ -259,6 +263,17 @@
     const btnFav = document.getElementById("btn-fav");
 
     // Set default scan path to user home after init and DOM binding.
+    // Apply saved default scan path first, falling back to home dir.
+    try {
+      const saved = await window.__TAURI__.invoke("load_settings");
+      const savedPath =
+        saved && saved.default_scan_path
+          ? String(saved.default_scan_path)
+          : "";
+      if (savedPath && scanPath && !scanPath.value) {
+        scanPath.value = savedPath;
+      }
+    } catch (e) {}
     try {
       const home = await window.__TAURI__.invoke("get_home_dir");
       let homePath = null;
@@ -430,7 +445,8 @@
                 .then(function (h) { if (h) dupScanner.start(String(h)); })
                 .catch(function () {});
             } else {
-              window.showToast("Select a folder to scan for duplicates first", "info");
+              const t0 = window.__ || function (s) { return s; };
+              window.showToast(t0("toast.select_folder_first"), "info");
             }
           });
       } else {
@@ -440,7 +456,7 @@
 
     // About dialog
     try {
-      const v = await window.__TAURI__.invoke("get_app_version");
+      const v = await window.__TAURI__.invoke("get_app_info");
       const ver = v && v.data ? v.data.version : "";
       if (ver) {
         const el = document.querySelector(".about-version");
@@ -503,7 +519,7 @@
     // Update check
     let _currentVersion = "";
     try {
-      const vv = await window.__TAURI__.invoke("get_app_version");
+      const vv = await window.__TAURI__.invoke("get_app_info");
       _currentVersion = vv && vv.data ? (vv.data.version || "") : "";
     } catch (e) {}
     window.__checkUpdate = async function () {
@@ -512,11 +528,10 @@
       el.textContent = "\u23F3 Checking...";
       const current = _currentVersion || "0.0.0";
       try {
-        const r = await fetch(
-          "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
-        );
-        const data = await r.json();
-        const latest = (data.tag_name || "").replace(/^v/, "");
+        // Prefer the native check (knows installed version, does the network call off the UI thread).
+        const res = await window.__TAURI__.invoke("check_for_updates");
+        const data = res && res.data ? res.data : res;
+        const latest = data && data.latest ? String(data.latest) : "";
         if (latest && latest !== current) {
           el.textContent =
             "\u2B07\uFE0F Update available: v" +
@@ -531,8 +546,30 @@
           el.style.color = "var(--accent-green)";
         }
       } catch (e) {
-        el.textContent = "\u26A0\uFE0F Update check failed";
-        el.style.color = "var(--accent-red)";
+        // Fallback: query GitHub directly from the frontend.
+        try {
+          const r = await fetch(
+            "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
+          );
+          const d2 = await r.json();
+          const latest2 = (d2.tag_name || "").replace(/^v/, "");
+          if (latest2 && latest2 !== current) {
+            el.textContent =
+              "\u2B07\uFE0F Update available: v" +
+              latest2 +
+              " (current: v" +
+              current +
+              ")";
+            el.style.color = "var(--accent-orange)";
+          } else {
+            el.textContent =
+              "\u2705 You have the latest version (v" + current + ")";
+            el.style.color = "var(--accent-green)";
+          }
+        } catch (e2) {
+          el.textContent = "\u26A0\uFE0F Update check failed";
+          el.style.color = "var(--accent-red)";
+        }
       }
     };
 
@@ -761,9 +798,17 @@
       console.error("DiskRaptor init failed:", err);
       const sb = document.querySelector(".status-bar");
       if (sb) {
-        sb.textContent = "Init error: " + err.message;
-        sb.style.color = "#f85149";
+        sb.textContent = "Init error: " + (err && err.message ? err.message : err);
+        sb.style.color = "var(--accent-red)";
       }
+      // Offer a retry dialog so the user isn't left staring at a dead window.
+      window.alertDialog(
+        "DiskRaptor failed to initialize.\n\n" +
+          (err && err.message ? err.message : String(err)) +
+          "\n\nClick OK to reload the app, or close this dialog to continue.",
+      ).then(function (ok) {
+        if (ok) window.location.reload();
+      });
     });
   }
 

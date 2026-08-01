@@ -21,7 +21,7 @@
 
       const body = document.createElement("div");
       body.style.cssText =
-        "padding:18px 20px;font-size:13px;color:var(--text-primary,#e6edf3);" +
+        "padding:18px 20px;font-size:13px;color:var(--text-primary,var(--text-primary));" +
         "line-height:1.5;white-space:pre-wrap;word-break:break-word;";
       body.textContent = message;
 
@@ -32,7 +32,7 @@
         input.style.cssText =
           "width:100%;margin-top:12px;padding:8px 10px;border-radius:6px;" +
           "border:1px solid var(--border,#30363d);background:var(--bg-tertiary,#161b22);" +
-          "color:var(--text-primary,#e6edf3);font-size:13px;";
+          "color:var(--text-primary,var(--text-primary));font-size:13px;";
         body.appendChild(input);
       }
 
@@ -47,8 +47,8 @@
         b.style.cssText =
           "padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid var(--border,#30363d);" +
           (isPrimary
-            ? "background:linear-gradient(135deg,#238636,#2ea043);color:#fff;font-weight:600;"
-            : "background:var(--bg-tertiary,#161b22);color:var(--text-primary,#e6edf3);");
+            ? "background:linear-gradient(135deg,#238636,var(--accent-green));color:#fff;font-weight:600;"
+            : "background:var(--bg-tertiary,#161b22);color:var(--text-primary);");
         return b;
       }
 

@@ -15,6 +15,44 @@
       toolsMenu.classList.toggle("active");
     });
 
+    // Keyboard navigation: ArrowUp/Down move, Enter/Space activates.
+    btnTools.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (!toolsMenu.classList.contains("active")) {
+          toolsMenu.classList.add("active");
+        }
+        const items = toolsMenu.querySelectorAll(".tools-item");
+        if (items.length === 0) return;
+        let idx = Array.prototype.indexOf.call(items, document.activeElement);
+        if (idx < 0) idx = -1;
+        if (e.key === "ArrowDown") idx = Math.min(idx + 1, items.length - 1);
+        else if (e.key === "ArrowUp") idx = Math.max(idx - 1, 0);
+        else {
+          // Enter/Space on the trigger opens the menu and focuses the first item.
+          idx = 0;
+        }
+        items[idx].focus();
+      }
+    });
+    toolsMenu.addEventListener("keydown", function (e) {
+      const items = toolsMenu.querySelectorAll(".tools-item");
+      const idx = Array.prototype.indexOf.call(items, document.activeElement);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        items[Math.min(idx + 1, items.length - 1)].focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        items[Math.max(idx - 1, 0)].focus();
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (idx >= 0) items[idx].click();
+      } else if (e.key === "Escape") {
+        toolsMenu.classList.remove("active");
+        btnTools.focus();
+      }
+    });
+
     document.addEventListener("click", function () {
       toolsMenu.classList.remove("active");
     });
@@ -133,7 +171,8 @@
           }
         }
         if (emptyDirs.length === 0) {
-          window.showToast("No empty folders found", "info");
+          const t0 = window.__ || function (s) { return s; };
+          window.showToast(t0("toast.no_empty_folders"), "info");
           return;
         }
         const base = scanPath.value.replace(/[\\/]+$/, "");
@@ -169,7 +208,7 @@
           ")</div>" +
           html2 +
           '<div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
-          '<button class="ef-delete-btn" style="padding:6px 14px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">\uD83D\uDDD1 Delete all ' + emptyDirs.length + ' empty folders</button>' +
+          '<button class="ef-delete-btn" style="padding:6px 14px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;">\uD83D\uDDD1 Delete all ' + emptyDirs.length + ' empty folders</button>' +
           '<button class="ef-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button>' +
           "</div>";
         ov2.appendChild(card2);
@@ -248,7 +287,7 @@
             "</td></tr>\n";
         }
         const htmlReport =
-          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>DiskRaptor Report</title><style>body{font-family:sans-serif;margin:20px;color:#333}h1{color:#2ea043}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5}</style></head><body>' +
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>DiskRaptor Report</title><style>body{font-family:sans-serif;margin:20px;color:#333}h1{color:var(--accent-green)}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5}</style></head><body>' +
           "<h1>\uD83E\uDD96 DiskRaptor Report</h1>" +
           "<p>Path: " +
           (scanPath.value || "") +
@@ -344,7 +383,7 @@
           html +=
             '<div class="find-file-item" data-idx="' +
             r.arenaIdx +
-            '" title="' + esc(r.path) + '" style="padding:4px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:8px;">';
+            '" title="' + esc(r.path) + '" style="padding:4px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:8px;align-items:center;">';
           html +=
             '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
             esc(r.name) +
@@ -353,7 +392,9 @@
             '<span style="font-family:monospace;color:var(--text-muted);font-size:11px;white-space:nowrap;">' +
             (r.size ? fmtBytes(r.size) : "") +
             "</span>";
-          html += "</div>";
+          html +=
+            '<button class="ff-open" title="Open containing folder" aria-label="Open containing folder" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:2px 4px;">\uD83D\uDCC2</button>' +
+            "</div>";
         }
         if (results.length > 500)
           html +=
@@ -382,7 +423,8 @@
           if (e.target === ov) document.body.removeChild(ov);
         };
         ov.querySelectorAll(".find-file-item").forEach(function (el) {
-          el.onclick = function () {
+          el.onclick = function (e) {
+            if (e.target.classList.contains("ff-open")) return;
             const idx = parseInt(this.dataset.idx);
             if (!isNaN(idx) && treeView) {
               treeView.select(idx);
@@ -396,6 +438,17 @@
             this.style.background = "transparent";
           };
         });
+        const ffOpenBtns = ov.querySelectorAll(".ff-open");
+        for (let fi = 0; fi < ffOpenBtns.length; fi++) {
+          (function (btn, r) {
+            btn.onclick = function (e) {
+              e.stopPropagation();
+              if (r && r.path) {
+                window.__TAURI__.invoke("open_explorer", { path: r.path }).catch(function () {});
+              }
+            };
+          })(ffOpenBtns[fi], results[fi]);
+        }
       } else if (action === "cleanup-downloads") {
         openDownloadsCleanup(scanPath, btnScan);
       } else if (action === "smart-tools") {
@@ -426,7 +479,8 @@
           );
         } catch (e) {
           console.warn("Empty trash:", e);
-          window.showToast("Failed: " + e, "error");
+          const t0 = window.__ || function (s) { return s; };
+          window.showToast(t0("toast.failed").replace("{err}", e), "error");
         }
         setTimeout(function () {
           item.textContent = "\uD83D\uDDD1\uFE0F Empty Trash";
@@ -456,7 +510,7 @@
     card.innerHTML =
       '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
       '<span style="font-size:14px;font-weight:600;">\uD83E\uDDF9 Downloads Cleanup</span>' +
-      '<button class="dlc-close" style="padding:3px 8px;font-size:14px;border:none;background:none;color:var(--text-muted);cursor:pointer;">\u2715</button>' +
+      '<button class="dlc-close" aria-label="Close" style="padding:3px 8px;font-size:14px;border:none;background:none;color:var(--text-muted);cursor:pointer;">\u2715</button>' +
       "</div>" +
       '<div class="dlc-toolbar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
       '<button class="dlc-refresh" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\u27F3 Refresh</button>' +
@@ -468,7 +522,7 @@
       '<div class="dlc-list" style="flex:1;overflow-y:auto;padding:8px;min-height:200px;"></div>' +
       '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
       '<span class="dlc-total" style="font-size:12px;color:var(--text-muted);"></span>' +
-      '<button class="dlc-clean" style="padding:7px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;font-weight:600;">\uD83D\uDDD1 Move Selected to Trash</button>' +
+      '<button class="dlc-clean" style="padding:7px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;font-weight:600;">\uD83D\uDDD1 Move Selected to Trash</button>' +
       "</div>";
     overlay.appendChild(card);
     document.body.appendChild(overlay);
@@ -506,25 +560,36 @@
         const f = files[i];
         totalSize += f.size || 0;
         const tags = [];
-        if (f.is_temp) tags.push('<span style="font-size:10px;color:#d29922;border:1px solid #d29922;border-radius:3px;padding:0 4px;margin-left:4px;">TEMP</span>');
-        if (f.is_old) tags.push('<span style="font-size:10px;color:#58a6ff;border:1px solid #58a6ff;border-radius:3px;padding:0 4px;margin-left:4px;">' + (f.age_days || 0) + 'd old</span>');
-        if (f.is_large) tags.push('<span style="font-size:10px;color:#f85149;border:1px solid #f85149;border-radius:3px;padding:0 4px;margin-left:4px;">LARGE</span>');
+        if (f.is_temp) tags.push('<span style="font-size:10px;color:var(--accent-orange);border:1px solid var(--accent-orange);border-radius:3px;padding:0 4px;margin-left:4px;">TEMP</span>');
+        if (f.is_old) tags.push('<span style="font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:0 4px;margin-left:4px;">' + (f.age_days || 0) + 'd old</span>');
+        if (f.is_large) tags.push('<span style="font-size:10px;color:var(--accent-red);border:1px solid var(--accent-red);border-radius:3px;padding:0 4px;margin-left:4px;">LARGE</span>');
         html +=
           '<div class="dlc-item" data-idx="' + i + '" title="' + esc(f.path) + '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;">' +
           '<input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" />' +
           '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + esc(f.name) + tags.join("") + "</span>" +
           '<span style="font-family:monospace;font-size:11px;color:var(--text-muted);white-space:nowrap;">' + (f.size_human || fmtBytes(f.size)) + "</span>" +
+          '<button class="dlc-open" title="Open containing folder" aria-label="Open containing folder" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:2px 4px;">\uD83D\uDCC2</button>' +
           "</div>";
       }
       listEl.innerHTML = html;
       listEl.querySelectorAll(".dlc-item").forEach(function (row) {
         row.onclick = function (e) {
-          if (e.target.tagName === "INPUT") return;
+          if (e.target.tagName === "INPUT" || e.target.classList.contains("dlc-open")) return;
           const cb = this.querySelector('input');
           if (cb) { cb.checked = !cb.checked; }
         };
         row.onmouseenter = function () { this.style.background = "var(--bg-hover)"; };
         row.onmouseleave = function () { this.style.background = "transparent"; };
+      });
+      listEl.querySelectorAll(".dlc-open").forEach(function (btn) {
+        btn.onclick = function (e) {
+          e.stopPropagation();
+          const i = parseInt(btn.closest(".dlc-item").dataset.idx);
+          const f = files[i];
+          if (f && f.path) {
+            window.__TAURI__.invoke("open_explorer", { path: f.path }).catch(function () {});
+          }
+        };
       });
       totalEl.textContent = files.length + " candidate(s) \u00B7 " + fmtBytes(totalSize) + " total";
       cleanBtn.disabled = false;
@@ -564,7 +629,7 @@
 
     cleanBtn.onclick = async function () {
       const sel = selectedFiles();
-      if (sel.length === 0) { window.showToast("Nothing selected", "warning"); return; }
+      if (sel.length === 0) { const t0 = window.__ || function (s) { return s; }; window.showToast(t0("toast.nothing_selected"), "warning"); return; }
       const totalSel = sel.reduce(function (s, f) { return s + (f.size || 0); }, 0);
       const ok = await window.confirmDialog(
         "Move " + sel.length + " file(s) to Trash?\n\nFrees " + fmtBytes(totalSel) + ".\n\nThese include old, large, or incomplete download files.",
@@ -615,7 +680,7 @@
         "</div>" +
         '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">' +
         '<button id="ff-cancel" style="padding:6px 14px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Cancel</button>' +
-        '<button id="ff-ok" style="padding:6px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;font-weight:600;">Search</button>' +
+        '<button id="ff-ok" style="padding:6px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,var(--accent-green));color:#fff;cursor:pointer;font-weight:600;">Search</button>' +
         "</div>";
       ov.appendChild(card);
       document.body.appendChild(ov);
@@ -679,7 +744,7 @@
       '<div class="smart-header">' +
       '<span class="smart-title">\uD83D\uDEE1\uFE0F S.M.A.R.T. Tools</span>' +
       '<button class="smart-refresh-btn" id="smart-refresh" title="Refresh drive list">\u27F3</button>' +
-      '<button class="smart-close" id="smart-close" title="Close">\u2715</button>' +
+      '<button class="smart-close" id="smart-close" title="Close" aria-label="Close">\u2715</button>' +
       "</div>" +
       '<div class="smart-body">' +
       '<div class="smart-drive-row">' +
@@ -995,7 +1060,7 @@
       '<div class="smart-card browser-card">' +
       '<div class="smart-header">' +
       '<span class="smart-title">\uD83E\uDDF9 Clean Browser Tools</span>' +
-      '<button class="smart-close" id="browser-close" title="Close">\u2715</button>' +
+      '<button class="smart-close" id="browser-close" title="Close" aria-label="Close">\u2715</button>' +
       "</div>" +
       '<div class="smart-body">' +
       '<div class="browser-toolbar">' +
@@ -1092,7 +1157,7 @@
     function renderList() {
       if (browsers.length === 0) {
         listEl.innerHTML =
-          '<div style="padding:22px;text-align:center;color:#8b949e;font-size:13px;">No installed browsers with cookies/cache found.</div>';
+          '<div style="padding:22px;text-align:center;color:var(--text-muted);font-size:13px;">No installed browsers with cookies/cache found.</div>';
         return;
       }
       let html =

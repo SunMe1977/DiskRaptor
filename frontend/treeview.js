@@ -280,10 +280,10 @@ class TreeView {
 
     const style = document.createElement("style");
     style.textContent =
-      ".tctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
+      ".tctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:var(--text-primary);}" +
       ".tctx-item:hover{background:#30363d;}" +
       ".tctx-sep{height:1px;background:#30363d;margin:4px 8px;}" +
-      ".tctx-del{color:#f85149;}";
+      ".tctx-del{color:var(--accent-red);}";
     document.head.appendChild(style);
 
     document.addEventListener("click", (e) => {
@@ -775,10 +775,10 @@ class TreeView {
     pctFill.className = "tree-pct-fill";
     pctFill.style.width = Math.max(1, pct) + "%";
     // Gradient color based on usage: green < 40% < yellow < 70% < red
-    if (pct > 70) pctFill.style.background = "linear-gradient(90deg, #f85149, #da3633)";
-    else if (pct > 40) pctFill.style.background = "linear-gradient(90deg, #d29922, #bb8009)";
-    else if (pct > 10) pctFill.style.background = "linear-gradient(90deg, #3fb950, #2ea043)";
-    else pctFill.style.background = "#238636";
+    if (pct > 70) pctFill.style.background = "linear-gradient(90deg, var(--accent-red), var(--accent-red))";
+    else if (pct > 40) pctFill.style.background = "linear-gradient(90deg, var(--accent-orange), #bb8009)";
+    else if (pct > 10) pctFill.style.background = "linear-gradient(90deg, #3fb950, var(--accent-green))";
+    else pctFill.style.background = "var(--accent-green)";
     pctBar.appendChild(pctFill);
     el.appendChild(pctBar);
 

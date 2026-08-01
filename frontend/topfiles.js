@@ -102,10 +102,10 @@ class TopFilesPanel {
 
     const style = document.createElement("style");
     style.textContent =
-      ".tfctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
+      ".tfctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:var(--text-primary);}" +
       ".tfctx-item:hover{background:#30363d;}" +
       ".tfctx-sep{height:1px;background:#30363d;margin:4px 8px;}" +
-      ".tfctx-del{color:#f85149;}";
+      ".tfctx-del{color:var(--accent-red);}";
     document.head.appendChild(style);
 
     document.addEventListener("click", (e) => {

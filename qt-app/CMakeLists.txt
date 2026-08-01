@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(DiskRaptor VERSION 1.0.8 DESCRIPTION "Ultra-fast disk space analyzer" LANGUAGES CXX)
+project(DiskRaptor VERSION 1.0.9 DESCRIPTION "Ultra-fast disk space analyzer" LANGUAGES CXX)
 if(APPLE)
   enable_language(OBJCXX)
 endif()

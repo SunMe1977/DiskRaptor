@@ -32,7 +32,8 @@
 
       let path = scanPath.value.trim();
       if (!path) {
-        window.showToast("Please enter or select a directory path.", "error");
+        const t = window.__ || function (s) { return s; };
+        window.showToast(t("toast.need_path"), "error");
         return;
       }
 
@@ -761,7 +762,7 @@
           document.getElementById("cleanup-move-trash").onclick = function () {
             var items = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');
             var files = Array.from(items).map(function (cb) { return cb.closest(".cleanup-item").dataset.file; });
-            if (files.length === 0) { window.showToast("No items selected", "warning"); return; }
+            if (files.length === 0) { const t0 = window.__ || function (s) { return s; }; window.showToast(t0("toast.no_items"), "warning"); return; }
             window.confirmDialog("Move " + files.length + " file(s) to Trash?").then(function (ok) {
               if (!ok) return;
             var rootPath = (scanPath && scanPath.value || "").replace(/[\\/]+$/, "");

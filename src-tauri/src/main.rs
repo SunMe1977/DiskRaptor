@@ -98,12 +98,15 @@ fn delete_path(path: String) -> JsonResult {
 }
 
 #[tauri::command]
-fn delete_permanent(path: String) -> JsonResult {
-    let p = std::path::Path::new(&path);
-    if p.is_dir() { std::fs::remove_dir_all(p).ok(); }
-    else { std::fs::remove_file(p).ok(); }
-    if p.exists() { JsonResult::err("Failed to delete") }
-    else { JsonResult::ok_empty() }
+async fn delete_permanent(path: String) -> JsonResult {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        if p.is_dir() { std::fs::remove_dir_all(p).ok(); }
+        else { std::fs::remove_file(p).ok(); }
+        JsonResult::ok_empty()
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Delete failed: {e}")))
 }
 
 #[tauri::command]
@@ -177,6 +180,17 @@ fn list_drives() -> JsonResult {
     JsonResult::ok(serde_json::json!(disks))
 }
 
+fn classify_download(name: &str, size: u64, age_days: u64) -> (bool, bool, bool) {
+    let lower = name.to_lowercase();
+    let is_temp = lower.ends_with(".crdownload")
+        || lower.ends_with(".part")
+        || lower.ends_with(".download")
+        || lower.ends_with(".tmp");
+    let is_old = age_days >= 90;
+    let is_large = size >= 100 * 1024 * 1024;
+    (is_temp, is_old, is_large)
+}
+
 #[tauri::command]
 async fn list_downloads_candidates() -> JsonResult {
     tauri::async_runtime::spawn_blocking(|| {
@@ -202,13 +216,7 @@ async fn list_downloads_candidates() -> JsonResult {
                     .unwrap_or(now);
                 let age_days = (now.saturating_sub(modified)) / 86400;
                 let name = entry.file_name().to_string_lossy().to_string();
-                let lower = name.to_lowercase();
-                let is_temp = lower.ends_with(".crdownload")
-                    || lower.ends_with(".part")
-                    || lower.ends_with(".download")
-                    || lower.ends_with(".tmp");
-                let is_old = age_days >= 90;
-                let is_large = size >= 100 * 1024 * 1024;
+                let (is_temp, is_old, is_large) = classify_download(&name, size, age_days);
                 if !is_temp && !is_old && !is_large { continue; }
                 files.push(serde_json::json!({
                     "name": name,
@@ -1293,6 +1301,22 @@ fn get_app_data_dir() -> JsonResult {
 }
 
 #[tauri::command]
+fn get_app_info() -> JsonResult {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let data_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("diskraptor");
+    JsonResult::ok(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "name": "DiskRaptor",
+        "os": os,
+        "arch": arch,
+        "data_dir": data_dir.to_string_lossy(),
+    }))
+}
+
+#[tauri::command]
 fn empty_trash() -> JsonResult {
     #[cfg(target_os = "macos")]
     { let _ = std::process::Command::new("osascript").args(["-e", "tell app \"Finder\" to empty trash"]).status(); }
@@ -1429,8 +1453,44 @@ fn restart_as_admin() -> JsonResult {
 }
 
 #[tauri::command]
-fn check_for_updates() -> JsonResult {
-    JsonResult::ok(serde_json::json!({"version": "1.0.2", "update_available": false}))
+async fn check_for_updates() -> JsonResult {
+    // Query the GitHub releases API for the latest tag and compare with the
+    // installed version. Async so a slow network call never blocks the UI.
+    let installed = env!("CARGO_PKG_VERSION");
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let client = std::process::Command::new("curl")
+            .args([
+                "-s",
+                "-m",
+                "8",
+                "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
+            ])
+            .output()
+            .ok();
+        let Some(out) = client else { return None };
+        if !out.status.success() { return None; }
+        let s = String::from_utf8_lossy(&out.stdout);
+        let v: serde_json::Value = serde_json::from_str(&s).ok()?;
+        let tag = v.get("tag_name").and_then(|t| t.as_str())?;
+        let latest = tag.trim_start_matches('v').to_string();
+        Some(latest)
+    })
+    .await;
+    match result {
+        Ok(Some(latest)) => {
+            let update_available = latest != installed;
+            JsonResult::ok(serde_json::json!({
+                "version": installed,
+                "latest": latest,
+                "update_available": update_available,
+            }))
+        }
+        _ => JsonResult::ok(serde_json::json!({
+            "version": installed,
+            "latest": null,
+            "update_available": false,
+        })),
+    }
 }
 
 #[tauri::command]
@@ -1992,7 +2052,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             open_explorer, open_terminal, get_icon,
             get_home_dir, list_drives, get_volume_stats, get_dir_stats,
             list_downloads_candidates,
-            get_memory_info, get_process_memory, get_app_version, get_app_data_dir,
+            get_memory_info, get_process_memory, get_app_version, get_app_data_dir, get_app_info,
             empty_trash, list_trash, restore_trash,
             request_permissions, check_admin_needed, restart_as_admin,
             check_for_updates, open_url,
@@ -2322,5 +2382,38 @@ mod tests {
         assert_eq!(format_size(1024), "1.00 KB");
         assert_eq!(format_size(1048576), "1.00 MB");
         assert_eq!(format_size(1073741824), "1.00 GB");
+    }
+
+    #[test]
+    fn classify_download_detects_temp_files() {
+        assert_eq!(classify_download("file.part", 100, 1), (true, false, false));
+        assert_eq!(classify_download("setup.crdownload", 100, 1), (true, false, false));
+        assert_eq!(classify_download("data.tmp", 100, 1), (true, false, false));
+        assert_eq!(classify_download("image.download", 100, 1), (true, false, false));
+    }
+
+    #[test]
+    fn classify_download_detects_old_and_large() {
+        assert_eq!(classify_download("archive.zip", 200 * 1024 * 1024, 1), (false, false, true));
+        assert_eq!(classify_download("old_file.pdf", 1000, 120), (false, true, false));
+        assert_eq!(classify_download("normal.txt", 5000, 5), (false, false, false));
+    }
+
+    #[test]
+    fn classify_download_is_case_insensitive() {
+        assert_eq!(classify_download("BIG.MOVIE.PART", 100, 1), (true, false, false));
+    }
+
+    #[test]
+    fn get_app_info_returns_expected_fields() {
+        let result = get_app_info();
+        assert!(result.success);
+        if let Some(data) = result.data {
+            assert!(data.get("version").is_some());
+            assert!(data.get("os").is_some());
+            assert!(data.get("arch").is_some());
+            assert!(data.get("data_dir").is_some());
+            assert_eq!(data["version"], env!("CARGO_PKG_VERSION"));
+        }
     }
 }

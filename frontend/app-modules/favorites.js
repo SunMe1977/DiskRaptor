@@ -16,7 +16,9 @@
     async function saveFavorites() {
       await window.__TAURI__
         .invoke("save_settings", { settings: { favorites: favorites } })
-        .catch(function () {});
+        .catch(function (e) {
+          console.warn("Failed to save favorites:", e && e.message ? e.message : e);
+        });
     }
 
     function renderFavorites() {
