@@ -97,7 +97,7 @@
           return;
         }
         window.__TAURI__.invoke("get_dir_stats", { path: current }).then(function (res) {
-          const st = res && res.data ? res.data : {};
+          const st = res && res.data ? res.data : (res || {});
           const sizeStr = fmtBytes(st.total_bytes);
           const preview = "Open this folder?\n\n" + current + (sizeStr ? "\nSize: " + sizeStr : "");
           window.confirmDialog(preview).then(function (ok) {
@@ -120,7 +120,7 @@
             window.__TAURI__
               .invoke("get_dir_stats", { path: dir })
               .then(function (res) {
-                const st = res && res.data ? res.data : {};
+                const st = res && res.data ? res.data : (res || {});
                 const sizeStr = fmtBytes(st.total_bytes);
                 const t0 = window.__ || function (s) { return s; };
                 const label =
@@ -676,8 +676,16 @@
       window.__TAURI__
         .invoke("list_downloads_candidates")
         .then(function (res) {
-          const data = res && res.data ? res.data : {};
-          files = Array.isArray(data.files) ? data.files : [];
+          // The bridge unwraps `data`, so `res` may be the file list object
+          // ({files:[...]}) or the raw array; handle all shapes.
+          const filesArr = Array.isArray(res)
+            ? res
+            : res && res.files
+              ? res.files
+              : res && res.data && res.data.files
+                ? res.data.files
+                : [];
+          files = filesArr;
           render();
           statusEl.textContent = files.length + " candidate(s) found";
         })

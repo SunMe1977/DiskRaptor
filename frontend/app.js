@@ -351,7 +351,12 @@
         }
         if (!homePath) homePath = home;
       } else if (home && typeof home === "object") {
-        homePath = home.data ? String(home.data) : null;
+        homePath =
+          typeof home.path === "string"
+            ? home.path
+            : home.data
+              ? String(home.data)
+              : null;
       }
       if (homePath && scanPath && !scanPath.value) {
         scanPath.value = homePath;
@@ -540,7 +545,7 @@
     // About dialog
     try {
       const v = await window.__TAURI__.invoke("get_app_info");
-      const ver = v && v.data ? v.data.version : "";
+      const ver = v && v.version ? v.version : (v && v.data ? v.data.version : "");
       if (ver) {
         const el = document.querySelector(".about-version");
         if (el) {
@@ -646,7 +651,7 @@
     let _currentVersion = "";
     try {
       const vv = await window.__TAURI__.invoke("get_app_info");
-      _currentVersion = vv && vv.data ? (vv.data.version || "") : "";
+      _currentVersion = vv && vv.version ? (vv.version || "") : (vv && vv.data ? (vv.data.version || "") : "");
     } catch (e) {}
     window.__checkUpdate = async function () {
       const el = document.getElementById("about-update-check");

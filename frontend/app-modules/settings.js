@@ -42,7 +42,7 @@
       (async function () {
         try {
           const r = await window.__TAURI__.invoke("get_app_data_dir");
-          const p = r && r.data ? r.data.path : "";
+          const p = r && r.path ? r.path : (r && r.data ? r.data.path : "");
           const el = document.getElementById("settings-appdata");
           if (el && p) el.textContent = p;
         } catch (e) {}
