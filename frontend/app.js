@@ -232,6 +232,43 @@
       });
     }
 
+    // ── Focus trap for the about + settings modals ─────────
+    // Activates whenever the overlay becomes visible (class .active or display
+    // flex), so Tab/Shift+Tab stays inside the modal.
+    (function initModalFocusTraps() {
+      const aboutOv = document.getElementById("about-overlay");
+      const settingsOv = document.getElementById("settings-overlay");
+      const targets = [aboutOv, settingsOv].filter(Boolean);
+      let untrap = null;
+
+      function check() {
+        const anyActive = targets.some(function (ov) {
+          return (
+            ov.classList.contains("active") ||
+            (ov.style && ov.style.display === "flex")
+          );
+        });
+        if (anyActive && !untrap) {
+          const card = aboutOv && aboutOv.classList.contains("active")
+            ? aboutOv
+            : settingsOv;
+          untrap = window.trapFocus ? window.trapFocus(card) : null;
+        } else if (!anyActive && untrap) {
+          untrap();
+          untrap = null;
+        }
+      }
+
+      targets.forEach(function (ov) {
+        new MutationObserver(check).observe(ov, {
+          attributes: true,
+          attributeFilter: ["class", "style"],
+        });
+      });
+      // Also trap while settings is toggled via style.display changes.
+      check();
+    })();
+
     // ── Collapsible detail cards ─────────────────────────
     document.querySelectorAll(".collapsible .card-header").forEach(function (
       h,
@@ -485,6 +522,47 @@
     } catch (e) {
       console.debug("Version fetch failed:", e);
     }
+
+    // Load real GitHub release notes into the Changelog tab.
+    (async function loadReleaseNotes() {
+      const changelog = document.querySelector("#about-tab-changelog > div");
+      if (!changelog) return;
+      try {
+        const res = await fetch(
+          "https://api.github.com/repos/SunMe1977/DiskRaptor/releases?per_page=15",
+        );
+        const releases = await res.json();
+        if (!Array.isArray(releases) || releases.length === 0) return;
+        let html = "";
+        for (let ri = 0; ri < releases.length; ri++) {
+          const r = releases[ri];
+          const tag = r.tag_name || "";
+          const body = r.body || "";
+          const date = (r.published_at || "").substring(0, 10);
+          html +=
+            "<div style='margin-bottom:12px;'>" +
+            "<b style='color:var(--text-primary);'>" +
+            escapeHtml(tag) +
+            "</b>" +
+            (date ? " <span style='color:var(--text-muted);font-size:10px;'>" + date + "</span>" : "") +
+            "<div style='white-space:pre-wrap;word-break:break-word;margin-top:4px;'>" +
+            (body ? escapeHtml(body) : "") +
+            "</div></div>";
+        }
+        changelog.innerHTML = html;
+      } catch (e) {
+        // Keep the static fallback changelog if the network call fails.
+        console.debug("Release notes fetch failed:", e);
+      }
+    })();
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
     aboutClose.addEventListener("click", function () {
       aboutOverlay.classList.remove("active");
     });
@@ -652,6 +730,23 @@
         if (e.key === "Escape") langMenu.classList.remove("active");
       });
 
+      // Arrow-key navigation through the language list; Enter selects.
+      langMenu.addEventListener("keydown", function (e) {
+        const items = langMenu.querySelectorAll(".lang-item");
+        if (items.length === 0) return;
+        let idx = Array.prototype.indexOf.call(items, document.activeElement);
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          items[Math.min(idx + 1, items.length - 1)].focus();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          items[Math.max(idx - 1, 0)].focus();
+        } else if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (idx >= 0) items[idx].click();
+        }
+      });
+
       langFilter.addEventListener("keydown", function (e) {
         if (e.key === "Escape") {
           langMenu.classList.remove("active");
@@ -817,4 +912,17 @@
   } else {
     safeInit();
   }
+
+  // Global error handlers: surface uncaught errors instead of a silent blank UI.
+  window.addEventListener("error", function (e) {
+    if (window.showToast) {
+      window.showToast("Unexpected error: " + (e.message || "unknown"), "error");
+    }
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    if (window.showToast) {
+      const msg = e && e.reason && e.reason.message ? e.reason.message : String(e && e.reason);
+      window.showToast("Unhandled: " + msg.substring(0, 120), "error");
+    }
+  });
 })();

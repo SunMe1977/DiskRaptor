@@ -78,13 +78,14 @@
               .then(function (res) {
                 const st = res && res.data ? res.data : {};
                 const sizeStr = fmtBytes(st.total_bytes);
+                const t0 = window.__ || function (s) { return s; };
+                const label =
+                  action === "scan-downloads" ? "Downloads" : "Trash";
                 const preview =
-                  "Scan " +
-                  (action === "scan-downloads" ? "Downloads" : "Trash") +
-                  " folder?\n\n" +
-                  (sizeStr ? "Size: " + sizeStr : "") +
-                  (st.files != null ? "\nFiles: " + st.files : "") +
-                  (st.dirs != null ? "\nFolders: " + st.dirs : "");
+                  t0("tools.scan_preview").replace("{folder}", label) +
+                  (sizeStr ? "\n" + t0("tools.preview_size").replace("{size}", sizeStr) : "") +
+                  (st.files != null ? "\n" + t0("tools.preview_files").replace("{n}", st.files) : "") +
+                  (st.dirs != null ? "\n" + t0("tools.preview_dirs").replace("{n}", st.dirs) : "");
                 window.confirmDialog(preview).then(function (ok) {
                   if (!ok) return;
                   scanPath.value = dir;
@@ -113,6 +114,10 @@
         if (window.__statsPanel) window.__statsPanel.clear();
         if (window.__diagram) window.__diagram.setData(null);
         if (window.__topFiles) window.__topFiles.render([], true);
+        const expBtn = document.getElementById("btn-export");
+        if (expBtn) expBtn.disabled = true;
+        const dupBtn = document.getElementById("btn-duplicates");
+        if (dupBtn) dupBtn.style.display = "none";
         document.querySelector(".status-bar").textContent = (
           window.__ || function (s) { return s; }
         )("status.clear_scan");
@@ -221,7 +226,7 @@
           btn.disabled = true;
           btn.textContent = "Deleting\u2026";
           const ok = await window.confirmDialog(
-            "Move " + emptyDirs.length + " empty folder(s) to Trash?\n\nThey contain no files or subfolders, so nothing else will be deleted.",
+            window.__ ? window.__("tools.empty_folders_delete_confirm").replace("{n}", emptyDirs.length) : "Move " + emptyDirs.length + " empty folder(s) to Trash?",
           );
           if (!ok) { btn.disabled = false; btn.textContent = "\uD83D\uDDD1 Delete all " + emptyDirs.length + " empty folders"; return; }
           let done = 0, failed = 0;
@@ -367,10 +372,8 @@
           }
         }
         if (results.length === 0) {
-          window.showToast(
-            "No files found matching your filters",
-            "info",
-          );
+          const t0 = window.__ || function (s) { return s; };
+          window.showToast(t0("tools.find_no_results"), "info");
           return;
         }
         results.sort(function (a, b) {
@@ -632,7 +635,7 @@
       if (sel.length === 0) { const t0 = window.__ || function (s) { return s; }; window.showToast(t0("toast.nothing_selected"), "warning"); return; }
       const totalSel = sel.reduce(function (s, f) { return s + (f.size || 0); }, 0);
       const ok = await window.confirmDialog(
-        "Move " + sel.length + " file(s) to Trash?\n\nFrees " + fmtBytes(totalSel) + ".\n\nThese include old, large, or incomplete download files.",
+        window.__ ? window.__("tools.cleanup_confirm").replace("{n}", sel.length).replace("{size}", fmtBytes(totalSel)) : "Move " + sel.length + " file(s) to Trash?",
       );
       if (!ok) return;
       cleanBtn.disabled = true;

@@ -18,6 +18,15 @@ runTest("DiskRaptor Tree View Test", 9203, async (cdp, scanPath) => {
   const treeRowCount = await jsExpr(cdp, `document.querySelectorAll('.tree-row').length`);
   assert(`Tree has content`, treeHtml > 100 || treeRowCount > 0, `html=${treeHtml} rows=${treeRowCount}`);
 
+  // Regression: after the tree is ready it must not silently collapse to empty.
+  await sleep(800);
+  const rowCountLater = await jsExpr(cdp, `document.querySelectorAll('.tree-row').length`);
+  assert("Tree does not go empty after load", rowCountLater > 0 || treeHtml > 100, `rows=${rowCountLater}`);
+
+  // The tree status bar should not be stuck on the loading message.
+  const treeStatus = await jsExpr(cdp, `document.querySelector('#tree-panel .status-bar')?.textContent || ''`);
+  assert("Tree status not stuck loading", treeStatus.indexOf("Loading") === -1, `status=${treeStatus}`);
+
   const treeHeader = await jsExpr(cdp, `document.getElementById('tree-header') ? 'found' : 'not-found'`);
   assert("Tree header exists", treeHeader === "found");
 

@@ -16,254 +16,6 @@ class ChunkLoader {
     this.loadedChunks = new Set();
     this.loadedCount = 0;
     this.onProgress = null;
-    this._scanResolve = null;
-    this._scanReject = null;
-  }
-
-  /** Start a scan (async — returns promise that resolves when scan completes). */
-  startScan(path) {
-    const self = this;
-    return new Promise(function (resolve, reject) {
-      self._scanResolve = resolve;
-      self._scanReject = reject;
-      self._doStartScan(path);
-    });
-  }
-
-  /**
-   * Continue with an already-started scan (scan ID known).
-   * Polls for completion and loads chunks.
-   */
-  startScanWithId(scanId, path) {
-    const self = this;
-    return new Promise(function (resolve, reject) {
-      self._scanResolve = resolve;
-      self._scanReject = reject;
-      self._pollScanComplete(scanId);
-    });
-  }
-
-  /** Internal: poll for scan completion by scan ID. */
-  async _pollScanComplete(scanId) {
-    const self = this;
-
-    // Release previous scan
-    if (this.scanId) {
-      try {
-        await self._invoke("release_scan", { scanId: this.scanId });
-      } catch (e) {}
-    }
-    // Save resolve/reject before _reset() clears them
-    const savedResolve = this._scanResolve;
-    const savedReject = this._scanReject;
-    this._reset();
-    this._scanResolve = savedResolve;
-    this._scanReject = savedReject;
-    this.scanId = scanId;
-
-    let scanDone = false;
-    const unlisten =
-      typeof window.__TAURI__.event !== "undefined"
-        ? window.__TAURI__.event.listen("scan:progress", function (evt) {
-            const p = evt.payload;
-            if (
-              p &&
-              (p.is_running === false || p.phase === 3)
-            ) {
-              scanDone = true;
-            }
-          })
-        : null;
-
-    try {
-      // Wait for scan completion (max 100 iterations = ~30s safety)
-      for (let pollIter = 0; pollIter < 100; pollIter++) {
-        if (scanDone) {
-          const result = await self
-            ._invoke("get_scan_result", { scanId: scanId })
-            .catch(function () {
-              return null;
-            });
-          if (result) {
-            self.totalNodes = result.root_info.total_nodes;
-            self.totalChunks = result.root_info.total_chunks;
-            self.allNodes = new Array(self.totalNodes);
-
-            if (self.totalChunks > 0) {
-              await self.loadChunk(0);
-              self._preloadRemainingChunks();
-            }
-
-            if (self._scanResolve) {
-              self._scanResolve(result);
-            }
-            if (unlisten) unlisten();
-            return;
-          }
-        }
-
-        const prog = await self
-          ._invoke("get_scan_progress", { scanId: scanId })
-          .catch(function () {
-            return null;
-          });
-        if (prog && prog.is_running !== undefined) {
-          if (!prog.is_running && prog.phase !== 3) {
-            if (unlisten) unlisten();
-            throw new Error(prog.error || "Scan did not complete successfully.");
-          }
-          if (!prog.is_running || prog.phase === 3) {
-            scanDone = true;
-            continue;
-          }
-        }
-
-        const result = await self
-          ._invoke("get_scan_result", { scanId: scanId })
-          .catch(function () {
-            return null;
-          });
-        if (result) {
-          // Scan finished
-          self.totalNodes = result.root_info.total_nodes;
-          self.totalChunks = result.root_info.total_chunks;
-          self.allNodes = new Array(self.totalNodes);
-
-          if (self.totalChunks > 0) {
-            await self.loadChunk(0);
-            // Pre-load all remaining chunks in parallel batches
-            // This avoids 1220 sequential IPC calls
-            self._preloadRemainingChunks();
-          }
-
-          if (self._scanResolve) {
-            self._scanResolve(result);
-          }
-          if (unlisten) unlisten();
-          return;
-        }
-        await new Promise(function (r) {
-          setTimeout(r, 300);
-        });
-      }
-      // If we exhaust all iterations, reject
-      if (self._scanReject)
-        self._scanReject(new Error("Polling timed out (100 iterations)"));
-    } catch (e) {
-      if (self._scanReject) self._scanReject(e);
-    }
-  }
-
-  /** Internal: start scan, poll for completion. */
-  async _doStartScan(path) {
-    const self = this;
-
-    // Save resolve/reject before _reset() clears them
-    const savedResolve = this._scanResolve;
-    const savedReject = this._scanReject;
-
-    if (this.scanId) {
-      try {
-        await self._invoke("release_scan", { scanId: this.scanId });
-      } catch (e) {}
-    }
-    this._reset();
-
-    // Restore resolve/reject after _reset()
-    this._scanResolve = savedResolve;
-    this._scanReject = savedReject;
-
-    try {
-      const initResult = await self._invoke("start_scan", { path: path });
-      this.scanId = initResult.scan_id;
-      await self._pollScanComplete(this.scanId);
-    } catch (e) {
-      if (self._scanReject) self._scanReject(e);
-    }
-  }
-
-  /** Load all chunks from a scan result directly (fast path — no per-chunk FFI calls) */
-  loadFromResult(result) {
-    if (!result || !result.chunks) {
-      console.warn("loadFromResult: no chunks in result");
-      return;
-    }
-
-    let chunksArray;
-    if (typeof result.chunks === "string") {
-      try { chunksArray = JSON.parse(result.chunks); } catch(e) {
-        console.warn("Failed to parse chunks JSON:", e);
-        return;
-      }
-    } else if (Array.isArray(result.chunks)) {
-      chunksArray = result.chunks;
-    } else {
-      console.warn("loadFromResult: unknown chunks type:", typeof result.chunks);
-      return;
-    }
-
-    if (!Array.isArray(chunksArray) || chunksArray.length === 0) {
-      console.warn("loadFromResult: empty or invalid chunks array");
-      return;
-    }
-
-    this.scanId = result.scan_id || this.scanId;
-    this.totalChunks = chunksArray.length;
-    this.loadedChunks = new Set();
-    this.parentMap = new Map();
-
-    // First pass: count total nodes
-    let totalNodes = 0;
-    if (result.root_info && result.root_info.total_nodes) {
-      totalNodes = result.root_info.total_nodes;
-    } else {
-      for (let ci = 0; ci < chunksArray.length; ci++) {
-        totalNodes += (chunksArray[ci].nodes || []).length;
-      }
-    }
-    this.totalNodes = totalNodes;
-    this.allNodes = new Array(totalNodes);
-
-    // Second pass: populate all nodes and parent map
-    let nodeIdx = 0;
-    for (let ci = 0; ci < chunksArray.length; ci++) {
-      const chunk = chunksArray[ci];
-      if (!chunk || !chunk.nodes) continue;
-      for (let ni = 0; ni < chunk.nodes.length; ni++) {
-        const node = chunk.nodes[ni];
-        if (!node) continue;
-        node._arenaIndex = nodeIdx;
-        node._children = [];
-        node._loadedChildren = false;
-        this.allNodes[nodeIdx] = node;
-
-        if (node.parent !== 4294967295 && node.parent !== undefined) {
-          if (!this.parentMap.has(node.parent)) {
-            this.parentMap.set(node.parent, []);
-          }
-          this.parentMap.get(node.parent).push(nodeIdx);
-        }
-        nodeIdx++;
-      }
-      this.loadedChunks.add(ci);
-    }
-    this.loadedCount = nodeIdx;
-
-    // Sort children by size (largest first)
-    const self = this;
-    const entries = Array.from(this.parentMap.entries());
-    for (let ei = 0; ei < entries.length; ei++) {
-      const children = entries[ei][1];
-      children.sort(function (a, b) {
-        const na = self.allNodes[a];
-        const nb = self.allNodes[b];
-        return (nb ? nb.size : 0) - (na ? na.size : 0);
-      });
-    }
-
-    if (this.onProgress) {
-      this.onProgress(this.loadedChunks.size, this.totalChunks);
-    }
   }
 
   /**
@@ -272,16 +24,32 @@ class ChunkLoader {
    */
   async loadChunk(chunkIndex) {
     if (this.loadedChunks.has(chunkIndex)) return;
+    if (chunkIndex < 0 || chunkIndex >= this.totalChunks) {
+      console.warn("loadChunk: index out of range", chunkIndex, "total", this.totalChunks);
+      return;
+    }
 
     const self = this;
     const chunk = await this._invoke("get_chunk", {
       scanId: this.scanId,
       chunkIndex: chunkIndex,
     });
+    if (!chunk || !Array.isArray(chunk.nodes)) {
+      console.warn("loadChunk: invalid chunk payload for", chunkIndex);
+      return;
+    }
 
-    const baseIdx = chunkIndex * 10000;
+    const baseIdx =
+      typeof chunk.start_index === "number"
+        ? chunk.start_index
+        : chunkIndex * 10000;
+    const touchedParents = new Set();
     for (let i = 0; i < chunk.nodes.length; i++) {
       const arenaIdx = baseIdx + i;
+      if (arenaIdx >= this.allNodes.length) {
+        console.warn("loadChunk: arena index out of bounds", arenaIdx, "allNodes", this.allNodes.length);
+        break;
+      }
       const node = chunk.nodes[i];
       node._arenaIndex = arenaIdx;
       node._children = [];
@@ -293,16 +61,19 @@ class ChunkLoader {
           this.parentMap.set(node.parent, []);
         }
         this.parentMap.get(node.parent).push(arenaIdx);
+        touchedParents.add(node.parent);
       }
     }
 
     this.loadedChunks.add(chunkIndex);
     this.loadedCount += chunk.nodes.length;
 
+    // Only re-sort the parent lists that actually gained children this round
+    // (avoids an O(all_nodes log n) sort on every chunk load).
     const _self = this;
-    const entries = Array.from(this.parentMap.entries());
+    const entries = Array.from(touchedParents);
     for (let ei = 0; ei < entries.length; ei++) {
-      const children = entries[ei][1];
+      const children = this.parentMap.get(entries[ei]) || [];
       children.sort(function (a, b) {
         const na = _self.allNodes[a];
         const nb = _self.allNodes[b];
@@ -420,7 +191,5 @@ class ChunkLoader {
     this.parentMap = new Map();
     this.loadedChunks = new Set();
     this.loadedCount = 0;
-    this._scanResolve = null;
-    this._scanReject = null;
   }
 }

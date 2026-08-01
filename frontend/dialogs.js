@@ -52,7 +52,9 @@
         return b;
       }
 
+      let untrap = null;
       function close(result) {
+        if (untrap) { untrap(); untrap = null; }
         document.removeEventListener("keydown", onKey);
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
         resolve(result);
@@ -80,7 +82,36 @@
       card.appendChild(footer);
       document.body.appendChild(overlay);
       if (input) input.focus();
+      else if (ok) ok.focus();
+      untrap = trapFocus(card);
     });
+  }
+
+  /**
+   * Trap Tab focus inside a modal container so keyboard users can't tab out
+   * into the page behind the overlay.
+   * @param {HTMLElement} container - the modal card/root element
+   */
+  function trapFocus(container) {
+    if (!container) return function () {};
+    const onKey = function (e) {
+      if (e.key !== "Tab") return;
+      const focusables = container.querySelectorAll(
+        'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return function () { document.removeEventListener("keydown", onKey); };
   }
 
   /**
@@ -107,4 +138,5 @@
   window.confirmDialog = confirmDialog;
   window.alertDialog = alertDialog;
   window.promptDialog = promptDialog;
+  window.trapFocus = trapFocus;
 })();

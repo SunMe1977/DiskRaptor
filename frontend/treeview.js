@@ -65,9 +65,13 @@ class TreeView {
     const self = this;
     const el = document.getElementById("tree-filter");
     if (!el) return;
+    let timer = null;
     el.addEventListener("input", function() {
       self._filterText = this.value.toLowerCase().trim();
-      self.rebuild();
+      clearTimeout(timer);
+      timer = setTimeout(function() {
+        self.rebuild();
+      }, 200);
     });
   }
 
@@ -291,6 +295,11 @@ class TreeView {
         this._ctxMenu.style.display = "none";
       }
     });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this._ctxMenu) {
+        this._ctxMenu.style.display = "none";
+      }
+    });
 
     this._ctxMenu.addEventListener("click", (e) => {
       const item = e.target.closest(".tctx-item");
@@ -508,6 +517,17 @@ class TreeView {
     } catch (e) {
       console.warn("_buildList error:", e);
     }
+    // If the root never materialised, try loading chunk 0 explicitly once.
+    if (this.visibleNodes.length === 0 && this.loader && !this.loader.getNode(0)) {
+      try {
+        if (this.loader.totalChunks > 0 && !this.loader.loadedChunks.has(0)) {
+          await this.loader.loadChunk(0);
+        }
+        await this._buildList(0, 0);
+      } catch (e) {
+        console.warn("Root chunk fallback failed:", e);
+      }
+    }
 
     this.maxSize = 0;
     this.maxFileCount = 0;
@@ -531,11 +551,28 @@ class TreeView {
     if (nc) nc.textContent = t("tree.shown").replace("{n}", totalItems.toLocaleString());
 
     const se = document.querySelector("#tree-panel .status-bar");
-    if (se)
-      se.textContent = t("tree.visible").replace("{n}", totalItems).replace("{s}", totalItems === 1 ? "" : "s");
+    if (se) {
+      if (totalItems === 0) {
+        // Distinguish "scan still loading chunks" from "truly empty".
+        const loading =
+          this.loader &&
+          this.loader.totalChunks > 0 &&
+          this.loader.loadedChunks.size < this.loader.totalChunks;
+        se.textContent = loading
+          ? "Loading tree..."
+          : t("tree.visible").replace("{n}", 0).replace("{s}", "");
+      } else {
+        se.textContent = t("tree.visible").replace("{n}", totalItems).replace("{s}", totalItems === 1 ? "" : "s");
+      }
+    }
   }
 
   async _buildList(arenaIdx, depth) {
+    // If the requested node isn't loaded yet (chunks still arriving), wait a
+    // short moment and retry so we never render a half-empty tree.
+    for (let tries = 0; tries < 50 && !this.loader.getNode(arenaIdx); tries++) {
+      await new Promise(function (r) { setTimeout(r, 100); });
+    }
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
 

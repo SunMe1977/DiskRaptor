@@ -36,6 +36,7 @@ pub fn chunk_tree(arena: &TreeNodeArena) -> Result<Vec<TreeChunk>> {
             chunk_id,
             total_chunks,
             total_nodes: total,
+            start_index: start as u32,
             nodes,
         });
     }
@@ -84,6 +85,7 @@ pub fn make_root_chunk(arena: &TreeNodeArena) -> Vec<TreeChunk> {
         chunk_id: 0,
         total_chunks: 1,
         total_nodes: total,
+        start_index: 0,
         nodes,
     }]
 }

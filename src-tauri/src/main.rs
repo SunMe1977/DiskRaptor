@@ -75,7 +75,7 @@ impl JsonResult {
 
 #[tauri::command]
 fn delete_path(path: String) -> JsonResult {
-    if let Ok(_) = trash::delete(&path) {
+    if trash::delete(&path).is_ok() {
         return JsonResult::ok_empty();
     }
     #[cfg(target_os = "macos")]
@@ -1065,6 +1065,7 @@ fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std:
     Some((base, cookies, cache_paths))
 }
 
+#[allow(clippy::needless_return)] // cfg-gated returns keep each platform arm type-consistent
 fn browser_paths(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
     #[cfg(target_os = "windows")]
     { return browser_paths_windows(def); }
@@ -1398,7 +1399,8 @@ print(json.dumps(out))"#;
         .output();
     if let Ok(out) = output {
         if let Ok(s) = String::from_utf8(out.stdout) {
-            if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(&s.trim()) {
+            let trimmed = s.trim();
+            if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(trimmed) {
                 return items;
             }
         }
@@ -1458,7 +1460,7 @@ async fn check_for_updates() -> JsonResult {
     // installed version. Async so a slow network call never blocks the UI.
     let installed = env!("CARGO_PKG_VERSION");
     let result = tauri::async_runtime::spawn_blocking(|| {
-        let client = std::process::Command::new("curl")
+        let out = std::process::Command::new("curl")
             .args([
                 "-s",
                 "-m",
@@ -1466,8 +1468,7 @@ async fn check_for_updates() -> JsonResult {
                 "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
             ])
             .output()
-            .ok();
-        let Some(out) = client else { return None };
+            .ok()?;
         if !out.status.success() { return None; }
         let s = String::from_utf8_lossy(&out.stdout);
         let v: serde_json::Value = serde_json::from_str(&s).ok()?;
@@ -1495,6 +1496,15 @@ async fn check_for_updates() -> JsonResult {
 
 #[tauri::command]
 fn open_url(url: String) -> JsonResult {
+    // Restrict to safe schemes so a compromised frontend can't use this to
+    // launch arbitrary programs (e.g. file:///path/to/script).
+    let lower = url.trim().to_ascii_lowercase();
+    if !(lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("mailto:"))
+    {
+        return JsonResult::err("Blocked URL scheme");
+    }
     let _ = open::that(&url);
     JsonResult::ok_empty()
 }
@@ -1525,6 +1535,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
     *scan.scan.current_dir.lock().unwrap() = path.clone();
     *scan.scan.start_time.lock().unwrap() = Instant::now();
     *scan.scan.result.lock().unwrap() = None;
+    *scan.scan.errors.lock().unwrap() = Vec::new();
 
     let p = path.clone();
     let fs = follow_symlinks.unwrap_or(false);
@@ -1571,7 +1582,11 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
                     chunks, errors: Vec::new(),
                 });
             }
-            Err(e) => eprintln!("[scan] error: {}", e),
+            Err(e) => {
+                eprintln!("[scan] error: {}", e);
+                // Surface the error to the UI so the user sees why the tree is empty.
+                s.scan.errors.lock().unwrap().push(e.to_string());
+            }
         }
         s.scan.running.store(false, Ordering::Release);
     }).ok();
@@ -1589,6 +1604,7 @@ fn scan_progress_data(state: &AppState) -> serde_json::Value {
     } else {
         (state.scan.files_found.load(Ordering::Relaxed), state.scan.dirs_found.load(Ordering::Relaxed), state.scan.bytes_found.load(Ordering::Relaxed))
     };
+    let errors: Vec<String> = state.scan.errors.lock().unwrap().clone();
     drop(rg);
     let phase: u64 = if !is_running && has_result { 3 } else if is_running { 0 } else { 3 };
     let elapsed = state.scan.start_time.lock().unwrap().elapsed().as_secs();
@@ -1597,6 +1613,7 @@ fn scan_progress_data(state: &AppState) -> serde_json::Value {
         "files_found": files, "dirs_found": dirs, "bytes_found": bytes,
         "is_running": is_running, "current_dir": cd,
         "elapsed_secs": elapsed, "phase": phase,
+        "errors": errors,
     })
 }
 
@@ -1966,7 +1983,6 @@ fn handle_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str) {
         "empty_trash" => click(".tools-item[data-action='trash']"),
         "menu_exit" => {
             app.exit(0);
-            return;
         }
         "check_updates" => run("if(window.__checkUpdate)window.__checkUpdate();"),
         "settings" => run("var s=document.getElementById('settings-overlay');if(s)s.style.display='flex';"),
@@ -2045,7 +2061,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             }
             Ok(())
         })
-        .menu(|app| build_native_menu(app))
+        .menu(build_native_menu)
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
         .invoke_handler(tauri::generate_handler![
             delete_path, delete_permanent,
@@ -2415,5 +2431,52 @@ mod tests {
             assert!(data.get("data_dir").is_some());
             assert_eq!(data["version"], env!("CARGO_PKG_VERSION"));
         }
+    }
+
+    #[test]
+    fn open_url_rejects_dangerous_schemes() {
+        assert!(open_url("file:///etc/passwd".to_string()).error.is_some());
+        assert!(open_url("javascript:alert(1)".to_string()).error.is_some());
+        assert!(open_url("data:text/html,x".to_string()).error.is_some());
+        assert!(open_url("https://example.com".to_string()).success);
+        assert!(open_url("mailto:test@example.com".to_string()).success);
+    }
+
+    #[test]
+    fn chunk_start_index_matches_arena_offset() {
+        // chunk_tree assigns start_index = chunk_id * CHUNK_SIZE; the UI uses
+        // this to place nodes instead of assuming a fixed chunk size.
+        use diskraptor_scanner::scanner::tree::{NodeType, TreeNode, TreeNodeArena};
+        use diskraptor_scanner::streaming::chunker::chunk_tree;
+        let mut arena = TreeNodeArena::with_capacity(25_000);
+        for i in 0..25_000u32 {
+            let mut n = TreeNode {
+                name: format!("n{i}").into(),
+                size: i as u64,
+                file_count: 1,
+                dir_count: 0,
+                node_type: NodeType::File,
+                parent: 0,
+                first_child: u32::MAX,
+                next_sibling: u32::MAX,
+                depth: 1,
+                chunk_id: 0,
+                mtime: 0,
+            };
+            if i == 0 {
+                n.parent = u32::MAX;
+                n.node_type = NodeType::Directory;
+                n.dir_count = 1;
+                n.file_count = 0;
+            }
+            arena.nodes.push(n);
+        }
+        let chunks = chunk_tree(&arena).unwrap();
+        assert_eq!(chunks.len(), 3, "25000 nodes -> 3 chunks of 10000");
+        assert_eq!(chunks[0].start_index, 0);
+        assert_eq!(chunks[1].start_index, 10_000);
+        assert_eq!(chunks[2].start_index, 20_000);
+        assert_eq!(chunks[0].nodes.len(), 10_000);
+        assert_eq!(chunks[2].nodes.len(), 5_000);
     }
 }

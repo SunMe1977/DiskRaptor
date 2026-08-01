@@ -181,6 +181,9 @@ pub struct TreeChunk {
     pub chunk_id: u32,
     pub total_chunks: u32,
     pub total_nodes: u32,
+    /// Arena index of the first node in this chunk (lets the UI place nodes
+    /// without assuming a fixed chunk size).
+    pub start_index: u32,
     pub nodes: Vec<TreeNode>,
 }
 

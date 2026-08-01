@@ -20,6 +20,7 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - run: cargo check --manifest-path src-tauri/Cargo.toml --features test-server
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   js:
     runs-on: ubuntu-latest

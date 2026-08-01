@@ -1,4 +1,5 @@
 // DiskRaptor Rust Scanner - C FFI for Qt integration
+#![allow(clippy::missing_safety_doc)]
 use crate::scanner::tree::{ScanStats, TreeChunk, TreeNodeArena};
 use crate::scanner::walker;
 
@@ -46,7 +47,7 @@ static STATE: LazyLock<ScanState> = LazyLock::new(|| ScanState {
 });
 
 #[no_mangle]
-pub extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_char {
     let config_str = match unsafe { CStr::from_ptr(json_config) }.to_str() {
         Ok(s) => s.to_string(),
         Err(e) => return make_json_error(&format!("invalid config UTF-8: {}", e)),
@@ -175,7 +176,7 @@ pub extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn dr_get_progress() -> *mut c_char {
+pub unsafe extern "C" fn dr_get_progress() -> *mut c_char {
     let state = &*STATE;
     let is_running = state.running.load(Ordering::Acquire);
     let rg = state.result.lock().unwrap();
@@ -220,7 +221,7 @@ pub extern "C" fn dr_get_progress() -> *mut c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn dr_get_result() -> *mut c_char {
+pub unsafe extern "C" fn dr_get_result() -> *mut c_char {
     let g = STATE.result.lock().unwrap();
     if let Some(ref d) = *g {
         let sid = d.scan_id;
@@ -242,7 +243,7 @@ pub extern "C" fn dr_get_result() -> *mut c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn dr_cancel_scan() -> bool {
+pub unsafe extern "C" fn dr_cancel_scan() -> bool {
     let s = &*STATE;
     if !s.running.load(Ordering::Acquire) {
         return false;
@@ -255,11 +256,11 @@ pub extern "C" fn dr_cancel_scan() -> bool {
     true
 }
 #[no_mangle]
-pub extern "C" fn dr_is_running() -> bool {
+pub unsafe extern "C" fn dr_is_running() -> bool {
     STATE.running.load(Ordering::Acquire)
 }
 #[no_mangle]
-pub extern "C" fn dr_get_chunk(c: u32) -> *mut c_char {
+pub unsafe extern "C" fn dr_get_chunk(c: u32) -> *mut c_char {
     let s = &*STATE;
     let g = s.result.lock().unwrap();
     if let Some(ref d) = *g {
@@ -274,7 +275,7 @@ pub extern "C" fn dr_get_chunk(c: u32) -> *mut c_char {
     CString::new("{}").unwrap().into_raw()
 }
 #[no_mangle]
-pub extern "C" fn dr_free_string(s: *mut c_char) {
+pub unsafe extern "C" fn dr_free_string(s: *mut c_char) {
     if s.is_null() {
         return;
     }
@@ -303,7 +304,7 @@ fn quick_hash(path: &std::path::Path) -> u64 {
 }
 
 #[no_mangle]
-pub extern "C" fn dr_find_duplicates(path: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn dr_find_duplicates(path: *const c_char) -> *mut c_char {
     use std::collections::HashMap;
     let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();
 
