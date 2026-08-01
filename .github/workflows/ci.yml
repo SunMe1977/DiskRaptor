@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [main]
 
+# Only the latest run per branch/PR matters: cancel older in-progress ones.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     runs-on: ubuntu-latest
