@@ -46,6 +46,12 @@ impl Default for ScanConfig {
     }
 }
 
+/// True if any path segment equals `target` (avoids matching partial names
+/// like "bin" matching "binary_folder").
+fn path_has_component(path: &str, target: &str) -> bool {
+    path.split(['/', '\\']).any(|c| c == target)
+}
+
 struct TopFilesAccum {
     files: Mutex<Vec<TopFileEntry>>,
     min_size: Mutex<u64>,
@@ -108,6 +114,20 @@ impl FileTypeAccum {
     }
     fn into_sorted(self) -> Vec<FileTypeCount> {
         let map = self.map.into_inner();
+        let mut r: Vec<FileTypeCount> = map
+            .into_iter()
+            .map(|(ext, (c, s))| FileTypeCount {
+                extension: ext,
+                count: c,
+                total_size: s,
+                size_human: format_size(s),
+            })
+            .collect();
+        r.sort_unstable_by_key(|b| std::cmp::Reverse(b.total_size));
+        r
+    }
+    fn sorted_clone(&self) -> Vec<FileTypeCount> {
+        let map = self.map.lock().clone();
         let mut r: Vec<FileTypeCount> = map
             .into_iter()
             .map(|(ext, (c, s))| FileTypeCount {
@@ -240,7 +260,7 @@ mod platform {
 
             if is_dir {
                 dirs_found += 1;
-                if skip_dirs.iter().any(|sd| path_buf.contains(sd.as_str())) {
+                if skip_dirs.iter().any(|sd| path_has_component(&path_buf, sd.as_str())) {
                     continue;
                 }
                 let depth = if pi == root_idx {
@@ -346,11 +366,17 @@ fn finish_scan(
         scan_time_ms: elapsed,
         top_files: match Arc::try_unwrap(top_files) {
             Ok(t) => t.into_inner(),
-            Err(_) => vec![],
+            Err(arc) => {
+                eprintln!("[warn] top_files Arc still referenced; cloning");
+                arc.files.lock().clone()
+            }
         },
         file_type_breakdown: match Arc::try_unwrap(file_types) {
             Ok(t) => t.into_sorted(),
-            Err(_) => vec![],
+            Err(arc) => {
+                eprintln!("[warn] file_types Arc still referenced; cloning");
+                arc.sorted_clone()
+            }
         },
     };
     Ok(ScanResult { arena, stats })
@@ -400,7 +426,17 @@ pub fn scan_simple(
         }
         let entry = match entry_result {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                // Collect errors like the jwalk path so the caller learns
+                // which folders were inaccessible.
+                if let Some(p) = e.path() {
+                    let mut errs = config.errors.lock().unwrap();
+                    if errs.len() < 100 {
+                        errs.push(format!("Access denied: {}", p.to_string_lossy()));
+                    }
+                }
+                continue;
+            }
         };
         let full = entry.path().to_string_lossy().to_string();
         if full == root_path {
@@ -416,7 +452,7 @@ pub fn scan_simple(
         let pi = *ptix.get(&parent).unwrap_or(&root_idx);
         if is_dir {
             dirs_found += 1;
-            if skip_dirs.iter().any(|sd| full.contains(sd.as_str())) {
+            if skip_dirs.iter().any(|sd| path_has_component(&full, sd.as_str())) {
                 continue;
             }
             let depth = if pi == root_idx {

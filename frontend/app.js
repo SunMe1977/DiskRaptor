@@ -609,9 +609,11 @@
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
     }
-    aboutClose.addEventListener("click", function () {
-      aboutOverlay.classList.remove("active");
-    });
+    if (aboutClose) {
+      aboutClose.addEventListener("click", function () {
+        aboutOverlay.classList.remove("active");
+      });
+    }
     aboutOverlay.addEventListener("click", function (e) {
       if (e.target === aboutOverlay) aboutOverlay.classList.remove("active");
     });

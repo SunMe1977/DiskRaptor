@@ -1744,6 +1744,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
                 eprintln!("[scan] error: {}", e);
                 // Surface the error to the UI so the user sees why the tree is empty.
                 s.scan.errors.lock().unwrap().push(e.to_string());
+                let _ = result_handle.emit("scan:error", serde_json::json!({ "error": e.to_string() }));
             }
         }
         s.scan.running.store(false, Ordering::Release);
@@ -1787,8 +1788,8 @@ fn build_chunk(arena: &scanner::tree::TreeNodeArena, chunk_id: u32) -> Option<Tr
     if chunk_id >= total_chunks {
         return None;
     }
-    let start: usize = (chunk_id * CHUNK_SIZE) as usize;
-    let end: usize = (((chunk_id + 1) * CHUNK_SIZE).min(total)) as usize;
+    let start: usize = (chunk_id as u64 * CHUNK_SIZE as u64) as usize;
+    let end: usize = (((chunk_id as u64 + 1) * CHUNK_SIZE as u64).min(total as u64)) as usize;
     let mut nodes = Vec::with_capacity(end - start);
     for idx in start..end {
         let mut node = arena.nodes[idx].clone();

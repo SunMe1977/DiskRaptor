@@ -22,8 +22,9 @@ pub fn chunk_tree(arena: &TreeNodeArena) -> Result<Vec<TreeChunk>> {
     let mut chunks = Vec::with_capacity(total_chunks as usize);
 
     for chunk_id in 0..total_chunks {
-        let start = (chunk_id * CHUNK_SIZE) as usize;
-        let end = ((chunk_id + 1) * CHUNK_SIZE).min(total) as usize;
+        // Promote to u64 to avoid u32 overflow on huge arenas.
+        let start = (chunk_id as u64 * CHUNK_SIZE as u64) as usize;
+        let end = (((chunk_id as u64 + 1) * CHUNK_SIZE as u64).min(total as u64)) as usize;
 
         let mut nodes: Vec<TreeNode> = Vec::with_capacity(end - start);
         for idx in start..end {

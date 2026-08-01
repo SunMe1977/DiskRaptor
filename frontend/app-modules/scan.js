@@ -249,6 +249,7 @@
       progressElapsedValEl.textContent = "0s";
       progressDirEl.textContent = "";
       speedSamples.length = 0;
+      let unlisten = null;
 
       try {
         const initScan = await window.__TAURI__.invoke("start_scan", {
@@ -449,7 +450,7 @@
           }
         }
 
-        const unlisten = window.__TAURI__.event.listen(
+        unlisten = window.__TAURI__.event.listen(
           "scan:progress",
           function () {
             // Event only signals "something changed"; fetch the full progress
@@ -479,7 +480,6 @@
           if (p) onProgress(p);
         }
 
-        if (unlisten && typeof unlisten === "function") unlisten();
         if (!done) throw new Error("Scan timeout");
 
         progressSpeedValEl.textContent = "\u2713";
@@ -854,6 +854,7 @@
         document.querySelector(".status-bar").textContent =
           "Error: " + err;
       } finally {
+        if (unlisten && typeof unlisten === "function") unlisten();
         clearTimeout(safetyTimer);
         state.isScanning = false;
         btnScan.disabled = false;
@@ -873,8 +874,10 @@
 
     // Cancel (toolbar)
     btnCancel.addEventListener("click", async function () {
-      document.getElementById("progress-status").textContent =
-        (window.__ || function (s) { return s; })("status.cancelling");
+      const psEl = document.getElementById("progress-status");
+      if (psEl)
+        psEl.textContent =
+          (window.__ || function (s) { return s; })("status.cancelling");
       btnCancel.disabled = true;
       try {
         await window.__TAURI__.invoke("cancel_scan", {});

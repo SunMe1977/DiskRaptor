@@ -87,9 +87,9 @@ build_mas_pkg() {
   # sandbox-unsafe code paths (smartctl/system_profiler/osascript subprocesses).
   cd src-tauri
   if [ -n "$TAURI_TARGET" ]; then
-    npx tauri build --bundles app --ci --features store --target "$TAURI_TARGET" 2>&1 || true
+    npx tauri build --bundles app --ci --features store --target "$TAURI_TARGET" 2>&1
   else
-    npx tauri build --bundles app --ci --features store 2>&1 || true
+    npx tauri build --bundles app --ci --features store 2>&1
   fi
   cd ..
 
@@ -304,7 +304,7 @@ cd src-tauri
 # `app` bundle only exists on macOS; on Linux we only need the raw binary.
 TAURI_BUNDLES="app"
 [ "$PLATFORM" = "linux" ] && TAURI_BUNDLES="--no-bundle"
-npx tauri build --bundles "$TAURI_BUNDLES" --ci $TAURI_TARGET 2>&1 || true
+npx tauri build --bundles "$TAURI_BUNDLES" --ci $TAURI_TARGET 2>&1
 cd ..
 
 # Also build scanner library for backward compat

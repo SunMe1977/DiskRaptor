@@ -48,11 +48,25 @@
         } catch (e) {}
       })();
 
-      const presets = [
-        { label: "Quick Scan", value: "/Users" },
-        { label: "Downloads", value: "~/Downloads" },
-        { label: "Desktop", value: "~/Desktop" }
-      ];
+      const isWin = /win/i.test(navigator.platform || "");
+      const isMac = /mac/i.test(navigator.platform || "");
+      const presets = isWin
+        ? [
+            { label: "Quick Scan", value: "C:\\Users" },
+            { label: "Downloads", value: "C:\\Users\\Public\\Downloads" },
+            { label: "Desktop", value: "C:\\Users\\Public\\Desktop" },
+          ]
+        : isMac
+          ? [
+              { label: "Quick Scan", value: "/Users" },
+              { label: "Downloads", value: "~/Downloads" },
+              { label: "Desktop", value: "~/Desktop" },
+            ]
+          : [
+              { label: "Quick Scan", value: "/home" },
+              { label: "Downloads", value: "~/Downloads" },
+              { label: "Desktop", value: "~/Desktop" },
+            ];
       const presetWrap = document.getElementById("settings-presets");
       if (presetWrap) {
         presetWrap.innerHTML = presets.map(function (p) {
@@ -140,7 +154,9 @@
           const sysUsed = sysMem.used || (total - (sysMem.free || 0));
           const sysPct = Math.round((sysUsed / total) * 100);
           ramSysFill.style.width = sysPct + "%";
-          ramSysFill.className = "ram-bar-fill-sys" + (sysPct > 85 ? " critical" : sysPct > 70 ? " warning" : "");
+          ramSysFill.classList.add("ram-bar-fill-sys");
+          ramSysFill.classList.toggle("critical", sysPct > 85);
+          ramSysFill.classList.toggle("warning", sysPct > 70 && sysPct <= 85);
           ramSysText.textContent = formatBytes(sysUsed) + " / " + formatBytes(total) + " (" + sysPct + "%)";
         }
         if (procMem && procMem.resident > 0) {

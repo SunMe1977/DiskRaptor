@@ -162,7 +162,8 @@ pub fn format_size(bytes: u64) -> String {
         return "0 B".into();
     }
     let bytes_f = bytes as f64;
-    let unit_idx = (bytes_f.log10() / 3.0) as usize;
+    // Binary units: use log2 so the unit index matches powers of 1024.
+    let unit_idx = (bytes_f.log2() / 10.0).floor() as usize;
     let unit_idx = unit_idx.min(UNITS.len() - 1);
     let value = bytes_f / (1024u64.pow(unit_idx as u32) as f64);
     if unit_idx == 0 {

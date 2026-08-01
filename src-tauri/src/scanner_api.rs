@@ -51,6 +51,9 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
     // SAFETY: `json_config` must be a valid, NUL-terminated UTF-8 C string
     // that remains valid for the duration of this call. The pointer is only
     // read here and never retained.
+    if json_config.is_null() {
+        return make_json_error("json_config is null");
+    }
     let config_str = match unsafe { CStr::from_ptr(json_config) }.to_str() {
         Ok(s) => s.to_string(),
         Err(e) => return make_json_error(&format!("invalid config UTF-8: {}", e)),
@@ -102,9 +105,10 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
     *state.current_dir.lock().unwrap() = path_str.clone();
     *state.start_time.lock().unwrap() = Instant::now();
     *state.result.lock().unwrap() = None;
+    state.errors.lock().unwrap().clear();
     let path_clone = path_str.clone();
 
-    std::thread::Builder::new()
+    let spawn_result = std::thread::Builder::new()
         .name("scan".into())
         .spawn(move || {
             eprintln!("[scan] starting scan of: {}", path_clone);
@@ -171,7 +175,15 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
                 }
             }
         })
-        .ok();
+        .map_err(|e| e.to_string())
+        .map(std::mem::drop);
+
+    if let Err(e) = spawn_result {
+        // Thread creation failed (OS limit / OOM): reset the running flag so
+        // future scans aren't blocked forever.
+        state.running.store(false, Ordering::Release);
+        return make_json_error(&format!("failed to spawn scan thread: {}", e));
+    }
 
     CString::new(serde_json::json!({"success":true,"scan_id":scan_id}).to_string())
         .unwrap()
@@ -292,7 +304,9 @@ pub unsafe extern "C" fn dr_free_string(s: *mut c_char) {
 }
 
 fn make_json_error(msg: &str) -> *mut c_char {
-    STATE.running.store(false, Ordering::Release);
+    // NOTE: must NOT touch STATE.running here — it may be called while a scan
+    // is still running (e.g. re-entry "scan already running"); resetting the
+    // flag would corrupt dr_is_running() state.
     CString::new(format!("{{\"success\":false,\"error\":\"{}\"}}", msg))
         .unwrap()
         .into_raw()
@@ -313,6 +327,9 @@ fn quick_hash(path: &std::path::Path) -> u64 {
 #[no_mangle]
 pub unsafe extern "C" fn dr_find_duplicates(path: *const c_char) -> *mut c_char {
     use std::collections::HashMap;
+    if path.is_null() {
+        return make_json_error("path is null");
+    }
     // SAFETY: `path` must be a valid, NUL-terminated C string that remains
     // valid for the duration of this call; it is only read, never retained.
     let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();

@@ -58,7 +58,7 @@ if %ERRORLEVEL% neq 0 (
     pause
     exit /b 1
 )
-echo OKREM -- Step 3: Create dist package --------------
+REM -- Step 3: Create dist package ----------
 echo.
 echo [3/3] Packaging dist...
 cd /d "%~dp0"
@@ -113,7 +113,9 @@ if exist "%MAKENSIS%" (
         echo  OK - NSIS installer created
         if defined SIGNTOOL (
             echo  [SIGN] Signing installer...
-            "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%~dp0dist\DiskRaptor-*.exe"
+            for %%f in ("%~dp0dist\DiskRaptor-*.exe") do (
+                "%SIGNTOOL%" sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 "%%f"
+            )
             echo  OK - Installer signed
         )
     ) else (
