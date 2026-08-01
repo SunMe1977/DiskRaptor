@@ -29,7 +29,7 @@
 
 - [ ] TypeScript migration (or at least strict JSDoc across all modules)
 - [ ] Event-driven progress (replace 30-min busy-polling loop)
-- [ ] Lazy-load Galaxy view via dynamic `import()`
+- [x] **Lazy-load Galaxy view** — scripts injected only on first use (no script tags in index.html)
 - [ ] Remove hardcoded version/branding from welcome page (star/fork appeal)
 - [ ] Add C++ unit tests (Qt Test framework)
 - [ ] macOS: automatically detect Qt path instead of hardcoded `/usr/local/opt/qt`

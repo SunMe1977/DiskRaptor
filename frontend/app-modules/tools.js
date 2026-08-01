@@ -25,34 +25,38 @@
       const action = item.dataset.action;
       toolsMenu.classList.remove("active");
 
-      if (action === "scan-downloads") {
+      if (action === "scan-downloads" || action === "scan-trash") {
         window.__TAURI__
           .invoke("get_home_dir")
           .then(function (home) {
             const p =
               typeof home === "string" ? home : (home?.data || "");
-            const dl = p
-              ? p.replace(/[\\/]+$/, "") + "/Downloads"
-              : "";
-            if (dl && scanPath) {
-              scanPath.value = dl;
-              btnScan.click();
-            }
-          })
-          .catch(function () {});
-      } else if (action === "scan-trash") {
-        window.__TAURI__
-          .invoke("get_home_dir")
-          .then(function (home) {
-            const p =
-              typeof home === "string" ? home : (home?.data || "");
-            const tr = p
-              ? p.replace(/[\\/]+$/, "") + "/.Trash"
-              : "";
-            if (tr && scanPath) {
-              scanPath.value = tr;
-              btnScan.click();
-            }
+            const sub =
+              action === "scan-downloads" ? "Downloads" : ".Trash";
+            const dir = p ? p.replace(/[\\/]+$/, "") + "/" + sub : "";
+            if (!dir) return;
+            window.__TAURI__
+              .invoke("get_dir_stats", { path: dir })
+              .then(function (res) {
+                const st = res && res.data ? res.data : {};
+                const sizeStr = fmtBytes(st.total_bytes);
+                const preview =
+                  "Scan " +
+                  (action === "scan-downloads" ? "Downloads" : "Trash") +
+                  " folder?\n\n" +
+                  (sizeStr ? "Size: " + sizeStr : "") +
+                  (st.files != null ? "\nFiles: " + st.files : "") +
+                  (st.dirs != null ? "\nFolders: " + st.dirs : "");
+                window.confirmDialog(preview).then(function (ok) {
+                  if (!ok) return;
+                  scanPath.value = dir;
+                  btnScan.click();
+                });
+              })
+              .catch(function () {
+                scanPath.value = dir;
+                btnScan.click();
+              });
           })
           .catch(function () {});
       } else if (action === "clear-scan") {
@@ -80,8 +84,10 @@
         if (so) {
           const defPath = document.getElementById("settings-default-path");
           const selTheme = document.getElementById("settings-theme");
+          const selLang = document.getElementById("settings-language");
           if (defPath) defPath.value = scanPath.value || "";
           if (selTheme) selTheme.value = "auto";
+          if (selLang) selLang.value = "auto";
           window.__TAURI__
             .invoke("load_settings", {})
             .then(function (s) {
@@ -90,6 +96,8 @@
                   defPath.value = s.default_scan_path;
                 if (selTheme && s.theme)
                   selTheme.value = s.theme;
+                if (selLang && s.language)
+                  selLang.value = s.language;
               }
             })
             .catch(function () {});
@@ -112,13 +120,23 @@
             n.dir_count === 0 &&
             n.parent !== 4294967295
           ) {
-            emptyDirs.push({ name: n.name, arenaIdx: ni });
+            const parts = [n.name];
+            let p = n.parent;
+            let safety = 0;
+            while (p !== 4294967295 && p !== undefined && safety < 20) {
+              const parent = nodes[p];
+              if (parent && parent.name) parts.unshift(parent.name);
+              p = parent ? parent.parent : 4294967295;
+              safety++;
+            }
+            emptyDirs.push({ name: n.name, path: parts.join("/"), arenaIdx: ni });
           }
         }
         if (emptyDirs.length === 0) {
           window.showToast("No empty folders found", "info");
           return;
         }
+        const base = scanPath.value.replace(/[\\/]+$/, "");
         let html2 =
           '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
         for (
@@ -129,9 +147,9 @@
           html2 +=
             '<div class="empty-folder-item" data-idx="' +
             emptyDirs[ei].arenaIdx +
-            '" style="padding:3px 8px;cursor:pointer;border-radius:4px;font-size:12px;">\uD83D\uDCC2 ' +
-            emptyDirs[ei].name +
-            "</div>";
+            '" title="' + esc(base + "/" + emptyDirs[ei].path) + '" style="padding:3px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:6px;align-items:center;">\uD83D\uDCC2 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+            esc(emptyDirs[ei].path) +
+            "</span></div>";
         }
         if (emptyDirs.length > 500)
           html2 +=
@@ -144,17 +162,44 @@
           "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
         const card2 = document.createElement("div");
         card2.style.cssText =
-          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:400px;width:90%;max-height:80vh;overflow:hidden;";
+          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:460px;width:90%;max-height:80vh;overflow:hidden;";
         card2.innerHTML =
           '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDCC2 Empty Folders (' +
           emptyDirs.length +
           ")</div>" +
           html2 +
-          '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;"><button class="ef-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button></div>';
+          '<div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+          '<button class="ef-delete-btn" style="padding:6px 14px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">\uD83D\uDDD1 Delete all ' + emptyDirs.length + ' empty folders</button>' +
+          '<button class="ef-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button>' +
+          "</div>";
         ov2.appendChild(card2);
         document.body.appendChild(ov2);
         ov2.querySelector(".ef-close-btn").onclick = function () {
           document.body.removeChild(ov2);
+        };
+        ov2.querySelector(".ef-delete-btn").onclick = async function () {
+          const btn = this;
+          btn.disabled = true;
+          btn.textContent = "Deleting\u2026";
+          const ok = await window.confirmDialog(
+            "Move " + emptyDirs.length + " empty folder(s) to Trash?\n\nThey contain no files or subfolders, so nothing else will be deleted.",
+          );
+          if (!ok) { btn.disabled = false; btn.textContent = "\uD83D\uDDD1 Delete all " + emptyDirs.length + " empty folders"; return; }
+          let done = 0, failed = 0;
+          for (let ei = 0; ei < emptyDirs.length; ei++) {
+            const full = base + "/" + emptyDirs[ei].path;
+            try {
+              const r = await window.__TAURI__.invoke("delete_path", { path: full });
+              if (r && r.success === false) failed++;
+              else done++;
+            } catch (e) { failed++; }
+          }
+          document.body.removeChild(ov2);
+          window.showToast(
+            done + " empty folder(s) moved to trash" + (failed ? ", " + failed + " failed" : ""),
+            failed ? "warning" : "success",
+          );
+          if (btnScan) btnScan.click();
         };
         ov2.onclick = function (e) {
           if (e.target === ov2) document.body.removeChild(ov2);
@@ -230,16 +275,14 @@
         a.click();
         URL.revokeObjectURL(url);
       } else if (action === "find-files") {
-        const query = prompt(
-          "Find files by name (e.g. *.jpg, *test*, partial name):",
-          "*",
-        );
-        if (!query) return;
+        const params = await findFilesDialog();
+        if (!params) return;
         const loader = window.__loader;
         const treeView = window.__treeView;
         if (!loader || !loader.allNodes) return;
         const nodes = loader.allNodes;
         const results = [];
+        const query = params.name || "*";
         const pattern = query
           .replace(/\*/g, ".*")
           .replace(/\?/g, ".")
@@ -250,9 +293,17 @@
         } catch (e) {
           return;
         }
+        const minSize = params.minBytes || 0;
+        const maxSize = params.maxBytes || 0;
+        const ext = params.ext ? params.ext.toLowerCase() : "";
         for (let ni = 0; ni < nodes.length; ni++) {
           const n = nodes[ni];
-          if (n && n.name && re.test(n.name)) {
+          if (!n || !n.name) continue;
+          if (n.node_type === 0 || n.node_type === "Directory") continue;
+          if (ext && n.name.toLowerCase().indexOf("." + ext) !== n.name.length - (ext.length + 1)) continue;
+          if (minSize && (n.size || 0) < minSize) continue;
+          if (maxSize && (n.size || 0) > maxSize) continue;
+          if (re.test(n.name)) {
             const fullPath = scanPath.value.replace(/[\\/]+$/, "");
             const parts = [n.name];
             let p = n.parent;
@@ -278,7 +329,7 @@
         }
         if (results.length === 0) {
           window.showToast(
-            "No files found matching: " + query,
+            "No files found matching your filters",
             "info",
           );
           return;
@@ -288,28 +339,26 @@
         });
         let html =
           '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
-        for (let ri = 0; ri < Math.min(results.length, 200); ri++) {
+        for (let ri = 0; ri < Math.min(results.length, 500); ri++) {
           const r = results[ri];
           html +=
             '<div class="find-file-item" data-idx="' +
             r.arenaIdx +
-            '" style="padding:4px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:8px;">';
+            '" title="' + esc(r.path) + '" style="padding:4px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:8px;">';
           html +=
             '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-            r.name +
+            esc(r.name) +
             "</span>";
           html +=
-            '<span style="font-family:monospace;color:var(--text-muted);font-size:11px;">' +
-            (r.size
-              ? (r.size / 1024).toFixed(1) + " KB"
-              : "") +
+            '<span style="font-family:monospace;color:var(--text-muted);font-size:11px;white-space:nowrap;">' +
+            (r.size ? fmtBytes(r.size) : "") +
             "</span>";
           html += "</div>";
         }
-        if (results.length > 200)
+        if (results.length > 500)
           html +=
             '<div style="padding:4px;text-align:center;color:var(--text-muted);font-size:11px;">+ ' +
-            (results.length - 200) +
+            (results.length - 500) +
             " more</div>";
         html += "</div>";
         const ov = document.createElement("div");
@@ -317,7 +366,7 @@
           "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
         const card = document.createElement("div");
         card.style.cssText =
-          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:500px;width:90%;max-height:80vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:560px;width:90%;max-height:80vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
         card.innerHTML =
           '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDD0E Find Files (' +
           results.length +
@@ -348,17 +397,7 @@
           };
         });
       } else if (action === "cleanup-downloads") {
-        const stb = document.querySelector(".status-bar");
-        if (stb) stb.textContent = "Scanning Downloads...";
-        window.__TAURI__.invoke("get_home_dir").then(function (home) {
-          var p = typeof home === "string" ? home : (home?.data || "");
-          var dl = p ? p.replace(/[\\/]+$/, "") + "/Downloads" : "";
-          if (dl && scanPath) {
-            scanPath.value = dl;
-            btnScan.click();
-          }
-        }).catch(function () {});
-        return;
+        openDownloadsCleanup(scanPath, btnScan);
       } else if (action === "smart-tools") {
         openSmartTools();
       } else if (action === "browser-tools") {
@@ -369,7 +408,16 @@
         window.__trashRecovery.open();
       } else if (action === "trash") {
         const t = window.__ || function (s) { return s; };
-        if (!confirm(t("confirm.empty_trash"))) return;
+        let trashInfo = "";
+        try {
+          const items = await window.__TAURI__.invoke("list_trash", {});
+          const arr = Array.isArray(items) ? items : [];
+          if (arr.length > 0) {
+            const sz = arr.reduce(function (s2, it) { return s2 + (it.size || 0); }, 0);
+            trashInfo = "\n\n" + arr.length + " item(s) \u00B7 " + fmtBytes(sz);
+          }
+        } catch (e) {}
+        if (!(await window.confirmDialog(t("confirm.empty_trash") + trashInfo))) return;
         try {
           item.textContent = "\u23F3 Emptying...";
           await window.__TAURI__.invoke("empty_trash", {});
@@ -392,6 +440,206 @@
       }
     });
   };
+
+  // ── Downloads Cleanup overlay ────────────────────────────
+  function openDownloadsCleanup(scanPath, btnScan) {
+    const old = document.getElementById("downloads-cleanup-overlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "downloads-cleanup-overlay";
+    overlay.style.cssText =
+      "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;";
+    const card = document.createElement("div");
+    card.style.cssText =
+      "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:640px;width:92%;max-height:82vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.5);display:flex;flex-direction:column;";
+    card.innerHTML =
+      '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+      '<span style="font-size:14px;font-weight:600;">\uD83E\uDDF9 Downloads Cleanup</span>' +
+      '<button class="dlc-close" style="padding:3px 8px;font-size:14px;border:none;background:none;color:var(--text-muted);cursor:pointer;">\u2715</button>' +
+      "</div>" +
+      '<div class="dlc-toolbar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+      '<button class="dlc-refresh" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\u27F3 Refresh</button>' +
+      '<button class="dlc-select-all" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Select All</button>' +
+      '<button class="dlc-select-none" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Select None</button>' +
+      '<button class="dlc-select-old" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">90+ days old</button>' +
+      '<span class="dlc-status" style="flex:1;font-size:12px;color:var(--text-muted);text-align:right;"></span>' +
+      "</div>" +
+      '<div class="dlc-list" style="flex:1;overflow-y:auto;padding:8px;min-height:200px;"></div>' +
+      '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+      '<span class="dlc-total" style="font-size:12px;color:var(--text-muted);"></span>' +
+      '<button class="dlc-clean" style="padding:7px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;font-weight:600;">\uD83D\uDDD1 Move Selected to Trash</button>' +
+      "</div>";
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    const listEl = card.querySelector(".dlc-list");
+    const statusEl = card.querySelector(".dlc-status");
+    const totalEl = card.querySelector(".dlc-total");
+    const cleanBtn = card.querySelector(".dlc-clean");
+    let files = [];
+
+    function close() { overlay.remove(); }
+    card.querySelector(".dlc-close").onclick = close;
+    overlay.onclick = function (e) { if (e.target === overlay) close(); };
+    document.addEventListener("keydown", function onKey(e) {
+      if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); }
+    });
+
+    function selectedFiles() {
+      return files.filter(function (f, i) {
+        const cb = listEl.querySelector('.dlc-item[data-idx="' + i + '"] input');
+        return cb && cb.checked;
+      });
+    }
+
+    function render() {
+      if (files.length === 0) {
+        listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">No large, old, or temporary files found in Downloads.</div>';
+        totalEl.textContent = "";
+        cleanBtn.disabled = true;
+        return;
+      }
+      let html = "";
+      let totalSize = 0;
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        totalSize += f.size || 0;
+        const tags = [];
+        if (f.is_temp) tags.push('<span style="font-size:10px;color:#d29922;border:1px solid #d29922;border-radius:3px;padding:0 4px;margin-left:4px;">TEMP</span>');
+        if (f.is_old) tags.push('<span style="font-size:10px;color:#58a6ff;border:1px solid #58a6ff;border-radius:3px;padding:0 4px;margin-left:4px;">' + (f.age_days || 0) + 'd old</span>');
+        if (f.is_large) tags.push('<span style="font-size:10px;color:#f85149;border:1px solid #f85149;border-radius:3px;padding:0 4px;margin-left:4px;">LARGE</span>');
+        html +=
+          '<div class="dlc-item" data-idx="' + i + '" title="' + esc(f.path) + '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;">' +
+          '<input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" />' +
+          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + esc(f.name) + tags.join("") + "</span>" +
+          '<span style="font-family:monospace;font-size:11px;color:var(--text-muted);white-space:nowrap;">' + (f.size_human || fmtBytes(f.size)) + "</span>" +
+          "</div>";
+      }
+      listEl.innerHTML = html;
+      listEl.querySelectorAll(".dlc-item").forEach(function (row) {
+        row.onclick = function (e) {
+          if (e.target.tagName === "INPUT") return;
+          const cb = this.querySelector('input');
+          if (cb) { cb.checked = !cb.checked; }
+        };
+        row.onmouseenter = function () { this.style.background = "var(--bg-hover)"; };
+        row.onmouseleave = function () { this.style.background = "transparent"; };
+      });
+      totalEl.textContent = files.length + " candidate(s) \u00B7 " + fmtBytes(totalSize) + " total";
+      cleanBtn.disabled = false;
+    }
+
+    function load() {
+      statusEl.textContent = "\u23F3 Scanning Downloads\u2026";
+      window.__TAURI__
+        .invoke("list_downloads_candidates")
+        .then(function (res) {
+          const data = res && res.data ? res.data : {};
+          files = Array.isArray(data.files) ? data.files : [];
+          render();
+          statusEl.textContent = files.length + " candidate(s) found";
+        })
+        .catch(function (e) {
+          files = [];
+          listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">Error: ' + esc(e && e.message ? e.message : e) + "</div>";
+          statusEl.textContent = "Error";
+        });
+    }
+
+    card.querySelector(".dlc-refresh").onclick = load;
+    card.querySelector(".dlc-select-all").onclick = function () {
+      listEl.querySelectorAll(".dlc-item input").forEach(function (c) { c.checked = true; });
+    };
+    card.querySelector(".dlc-select-none").onclick = function () {
+      listEl.querySelectorAll(".dlc-item input").forEach(function (c) { c.checked = false; });
+    };
+    card.querySelector(".dlc-select-old").onclick = function () {
+      listEl.querySelectorAll(".dlc-item").forEach(function (row) {
+        const i = parseInt(row.dataset.idx);
+        const cb = row.querySelector("input");
+        if (cb && files[i] && files[i].is_old) cb.checked = true;
+      });
+    };
+
+    cleanBtn.onclick = async function () {
+      const sel = selectedFiles();
+      if (sel.length === 0) { window.showToast("Nothing selected", "warning"); return; }
+      const totalSel = sel.reduce(function (s, f) { return s + (f.size || 0); }, 0);
+      const ok = await window.confirmDialog(
+        "Move " + sel.length + " file(s) to Trash?\n\nFrees " + fmtBytes(totalSel) + ".\n\nThese include old, large, or incomplete download files.",
+      );
+      if (!ok) return;
+      cleanBtn.disabled = true;
+      cleanBtn.textContent = "\u23F3 Moving\u2026";
+      let done = 0, failed = 0;
+      for (let si = 0; si < sel.length; si++) {
+        try {
+          const r = await window.__TAURI__.invoke("delete_path", { path: sel[si].path });
+          if (r && r.success === false) failed++;
+          else done++;
+        } catch (e) { failed++; }
+      }
+      window.showToast(
+        done + " file(s) moved to trash, freed " + fmtBytes(totalSel) + (failed ? " (" + failed + " failed)" : ""),
+        failed ? "warning" : "success",
+      );
+      cleanBtn.textContent = "\uD83D\uDDD1 Move Selected to Trash";
+      cleanBtn.disabled = false;
+      load();
+    };
+
+    load();
+  }
+
+  // ── Find Files dialog ────────────────────────────────────
+  function findFilesDialog() {
+    return new Promise(function (resolve) {
+      const ov = document.createElement("div");
+      ov.style.cssText =
+        "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+      const card = document.createElement("div");
+      card.style.cssText =
+        "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:420px;width:90%;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+      card.innerHTML =
+        '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDD0E Find Files</div>' +
+        '<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">' +
+        '<label style="font-size:12px;color:var(--text-secondary);">Name pattern (e.g. *.jpg, *test*, partial name)</label>' +
+        '<input id="ff-name" type="text" value="*" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
+        '<label style="font-size:12px;color:var(--text-secondary);">File extension (optional, e.g. jpg)</label>' +
+        '<input id="ff-ext" type="text" value="" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
+        '<label style="font-size:12px;color:var(--text-secondary);">Min size (MB, optional)</label>' +
+        '<input id="ff-min" type="number" min="0" value="" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
+        '<label style="font-size:12px;color:var(--text-secondary);">Max size (MB, optional)</label>' +
+        '<input id="ff-max" type="number" min="0" value="" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
+        "</div>" +
+        '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">' +
+        '<button id="ff-cancel" style="padding:6px 14px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Cancel</button>' +
+        '<button id="ff-ok" style="padding:6px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;font-weight:600;">Search</button>' +
+        "</div>";
+      ov.appendChild(card);
+      document.body.appendChild(ov);
+      function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+      function submit() {
+        const name = card.querySelector("#ff-name").value || "*";
+        const ext = (card.querySelector("#ff-ext").value || "").replace(/^\./, "").trim();
+        const minMB = parseFloat(card.querySelector("#ff-min").value);
+        const maxMB = parseFloat(card.querySelector("#ff-max").value);
+        close();
+        resolve({
+          name: name,
+          ext: ext,
+          minBytes: minMB > 0 ? minMB * 1024 * 1024 : 0,
+          maxBytes: maxMB > 0 ? maxMB * 1024 * 1024 : 0,
+        });
+      }
+      card.querySelector("#ff-cancel").onclick = function () { close(); resolve(null); };
+      card.querySelector("#ff-ok").onclick = submit;
+      ov.onclick = function (e) { if (e.target === ov) { close(); resolve(null); } };
+      card.querySelector("#ff-name").addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+      card.querySelector("#ff-name").focus();
+    });
+  }
 
   // ── S.M.A.R.T. Tools overlay ─────────────────────────────
   function fmtBytes(b) {
@@ -430,6 +678,7 @@
       '<div class="smart-card">' +
       '<div class="smart-header">' +
       '<span class="smart-title">\uD83D\uDEE1\uFE0F S.M.A.R.T. Tools</span>' +
+      '<button class="smart-refresh-btn" id="smart-refresh" title="Refresh drive list">\u27F3</button>' +
       '<button class="smart-close" id="smart-close" title="Close">\u2715</button>' +
       "</div>" +
       '<div class="smart-body">' +
@@ -444,6 +693,7 @@
     document.body.appendChild(overlay);
 
     const closeBtn = overlay.querySelector("#smart-close");
+    const refreshBtn = overlay.querySelector("#smart-refresh");
     const select = overlay.querySelector("#smart-drive");
     const scanBtn = overlay.querySelector("#smart-scan");
     const statusEl = overlay.querySelector("#smart-status");
@@ -451,6 +701,7 @@
 
     function close() { overlay.remove(); }
     closeBtn.addEventListener("click", close);
+    refreshBtn.addEventListener("click", loadDrives);
     overlay.addEventListener("click", function (e) {
       if (e.target === overlay) close();
     });
@@ -459,7 +710,11 @@
     }
     document.addEventListener("keydown", onKey);
 
-    window.__TAURI__
+    function loadDrives() {
+      statusEl.className = "smart-status";
+      statusEl.innerHTML = '<span class="smart-spinner"></span>Loading drives\u2026';
+      scanBtn.disabled = true;
+      window.__TAURI__
       .invoke("list_disks")
       .then(function (res) {
         const disks = Array.isArray(res) ? res : (res && res.data ? res.data : []);
@@ -473,8 +728,12 @@
           const opt = document.createElement("option");
           opt.value = String(d.id);
           const sizeStr = fmtBytes(typeof d.size === "number" ? d.size : 0);
+          const parts = [];
+          if (d.serial) parts.push(d.serial);
+          if (d.model) parts.push(d.model);
           opt.textContent =
-            (d.name || "Disk " + d.id) + (sizeStr ? " \u2014 " + sizeStr : "");
+            (d.name || "Disk " + d.id) + (sizeStr ? " \u2014 " + sizeStr : "") +
+            (parts.length ? " \u00B7 " + parts.join(" \u00B7 ") : "");
           select.appendChild(opt);
         });
         select.value = String(disks[0].id);
@@ -483,8 +742,18 @@
       })
       .catch(function (e) {
         select.innerHTML = '<option value="">Error</option>';
-        statusEl.textContent = "Could not list drives: " + (e && e.message ? e.message : e);
+        const msg = e && e.message ? e.message : String(e);
+        statusEl.textContent = "Could not list drives: " + msg;
+        if (/smartctl|smartmontools/i.test(msg)) {
+          statusEl.innerHTML =
+            "Could not list drives.<br>" +
+            '<span style="font-size:12px;color:var(--text-secondary);">Install smartmontools to enable full S.M.A.R.T. reports:</span>' +
+            '<div style="margin-top:8px;font-family:monospace;font-size:12px;background:rgba(0,0,0,0.4);padding:8px 10px;border-radius:6px;border:1px solid var(--border);">brew install smartmontools</div>' +
+            '<div style="margin-top:8px;font-size:12px;color:var(--text-muted);">Then relaunch DiskRaptor and scan again.</div>';
+        }
       });
+    }
+    loadDrives();
 
     scanBtn.addEventListener("click", function () {
       const id = select.value;
@@ -501,7 +770,15 @@
         })
         .catch(function (e) {
           statusEl.className = "smart-status err";
-          statusEl.textContent = "Error: " + (e && e.message ? e.message : e);
+          const msg = e && e.message ? e.message : String(e);
+          if (/smartctl|smartmontools/i.test(msg)) {
+            statusEl.innerHTML =
+              "S.M.A.R.T. requires smartmontools, which is not installed.<br>" +
+              '<span style="font-size:12px;color:var(--text-secondary);">Install it via Homebrew, then relaunch:</span>' +
+              '<div style="margin-top:8px;font-family:monospace;font-size:12px;background:rgba(0,0,0,0.4);padding:8px 10px;border-radius:6px;border:1px solid var(--border);">brew install smartmontools</div>';
+          } else {
+            statusEl.textContent = "Error: " + msg;
+          }
         })
         .finally(function () {
           scanBtn.disabled = false;
@@ -605,6 +882,7 @@
         '<div class="banner-score">Health Score ' + (r.score != null ? esc(r.score) : "\u2014") + " / 100</div>" +
         '<div class="banner-scale"><div class="scale-track"><div class="scale-fill" style="width:' + Math.max(0, Math.min(100, Number(r.score) || 0)) + '%"></div></div></div>' +
         "</div>" +
+        '<div style="text-align:right;padding:4px 0 8px;"><button class="smart-export-btn" id="smart-export" style="padding:4px 10px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\uD83D\uDCC4 Export Report</button></div>' +
         '<div class="smart-info-grid">' +
         cell("Model", r.model || "\u2014") +
         cell("Firmware", r.firmware || "\u2014") +
@@ -623,6 +901,43 @@
         "<thead><tr><th>ID</th><th>Attribute</th><th>Current</th><th>Worst</th><th>Threshold</th><th>RAW</th><th>Status</th></tr></thead>" +
         "<tbody>" + tableRows + "</tbody>" +
         "</table></div>";
+
+      const exportBtn = resultEl.querySelector("#smart-export");
+      if (exportBtn) {
+        exportBtn.onclick = function () {
+          const lines = [];
+          lines.push("DiskRaptor S.M.A.R.T. Report");
+          lines.push("Generated: " + new Date().toISOString());
+          lines.push("Model: " + (r.model || ""));
+          lines.push("Firmware: " + (r.firmware || ""));
+          lines.push("Serial: " + (r.serial || ""));
+          lines.push("Interface: " + (r.interface || ""));
+          lines.push("Capacity: " + capacityStr);
+          lines.push("Media: " + mediaLabel(r.media_type));
+          lines.push("Status: " + statusTxt);
+          lines.push("Health Score: " + (r.score != null ? r.score : ""));
+          lines.push("Temperature: " + tempStr);
+          lines.push("Wear: " + (wear != null ? wear + "%" : ""));
+          lines.push("Power-On Hours: " + fmtHours(powh));
+          lines.push("Power Cycles: " + (cycles != null ? cycles : ""));
+          lines.push("Uncorrected Errors: " + uncorrected);
+          lines.push("");
+          lines.push("ID\tAttribute\tCurrent\tWorst\tThreshold\tRAW\tStatus");
+          for (let ai = 0; ai < attrs.length; ai++) {
+            const a = attrs[ai];
+            lines.push(
+              [a.id != null ? a.id : "", a.name || "", a.current != null ? a.current : "", a.worst != null ? a.worst : "", a.threshold != null ? a.threshold : "", a.raw || "", a.status || ""].join("\t")
+            );
+          }
+          const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "smart-report-" + (r.model || "disk").replace(/\W+/g, "_") + ".txt";
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+      }
 
       statusEl.className = "smart-status";
       if (unsupported) {
@@ -782,7 +1097,7 @@
       }
       let html =
         '<div class="browser-row browser-row-head">' +
-        '<span class="browser-name">Browser</span>' +
+        '<span class="browser-name">\u2714 Browser</span>' +
         '<span class="browser-size">\uD83C\uDF6A Cookies</span>' +
         '<span class="browser-size">\uD83D\uDCBE Cache</span>' +
         '<span class="browser-total">Total</span>' +
@@ -790,9 +1105,13 @@
       for (let i = 0; i < browsers.length; i++) {
         const b = browsers[i];
         const emoji = BROWSER_EMOJI[b.name] || "\uD83C\uDF10";
+        const cookiePaths = Array.isArray(b.cookie_paths) ? b.cookie_paths : [];
+        const cachePaths = Array.isArray(b.cache_paths) ? b.cache_paths : [];
+        const pathTitle = (cookiePaths.concat(cachePaths)).map(function (p) { return p; }).join("\n") || "";
         html +=
-          '<div class="browser-row">' +
+          '<div class="browser-row" data-name="' + esc(b.name) + '" title="' + esc(pathTitle) + '">' +
           '<span class="browser-name">' +
+          '<input type="checkbox" class="browser-row-check" title="Select all for ' + esc(b.name) + '" />' +
           '<span class="browser-icon-wrap">' +
           '<span class="browser-emoji">' + emoji + "</span>" +
           '<img class="browser-icon" data-exe="' + esc(b.exe || "") + '" alt="" style="display:none;" />' +
@@ -801,16 +1120,23 @@
           "</span>" +
           '<label class="browser-part" title="Clean cookies for ' + esc(b.name) + '">' +
           '<input type="checkbox" class="browser-check" data-name="' + esc(b.name) + '" data-part="cookies" />' +
-          '<span class="browser-size cookie">' + fmtSize(b.cookie_size) + "</span>" +
+          '<span class="browser-size cookie">' + fmtSize(b.cookie_size) + (cookiePaths.length > 0 ? '<span class="browser-fcount"> \u00B7 ' + cookiePaths.length + "</span>" : "") + "</span>" +
           "</label>" +
           '<label class="browser-part" title="Clean cache for ' + esc(b.name) + '">' +
           '<input type="checkbox" class="browser-check" data-name="' + esc(b.name) + '" data-part="cache" />' +
-          '<span class="browser-size cache">' + fmtSize(b.cache_size) + "</span>" +
+          '<span class="browser-size cache">' + fmtSize(b.cache_size) + (cachePaths.length > 0 ? '<span class="browser-fcount"> \u00B7 ' + cachePaths.length + "</span>" : "") + "</span>" +
           "</label>" +
           '<span class="browser-total">' + fmtSize(b.total_size || (b.cookie_size + b.cache_size)) + "</span>" +
           "</div>";
       }
       listEl.innerHTML = html;
+      // Per-browser row select: checks both parts.
+      listEl.querySelectorAll(".browser-row-check").forEach(function (rc) {
+        rc.onchange = function () {
+          const row = rc.closest(".browser-row");
+          row.querySelectorAll(".browser-check").forEach(function (c) { c.checked = rc.checked; });
+        };
+      });
       loadBrowserIcons();
       cleanBtn.disabled = false;
     }
@@ -873,12 +1199,10 @@
       const selCount = names.reduce(function (s, n) {
         return s + (byName[n].cookies ? 1 : 0) + (byName[n].cache ? 1 : 0);
       }, 0);
-      if (
-        !confirm(
-          "Clean " + selCount + " selection(s) in " + names.length + " browser(s)?\n\nCleaning cookies will sign you out of websites in those browsers.",
-        )
-      )
-        return;
+      const ok = await window.confirmDialog(
+        "Clean " + selCount + " selection(s) in " + names.length + " browser(s)?\n\nCleaning cookies will sign you out of websites in those browsers.",
+      );
+      if (!ok) return;
       cleanBtn.disabled = true;
       let freed = 0;
       let failed = 0;

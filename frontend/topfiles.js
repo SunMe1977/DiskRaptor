@@ -140,8 +140,10 @@ class TopFilesPanel {
           .catch(function () {});
       } else if (action === "delete") {
         const t = window.__ || function(s){return s;};
-        if (confirm(t("confirm.move_trash_file") + path)) {
-          this._exec("delete_path", { path: path })
+        const self = this;
+        window.confirmDialog(t("confirm.move_trash_file") + path).then(function (ok) {
+          if (!ok) return;
+          self._exec("delete_path", { path: path })
             .then(function () {
               const sb = document.querySelector(".status-bar");
               if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
@@ -154,9 +156,9 @@ class TopFilesPanel {
               if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
             })
             .catch(function (err) {
-              alert("Failed: " + err);
+              window.alertDialog("Failed: " + err);
             });
-        }
+        });
       }
     });
   }
@@ -273,10 +275,12 @@ class TopFilesPanel {
           "padding:1px 6px;font-size:12px;background:transparent;border:1px solid var(--border);border-radius:3px;cursor:pointer";
         delBtn.title = "Move to Trash: " + (entry.path || "");
         delBtn.onclick = function (p, row) {
+          const self = this;
           return function () {
             const t = window.__ || function(s){return s;};
-            if (confirm(t("confirm.move_trash_file") + p)) {
-              this._exec("delete_path", { path: p })
+            window.confirmDialog(t("confirm.move_trash_file") + p).then(function (ok) {
+              if (!ok) return;
+              self._exec("delete_path", { path: p })
                 .then(function () {
                   const sb = document.querySelector(".status-bar");
                   if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", p);
@@ -289,8 +293,11 @@ class TopFilesPanel {
                   }
                   if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
                 })
-            }
-          }.bind(this);
+                .catch(function (err) {
+                  window.alertDialog("Failed: " + err);
+                });
+            });
+          };
         }.bind(this)(entry.path, tr);
         delTd.appendChild(delBtn);
         tr.appendChild(delTd);

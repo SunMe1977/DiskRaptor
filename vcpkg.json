@@ -1,6 +1,6 @@
 {
   "name": "diskraptor",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Ultra-fast disk space analyzer",
   "homepage": "https://diskraptor.com",
   "dependencies": [

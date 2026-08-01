@@ -424,13 +424,21 @@
 
         const unlisten = window.__TAURI__.event.listen(
           "scan:progress",
-          function (evt) {
-            onProgress(evt.payload);
+          function () {
+            // Event only signals "something changed"; fetch the full progress
+            // payload so all fields (phase, is_running, errors...) are present.
+            window.__TAURI__
+              .invoke("get_scan_progress", { scanId: scanId })
+              .then(function (p) {
+                if (p) onProgress(p);
+              })
+              .catch(function () {});
           },
         );
 
         let done = false;
-        for (let i = 0; i < 3600; i++) {
+        // 10-minute safety cap; normally the scan:progress event drives progress.
+        for (let i = 0; i < 1200; i++) {
           await sleep(500);
           if (scanDone) {
             done = true;
@@ -754,25 +762,27 @@
             var items = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');
             var files = Array.from(items).map(function (cb) { return cb.closest(".cleanup-item").dataset.file; });
             if (files.length === 0) { window.showToast("No items selected", "warning"); return; }
-            if (!confirm("Move " + files.length + " file(s) to Trash?")) return;
+            window.confirmDialog("Move " + files.length + " file(s) to Trash?").then(function (ok) {
+              if (!ok) return;
             var rootPath = (scanPath && scanPath.value || "").replace(/[\\/]+$/, "");
             (async function () {
-              var ok = 0, fail = 0;
+              var ok2 = 0, fail = 0;
               for (var fi = 0; fi < files.length; fi++) {
                 var fullPath = rootPath + "/" + files[fi];
                 try {
                   var delRes = await window.__TAURI__.invoke("delete_path", { path: fullPath });
                   if (delRes && delRes.success === false) { fail++; console.warn("Cleanup failed:", fullPath, delRes.error); }
-                  else { ok++; }
+                  else { ok2++; }
                 } catch (e) { fail++; console.warn("Cleanup failed:", fullPath, e); }
               }
               overlay.remove();
               if (window.showToast) {
-                if (fail > 0) window.showToast(ok + " moved to trash, " + fail + " failed", "warning");
-                else if (ok > 0) window.showToast(ok + " file(s) moved to trash", "success");
+                if (fail > 0) window.showToast(ok2 + " moved to trash, " + fail + " failed", "warning");
+                else if (ok2 > 0) window.showToast(ok2 + " file(s) moved to trash", "success");
               }
               if (btnScan) btnScan.click();
             })();
+            });
           };
           overlay.querySelectorAll(".cleanup-item").forEach(function (row) {
             row.onclick = function (e) { if (e.target.tagName === "INPUT") return; var cb = this.querySelector('input[type="checkbox"]'); if (cb) cb.checked = !cb.checked; };

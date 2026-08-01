@@ -173,10 +173,14 @@ class DupScanner {
 
     // Add delete selected button
     const toolbar = document.createElement("div");
-    toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);";
+    toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);flex-wrap:wrap;gap:6px;";
     toolbar.innerHTML = `
-      <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete</span>
-      <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 <span data-i18n="action.move_selected_to_trash">Move Selected to Trash</span></button>
+      <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete \u00B7 <span style="color:#f85149;">${this._fmtSize(data.wastedBytes || 0)} reclaimable</span></span>
+      <span style="display:flex;gap:6px;">
+        <button id="dup-select-none" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select None</button>
+        <button id="dup-select-all" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select All</button>
+        <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 <span data-i18n="action.move_selected_to_trash">Move Selected to Trash</span></button>
+      </span>
     `;
     list.appendChild(toolbar);
 
@@ -189,6 +193,41 @@ class DupScanner {
       if (el) el.textContent = totalChecked;
     }
 
+    // Select None: uncheck everything
+    const selNone = document.getElementById("dup-select-none");
+    if (selNone) {
+      selNone.onclick = function () {
+        for (const sg in checkStates) checkStates[sg] = new Set();
+        totalChecked = 0;
+        list.querySelectorAll('#dup-groups-list input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
+        updateSelectedCount();
+      };
+    }
+    // Select All: keep one copy per group, select the rest
+    const selAll = document.getElementById("dup-select-all");
+    if (selAll) {
+      selAll.onclick = function () {
+        totalChecked = 0;
+        groups.forEach(function (g, gi) {
+          checkStates[gi] = new Set();
+          for (let fi = 1; fi < g.files.length; fi++) { checkStates[gi].add(fi); totalChecked++; }
+        });
+        list.querySelectorAll('.dup-group-body input[type="checkbox"]').forEach(function (cb, ci) {
+          cb.checked = true;
+        });
+        groups.forEach(function (g, gi) {
+          const card = list.querySelectorAll(".dup-group-card")[gi];
+          if (card) {
+            const cbs = card.querySelectorAll('input[type="checkbox"]');
+            for (let fi = 0; fi < g.files.length; fi++) {
+              if (cbs[fi]) cbs[fi].checked = fi > 0;
+            }
+          }
+        });
+        updateSelectedCount();
+      };
+    }
+
     groups.forEach(function(g, gi) {
       // Pre-select all except the first file (keep one copy)
       const preSelected = [];
@@ -197,6 +236,7 @@ class DupScanner {
       totalChecked += preSelected.length;
 
       const card = document.createElement("div");
+      card.className = "dup-group-card";
       card.style.cssText = "margin-bottom:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;opacity:0;transform:translateY(10px);transition:opacity 0.3s,transform 0.3s;";
 
       const header = document.createElement("div");
@@ -235,6 +275,7 @@ class DupScanner {
       };
 
       const body = document.createElement("div");
+      body.className = "dup-group-body";
       body.style.cssText = "padding:4px 0;background:var(--bg-secondary);";
 
       (g.files || []).forEach(function(fp, fi) {
@@ -297,7 +338,7 @@ class DupScanner {
 
     // Delete button handler
     const self2 = this;
-    document.getElementById("dup-delete-btn").onclick = function() {
+    document.getElementById("dup-delete-btn").onclick = async function() {
       const toDelete = [];
       groups.forEach(function(g, gi) {
         const selected = checkStates[gi];
@@ -308,11 +349,14 @@ class DupScanner {
       });
 
       if (toDelete.length === 0) {
-        alert("No files selected.");
+        window.alertDialog("No files selected.");
         return;
       }
 
-      if (!confirm("Move " + toDelete.length + " duplicate files to Trash?")) return;
+      const ok = await window.confirmDialog(
+        "Move " + toDelete.length + " duplicate files to Trash?",
+      );
+      if (!ok) return;
 
       // Move one by one with status updates
       const delBtn = document.getElementById("dup-delete-btn");
@@ -331,7 +375,7 @@ class DupScanner {
             setTimeout(function() { deleteNext(idx + 1); }, 200);
           })
           .catch(function(err) {
-            alert("Failed: " + toDelete[idx] + "\n" + err);
+            window.alertDialog("Failed: " + toDelete[idx] + "\n" + err);
             setTimeout(function() { deleteNext(idx + 1); }, 200);
           });
       })(0);

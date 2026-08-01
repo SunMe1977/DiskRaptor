@@ -27,6 +27,27 @@
     (function () {
       const so = document.getElementById("settings-overlay");
       if (!so) return;
+
+      // Populate language dropdown from I18N.LANGUAGES
+      const langSel = document.getElementById("settings-language");
+      if (langSel && window.I18N && Array.isArray(window.I18N.LANGUAGES)) {
+        window.I18N.LANGUAGES.forEach(function (lang) {
+          const opt = document.createElement("option");
+          opt.value = lang.code;
+          opt.textContent = (lang.flag ? lang.flag + " " : "") + (lang.label || lang.code);
+          langSel.appendChild(opt);
+        });
+      }
+      // Show app data location
+      (async function () {
+        try {
+          const r = await window.__TAURI__.invoke("get_app_data_dir");
+          const p = r && r.data ? r.data.path : "";
+          const el = document.getElementById("settings-appdata");
+          if (el && p) el.textContent = p;
+        } catch (e) {}
+      })();
+
       document
         .getElementById("settings-close")
         ?.addEventListener("click", function () { so.style.display = "none"; });
@@ -35,14 +56,18 @@
         ?.addEventListener("click", async function () {
           const defPath = document.getElementById("settings-default-path")?.value || "";
           const selTheme = document.getElementById("settings-theme")?.value || "auto";
+          const selLang = (document.getElementById("settings-language")?.value || "auto");
           await window.__TAURI__
-            .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme } })
+            .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme, language: selLang } })
             .catch(function () {});
           if (selTheme === "light") document.body.classList.add("light-theme");
           else if (selTheme === "dark") document.body.classList.remove("light-theme");
           else {
             const isLight = window.matchMedia("(prefers-color-scheme: light)").matches;
             document.body.classList.toggle("light-theme", isLight);
+          }
+          if (selLang !== "auto" && window.I18N && window.I18N.setLocale) {
+            window.I18N.setLocale(selLang);
           }
           so.style.display = "none";
         });
@@ -90,17 +115,17 @@
           window.__TAURI__.invoke("get_memory_info").catch(function(){return null}),
           window.__TAURI__.invoke("get_process_memory").catch(function(){return null})
         ]);
-        if (sysMem && sysMem.total_bytes > 0) {
-          const total = sysMem.total_bytes;
-          const sysUsed = sysMem.used_bytes;
+        if (sysMem && sysMem.total > 0) {
+          const total = sysMem.total;
+          const sysUsed = sysMem.used || (total - (sysMem.free || 0));
           const sysPct = Math.round((sysUsed / total) * 100);
           ramSysFill.style.width = sysPct + "%";
           ramSysFill.className = "ram-bar-fill-sys" + (sysPct > 85 ? " critical" : sysPct > 70 ? " warning" : "");
           ramSysText.textContent = formatBytes(sysUsed) + " / " + formatBytes(total) + " (" + sysPct + "%)";
         }
-        if (procMem && procMem.resident_bytes > 0) {
-          const total = (sysMem && sysMem.total_bytes) || 1;
-          const appMem = procMem.resident_bytes;
+        if (procMem && procMem.resident > 0) {
+          const total = (sysMem && sysMem.total) || 1;
+          const appMem = procMem.resident;
           const appPct = Math.round((appMem / total) * 100);
           ramAppFill.style.width = appPct + "%";
           ramAppText.textContent = formatBytes(appMem) + " (" + appPct + "%)";

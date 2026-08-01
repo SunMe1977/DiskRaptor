@@ -20,9 +20,11 @@
         for (let vi = 0; vi < vols.length && shown < 10; vi++) {
           const v = vols[vi];
           if (!v.total_bytes && !v.name && !v.path) continue;
-          const pct = Math.min(100, Math.max(0, v.usage_pct || 0));
+          const pct = Math.min(100, Math.max(0, v.usage_pct || v.percentFull || 0));
           const color =
             pct > 90 ? "#f85149" : pct > 70 ? "#d29922" : "#3fb950";
+          const usedStr = fmtVol(v.used_bytes || v.used || 0);
+          const totalStr = fmtVol(v.total_bytes || v.total || 0);
           html +=
             '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--bg-tertiary);margin-bottom:4px;">';
           html += '<span style="font-size:14px;">\uD83D\uDCBD</span>';
@@ -38,11 +40,17 @@
             ';border-radius:3px;"></div></div>';
           html +=
             '<span style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono);white-space:nowrap;">' +
-            (v.used_human || (v.total_bytes ? "0 B" : "")) +
-            (v.total_human ? " / " + v.total_human : "") +
+            usedStr +
+            (totalStr && totalStr !== "0 B" ? " / " + totalStr : "") +
             "</span>";
           html += "</div>";
           shown++;
+        }
+        function fmtVol(bytes) {
+          const u = ["B", "KB", "MB", "GB", "TB"];
+          let v = bytes || 0, i = 0;
+          while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+          return (i === 0 ? v : v.toFixed(1)) + " " + u[i];
         }
         if (vols.length > 10) {
           html +=
@@ -125,15 +133,17 @@
               label = "/ (Root)";
           }
           const name = d.name || label;
-          const total = d.totalBytes || 0;
-          const used = d.usedBytes || 0;
+          const total = d.total_bytes || d.total || 0;
+          const used = d.used_bytes || d.used || 0;
           const pct =
             d.percentFull !== undefined
               ? Math.round(d.percentFull)
-              : total > 0
-                ? Math.round((used / total) * 100)
-                : 0;
-          const free = d.freeBytes || 0;
+              : d.usage_pct !== undefined
+                ? Math.round(d.usage_pct)
+                : total > 0
+                  ? Math.round((used / total) * 100)
+                  : 0;
+          const free = d.free_bytes || d.free || 0;
           const icon = driveIcon(type, path);
           const curPath = scanPath.value;
           const isActive = isWin

@@ -90,7 +90,7 @@
                         <h2 class="welcome-title" style="font-size:20px;margin:0 0 6px 0;color:var(--text-primary);">
                             DiskRaptor
                         </h2>
-                        <p class="welcome-subtitle" style="font-size:13px;color:var(--text-secondary);margin:0 0 12px 0;">
+                        <p class="welcome-subtitle" style="font-size:13px;color:var(--text-secondary);margin:0 0 12px 0;" data-i18n="welcome.subtitle">
                             Ultra-fast disk space analyzer
                         </p>
                         <div id="welcome-volumes" style="width:100%;max-width:400px;margin:0 auto 16px;text-align:left;"></div>
@@ -408,6 +408,16 @@
                         <option value="light" data-i18n="settings.theme_light">Light</option>
                     </select>
                 </div>
+                <div style="margin-bottom:16px;">
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.language">Language</label>
+                    <select id="settings-language" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
+                        <option value="auto">🌐 Auto (System)</option>
+                    </select>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">App data location</label>
+                    <code id="settings-appdata" style="display:block;font-size:11px;color:var(--text-muted);word-break:break-all;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;border:1px solid var(--border);">…</code>
+                </div>
                 <div class="flex-row" style="gap:8px;justify-content:flex-end;">
                     <button id="settings-close" class="btn-secondary" data-i18n="settings.cancel">Cancel</button>
                     <button id="settings-save" class="btn-primary" data-i18n="settings.save">Save</button>
@@ -423,7 +433,7 @@
                         <img src="../images/logo6_original.png" alt="DiskRaptor" onerror="this.style.display='none'" />
                     </div>
                     <h2>DiskRaptor</h2>
-                    <p class="about-version"><span data-i18n="about.version">Version</span> 1.0.0</p>
+                    <p class="about-version"><span data-i18n="about.version">Version</span> <span class="about-version-num">–</span></p>
                     <p class="about-desc" data-i18n="about.desc">Ultra-fast disk space analyzer</p>
                     <div class="about-tabs flex-row" style="gap:0;margin:12px 0 8px;border-bottom:2px solid var(--border);width:100%;">
                         <button class="about-tab active" data-tab="about">📋 About</button>
@@ -495,6 +505,7 @@
         <script src="qt-bridge.js"></script>
         <script src="i18n.js"></script>
         <script src="toast.js"></script>
+        <script src="dialogs.js"></script>
         <script src="iconcache.js"></script>
         <script src="virtualscroll.js"></script>
         <script src="chunkloader.js"></script>

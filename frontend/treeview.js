@@ -316,19 +316,18 @@ class TreeView {
     const name = node.name || "?";
     const isDir = node.node_type === "Directory" || node.node_type === 0;
     const t = window.__ || function(s){return s;};
-    if (!confirm((isDir ? t("confirm.move_trash_folder") : t("confirm.move_trash_file")) + path)) return;
+    if (!(await window.confirmDialog((isDir ? t("confirm.move_trash_folder") : t("confirm.move_trash_file")) + path))) return;
     try {
       const res = await window.__TAURI__.invoke("delete_path", { path: path });
       if (res && res.success === false) {
-        alert("Failed: " + (res.error || "unknown error"));
+        window.alertDialog("Failed: " + (res.error || "unknown error"));
         return;
       }
-      const t = window.__ || function(s){return s;};
       document.querySelector(".status-bar").textContent = t("status.moved_to_trash").replace("{name}", name);
       this._removeNodeFromTree(arenaIdx);
       await this.rebuild();
     } catch (e) {
-      alert("Failed: " + e);
+      window.alertDialog("Failed: " + e);
     }
   }
 

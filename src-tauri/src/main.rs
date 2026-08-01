@@ -7,7 +7,7 @@ use diskraptor_scanner::streaming::chunker::{chunk_tree, make_root_chunk};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use serde::Serialize;
 
 // ── Scanner state ──
@@ -40,6 +40,7 @@ struct ScanResultData {
 struct AppState {
     scan: ScanState,
     settings_path: Mutex<std::path::PathBuf>,
+    #[allow(dead_code)] // used on Linux for pkexec caching
     smart_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, JsonResult)>>,
 }
 
@@ -64,6 +65,7 @@ impl JsonResult {
     fn err(msg: impl Into<String>) -> Self {
         Self { success: false, data: None, error: Some(msg.into()) }
     }
+    #[allow(dead_code)] // used on Linux for smartctl cache
     fn clone(&self) -> Self {
         Self { success: self.success, data: self.data.clone(), error: self.error.clone() }
     }
@@ -163,18 +165,131 @@ fn list_drives() -> JsonResult {
         let free = d.available_space();
         let used = total.saturating_sub(free);
         let pct = if total > 0 { (used as f64 / total as f64 * 100.0).round() as u64 } else { 0 };
+        let label = d.name().to_string_lossy().to_string();
         serde_json::json!({
-            "path": mount, "name": mount,
+            "path": mount, "name": if label.is_empty() { mount.clone() } else { label },
+            "total_bytes": total, "free_bytes": free, "used_bytes": used,
+            "percentFull": pct, "usage_pct": pct, "type": "local",
+            // legacy aliases used by some callers
             "total": total, "free": free, "used": used,
-            "percentFull": pct, "type": "local",
         })
     }).collect();
     JsonResult::ok(serde_json::json!(disks))
 }
 
 #[tauri::command]
+async fn list_downloads_candidates() -> JsonResult {
+    tauri::async_runtime::spawn_blocking(|| {
+        let home = dirs::home_dir().unwrap_or_default();
+        let dl = home.join("Downloads");
+        if !dl.is_dir() {
+            return JsonResult::err("Downloads folder not found");
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let mut files = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&dl) {
+            for entry in rd.flatten() {
+                let path = entry.path();
+                let Ok(meta) = entry.metadata() else { continue };
+                if !meta.is_file() { continue; }
+                let size = meta.len();
+                let modified = meta.modified().ok()
+                    .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(now);
+                let age_days = (now.saturating_sub(modified)) / 86400;
+                let name = entry.file_name().to_string_lossy().to_string();
+                let lower = name.to_lowercase();
+                let is_temp = lower.ends_with(".crdownload")
+                    || lower.ends_with(".part")
+                    || lower.ends_with(".download")
+                    || lower.ends_with(".tmp");
+                let is_old = age_days >= 90;
+                let is_large = size >= 100 * 1024 * 1024;
+                if !is_temp && !is_old && !is_large { continue; }
+                files.push(serde_json::json!({
+                    "name": name,
+                    "path": path.to_string_lossy(),
+                    "size": size,
+                    "age_days": age_days,
+                    "is_temp": is_temp,
+                    "is_old": is_old,
+                    "is_large": is_large,
+                    "size_human": format_size(size),
+                }));
+            }
+        }
+        files.sort_by(|a, b| {
+            b["size"].as_u64().unwrap_or(0).cmp(&a["size"].as_u64().unwrap_or(0))
+        });
+        JsonResult::ok(serde_json::json!({
+            "path": dl.to_string_lossy(),
+            "files": files,
+        }))
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Cleanup scan failed: {e}")))
+}
+
+#[tauri::command]
 fn get_volume_stats() -> JsonResult {
     list_drives()
+}
+
+/// Quick top-level stats for a directory: total size, file count, dir count.
+/// Uses a capped walk so it stays fast for the tool previews.
+#[tauri::command]
+async fn get_dir_stats(path: String) -> JsonResult {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::PathBuf::from(&path);
+        if !p.is_dir() {
+            return JsonResult::err("Not a directory");
+        }
+        let mut total_bytes = 0u64;
+        let mut files = 0u64;
+        let mut dirs = 0u64;
+        let mut errors = 0u64;
+        let mut walked = 0u64;
+        const MAX_WALK: u64 = 500_000;
+        let mut stack: Vec<std::path::PathBuf> = vec![p];
+        while let Some(dir) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                errors += 1;
+                continue;
+            };
+            for entry in rd.flatten() {
+                walked += 1;
+                if walked > MAX_WALK {
+                    break;
+                }
+                let path = entry.path();
+                let Ok(meta) = entry.metadata() else { continue };
+                if meta.is_dir() {
+                    dirs += 1;
+                    stack.push(path);
+                } else if meta.is_file() {
+                    files += 1;
+                    total_bytes += meta.len();
+                }
+            }
+            if walked > MAX_WALK {
+                break;
+            }
+        }
+        JsonResult::ok(serde_json::json!({
+            "path": path,
+            "total_bytes": total_bytes,
+            "files": files,
+            "dirs": dirs,
+            "errors": errors,
+            "truncated": walked > MAX_WALK,
+        }))
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Stats failed: {e}")))
 }
 
 // ── S.M.A.R.T. Tools ────────────────────────────────────────────────
@@ -313,6 +428,7 @@ fn smart_from_smartctl(v: &serde_json::Value, device_id: &str) -> Option<serde_j
 }
 
 /// Combine OS health status + SMART attributes into a 0-100 score.
+#[cfg(target_os = "windows")]
 fn smart_health_from_attrs(health: i64, wear: Option<f64>, temp: Option<f64>, read_unc: u64, write_unc: u64) -> (u64, &'static str) {
     let mut score: f64 = 100.0;
     match health {
@@ -416,32 +532,9 @@ fn list_disks() -> JsonResult {
         // Fall back to `system_profiler` so the SSD/S.M.A.R.T. tool still lists
         // drives even when smartmontools is not installed.
         if let Some(s) = run_output("system_profiler", &["SPStorageDataType", "-json"]) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                let mut seen = std::collections::HashSet::new();
-                let disks: Vec<serde_json::Value> = v
-                    .get("SPStorageDataType")
-                    .and_then(|a| a.as_array())
-                    .map(|items| items.iter().filter_map(|it| {
-                        let pd = it.get("physical_drive")?;
-                        let dev = pd.get("device_name").and_then(|d| d.as_str()).unwrap_or("");
-                        if dev.is_empty() { return None; }
-                        if !seen.insert(dev.to_string()) { return None; }
-                        let medium = pd.get("medium_type").and_then(|m| m.as_str()).unwrap_or("");
-                        let bsd = it.get("bsd_name").and_then(|b| b.as_str()).unwrap_or("");
-                        let disk_num: String = bsd.chars().take_while(|c| c.is_ascii_digit()).collect();
-                        let is_internal = pd.get("is_internal_disk").and_then(|x| x.as_str()).unwrap_or("") == "yes";
-                        Some(serde_json::json!({
-                            "id": if disk_num.is_empty() { bsd.to_string() } else { format!("disk{disk_num}") },
-                            "name": dev,
-                            "media_type": if medium == "ssd" { 4 } else { 3 },
-                            "size": it.get("size_in_bytes").and_then(|s| s.as_u64()).unwrap_or(0),
-                            "is_mac_device": true,
-                            "is_internal": is_internal,
-                        }))
-                    }).collect()).unwrap_or_default();
-                if !disks.is_empty() {
-                    return JsonResult::ok(serde_json::json!(disks));
-                }
+            let disks = parse_system_profiler_disks(&s);
+            if !disks.is_empty() {
+                return JsonResult::ok(serde_json::json!(disks));
             }
         }
         JsonResult::err("S.M.A.R.T. requires smartmontools (smartctl) on macOS")
@@ -452,10 +545,45 @@ fn list_disks() -> JsonResult {
     }
 }
 
+fn parse_system_profiler_disks(s: &str) -> Vec<serde_json::Value> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(s) else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::HashSet::new();
+    v.get("SPStorageDataType")
+        .and_then(|a| a.as_array())
+        .map(|items| {
+            items.iter().filter_map(|it| {
+                let pd = it.get("physical_drive")?;
+                let dev = pd.get("device_name").and_then(|d| d.as_str()).unwrap_or("");
+                if dev.is_empty() { return None; }
+                if !seen.insert(dev.to_string()) { return None; }
+                let medium = pd.get("medium_type").and_then(|m| m.as_str()).unwrap_or("");
+                let bsd = it.get("bsd_name").and_then(|b| b.as_str()).unwrap_or("");
+                let disk_num: String = bsd
+                    .chars()
+                    .skip_while(|c| !c.is_ascii_digit())
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect();
+                let is_internal = pd.get("is_internal_disk").and_then(|x| x.as_str()).unwrap_or("") == "yes";
+                Some(serde_json::json!({
+                    "id": if disk_num.is_empty() { bsd.to_string() } else { format!("disk{disk_num}") },
+                    "name": dev,
+                    "media_type": if medium == "ssd" { 4 } else { 3 },
+                    "size": it.get("size_in_bytes").and_then(|s| s.as_u64()).unwrap_or(0),
+                    "is_mac_device": true,
+                    "is_internal": is_internal,
+                }))
+            }).collect()
+        })
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 fn get_smart_status(state: State<AppState>, device_id: String) -> JsonResult {
     #[cfg(target_os = "windows")]
     {
+        let _ = &state;
         // 1) Prefer smartmontools for a full CrystalDiskInfo-style report.
         if let Some(s) = run_output("smartctl", &["-j", "-a", &format!("\\\\.\\PHYSICALDRIVE{}", device_id)]) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
@@ -719,6 +847,7 @@ public static class NvmeSmart {
     }
     #[cfg(target_os = "macos")]
     {
+        let _ = &state;
         if let Some(s) = run_output("smartctl", &["-j", "-a", &device_id]) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
                 if let Some(r) = smart_from_smartctl(&v, &device_id) {
@@ -739,8 +868,10 @@ public static class NvmeSmart {
 #[derive(Clone)]
 struct BrowserDef {
     name: &'static str,
+    #[allow(dead_code)] // used by browser_paths_windows
     sub: &'static str,
     kind: &'static str,
+    #[allow(dead_code)] // used by browser_paths_windows
     base: &'static str, // "local" | "appdata"
 }
 
@@ -895,11 +1026,16 @@ fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std:
             } else {
                 vec![base.join("Cookies.binarycookies")]
             };
-            let cache = if container.join("Caches/com.apple.Safari").exists() {
-                vec![container.join("Caches/com.apple.Safari")]
-            } else {
-                vec![base.join("Cache")]
-            };
+            let mut cache = Vec::new();
+            for p in [
+                container.join("Caches/com.apple.Safari"),
+                container.join("WebKit/com.apple.WebKit"),
+                container.join("WebKit/com.apple.Safari"),
+                caches("com.apple.Safari"),
+            ] {
+                if p.exists() { cache.push(p); }
+            }
+            if cache.is_empty() { cache.push(base.join("Cache")); }
             (base, cookies, cache)
         }
         "Firefox" => {
@@ -998,6 +1134,7 @@ fn browser_exe_path(name: &str) -> Option<std::path::PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
+#[cfg(target_os = "windows")]
 fn simple_hash(s: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in s.bytes() {
@@ -1038,57 +1175,77 @@ fn get_browser_icon(exe: String) -> JsonResult {
 }
 
 #[tauri::command]
-fn list_browser_data() -> JsonResult {
-    let mut list: Vec<serde_json::Value> = Vec::new();
-    for def in browser_defs() {
-        if let Some((_base, cookies, cache)) = browser_paths(&def) {
-            let cookie_size = sum_sizes(&cookies);
-            let cache_size = sum_sizes(&cache);
-            if cookie_size == 0 && cache_size == 0 { continue; }
-            let exe: Option<String> = {
-                #[cfg(target_os = "windows")]
-                {
-                    browser_exe_path(def.name).map(|p| p.to_string_lossy().to_string())
-                }
-                #[cfg(not(target_os = "windows"))]
-                { None }
-            };
-            list.push(serde_json::json!({
-                "name": def.name,
-                "cookie_size": cookie_size,
-                "cache_size": cache_size,
-                "total_size": cookie_size + cache_size,
-                "kind": def.kind,
-                "exe": exe,
-            }));
+async fn list_browser_data() -> JsonResult {
+    // Summing cache sizes walks large directory trees, so run it off the
+    // main/UI thread to avoid freezing the window.
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut list: Vec<serde_json::Value> = Vec::new();
+        for def in browser_defs() {
+            if let Some((_base, cookies, cache)) = browser_paths(&def) {
+                let cookie_size = sum_sizes(&cookies);
+                let cache_size = sum_sizes(&cache);
+                if cookie_size == 0 && cache_size == 0 { continue; }
+                let exe: Option<String> = {
+                    #[cfg(target_os = "windows")]
+                    {
+                        browser_exe_path(def.name).map(|p| p.to_string_lossy().to_string())
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    { None }
+                };
+                let cookie_paths: Vec<String> = cookies.iter()
+                    .filter(|p| p.exists())
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect();
+                let cache_paths: Vec<String> = cache.iter()
+                    .filter(|p| p.exists())
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect();
+                list.push(serde_json::json!({
+                    "name": def.name,
+                    "cookie_size": cookie_size,
+                    "cache_size": cache_size,
+                    "total_size": cookie_size + cache_size,
+                    "kind": def.kind,
+                    "exe": exe,
+                    "cookie_paths": cookie_paths,
+                    "cache_paths": cache_paths,
+                }));
+            }
         }
-    }
-    list.sort_by(|a, b| b["total_size"].as_u64().unwrap_or(0).cmp(&a["total_size"].as_u64().unwrap_or(0)));
-    JsonResult::ok(serde_json::json!(list))
+        list.sort_by(|a, b| b["total_size"].as_u64().unwrap_or(0).cmp(&a["total_size"].as_u64().unwrap_or(0)));
+        JsonResult::ok(serde_json::json!(list))
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Browser scan failed: {e}")))
 }
 
 #[tauri::command]
-fn clean_browser(name: String, cookies: bool, cache: bool) -> JsonResult {
-    for def in browser_defs() {
-        if def.name != name { continue; }
-        if let Some((_base, cookie_paths, cache_paths)) = browser_paths(&def) {
-            let mut freed = 0u64;
-            if cookies {
-                for p in &cookie_paths {
-                    if p.exists() { freed += delete_path_recursive(p); }
+async fn clean_browser(name: String, cookies: bool, cache: bool) -> JsonResult {
+    tauri::async_runtime::spawn_blocking(move || {
+        for def in browser_defs() {
+            if def.name != name { continue; }
+            if let Some((_base, cookie_paths, cache_paths)) = browser_paths(&def) {
+                let mut freed = 0u64;
+                if cookies {
+                    for p in &cookie_paths {
+                        if p.exists() { freed += delete_path_recursive(p); }
+                    }
                 }
-            }
-            if cache {
-                for p in &cache_paths {
-                    if p.exists() { freed += delete_path_recursive(p); }
+                if cache {
+                    for p in &cache_paths {
+                        if p.exists() { freed += delete_path_recursive(p); }
+                    }
                 }
+                return JsonResult::ok(serde_json::json!({
+                    "name": name, "freed": freed,
+                }));
             }
-            return JsonResult::ok(serde_json::json!({
-                "name": name, "freed": freed,
-            }));
         }
-    }
-    JsonResult::err(format!("Browser not found: {}", name))
+        JsonResult::err(format!("Browser not found: {}", name))
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Clean failed: {e}")))
 }
 
 #[tauri::command]
@@ -1115,6 +1272,24 @@ fn get_process_memory() -> JsonResult {
     } else {
         JsonResult::err("Cannot read process memory")
     }
+}
+
+#[tauri::command]
+fn get_app_version() -> JsonResult {
+    JsonResult::ok(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "name": "DiskRaptor",
+    }))
+}
+
+#[tauri::command]
+fn get_app_data_dir() -> JsonResult {
+    let dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("diskraptor");
+    JsonResult::ok(serde_json::json!({
+        "path": dir.to_string_lossy(),
+    }))
 }
 
 #[tauri::command]
@@ -1154,11 +1329,17 @@ fn list_trash_linux() -> Vec<serde_json::Value> {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.starts_with('.') { continue; }
             let meta = entry.metadata().ok();
+            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+            let size = if is_dir {
+                dir_size(&entry.path())
+            } else {
+                meta.as_ref().map(|m| m.len()).unwrap_or(0)
+            };
             items.push(serde_json::json!({
                 "name": name,
                 "path": entry.path().to_string_lossy(),
-                "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),
-                "is_dir": meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+                "size": size,
+                "is_dir": is_dir,
                 "deleted_at": "",
             }));
         }
@@ -1168,8 +1349,28 @@ fn list_trash_linux() -> Vec<serde_json::Value> {
 
 #[cfg(target_os = "macos")]
 fn list_trash_macos() -> Vec<serde_json::Value> {
+    let script = r#"import os,json
+t=os.path.expanduser('~/.Trash')
+out=[]
+for f in os.listdir(t):
+    if f.startswith('.'): continue
+    p=os.path.join(t,f)
+    try:
+        st=os.lstat(p)
+        isdir=os.path.isdir(p)
+        size=0
+        if isdir:
+            for root,dirs,files in os.walk(p):
+                for n in files:
+                    try: size+=os.lstat(os.path.join(root,n)).st_size
+                    except: pass
+        else:
+            size=st.st_size
+        out.append({'name':f,'path':p,'size':size,'is_dir':isdir,'deleted_at':''})
+    except: pass
+print(json.dumps(out))"#;
     let output = std::process::Command::new("python3")
-        .args(["-c", "import os,json; t=os.path.expanduser('~/.Trash'); print(json.dumps([{'name':f,'path':os.path.join(t,f)} for f in os.listdir(t) if not f.startswith('.')]))"])
+        .args(["-c", script])
         .output();
     if let Ok(out) = output {
         if let Ok(s) = String::from_utf8(out.stdout) {
@@ -1281,6 +1482,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
         }
 
         let progress_handle = result_handle.clone();
+        let emit_handle = handle.clone();
         let progress = Box::new(move |files: u64, dirs: u64, bytes: u64, msg: &str| {
             let s = progress_handle.state::<AppState>();
             s.scan.files_found.store(files, Ordering::Relaxed);
@@ -1289,6 +1491,12 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
             if !msg.is_empty() {
                 *s.scan.current_dir.lock().unwrap() = msg.to_owned();
             }
+            let _ = emit_handle.emit(
+                "scan:progress",
+                serde_json::json!({
+                    "files": files, "dirs": dirs, "bytes": bytes, "path": msg,
+                }),
+            );
         });
 
         let result = scanner::walker::scan_directory_with_progress(config, progress);
@@ -1411,22 +1619,28 @@ fn get_stats(state: State<AppState>) -> JsonResult {
 
 // ── Test/Diagnostic Commands ──
 
+#[cfg(feature = "test-server")]
 use std::collections::HashMap;
+#[cfg(feature = "test-server")]
 use std::sync::Mutex as StdMutex;
 
+#[cfg(feature = "test-server")]
 static CDP_RESULTS: std::sync::LazyLock<StdMutex<HashMap<String, String>>> =
     std::sync::LazyLock::new(|| StdMutex::new(HashMap::new()));
 
+#[cfg(feature = "test-server")]
 #[tauri::command]
 fn __cdp_result(key: String, value: String) -> JsonResult {
     CDP_RESULTS.lock().unwrap().insert(key, value);
     JsonResult::ok_empty()
 }
 
+#[cfg(feature = "test-server")]
 fn get_cdp_result(key: &str) -> Option<String> {
     CDP_RESULTS.lock().unwrap().remove(key)
 }
 
+#[cfg(feature = "test-server")]
 fn parse_cdp_value(v: &str) -> serde_json::Value {
     if let Some(inner) = v.strip_prefix("__err:") {
         return serde_json::json!({"type": "string", "value": inner});
@@ -1734,7 +1948,10 @@ fn main() {
             settings_path: Mutex::new(settings_path),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
         })
-        .setup(|app| {
+        .setup(|_app| {
+            #[cfg(feature = "test-server")]
+            {
+            let app = _app;
             let port: u16 = std::env::var("DISKraptor_CDP_PORT")
                 .ok().and_then(|s| s.parse().ok()).unwrap_or(0);
             if port > 0 {
@@ -1757,6 +1974,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
                     rt.block_on(cdp_server(port, handle));
                 });
             }
+            }
             #[cfg(target_os = "windows")]
             {
                 if let Some(win) = app.get_webview_window("main") {
@@ -1772,8 +1990,9 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
         .invoke_handler(tauri::generate_handler![
             delete_path, delete_permanent,
             open_explorer, open_terminal, get_icon,
-            get_home_dir, list_drives, get_volume_stats,
-            get_memory_info, get_process_memory,
+            get_home_dir, list_drives, get_volume_stats, get_dir_stats,
+            list_downloads_candidates,
+            get_memory_info, get_process_memory, get_app_version, get_app_data_dir,
             empty_trash, list_trash, restore_trash,
             request_permissions, check_admin_needed, restart_as_admin,
             check_for_updates, open_url,
@@ -1782,7 +2001,6 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             save_settings, load_settings,
             list_disks, get_smart_status, exit_app,
             list_browser_data, clean_browser, get_browser_icon,
-            __cdp_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1790,11 +2008,16 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
 
 // ── CDP Server ──
 
+#[cfg(feature = "test-server")]
 use tokio_tungstenite::accept_async;
+#[cfg(feature = "test-server")]
 use futures_util::{StreamExt, SinkExt};
+#[cfg(feature = "test-server")]
 use tokio::sync::Mutex as AsyncMutex;
+#[cfg(feature = "test-server")]
 use tokio::io::AsyncReadExt;
 
+#[cfg(feature = "test-server")]
 async fn handle_http(stream: tokio::net::TcpStream, buf: &[u8], port: u16) {
     let req = String::from_utf8_lossy(buf);
     if req.starts_with("OPTIONS") {
@@ -1832,6 +2055,7 @@ async fn handle_http(stream: tokio::net::TcpStream, buf: &[u8], port: u16) {
     }
 }
 
+#[cfg(feature = "test-server")]
 async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::SocketAddr, app: tauri::AppHandle, _cdp_port: u16) {
     struct PrependReader {
         buf: Vec<u8>,
@@ -1947,6 +2171,7 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
     eprintln!("[CDP] WS disconnected: {}", addr);
 }
 
+#[cfg(feature = "test-server")]
 async fn cdp_server(port: u16, app: tauri::AppHandle) {
     let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await {
         Ok(l) => l,
@@ -1980,5 +2205,122 @@ async fn cdp_server(port: u16, app: tauri::AppHandle) {
                 let _ = stream.try_write(resp.as_bytes());
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_system_profiler_handles_empty_input() {
+        assert!(parse_system_profiler_disks("").is_empty());
+        assert!(parse_system_profiler_disks("not json {").is_empty());
+    }
+
+    #[test]
+    fn parse_system_profiler_detects_drives() {
+        let s = r#"{
+          "SPStorageDataType": [
+            { "_name": "Data",
+              "bsd_name": "disk1s1",
+              "size_in_bytes": 429286973440,
+              "physical_drive": {
+                "device_name": "APPLE SSD SM0512",
+                "is_internal_disk": "yes",
+                "medium_type": "ssd"
+              } },
+            { "_name": "Backup",
+              "bsd_name": "disk2s1",
+              "size_in_bytes": 999000000,
+              "physical_drive": {
+                "device_name": "WD Elements 4TB",
+                "is_internal_disk": "no",
+                "medium_type": "hdd"
+              } },
+            { "_name": "Cryptex",
+              "bsd_name": "disk4s1",
+              "size_in_bytes": 4194304,
+              "physical_drive": {
+                "device_name": "Disk Image",
+                "is_internal_disk": "no",
+                "medium_type": "ssd"
+              } }
+          ]
+        }"#;
+        let disks = parse_system_profiler_disks(s);
+        assert_eq!(disks.len(), 3, "all three distinct physical drives listed");
+        assert_eq!(disks[0]["name"], "APPLE SSD SM0512");
+        assert_eq!(disks[0]["id"], "disk1");
+        assert_eq!(disks[0]["media_type"], 4, "ssd -> media_type 4");
+        assert_eq!(disks[0]["is_internal"], true);
+        assert_eq!(disks[1]["name"], "WD Elements 4TB");
+        assert_eq!(disks[1]["media_type"], 3, "hdd -> media_type 3");
+        assert_eq!(disks[1]["is_internal"], false);
+    }
+
+    #[test]
+    fn parse_system_profiler_dedupes_shared_physical_drive() {
+        let s = r#"{
+          "SPStorageDataType": [
+            { "_name": "Untitled",
+              "bsd_name": "disk1s1",
+              "physical_drive": { "device_name": "VMware Virtual SATA Hard Drive", "medium_type": "ssd" } },
+            { "_name": "Untitled - Data",
+              "bsd_name": "disk1s2",
+              "physical_drive": { "device_name": "VMware Virtual SATA Hard Drive", "medium_type": "ssd" } }
+          ]
+        }"#;
+        let disks = parse_system_profiler_disks(s);
+        assert_eq!(disks.len(), 1);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn browser_defs_include_safari() {
+        assert!(browser_defs().iter().any(|d| d.name == "Safari"));
+    }
+
+    #[test]
+    fn drive_fields_match_frontend_contract() {
+        // The frontend (drives.js / welcome page) reads these exact keys.
+        // Guard against silently breaking the drive selector UI.
+        let result = list_drives();
+        let ok = result.success;
+        assert!(ok);
+        if let Some(data) = result.data {
+            let arr = data.as_array().cloned().unwrap_or_default();
+            if !arr.is_empty() {
+                let d = &arr[0];
+                assert!(d.get("path").is_some(), "drive missing path");
+                assert!(d.get("name").is_some(), "drive missing name");
+                assert!(d.get("total_bytes").is_some(), "drive missing total_bytes");
+                assert!(d.get("free_bytes").is_some(), "drive missing free_bytes");
+                assert!(d.get("used_bytes").is_some(), "drive missing used_bytes");
+                assert!(d.get("usage_pct").is_some(), "drive missing usage_pct");
+                assert!(d.get("percentFull").is_some(), "drive missing percentFull");
+            }
+        }
+    }    #[cfg(target_os = "macos")]
+    #[test]
+    fn safari_paths_fall_back_to_container() {
+        for def in browser_defs() {
+            if def.name != "Safari" { continue; }
+            if let Some((_base, cookies, cache)) = browser_paths(&def) {
+                assert!(cookies.len() >= 1);
+                assert!(cache.len() >= 1);
+                return;
+            }
+            panic!("browser_paths returned None for Safari");
+        }
+        panic!("Safari not in browser_defs");
+    }
+
+    #[test]
+    fn format_size_known_values() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(1024), "1.00 KB");
+        assert_eq!(format_size(1048576), "1.00 MB");
+        assert_eq!(format_size(1073741824), "1.00 GB");
     }
 }

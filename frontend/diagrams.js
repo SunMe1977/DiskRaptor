@@ -1066,13 +1066,16 @@ class DiagramRenderer {
       case "delete":
         if (!filePath) break;
         const t = window.__ || function(s){return s;};
-        if (!confirm(t("confirm.move_trash_file") + filePath)) break;
-        this._invoke("delete_path", { path: filePath }).then((ok) => {
-          if (ok && ok.success !== false) {
-            this.files = this.files.filter((f) => f.path !== filePath);
-            this._draw();
-            if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
-          }
+        const self = this;
+        window.confirmDialog(t("confirm.move_trash_file") + filePath).then(function (ok) {
+          if (!ok) return;
+          self._invoke("delete_path", { path: filePath }).then((ok2) => {
+            if (ok2 && ok2.success !== false) {
+              self.files = self.files.filter((f) => f.path !== filePath);
+              self._draw();
+              if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
+            }
+          });
         });
         break;
     }

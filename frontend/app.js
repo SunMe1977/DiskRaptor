@@ -421,7 +421,17 @@
             if (p) dupScanner.start(p);
           })
           .catch(function () {
-            dupScanner.start("C:/Users/");
+            const fallback =
+              typeof window.__TAURI__ !== "undefined" &&
+              window.__TAURI__.path &&
+              window.__TAURI__.path.homeDir;
+            if (fallback) {
+              fallback()
+                .then(function (h) { if (h) dupScanner.start(String(h)); })
+                .catch(function () {});
+            } else {
+              window.showToast("Select a folder to scan for duplicates first", "info");
+            }
           });
       } else {
         dupScanner.start(path);
@@ -429,6 +439,36 @@
     });
 
     // About dialog
+    try {
+      const v = await window.__TAURI__.invoke("get_app_version");
+      const ver = v && v.data ? v.data.version : "";
+      if (ver) {
+        const el = document.querySelector(".about-version");
+        if (el) {
+          el.innerHTML =
+            '<span data-i18n="about.version">Version</span> ' + ver;
+        }
+        const wsub = document.querySelector(".welcome-subtitle");
+        if (wsub) {
+          const sep = document.createElement("span");
+          sep.style.cssText = "color:var(--text-muted);margin:0 6px;";
+          sep.textContent = "·";
+          const vspan = document.createElement("span");
+          vspan.style.color = "var(--text-muted)";
+          vspan.textContent = "v" + ver;
+          wsub.appendChild(sep);
+          wsub.appendChild(vspan);
+        }
+        const firstCh = document.querySelector(
+          "#about-tab-changelog b",
+        );
+        if (firstCh) {
+          firstCh.textContent = "v" + ver;
+        }
+      }
+    } catch (e) {
+      console.debug("Version fetch failed:", e);
+    }
     aboutClose.addEventListener("click", function () {
       aboutOverlay.classList.remove("active");
     });
@@ -461,17 +501,22 @@
       });
     });
     // Update check
+    let _currentVersion = "";
+    try {
+      const vv = await window.__TAURI__.invoke("get_app_version");
+      _currentVersion = vv && vv.data ? (vv.data.version || "") : "";
+    } catch (e) {}
     window.__checkUpdate = async function () {
       const el = document.getElementById("about-update-check");
       if (!el) return;
       el.textContent = "\u23F3 Checking...";
+      const current = _currentVersion || "0.0.0";
       try {
         const r = await fetch(
           "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
         );
         const data = await r.json();
         const latest = (data.tag_name || "").replace(/^v/, "");
-        const current = "1.0.0";
         if (latest && latest !== current) {
           el.textContent =
             "\u2B07\uFE0F Update available: v" +
