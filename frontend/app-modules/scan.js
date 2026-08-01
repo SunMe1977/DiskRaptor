@@ -274,6 +274,47 @@
         let emaRate = 0;
         let uiRaf = null;
         let pendingUi = null;
+        let lastLiveRender = 0;
+
+        function escLive(s) {
+          return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        }
+
+        function renderLiveTree(entries) {
+          const now = Date.now();
+          if (now - lastLiveRender < 400) return;
+          lastLiveRender = now;
+          const scrollEl = document.getElementById("tree-scroll");
+          let live = document.getElementById("live-tree");
+          if (!live) {
+            live = document.createElement("div");
+            live.id = "live-tree";
+            live.style.cssText =
+              "position:absolute;inset:0;overflow-y:auto;background:var(--bg-primary);z-index:5;padding:8px 12px;font-size:12px;";
+            if (scrollEl) scrollEl.appendChild(live);
+          }
+          const arr = Array.isArray(entries) ? entries : [];
+          let html =
+            '<div style="color:var(--text-muted);font-size:11px;margin-bottom:6px;">\u23F3 Live scan\u2026 ' +
+            arr.length +
+            ' items so far</div>';
+          const shown = arr.slice(-500);
+          for (let i = shown.length - 1; i >= 0; i--) {
+            html +=
+              '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\uD83D\uDCC4 <span>' +
+              escLive(shown[i]) +
+              "</span></div>";
+          }
+          live.innerHTML = html;
+        }
+
+        function hideLiveTree() {
+          const live = document.getElementById("live-tree");
+          if (live) live.remove();
+        }
 
         let _lastProgressRender = 0;
         function onProgress(p) {
@@ -357,7 +398,7 @@
           // Throttle the expensive UI updates (speed chart, % bar, ETA, stats
           // panel) to once per animation frame so millions of progress events
           // don't overwhelm the renderer.
-          pendingUi = { filesFound: filesFound, dirsFound: dirsFound, bytesFound: bytesFound, elapsedSecs: elapsedSecs };
+          pendingUi = { filesFound: filesFound, dirsFound: dirsFound, bytesFound: bytesFound, elapsedSecs: elapsedSecs, liveEntries: p.live_entries };
           if (!uiRaf) {
             uiRaf = requestAnimationFrame(function () {
               uiRaf = null;
@@ -381,8 +422,7 @@
                 pctText.textContent = Math.round(pct) + "%";
               }
               const ratio = u.filesFound / Math.max(1, u.filesFound + u.dirsFound);
-              if (u.elapsedSecs > 5 && ratio > 0 && emaRate > 0) {
-                const projectedTotal = u.filesFound / ratio;
+              if (u.elapsedSecs > 5 && ratio > 0 && emaRate > 0) {                const projectedTotal = u.filesFound / ratio;
                 const filesLeft = Math.max(0, projectedTotal - u.filesFound);
                 const remaining = Math.max(0, Math.min(36000, filesLeft / emaRate));
                 if (isFinite(remaining) && !isNaN(remaining)) {
@@ -395,6 +435,7 @@
                 }
               }
               statsPanel.updateLive(u.filesFound, u.dirsFound, u.elapsedSecs);
+              if (u.liveEntries) renderLiveTree(u.liveEntries);
             });
           }
 
@@ -560,6 +601,7 @@
           "#tree-panel .status-bar",
         );
         let hadChunks = false;
+        hideLiveTree();
 
         if (
           result &&
@@ -854,6 +896,7 @@
         document.querySelector(".status-bar").textContent =
           "Error: " + err;
       } finally {
+        hideLiveTree();
         if (unlisten && typeof unlisten === "function") unlisten();
         clearTimeout(safetyTimer);
         state.isScanning = false;

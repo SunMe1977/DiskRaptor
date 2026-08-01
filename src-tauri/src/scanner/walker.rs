@@ -20,6 +20,8 @@ pub struct ScanConfig {
     pub errors: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     /// When set to true, scanner should stop as soon as possible
     pub cancelled: Option<std::sync::Arc<AtomicBool>>,
+    /// Ring buffer of recently discovered entries, for live scanning views.
+    pub live_entries: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
 }
 
 impl Default for ScanConfig {
@@ -42,6 +44,7 @@ impl Default for ScanConfig {
             scan_timeout_secs: 0,
             errors: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             cancelled: None,
+            live_entries: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         }
     }
 }
@@ -50,6 +53,17 @@ impl Default for ScanConfig {
 /// like "bin" matching "binary_folder").
 fn path_has_component(path: &str, target: &str) -> bool {
     path.split(['/', '\\']).any(|c| c == target)
+}
+
+const LIVE_CAP: usize = 1000;
+
+/// Record a discovered entry into the live ring buffer (capped).
+fn push_live(live: &std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>, name: &str) {
+    let mut q = live.lock().unwrap();
+    if q.len() >= LIVE_CAP {
+        q.pop_front();
+    }
+    q.push_back(name.to_string());
 }
 
 struct TopFilesAccum {
@@ -164,6 +178,7 @@ mod platform {
         let skip_dirs = Arc::new(config.skip_dirs.clone());
         let top_files = Arc::new(TopFilesAccum::default());
         let file_types = Arc::new(FileTypeAccum::default());
+        let live_entries = config.live_entries.clone();
         let top_count = config.top_files_count;
         let mut arena = TreeNodeArena::with_estimated_capacity(root_path);
         let root_name = Path::new(root_path)
@@ -250,6 +265,7 @@ mod platform {
             }
 
             let file_name = entry.file_name().to_string_lossy();
+            push_live(&live_entries, &file_name);
 
             let is_dir = entry.file_type().is_dir();
             let parent = os_path
@@ -442,6 +458,7 @@ pub fn scan_simple(
         if full == root_path {
             continue;
         }
+        push_live(&config.live_entries, entry.file_name().to_string_lossy().as_ref());
         let file_name = entry.file_name().to_string_lossy().to_string();
         let is_dir = entry.file_type().is_dir();
         let parent = entry

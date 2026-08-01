@@ -24,6 +24,7 @@ struct ScanState {
     cancelled: AtomicBool,
     cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
     errors: Mutex<Vec<String>>,
+    live_entries: Mutex<Option<std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>>>,
 }
 
 #[allow(dead_code)]
@@ -1669,13 +1670,19 @@ fn open_url(url: String) -> JsonResult {
 
 // ── Scanner Commands ──
 
-fn scan_config(path: &str, follow_symlinks: bool, timeout_secs: u64) -> scanner::walker::ScanConfig {
+fn scan_config(
+    path: &str,
+    follow_symlinks: bool,
+    timeout_secs: u64,
+    live: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+) -> scanner::walker::ScanConfig {
     scanner::walker::ScanConfig {
         root_path: path.into(),
         follow_symlinks,
         scan_timeout_secs: timeout_secs,
         errors: Arc::new(Mutex::new(Vec::new())),
         cancelled: Some(Arc::new(AtomicBool::new(false))),
+        live_entries: live,
         ..scanner::walker::ScanConfig::default()
     }
 }
@@ -1700,9 +1707,12 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
     let ts = timeout_secs.unwrap_or(30);
     let handle = app.clone();
 
+    let live = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    *scan.scan.live_entries.lock().unwrap() = Some(live.clone());
+
     let result_handle = handle.clone();
     std::thread::Builder::new().name("scan".into()).spawn(move || {
-        let config = scan_config(&p, fs, ts);
+        let config = scan_config(&p, fs, ts, live);
         let cancel_flag = config.cancelled.clone().unwrap();
         {
             let s = result_handle.state::<AppState>();
@@ -1768,11 +1778,19 @@ fn scan_progress_data(state: &AppState) -> serde_json::Value {
     let phase: u64 = if !is_running && has_result { 3 } else if is_running { 0 } else { 3 };
     let elapsed = state.scan.start_time.lock().unwrap().elapsed().as_secs();
     let cd = state.scan.current_dir.lock().unwrap().clone();
+    let live: Vec<String> = state
+        .scan
+        .live_entries
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|q| q.lock().unwrap().iter().cloned().collect())
+        .unwrap_or_default();
     serde_json::json!({
         "files_found": files, "dirs_found": dirs, "bytes_found": bytes,
         "is_running": is_running, "current_dir": cd,
         "elapsed_secs": elapsed, "phase": phase,
-        "errors": errors,
+        "errors": errors, "live_entries": live,
     })
 }
 
@@ -2204,6 +2222,7 @@ fn main() {
                 cancelled: AtomicBool::new(false),
                 cancel_flag: Mutex::new(None),
                 errors: Mutex::new(Vec::new()),
+                live_entries: Mutex::new(None),
             },
             settings_path: Mutex::new(settings_path),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
