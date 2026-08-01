@@ -43,6 +43,7 @@
                     <div id="tools-menu" class="tools-dropdown">
                         <div class="tools-item" data-action="exit" title="Close DiskRaptor">⏻ Exit</div>
                         <div class="tools-sep"></div>
+                        <div class="tools-item" data-action="open-current">📍 Open Current Folder</div>
                         <div class="tools-item" data-action="scan-downloads" data-i18n="tools.scan_downloads">📥 Scan Downloads</div>
                         <div class="tools-item" data-action="scan-trash" data-i18n="tools.scan_trash">🗑️ Scan Trash</div>
                         <div class="tools-item" data-action="trash-recovery">♻️ Trash Recovery</div>
@@ -55,6 +56,7 @@
                         <div class="tools-sep"></div>
                         <div class="tools-item" data-action="export-html">📄 Export HTML Report</div>
                         <div class="tools-item" data-action="settings">⚙️ Preferences</div>
+                        <div class="tools-item" data-action="reset-view">🔄 Reset View</div>
                         <div class="tools-item" data-action="clear-scan">🗑️ Clear Scan</div>
                         <div class="tools-item" data-action="trash" data-i18n="tools.empty_trash">🗑️ Empty Trash</div>
                     </div>
@@ -167,6 +169,7 @@
                     <div class="panel-header" id="diagram-header">
                         <h3 id="diagram-title" data-i18n="diagram.top50">Top 50 Files</h3>
                         <div class="diagram-controls">
+                            <span id="theme-hint" style="font-size:10px;color:var(--text-muted);margin-right:6px;">Theme preview</span>
                             <button class="diagram-mode active" data-mode="pie" data-i18n="diagram.pie">
                                 Pie
                             </button>
@@ -407,6 +410,10 @@
                         <option value="dark" data-i18n="settings.theme_dark">Dark</option>
                         <option value="light" data-i18n="settings.theme_light">Light</option>
                     </select>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Quick presets</label>
+                    <div id="settings-presets" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
                 </div>
                 <div style="margin-bottom:16px;">
                     <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.language">Language</label>

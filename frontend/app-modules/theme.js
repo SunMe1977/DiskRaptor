@@ -37,6 +37,10 @@
     });
 
     // ── Diagram theme buttons ─────────────────────────────
+    const themeHint = document.getElementById("theme-hint");
+    if (themeHint) {
+      themeHint.textContent = "Choose a diagram style to preview the layout instantly";
+    }
     document.querySelectorAll(".theme-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         const theme = this.dataset.theme;

@@ -237,6 +237,10 @@
 
       progressOverlay.classList.add("active");
       progressPath.textContent = "Scanning: " + path;
+      const scanHint = document.getElementById("scan-hint");
+      if (scanHint) {
+        scanHint.textContent = "Tip: press Ctrl/Cmd+Enter to start a scan quickly";
+      }
 
       progressFilesEl.textContent = "0";
       progressDirsEl.textContent = "0";

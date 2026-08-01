@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
   window.app = window.app || {};
 
@@ -6,13 +6,14 @@
     const state = window.app.state;
     const { scanPath, btnExport, loader } = refs;
 
-    // Export button handler (CSV / JSON / HTML)
     btnExport.addEventListener("click", async function () {
       try {
         const choice = await exportDialog();
         if (!choice) return;
         const fmt = choice.format;
-        let stats = state.currentStats || {};
+        const includeSummary = choice.includeSummary !== false;
+        const includeChart = choice.includeChart !== false;
+        const stats = state.currentStats || {};
         const scanPathVal = scanPath.value || "";
         const nodes = loader.allNodes || [];
         const topN = choice.topN > 0 ? Math.min(choice.topN, nodes.length) : nodes.length;
@@ -27,14 +28,9 @@
               const parts = [n.name];
               let p = n.parent;
               let safety = 0;
-              while (
-                p !== 4294967295 &&
-                p !== undefined &&
-                safety < 100
-              ) {
+              while (p !== 4294967295 && p !== undefined && safety < 100) {
                 const parent = nodes[p];
-                if (parent && parent.name)
-                  parts.unshift(parent.name);
+                if (parent && parent.name) parts.unshift(parent.name);
                 p = parent ? parent.parent : 4294967295;
                 safety++;
               }
@@ -57,7 +53,6 @@
           }
           downloadBlob(new Blob([csv], { type: "text/csv" }), "diskraptor-export-" + Date.now() + ".csv");
         } else if (fmt === "JSON") {
-          // Export all nodes (not just topN) so the file is complete.
           const allNodes = nodes.slice(0, topN).map(function (n, i) {
             return { index: i, name: n && n.name, size: n && n.size, file_count: n && n.file_count, dir_count: n && n.dir_count, type: n && n.node_type === 1 ? "File" : "Directory" };
           });
@@ -73,7 +68,6 @@
           );
           downloadBlob(new Blob([json], { type: "application/json" }), "diskraptor-export-" + Date.now() + ".json");
         } else {
-          // HTML report
           let fileRows = "";
           for (let ni = 0; ni < topN && ni < 500; ni++) {
             const hn = nodes[ni];
@@ -90,18 +84,23 @@
             const svg = document.querySelector("#diagram-container canvas");
             chartData = svg ? svg.toDataURL() : "";
           } catch (e) {}
+          const summaryBlock = includeSummary
+            ? '<div style="margin:16px 0;padding:12px 14px;background:#f6f8fa;border:1px solid #e5e7eb;border-radius:8px;">' +
+              '<strong>Summary</strong><br/>' +
+              'Files: ' + (stats.total_files || 0) + '<br/>' +
+              'Dirs: ' + (stats.total_dirs || 0) + '<br/>' +
+              'Size: ' + (stats.size_human || '0 B') +
+              '</div>'
+            : "";
+          const chartBlock = includeChart && chartData
+            ? '<div style="margin:16px 0;"><img src="' + chartData + '" style="max-width:600px;border-radius:8px;border:1px solid #e5e7eb;"></div>'
+            : "";
           const htmlReport =
             '<!DOCTYPE html><html><head><meta charset="utf-8"><title>DiskRaptor Report</title><style>body{font-family:sans-serif;margin:20px;color:#333}h1{color:#2ea043}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5}</style></head><body>' +
-            "<h1>\uD83E\uDD96 DiskRaptor Report</h1>" +
+            "<h1>🦖 DiskRaptor Report</h1>" +
             "<p>Path: " + escHtml(scanPathVal) + "</p>" +
-            "<p>Files: " +
-            (stats.total_files || 0) +
-            " | Dirs: " +
-            (stats.total_dirs || 0) +
-            " | Size: " +
-            (stats.size_human || "0 B") +
-            "</p>" +
-            (chartData ? '<img src="' + chartData + '" style="max-width:600px;">' : "") +
+            summaryBlock +
+            chartBlock +
             "<h2>Files</h2><table><tr><th>Name</th><th>Size</th></tr>" +
             fileRows +
             "</table>" +
@@ -132,36 +131,41 @@
 
     function exportDialog() {
       return new Promise(function (resolve) {
+        const preset = localStorage.getItem("diskraptor-export-preset") || "CSV";
         const ov = document.createElement("div");
-        ov.style.cssText =
-          "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+        ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
         const card = document.createElement("div");
-        card.style.cssText =
-          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:360px;width:90%;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+        card.style.cssText = "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:360px;width:90%;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
         card.innerHTML =
-          '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDCC4 Export</div>' +
+          '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">📄 Export</div>' +
           '<div style="padding:16px;display:flex;flex-direction:column;gap:12px;">' +
           '<label style="font-size:12px;color:var(--text-secondary);">Format</label>' +
           '<select id="exp-format" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);">' +
-          '<option value="CSV">CSV</option>' +
-          '<option value="JSON">JSON</option>' +
-          '<option value="HTML">HTML Report</option>' +
-          "</select>" +
+          '<option value="CSV"' + (preset === "CSV" ? " selected" : "") + '>CSV</option>' +
+          '<option value="JSON"' + (preset === "JSON" ? " selected" : "") + '>JSON</option>' +
+          '<option value="HTML"' + (preset === "HTML" ? " selected" : "") + '>HTML Report</option>' +
+          '</select>' +
           '<label style="font-size:12px;color:var(--text-secondary);">Rows (0 = all)</label>' +
           '<input id="exp-rows" type="number" min="0" value="0" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
-          "</div>" +
+          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"><input id="exp-summary" type="checkbox" checked /> Include summary block</label>' +
+          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"><input id="exp-chart" type="checkbox" checked /> Include chart snapshot</label>' +
+          '<div style="font-size:11px;color:var(--text-muted);">Your last export format is remembered for next time.</div>' +
+          '</div>' +
           '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">' +
           '<button id="exp-cancel" style="padding:6px 14px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Cancel</button>' +
           '<button id="exp-ok" style="padding:6px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;font-weight:600;">Export</button>' +
-          "</div>";
+          '</div>';
         ov.appendChild(card);
         document.body.appendChild(ov);
         function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
         function submit() {
           const format = card.querySelector("#exp-format").value;
           const rows = parseInt(card.querySelector("#exp-rows").value) || 0;
+          const includeSummary = card.querySelector("#exp-summary").checked;
+          const includeChart = card.querySelector("#exp-chart").checked;
+          localStorage.setItem("diskraptor-export-preset", format);
           close();
-          resolve({ format: format, topN: rows });
+          resolve({ format: format, topN: rows, includeSummary: includeSummary, includeChart: includeChart });
         }
         card.querySelector("#exp-cancel").onclick = function () { close(); resolve(null); };
         card.querySelector("#exp-ok").onclick = submit;

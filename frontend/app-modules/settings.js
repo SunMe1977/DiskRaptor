@@ -48,6 +48,24 @@
         } catch (e) {}
       })();
 
+      const presets = [
+        { label: "Quick Scan", value: "/Users" },
+        { label: "Downloads", value: "~/Downloads" },
+        { label: "Desktop", value: "~/Desktop" }
+      ];
+      const presetWrap = document.getElementById("settings-presets");
+      if (presetWrap) {
+        presetWrap.innerHTML = presets.map(function (p) {
+          return '<button type="button" class="settings-preset" data-path="' + p.value + '" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">' + p.label + '</button>';
+        }).join("");
+        presetWrap.querySelectorAll(".settings-preset").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            const input = document.getElementById("settings-default-path");
+            if (input) input.value = this.dataset.path;
+          });
+        });
+      }
+
       document
         .getElementById("settings-close")
         ?.addEventListener("click", function () { so.style.display = "none"; });

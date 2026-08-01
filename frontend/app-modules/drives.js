@@ -69,6 +69,11 @@
     const driveMenu = document.getElementById("drive-menu");
     const driveSelected = document.getElementById("drive-selected");
 
+    function setDriveSelection(path) {
+      if (driveSelected) driveSelected.textContent = path || "Select drive";
+      if (scanPath) scanPath.value = path || scanPath.value;
+    }
+
     btnDrive.addEventListener("click", function (e) {
       e.stopPropagation();
       driveMenu.classList.toggle("active");
@@ -116,7 +121,10 @@
           typeof drivesRaw === "string" ? JSON.parse(drivesRaw) : drivesRaw;
         if (!drives || drives.length === 0) return;
 
-        let html = "";
+        let html = '<div style="padding:6px 8px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;">' +
+          '<span>Quick select</span>' +
+          '<span class="drive-refresh" style="cursor:pointer;">↻ refresh</span>' +
+          '</div>';
         for (let i = 0; i < drives.length; i++) {
           const d = drives[i];
           const path = d.path || "";
@@ -184,6 +192,10 @@
             "</div>";
         }
         driveMenu.innerHTML = html;
+        driveMenu.querySelector(".drive-refresh")?.addEventListener("click", function (e) {
+          e.stopPropagation();
+          loadDrives();
+        });
         driveMenu.querySelectorAll(".drive-item").forEach(function (el) {
           el.addEventListener("click", function () {
             driveMenu
@@ -194,7 +206,7 @@
             el.classList.add("active");
             const p = el.dataset.path;
             scanPath.value = p;
-            driveSelected.textContent = p;
+            setDriveSelection(p);
             driveMenu.classList.remove("active");
             btnScan.click();
           });
@@ -205,10 +217,10 @@
           if (firstItem) {
             const p = firstItem.dataset.path;
             if (scanPath.value) {
-              driveSelected.textContent = scanPath.value;
+              setDriveSelection(scanPath.value);
             } else {
               scanPath.value = p;
-              driveSelected.textContent = p;
+              setDriveSelection(p);
             }
           }
         }

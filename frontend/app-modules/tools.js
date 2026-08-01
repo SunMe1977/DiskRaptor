@@ -25,7 +25,24 @@
       const action = item.dataset.action;
       toolsMenu.classList.remove("active");
 
-      if (action === "scan-downloads" || action === "scan-trash") {
+      if (action === "open-current") {
+        const current = (scanPath.value || "").trim();
+        if (!current) {
+          window.showToast("Enter or select a folder first", "info");
+          return;
+        }
+        window.__TAURI__.invoke("get_dir_stats", { path: current }).then(function (res) {
+          const st = res && res.data ? res.data : {};
+          const sizeStr = fmtBytes(st.total_bytes);
+          const preview = "Open this folder?\n\n" + current + (sizeStr ? "\nSize: " + sizeStr : "");
+          window.confirmDialog(preview).then(function (ok) {
+            if (!ok) return;
+            btnScan.click();
+          });
+        }).catch(function () {
+          btnScan.click();
+        });
+      } else if (action === "scan-downloads" || action === "scan-trash") {
         window.__TAURI__
           .invoke("get_home_dir")
           .then(function (home) {
@@ -78,6 +95,23 @@
         document.querySelector(".status-bar").textContent = (
           window.__ || function (s) { return s; }
         )("status.clear_scan");
+        showWelcome();
+      } else if (action === "reset-view") {
+        state.currentStats = null;
+        state.currentScanResult = null;
+        const loader = window.__loader;
+        const treeView = window.__treeView;
+        if (loader) loader.release().catch(function () {});
+        if (treeView) {
+          treeView.visibleNodes = [];
+          treeView.expanded.clear();
+          treeView.selectedIndex = null;
+          treeView.rebuild().catch(function () {});
+        }
+        if (window.__statsPanel) window.__statsPanel.clear();
+        if (window.__diagram) window.__diagram.setData(null);
+        if (window.__topFiles) window.__topFiles.render([], true);
+        document.querySelector(".status-bar").textContent = "View reset";
         showWelcome();
       } else if (action === "settings") {
         const so = document.getElementById("settings-overlay");

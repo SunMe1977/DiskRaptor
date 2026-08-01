@@ -1948,16 +1948,16 @@ fn main() {
             settings_path: Mutex::new(settings_path),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
         })
-        .setup(|_app| {
-            #[cfg(feature = "test-server")]
+        .setup(|app| {
+            #[cfg(all(feature = "test-server", debug_assertions))]
             {
-            let app = _app;
-            let port: u16 = std::env::var("DISKraptor_CDP_PORT")
-                .ok().and_then(|s| s.parse().ok()).unwrap_or(0);
-            if port > 0 {
-                // Inject test DOM structure into main window for tests
-                if let Some(w) = app.get_webview_window("main") {
-                    let inject_dom = r#"function _cdpI(){
+                let port: u16 = std::env::var("DISKraptor_CDP_PORT")
+                    .ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+                if port > 0 {
+                    // Inject test DOM structure into main window for tests.
+                    // Disabled in release builds to avoid shipping test-only behavior.
+                    if let Some(w) = app.get_webview_window("main") {
+                        let inject_dom = r#"function _cdpI(){
 var b=document.body||document.documentElement;
 if(!b)return setTimeout(_cdpI,50);
 if(document.getElementById('welcome-placeholder'))return;
@@ -1965,15 +1965,15 @@ b.innerHTML='<div id="welcome-placeholder" class="welcome-placeholder"><h2 class
 var wc=document.getElementById('welcome-close');
 if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').classList.add('hidden');};
 }_cdpI();"#;
-                    let _ = w.eval(inject_dom);
-                }
+                        let _ = w.eval(inject_dom);
+                    }
 
-                let handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    let rt = tokio::runtime::Runtime::new().unwrap();
-                    rt.block_on(cdp_server(port, handle));
-                });
-            }
+                    let handle = app.handle().clone();
+                    std::thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(cdp_server(port, handle));
+                    });
+                }
             }
             #[cfg(target_os = "windows")]
             {

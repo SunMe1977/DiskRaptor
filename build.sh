@@ -62,7 +62,15 @@ fi
 echo ""
 
 # ── Tool paths (override via env vars) ──────────────────────────
-: "${QT_DIR:=/usr/local/opt/qt}"                  # macOS Homebrew default
+: "${QT_DIR:=}"
+if [ -z "${QT_DIR}" ]; then
+  for candidate in /opt/homebrew/opt/qt@6 /opt/homebrew/opt/qt /usr/local/opt/qt@6 /usr/local/opt/qt; do
+    if [ -d "$candidate" ]; then
+      QT_DIR="$candidate"
+      break
+    fi
+  done
+fi
 : "${QT_VERSION:=6}"                               # Qt major version
 : "${RUST_TARGET:=release}"                        # release or debug
 : "${SIGNING_IDENTITY:=}"                          # macOS codesign identity
@@ -389,34 +397,35 @@ case "$PLATFORM" in
 
     # ── Create temporary signing keychain to avoid GUI password prompts ──
     SIGN_KEYCHAIN="/tmp/diskraptor-build-$$.keychain"
-    if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
-      echo "  ERROR: KEYCHAIN_PASSWORD not set - cannot sign"
-      exit 1
-    fi
-    SIGN_KEYCHAIN_PASS="$KEYCHAIN_PASSWORD"
-    trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
-
-    # Unlock login keychain first so export works
-    security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-
-    security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
-    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
-
-    # Export certs from login keychain and import to temp keychain
-    echo "  Exporting signing certs to temp keychain..."
-    security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$KEYCHAIN_PASSWORD" -o /tmp/cert_export.p12 2>/dev/null || true
-    if [ -f /tmp/cert_export.p12 ] && [ -s /tmp/cert_export.p12 ]; then
-      security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "$KEYCHAIN_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
-      echo "  Certs imported to temp keychain"
-    else
-      echo "  WARNING: Cert export failed - falling back to login keychain"
+    SIGN_KEYCHAIN_PASS="${KEYCHAIN_PASSWORD:-}"
+    if [ -z "$SIGN_KEYCHAIN_PASS" ]; then
+      echo "  WARNING: KEYCHAIN_PASSWORD not set - signing will fall back to ad-hoc mode"
       SIGN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+    else
+      trap 'rm -f "$SIGN_KEYCHAIN" 2>/dev/null; security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null' EXIT
+
+      # Unlock login keychain first so export works
+      security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+      security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+
+      security create-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+      security unlock-keychain -p "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+      security set-keychain-settings -t 86400 "$SIGN_KEYCHAIN" 2>/dev/null || true
+      security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$SIGN_KEYCHAIN_PASS" "$SIGN_KEYCHAIN" 2>/dev/null || true
+
+      # Export certs from login keychain and import to temp keychain
+      echo "  Exporting signing certs to temp keychain..."
+      security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "$SIGN_KEYCHAIN_PASS" -o /tmp/cert_export.p12 2>/dev/null || true
+      if [ -f /tmp/cert_export.p12 ] && [ -s /tmp/cert_export.p12 ]; then
+        security import /tmp/cert_export.p12 -k "$SIGN_KEYCHAIN" -P "$SIGN_KEYCHAIN_PASS" -A -T /usr/bin/codesign -T /usr/bin/productbuild 2>/dev/null || true
+        echo "  Certs imported to temp keychain"
+      else
+        echo "  WARNING: Cert export failed - falling back to login keychain"
+        SIGN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+      fi
+      rm -f /tmp/cert_export.p12 2>/dev/null || true
+      security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
     fi
-    rm -f /tmp/cert_export.p12 2>/dev/null || true
-    security list-keychains -s "$SIGN_KEYCHAIN" ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain 2>/dev/null || true
 
     # ── Sign with developer certificate, fall back to ad-hoc ──
 
@@ -447,19 +456,6 @@ case "$PLATFORM" in
         --keychain "$SIGN_KEYCHAIN" \
         "$APP" 2>/dev/null || true
     fi
-
-    echo ""
-    echo "  Creating DMG..."
-    if [ ! -d "$APP" ]; then
-      echo "  ERROR: .app bundle not found at $APP"
-      exit 1
-    fi
-    if ! hdiutil create -volname "DiskRaptor" -srcfolder "$APP" -ov -format UDZO "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1; then
-      echo "  ERROR: hdiutil failed (exit code $?)"
-      ls -la dist/
-      exit 1
-    fi
-
 
     # Notarization (requires Apple ID email, team ID, and app-specific password)
     if [ -n "$CODESIGN_IDENTITY" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
