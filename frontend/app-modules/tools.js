@@ -721,6 +721,7 @@
     const BROWSER_EMOJI = {
       "Google Chrome": "\uD83C\uDF10",
       "Microsoft Edge": "\uD83C\uDF00",
+      Safari: "\uD83E\uDD85",
       Firefox: "\uD83E\uDD8A",
       Opera: "\u2B55",
       "Opera GX": "\uD83C\uDFAE",

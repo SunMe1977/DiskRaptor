@@ -413,6 +413,37 @@ fn list_disks() -> JsonResult {
             }
             if !disks.is_empty() { return JsonResult::ok(serde_json::json!(disks)); }
         }
+        // Fall back to `system_profiler` so the SSD/S.M.A.R.T. tool still lists
+        // drives even when smartmontools is not installed.
+        if let Some(s) = run_output("system_profiler", &["SPStorageDataType", "-json"]) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                let mut seen = std::collections::HashSet::new();
+                let disks: Vec<serde_json::Value> = v
+                    .get("SPStorageDataType")
+                    .and_then(|a| a.as_array())
+                    .map(|items| items.iter().filter_map(|it| {
+                        let pd = it.get("physical_drive")?;
+                        let dev = pd.get("device_name").and_then(|d| d.as_str()).unwrap_or("");
+                        if dev.is_empty() { return None; }
+                        if !seen.insert(dev.to_string()) { return None; }
+                        let medium = pd.get("medium_type").and_then(|m| m.as_str()).unwrap_or("");
+                        let bsd = it.get("bsd_name").and_then(|b| b.as_str()).unwrap_or("");
+                        let disk_num: String = bsd.chars().take_while(|c| c.is_ascii_digit()).collect();
+                        let is_internal = pd.get("is_internal_disk").and_then(|x| x.as_str()).unwrap_or("") == "yes";
+                        Some(serde_json::json!({
+                            "id": if disk_num.is_empty() { bsd.to_string() } else { format!("disk{disk_num}") },
+                            "name": dev,
+                            "media_type": if medium == "ssd" { 4 } else { 3 },
+                            "size": it.get("size_in_bytes").and_then(|s| s.as_u64()).unwrap_or(0),
+                            "is_mac_device": true,
+                            "is_internal": is_internal,
+                        }))
+                    }).collect()).unwrap_or_default();
+                if !disks.is_empty() {
+                    return JsonResult::ok(serde_json::json!(disks));
+                }
+            }
+        }
         JsonResult::err("S.M.A.R.T. requires smartmontools (smartctl) on macOS")
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -753,6 +784,7 @@ fn browser_defs() -> Vec<BrowserDef> {
     vec![
         BrowserDef { name: "Google Chrome", sub: r"Google\Chrome\User Data", kind: "chrome", base: "local" },
         BrowserDef { name: "Microsoft Edge", sub: r"Microsoft\Edge\User Data", kind: "chrome", base: "local" },
+        BrowserDef { name: "Safari", sub: r"com.apple.Safari", kind: "safari", base: "local" },
         BrowserDef { name: "Chromium", sub: r"Chromium\User Data", kind: "chrome", base: "local" },
         BrowserDef { name: "Brave", sub: r"BraveSoftware\Brave-Browser\User Data", kind: "chrome", base: "local" },
         BrowserDef { name: "Vivaldi", sub: r"Vivaldi\User Data", kind: "chrome", base: "local" },
@@ -855,7 +887,21 @@ fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std:
     let (base, cookies, cache_paths) = match def.name {
         "Google Chrome" => (support("Google/Chrome"), vec![support("Google/Chrome/Default/Network/Cookies")], vec![caches("Google/Chrome/Default/Cache")]),
         "Microsoft Edge" => (support("Microsoft Edge"), vec![support("Microsoft Edge/Default/Network/Cookies")], vec![caches("Microsoft Edge/Default/Cache")]),
-        "Safari" => (support("com.apple.Safari"), vec![support("com.apple.Safari/Cookies.binarycookies")], vec![caches("com.apple.Safari")]),
+        "Safari" => {
+            let base = support("com.apple.Safari");
+            let container = std::path::PathBuf::from(&home).join("Library/Containers/com.apple.Safari/Data/Library");
+            let cookies = if container.join("Cookies/Cookies.binarycookies").exists() {
+                vec![container.join("Cookies/Cookies.binarycookies")]
+            } else {
+                vec![base.join("Cookies.binarycookies")]
+            };
+            let cache = if container.join("Caches/com.apple.Safari").exists() {
+                vec![container.join("Caches/com.apple.Safari")]
+            } else {
+                vec![base.join("Cache")]
+            };
+            (base, cookies, cache)
+        }
         "Firefox" => {
             let base = support("Firefox/Profiles");
             let mut cookies = Vec::new();
@@ -995,12 +1041,18 @@ fn get_browser_icon(exe: String) -> JsonResult {
 fn list_browser_data() -> JsonResult {
     let mut list: Vec<serde_json::Value> = Vec::new();
     for def in browser_defs() {
-        if let Some((base, cookies, cache)) = browser_paths(&def) {
-            if !base.exists() { continue; }
+        if let Some((_base, cookies, cache)) = browser_paths(&def) {
             let cookie_size = sum_sizes(&cookies);
             let cache_size = sum_sizes(&cache);
             if cookie_size == 0 && cache_size == 0 { continue; }
-            let exe = browser_exe_path(def.name).map(|p| p.to_string_lossy().to_string());
+            let exe: Option<String> = {
+                #[cfg(target_os = "windows")]
+                {
+                    browser_exe_path(def.name).map(|p| p.to_string_lossy().to_string())
+                }
+                #[cfg(not(target_os = "windows"))]
+                { None }
+            };
             list.push(serde_json::json!({
                 "name": def.name,
                 "cookie_size": cookie_size,
