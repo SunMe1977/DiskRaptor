@@ -103,10 +103,12 @@ Install the cask directly from a local checkout:
 ```bash
 git clone https://github.com/SunMe1977/DiskRaptor.git
 cd DiskRaptor
-brew install --cask ./Casks/diskraptor.rb
+brew install --cask ./brew/Casks/diskraptor.rb
 ```
 
 The cask installs the `.dmg` (macOS) or `.deb` (Linux) from the [Releases](https://github.com/SunMe1977/DiskRaptor/releases) page.
+
+To install as `brew install diskraptor` (no tap, no path), the cask must first be merged into the official [homebrew/homebrew-cask](https://github.com/Homebrew/homebrew-cask) repository (macOS only) — submit a PR against `Casks/d/diskraptor.rb` once the macOS `.dmg` with a fixed SHA256 is published. Linux has no official cask repo.
 
 ---
 
@@ -192,6 +194,8 @@ node tests/test_ui.mjs
 │   ├── nsis/                # Windows NSIS installer
 │   ├── build.sh             # macOS/Linux build + packaging
 │   └── build.cmd            # Windows build + packaging
+├── brew/                    # Homebrew cask (macOS + Linux)
+│   └── Casks/diskraptor.rb
 ├── test_*.mjs               # UI integration tests (CDP)
 └── .github/workflows/       # CI pipelines
 ```
