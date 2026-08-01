@@ -927,11 +927,17 @@
 
       const capacityStr = r.capacity ? fmtBytes(r.capacity) : "";
 
-      function cell(label, value) {
+      function shorten(s, max) {
+        s = String(s || "");
+        return s.length > max ? s.substring(0, max) + "\u2026" : s;
+      }
+      function cell(label, value, title) {
         return (
           '<div class="smart-info-cell"><div class="c-label">' +
           esc(label) +
-          '</div><div class="c-value">' +
+          '</div><div class="c-value" title="' +
+          esc(title || value) +
+          '">' +
           esc(value) +
           "</div></div>"
         );
@@ -988,7 +994,7 @@
         '<div class="smart-info-grid">' +
         cell("Model", r.model || "\u2014") +
         cell("Firmware", r.firmware || "\u2014") +
-        cell("Serial", r.serial || "\u2014") +
+        cell("Serial", shorten(r.serial, 22), r.serial) +
         cell("Interface", r.interface || "\u2014") +
         cell("Capacity", capacityStr || "\u2014") +
         cell("Media", mediaLabel(r.media_type)) +
