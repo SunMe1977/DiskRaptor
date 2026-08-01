@@ -508,7 +508,7 @@ fn smart_health_from_attrs(health: i64, wear: Option<f64>, temp: Option<f64>, re
         else if t >= 45.0 { score -= 4.0; }
     }
     if read_unc + write_unc > 0 { score -= 15.0; }
-    let score = (score.max(0.0).min(100.0)).round() as u64;
+    let score = score.clamp(0.0, 100.0).round() as u64;
     let status = if score >= 85 { "Healthy" } else if score >= 55 { "Warning" } else { "Critical" };
     (score, status)
 }
