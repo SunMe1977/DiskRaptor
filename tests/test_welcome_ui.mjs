@@ -9,7 +9,7 @@ runTest("DiskRaptor Welcome Screen Test", 9201, async (cdp) => {
       return 'visible=' + !hidden;
     })()
   `);
-  assert("Welcome screen visible on launch", welcomeVisible.includes("visible=true"), `${welcomeVisible}`);
+  assert("Welcome screen visible on launch", String(welcomeVisible).includes("visible=true"), `${welcomeVisible}`);
 
   const heading = await jsExpr(cdp, `document.querySelector('#welcome-placeholder .welcome-title') ? 'found' : 'not-found'`);
   assert("Welcome heading exists", heading === "found");

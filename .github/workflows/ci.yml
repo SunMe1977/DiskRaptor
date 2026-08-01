@@ -98,7 +98,7 @@ jobs:
       - name: Run UI tests (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: xvfb-run -a bash test.sh --quick
+        run: xvfb-run -a env WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 bash test.sh --quick
       - name: Run UI tests (macOS)
         if: runner.os == 'macOS'
         shell: bash
