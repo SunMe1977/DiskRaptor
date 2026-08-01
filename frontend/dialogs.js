@@ -21,7 +21,7 @@
 
       const body = document.createElement("div");
       body.style.cssText =
-        "padding:18px 20px;font-size:13px;color:var(--text-primary,#e6edf3);" +
+        "padding:18px 20px;font-size:13px;color:var(--text-primary,var(--text-primary));" +
         "line-height:1.5;white-space:pre-wrap;word-break:break-word;";
       body.textContent = message;
 
@@ -32,7 +32,7 @@
         input.style.cssText =
           "width:100%;margin-top:12px;padding:8px 10px;border-radius:6px;" +
           "border:1px solid var(--border,#30363d);background:var(--bg-tertiary,#161b22);" +
-          "color:var(--text-primary,#e6edf3);font-size:13px;";
+          "color:var(--text-primary,var(--text-primary));font-size:13px;";
         body.appendChild(input);
       }
 
@@ -47,12 +47,14 @@
         b.style.cssText =
           "padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid var(--border,#30363d);" +
           (isPrimary
-            ? "background:linear-gradient(135deg,#238636,#2ea043);color:#fff;font-weight:600;"
-            : "background:var(--bg-tertiary,#161b22);color:var(--text-primary,#e6edf3);");
+            ? "background:linear-gradient(135deg,#238636,var(--accent-green));color:#fff;font-weight:600;"
+            : "background:var(--bg-tertiary,#161b22);color:var(--text-primary);");
         return b;
       }
 
+      let untrap = null;
       function close(result) {
+        if (untrap) { untrap(); untrap = null; }
         document.removeEventListener("keydown", onKey);
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
         resolve(result);
@@ -80,7 +82,36 @@
       card.appendChild(footer);
       document.body.appendChild(overlay);
       if (input) input.focus();
+      else if (ok) ok.focus();
+      untrap = trapFocus(card);
     });
+  }
+
+  /**
+   * Trap Tab focus inside a modal container so keyboard users can't tab out
+   * into the page behind the overlay.
+   * @param {HTMLElement} container - the modal card/root element
+   */
+  function trapFocus(container) {
+    if (!container) return function () {};
+    const onKey = function (e) {
+      if (e.key !== "Tab") return;
+      const focusables = container.querySelectorAll(
+        'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return function () { document.removeEventListener("keydown", onKey); };
   }
 
   /**
@@ -107,4 +138,5 @@
   window.confirmDialog = confirmDialog;
   window.alertDialog = alertDialog;
   window.promptDialog = promptDialog;
+  window.trapFocus = trapFocus;
 })();

@@ -112,7 +112,8 @@
         )("status.exported").replace("{fmt}", fmt);
       } catch (err) {
         console.error("Export failed:", err);
-        window.showToast("Export failed: " + err, "error");
+        const t = window.__ || function (s) { return s; };
+        window.showToast(t("toast.export_failed").replace("{err}", err), "error");
       }
     });
 

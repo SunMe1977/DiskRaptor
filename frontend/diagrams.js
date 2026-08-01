@@ -153,6 +153,11 @@ class DiagramRenderer {
         this.contextMenu.style.display = "none";
       }
     });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.contextMenu) {
+        this.contextMenu.style.display = "none";
+      }
+    });
     this.contextMenu.addEventListener("click", (e) =>
       this._onContextMenuAction(e),
     );

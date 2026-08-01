@@ -25,7 +25,7 @@ class DupScanner {
           <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-wasted">0 B</div><div style="font-size:11px;color:var(--text-muted);">Wasted</div></div>
         </div>
         <div id="dup-progress-bar-wrap" style="width:100%;height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;margin-bottom:16px;">
-          <div id="dup-progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#238636,#2ea043);border-radius:2px;transition:width 0.3s;"></div>
+          <div id="dup-progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--accent-green),var(--accent-green));border-radius:2px;transition:width 0.3s;"></div>
         </div>
         <div id="dup-progress-file" style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:16px;">—</div>
         <div style="display:flex;gap:8px;justify-content:center;">
@@ -175,11 +175,11 @@ class DupScanner {
     const toolbar = document.createElement("div");
     toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);flex-wrap:wrap;gap:6px;";
     toolbar.innerHTML = `
-      <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete \u00B7 <span style="color:#f85149;">${this._fmtSize(data.wastedBytes || 0)} reclaimable</span></span>
+      <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete \u00B7 <span style="color:var(--accent-red);">${this._fmtSize(data.wastedBytes || 0)} reclaimable</span></span>
       <span style="display:flex;gap:6px;">
         <button id="dup-select-none" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select None</button>
         <button id="dup-select-all" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select All</button>
-        <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 <span data-i18n="action.move_selected_to_trash">Move Selected to Trash</span></button>
+        <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,var(--accent-red));border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 <span data-i18n="action.move_selected_to_trash">Move Selected to Trash</span></button>
       </span>
     `;
     list.appendChild(toolbar);
@@ -242,8 +242,8 @@ class DupScanner {
       const header = document.createElement("div");
       header.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg-tertiary);cursor:pointer;user-select:none;";
       header.innerHTML = `
-        <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-primary);font-weight:500;"><input type="checkbox" id="selall-${gi}" style="width:14px;height:14px;cursor:pointer;accent-color:#f85149;"> \uD83D\uDCC1 ${g.count} copies \u00B7 ${g.sizeHuman || self._fmtSize(g.size)} each</span>
-        <span style="font-size:12px;color:var(--text-muted);">\u267B ${g.wastedHuman || self._fmtSize(g.wasted)} <span style="color:#f85149;">reclaimable</span></span>
+        <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-primary);font-weight:500;"><input type="checkbox" id="selall-${gi}" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent-red);"> \uD83D\uDCC1 ${g.count} copies \u00B7 ${g.sizeHuman || self._fmtSize(g.size)} each</span>
+        <span style="font-size:12px;color:var(--text-muted);">\u267B ${g.wastedHuman || self._fmtSize(g.wasted)} <span style="color:var(--accent-red);">reclaimable</span></span>
       `;
       card.appendChild(header);
       // Select-all checkbox in header
@@ -283,7 +283,7 @@ class DupScanner {
         const row = document.createElement("div");
         row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:0;font-size:12px;color:var(--text-secondary);transition:background 0.15s;";
         row.innerHTML = `
-          <input type="checkbox" ${checked ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;accent-color:#f85149;flex-shrink:0;">
+          <input type="checkbox" ${checked ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent-red);flex-shrink:0;">
           <span style="color:var(--text-muted);font-size:10px;width:20px;flex-shrink:0;">${fi === 0 ? '\uD83D\uDD19 keep' : '\uD83D\uDDD1'}</span>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${fp}</span>
           <span style="color:var(--text-muted);font-size:10px;">${self._fmtSize(g.size)}</span>
@@ -366,7 +366,7 @@ class DupScanner {
       (function deleteNext(idx) {
         if (idx >= toDelete.length) {
           delBtn.textContent = "\u2705 " + toDelete.length + " files moved to Trash";
-          delBtn.style.background = "#238636";
+          delBtn.style.background = "var(--accent-green)";
           return;
         }
         window.__TAURI__.invoke("delete_path", { path: toDelete[idx] })

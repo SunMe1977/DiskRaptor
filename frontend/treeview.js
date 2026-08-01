@@ -65,9 +65,13 @@ class TreeView {
     const self = this;
     const el = document.getElementById("tree-filter");
     if (!el) return;
+    let timer = null;
     el.addEventListener("input", function() {
       self._filterText = this.value.toLowerCase().trim();
-      self.rebuild();
+      clearTimeout(timer);
+      timer = setTimeout(function() {
+        self.rebuild();
+      }, 200);
     });
   }
 
@@ -280,14 +284,19 @@ class TreeView {
 
     const style = document.createElement("style");
     style.textContent =
-      ".tctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
+      ".tctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:var(--text-primary);}" +
       ".tctx-item:hover{background:#30363d;}" +
       ".tctx-sep{height:1px;background:#30363d;margin:4px 8px;}" +
-      ".tctx-del{color:#f85149;}";
+      ".tctx-del{color:var(--accent-red);}";
     document.head.appendChild(style);
 
     document.addEventListener("click", (e) => {
       if (this._ctxMenu && !this._ctxMenu.contains(e.target)) {
+        this._ctxMenu.style.display = "none";
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this._ctxMenu) {
         this._ctxMenu.style.display = "none";
       }
     });
@@ -508,6 +517,17 @@ class TreeView {
     } catch (e) {
       console.warn("_buildList error:", e);
     }
+    // If the root never materialised, try loading chunk 0 explicitly once.
+    if (this.visibleNodes.length === 0 && this.loader && !this.loader.getNode(0)) {
+      try {
+        if (this.loader.totalChunks > 0 && !this.loader.loadedChunks.has(0)) {
+          await this.loader.loadChunk(0);
+        }
+        await this._buildList(0, 0);
+      } catch (e) {
+        console.warn("Root chunk fallback failed:", e);
+      }
+    }
 
     this.maxSize = 0;
     this.maxFileCount = 0;
@@ -531,11 +551,28 @@ class TreeView {
     if (nc) nc.textContent = t("tree.shown").replace("{n}", totalItems.toLocaleString());
 
     const se = document.querySelector("#tree-panel .status-bar");
-    if (se)
-      se.textContent = t("tree.visible").replace("{n}", totalItems).replace("{s}", totalItems === 1 ? "" : "s");
+    if (se) {
+      if (totalItems === 0) {
+        // Distinguish "scan still loading chunks" from "truly empty".
+        const loading =
+          this.loader &&
+          this.loader.totalChunks > 0 &&
+          this.loader.loadedChunks.size < this.loader.totalChunks;
+        se.textContent = loading
+          ? "Loading tree..."
+          : t("tree.visible").replace("{n}", 0).replace("{s}", "");
+      } else {
+        se.textContent = t("tree.visible").replace("{n}", totalItems).replace("{s}", totalItems === 1 ? "" : "s");
+      }
+    }
   }
 
   async _buildList(arenaIdx, depth) {
+    // If the requested node isn't loaded yet (chunks still arriving), wait a
+    // short moment and retry so we never render a half-empty tree.
+    for (let tries = 0; tries < 50 && !this.loader.getNode(arenaIdx); tries++) {
+      await new Promise(function (r) { setTimeout(r, 100); });
+    }
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
 
@@ -775,10 +812,10 @@ class TreeView {
     pctFill.className = "tree-pct-fill";
     pctFill.style.width = Math.max(1, pct) + "%";
     // Gradient color based on usage: green < 40% < yellow < 70% < red
-    if (pct > 70) pctFill.style.background = "linear-gradient(90deg, #f85149, #da3633)";
-    else if (pct > 40) pctFill.style.background = "linear-gradient(90deg, #d29922, #bb8009)";
-    else if (pct > 10) pctFill.style.background = "linear-gradient(90deg, #3fb950, #2ea043)";
-    else pctFill.style.background = "#238636";
+    if (pct > 70) pctFill.style.background = "linear-gradient(90deg, var(--accent-red), var(--accent-red))";
+    else if (pct > 40) pctFill.style.background = "linear-gradient(90deg, var(--accent-orange), #bb8009)";
+    else if (pct > 10) pctFill.style.background = "linear-gradient(90deg, #3fb950, var(--accent-green))";
+    else pctFill.style.background = "var(--accent-green)";
     pctBar.appendChild(pctFill);
     el.appendChild(pctBar);
 

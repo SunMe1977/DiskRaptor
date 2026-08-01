@@ -30,9 +30,10 @@
     btnScan.addEventListener("click", async function () {
       if (state.isScanning) return;
 
-      let path = scanPath.value.trim();
+      let path = scanPath.value.trim().replace(/^["']+|["']+$/g, "");
       if (!path) {
-        window.showToast("Please enter or select a directory path.", "error");
+        const t = window.__ || function (s) { return s; };
+        window.showToast(t("toast.need_path"), "error");
         return;
       }
 
@@ -270,9 +271,20 @@
         let scanDone = false;
         let scanError = null;
 
+        let _lastProgressRender = 0;
         function onProgress(p) {
           if (scanDone) return;
           if (!p) return;
+
+          // Throttle DOM-heavy rendering to ~15 fps; the raw counter fields
+          // still update cheaply on every event.
+          const now = Date.now();
+          if (now - _lastProgressRender < 66) {
+            lastFilesFound = Number(p.files_found || p.filesFound || 0);
+            lastDirsFound = Number(p.dirs_found || p.dirsFound || 0);
+            return;
+          }
+          _lastProgressRender = now;
 
           const rawDisplay = document.getElementById("progress-raw");
           if (rawDisplay) {
@@ -366,6 +378,7 @@
                   rate
                 : 0;
             remaining = Math.max(0, Math.min(36000, remaining));
+            if (!isFinite(remaining) || isNaN(remaining)) remaining = 0;
             const etaM = Math.floor(remaining / 60);
             const etaS = Math.floor(remaining % 60);
             const etaEl = document.getElementById("progress-eta-val");
@@ -594,12 +607,27 @@
           })();
         }
 
+        // If the scan reported errors (e.g. permission denied, or the scan
+        // thread failed), surface the first error instead of a silent empty tree.
+        try {
+          const prog2 = await window.__TAURI__.invoke("get_scan_progress", { scanId: scanId });
+          const errs = (prog2 && prog2.data && prog2.data.errors) ||
+                       (prog2 && prog2.errors) || [];
+          if (Array.isArray(errs) && errs.length > 0) {
+            const first = String(errs[0]);
+            document.querySelector(".status-bar").textContent =
+              "Scan finished with errors: " + first.substring(0, 200);
+            if (window.showToast) {
+              window.showToast("Scan errors: " + first.substring(0, 160), "warning");
+            }
+          }
+        } catch (e) {}
+
         if (
           !hadChunks &&
           state.currentStats &&
           state.currentStats.total_files > 0
-        ) {
-          try {
+        ) {          try {
             const rootNode = {
               name: scanPath.value,
               size: state.currentStats.total_size || 0,
@@ -765,7 +793,7 @@
           document.getElementById("cleanup-move-trash").onclick = function () {
             var items = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');
             var files = Array.from(items).map(function (cb) { return cb.closest(".cleanup-item").dataset.file; });
-            if (files.length === 0) { window.showToast("No items selected", "warning"); return; }
+            if (files.length === 0) { const t0 = window.__ || function (s) { return s; }; window.showToast(t0("toast.no_items"), "warning"); return; }
             window.confirmDialog("Move " + files.length + " file(s) to Trash?").then(function (ok) {
               if (!ok) return;
             var rootPath = (scanPath && scanPath.value || "").replace(/[\\/]+$/, "");

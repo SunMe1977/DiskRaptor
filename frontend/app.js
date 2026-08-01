@@ -68,7 +68,9 @@
       try {
         const r = await window.__TAURI__.invoke("load_settings");
         if (r && r[key] !== undefined) return r[key];
-      } catch (e) {}
+      } catch (e) {
+        console.warn("load_settings failed:", e && e.message ? e.message : e);
+      }
       return fallback;
     };
     window.app.setSetting = async function (key, val) {
@@ -76,7 +78,9 @@
         const o = {};
         o[key] = val;
         await window.__TAURI__.invoke("save_settings", { settings: o });
-      } catch (e) {}
+      } catch (e) {
+        console.warn("save_settings failed:", e && e.message ? e.message : e);
+      }
     };
     const getSetting = window.app.getSetting;
     const setSetting = window.app.setSetting;
@@ -228,6 +232,43 @@
       });
     }
 
+    // ── Focus trap for the about + settings modals ─────────
+    // Activates whenever the overlay becomes visible (class .active or display
+    // flex), so Tab/Shift+Tab stays inside the modal.
+    (function initModalFocusTraps() {
+      const aboutOv = document.getElementById("about-overlay");
+      const settingsOv = document.getElementById("settings-overlay");
+      const targets = [aboutOv, settingsOv].filter(Boolean);
+      let untrap = null;
+
+      function check() {
+        const anyActive = targets.some(function (ov) {
+          return (
+            ov.classList.contains("active") ||
+            (ov.style && ov.style.display === "flex")
+          );
+        });
+        if (anyActive && !untrap) {
+          const card = aboutOv && aboutOv.classList.contains("active")
+            ? aboutOv
+            : settingsOv;
+          untrap = window.trapFocus ? window.trapFocus(card) : null;
+        } else if (!anyActive && untrap) {
+          untrap();
+          untrap = null;
+        }
+      }
+
+      targets.forEach(function (ov) {
+        new MutationObserver(check).observe(ov, {
+          attributes: true,
+          attributeFilter: ["class", "style"],
+        });
+      });
+      // Also trap while settings is toggled via style.display changes.
+      check();
+    })();
+
     // ── Collapsible detail cards ─────────────────────────
     document.querySelectorAll(".collapsible .card-header").forEach(function (
       h,
@@ -259,6 +300,17 @@
     const btnFav = document.getElementById("btn-fav");
 
     // Set default scan path to user home after init and DOM binding.
+    // Apply saved default scan path first, falling back to home dir.
+    try {
+      const saved = await window.__TAURI__.invoke("load_settings");
+      const savedPath =
+        saved && saved.default_scan_path
+          ? String(saved.default_scan_path)
+          : "";
+      if (savedPath && scanPath && !scanPath.value) {
+        scanPath.value = savedPath;
+      }
+    } catch (e) {}
     try {
       const home = await window.__TAURI__.invoke("get_home_dir");
       let homePath = null;
@@ -430,7 +482,8 @@
                 .then(function (h) { if (h) dupScanner.start(String(h)); })
                 .catch(function () {});
             } else {
-              window.showToast("Select a folder to scan for duplicates first", "info");
+              const t0 = window.__ || function (s) { return s; };
+              window.showToast(t0("toast.select_folder_first"), "info");
             }
           });
       } else {
@@ -440,7 +493,7 @@
 
     // About dialog
     try {
-      const v = await window.__TAURI__.invoke("get_app_version");
+      const v = await window.__TAURI__.invoke("get_app_info");
       const ver = v && v.data ? v.data.version : "";
       if (ver) {
         const el = document.querySelector(".about-version");
@@ -468,6 +521,47 @@
       }
     } catch (e) {
       console.debug("Version fetch failed:", e);
+    }
+
+    // Load real GitHub release notes into the Changelog tab.
+    (async function loadReleaseNotes() {
+      const changelog = document.querySelector("#about-tab-changelog > div");
+      if (!changelog) return;
+      try {
+        const res = await fetch(
+          "https://api.github.com/repos/SunMe1977/DiskRaptor/releases?per_page=15",
+        );
+        const releases = await res.json();
+        if (!Array.isArray(releases) || releases.length === 0) return;
+        let html = "";
+        for (let ri = 0; ri < releases.length; ri++) {
+          const r = releases[ri];
+          const tag = r.tag_name || "";
+          const body = r.body || "";
+          const date = (r.published_at || "").substring(0, 10);
+          html +=
+            "<div style='margin-bottom:12px;'>" +
+            "<b style='color:var(--text-primary);'>" +
+            escapeHtml(tag) +
+            "</b>" +
+            (date ? " <span style='color:var(--text-muted);font-size:10px;'>" + date + "</span>" : "") +
+            "<div style='white-space:pre-wrap;word-break:break-word;margin-top:4px;'>" +
+            (body ? escapeHtml(body) : "") +
+            "</div></div>";
+        }
+        changelog.innerHTML = html;
+      } catch (e) {
+        // Keep the static fallback changelog if the network call fails.
+        console.debug("Release notes fetch failed:", e);
+      }
+    })();
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
     }
     aboutClose.addEventListener("click", function () {
       aboutOverlay.classList.remove("active");
@@ -503,7 +597,7 @@
     // Update check
     let _currentVersion = "";
     try {
-      const vv = await window.__TAURI__.invoke("get_app_version");
+      const vv = await window.__TAURI__.invoke("get_app_info");
       _currentVersion = vv && vv.data ? (vv.data.version || "") : "";
     } catch (e) {}
     window.__checkUpdate = async function () {
@@ -512,11 +606,10 @@
       el.textContent = "\u23F3 Checking...";
       const current = _currentVersion || "0.0.0";
       try {
-        const r = await fetch(
-          "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
-        );
-        const data = await r.json();
-        const latest = (data.tag_name || "").replace(/^v/, "");
+        // Prefer the native check (knows installed version, does the network call off the UI thread).
+        const res = await window.__TAURI__.invoke("check_for_updates");
+        const data = res && res.data ? res.data : res;
+        const latest = data && data.latest ? String(data.latest) : "";
         if (latest && latest !== current) {
           el.textContent =
             "\u2B07\uFE0F Update available: v" +
@@ -531,8 +624,30 @@
           el.style.color = "var(--accent-green)";
         }
       } catch (e) {
-        el.textContent = "\u26A0\uFE0F Update check failed";
-        el.style.color = "var(--accent-red)";
+        // Fallback: query GitHub directly from the frontend.
+        try {
+          const r = await fetch(
+            "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
+          );
+          const d2 = await r.json();
+          const latest2 = (d2.tag_name || "").replace(/^v/, "");
+          if (latest2 && latest2 !== current) {
+            el.textContent =
+              "\u2B07\uFE0F Update available: v" +
+              latest2 +
+              " (current: v" +
+              current +
+              ")";
+            el.style.color = "var(--accent-orange)";
+          } else {
+            el.textContent =
+              "\u2705 You have the latest version (v" + current + ")";
+            el.style.color = "var(--accent-green)";
+          }
+        } catch (e2) {
+          el.textContent = "\u26A0\uFE0F Update check failed";
+          el.style.color = "var(--accent-red)";
+        }
       }
     };
 
@@ -613,6 +728,23 @@
       });
       document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") langMenu.classList.remove("active");
+      });
+
+      // Arrow-key navigation through the language list; Enter selects.
+      langMenu.addEventListener("keydown", function (e) {
+        const items = langMenu.querySelectorAll(".lang-item");
+        if (items.length === 0) return;
+        let idx = Array.prototype.indexOf.call(items, document.activeElement);
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          items[Math.min(idx + 1, items.length - 1)].focus();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          items[Math.max(idx - 1, 0)].focus();
+        } else if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (idx >= 0) items[idx].click();
+        }
       });
 
       langFilter.addEventListener("keydown", function (e) {
@@ -761,9 +893,17 @@
       console.error("DiskRaptor init failed:", err);
       const sb = document.querySelector(".status-bar");
       if (sb) {
-        sb.textContent = "Init error: " + err.message;
-        sb.style.color = "#f85149";
+        sb.textContent = "Init error: " + (err && err.message ? err.message : err);
+        sb.style.color = "var(--accent-red)";
       }
+      // Offer a retry dialog so the user isn't left staring at a dead window.
+      window.alertDialog(
+        "DiskRaptor failed to initialize.\n\n" +
+          (err && err.message ? err.message : String(err)) +
+          "\n\nClick OK to reload the app, or close this dialog to continue.",
+      ).then(function (ok) {
+        if (ok) window.location.reload();
+      });
     });
   }
 
@@ -772,4 +912,17 @@
   } else {
     safeInit();
   }
+
+  // Global error handlers: surface uncaught errors instead of a silent blank UI.
+  window.addEventListener("error", function (e) {
+    if (window.showToast) {
+      window.showToast("Unexpected error: " + (e.message || "unknown"), "error");
+    }
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    if (window.showToast) {
+      const msg = e && e.reason && e.reason.message ? e.reason.message : String(e && e.reason);
+      window.showToast("Unhandled: " + msg.substring(0, 120), "error");
+    }
+  });
 })();

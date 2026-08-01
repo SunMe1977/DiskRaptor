@@ -30,8 +30,8 @@ class TrashRecovery {
       <div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">
         <button id="trash-select-all" style="padding:5px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">${this._t("trash.select_all")}</button>
         <button id="trash-restore-all" style="padding:5px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">♻️ Restore All</button>
-        <button id="trash-restore-selected" style="padding:5px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;">${this._t("trash.restore_selected")}</button>
-        <button id="trash-delete-selected" style="padding:5px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">${this._t("trash.delete_selected")}</button>
+        <button id="trash-restore-selected" style="padding:5px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#238636,var(--accent-green));color:#fff;cursor:pointer;">${this._t("trash.restore_selected")}</button>
+        <button id="trash-delete-selected" style="padding:5px 12px;font-size:11px;border:none;border-radius:4px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;">${this._t("trash.delete_selected")}</button>
         <button id="trash-close" style="padding:5px 12px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">${this._t("trash.close")}</button>
       </div>
     `;

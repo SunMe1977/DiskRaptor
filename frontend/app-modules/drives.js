@@ -88,6 +88,26 @@
       }
     });
 
+    // Arrow-key navigation through drive items; Enter activates.
+    driveMenu.addEventListener("keydown", function (e) {
+      const items = driveMenu.querySelectorAll(".drive-item");
+      if (items.length === 0) return;
+      let idx = Array.prototype.indexOf.call(items, document.activeElement);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        items[Math.min(idx + 1, items.length - 1)].focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        items[Math.max(idx - 1, 0)].focus();
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (idx >= 0) items[idx].click();
+      } else if (e.key === "Escape") {
+        driveMenu.classList.remove("active");
+        btnDrive.focus();
+      }
+    });
+
     function driveIcon(type, path) {
       if (path === "/") return "\uD83D\uDDA5\uFE0F";
       switch (type) {
@@ -160,7 +180,7 @@
           html +=
             '<div class="drive-item' +
             (isActive ? " active" : "") +
-            '" data-path="' +
+            '" tabindex="0" data-path="' +
             path +
             '">' +
             '<span class="drive-icon">' +

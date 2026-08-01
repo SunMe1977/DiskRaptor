@@ -77,7 +77,9 @@
           const selLang = (document.getElementById("settings-language")?.value || "auto");
           await window.__TAURI__
             .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme, language: selLang } })
-            .catch(function () {});
+            .catch(function (e) {
+              window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
+            });
           if (selTheme === "light") document.body.classList.add("light-theme");
           else if (selTheme === "dark") document.body.classList.remove("light-theme");
           else {
