@@ -369,6 +369,7 @@
         "galaxyview.js",
       ];
       let loaded = 0;
+      let failedAny = false;
       scripts.forEach(function (src) {
         var s = document.createElement("script");
         s.src = src;
@@ -377,17 +378,30 @@
           if (loaded === scripts.length) check();
         };
         s.onerror = function () {
+          failedAny = true;
           console.error("Failed to load galaxy script:", src);
+          loaded++;
+          if (loaded === scripts.length) check();
         };
         document.head.appendChild(s);
       });
       function check() {
         if (window.GalaxyView && window.GalaxyView.GalaxyView) {
           callback();
+        } else if (failedAny) {
+          console.error("GalaxyView: some scripts failed to load");
+          callback();
         } else {
           setTimeout(check, 50);
         }
       }
+      // Global timeout: never spin forever waiting for scripts.
+      setTimeout(function () {
+        if (!(window.GalaxyView && window.GalaxyView.GalaxyView)) {
+          console.error("GalaxyView: timed out waiting for scripts");
+          callback();
+        }
+      }, 15000);
     }
 
     function _feedGalaxyView() {
@@ -450,7 +464,11 @@
         } else {
           isGalaxyMode = false;
           if (galaxyContainer) galaxyContainer.style.display = "none";
-          if (galaxyView) galaxyView.hide();
+          if (galaxyView) {
+            try { galaxyView.hide(); } catch (e) {}
+            try { if (galaxyView.dispose) galaxyView.dispose(); } catch (e) {}
+            galaxyView = null;
+          }
           if (diagramContainer) diagramContainer.style.display = "block";
           diagram.setMode(mode);
         }

@@ -79,6 +79,17 @@ class TreeView {
     const self = this;
     document.querySelectorAll(".type-filter").forEach(function(btn) {
       btn.addEventListener("click", function() {
+        if (this.dataset.ext === "custom") {
+          const input = window.prompt("Enter extensions (comma-separated, e.g. md,tsx,toml):", "");
+          if (input === null) return;
+          const exts = input.split(",").map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+          if (exts.length === 0) return;
+          document.querySelectorAll(".type-filter").forEach(function(b) { b.classList.remove("active"); });
+          this.classList.add("active");
+          self._typeFilter = exts.join("|");
+          self.rebuild();
+          return;
+        }
         document.querySelectorAll(".type-filter").forEach(function(b) { b.classList.remove("active"); });
         this.classList.add("active");
         self._typeFilter = this.dataset.ext;

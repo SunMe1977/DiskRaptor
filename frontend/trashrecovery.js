@@ -4,6 +4,7 @@ class TrashRecovery {
     this._selected = {};
     this._filter = "";
     this._sort = "name";
+    this._shownCount = 200;
     this._createUI();
   }
 
@@ -92,8 +93,9 @@ class TrashRecovery {
     }
     let totalSize = 0;
     let html = "";
-    for (let vi = 0; vi < visible.length; vi++) {
-      const idx = visible[vi].idx;
+    const shown = visible.slice(0, this._shownCount);
+    for (let vi = 0; vi < shown.length; vi++) {
+      const idx = shown[vi].idx;
       const item = this._items[idx];
       const checked = this._selected[idx] || false;
       totalSize += item.size || 0;
@@ -109,8 +111,19 @@ class TrashRecovery {
       html += '<span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">' + (item.deleted_at ? item.deleted_at.substring(0,10) : "") + '</span>';
       html += '</div>';
     }
+    if (visible.length > shown.length) {
+      const remaining = visible.length - shown.length;
+      html += '<div style="text-align:center;padding:10px;"><button id="trash-show-more" style="padding:6px 16px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Show ' + remaining + ' more...</button></div>';
+    }
     list.innerHTML = html;
     const that = this;
+    const showMore = list.querySelector("#trash-show-more");
+    if (showMore) {
+      showMore.onclick = function () {
+        that._shownCount += 200;
+        that._render();
+      };
+    }
     list.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
       cb.onchange = function() {
         const i = parseInt(this.dataset.idx);
@@ -135,12 +148,13 @@ class TrashRecovery {
   _updateSummary() {
     const summary = document.getElementById("trash-summary");
     const visible = this._visible();
+    const shownCount = Math.min(visible.length, this._shownCount);
     let sel = 0, selSize = 0;
     Object.keys(this._selected).forEach(function (i) {
       if (this._selected[i]) { sel++; selSize += (this._items[Number(i)] || {}).size || 0; }
     }.bind(this));
     if (summary) {
-      summary.textContent = visible.length + " shown · " + fmtTrash(selSize) + " selected (" + sel + ")";
+      summary.textContent = shownCount + " shown · " + fmtTrash(selSize) + " selected (" + sel + ")";
     }
   }
 
@@ -161,13 +175,30 @@ class TrashRecovery {
     const t = this._t.bind(this);
     if (idxs.length === 0) { window.alertDialog(t("trash.no_selection")); return; }
     if (!(await window.confirmDialog(t("trash.restore_confirm").replace("{n}", idxs.length)))) return;
-    for (let ci = 0; ci < idxs.length; ci++) {
-      const item = this._items[idxs[ci]];
-      if (!item) continue;
-      try {
-        const r = await window.__TAURI__.invoke("restore_trash", { path: item.path });
-        if (r && r.restored_to) delete this._selected[idxs[ci]];
-      } catch(e) { window.alertDialog(t("trash.restore_failed").replace("{name}", item.name || "?") + "\n" + e); }
+    const BATCH = 10;
+    let restored = 0, failed = 0;
+    const self = this;
+    for (let start = 0; start < idxs.length; start += BATCH) {
+      const batch = idxs.slice(start, start + BATCH);
+      const results = await Promise.allSettled(batch.map(function (i) {
+        const item = self._items[i];
+        return window.__TAURI__.invoke("restore_trash", { path: item.path });
+      }));
+      results.forEach(function (r, ri) {
+        const item = self._items[batch[ri]];
+        if (r.status === "fulfilled" && r.value && r.value.restored_to) {
+          restored++;
+          delete self._selected[batch[ri]];
+        } else {
+          failed++;
+          if (item) console.warn("Restore failed:", item.name, r.reason || r.value);
+        }
+      });
+    }
+    if (failed > 0) {
+      window.showToast(restored + "/" + idxs.length + " restored, " + failed + " failed", "warning");
+    } else {
+      window.showToast(restored + "/" + idxs.length + " restored", "success");
     }
     await this.open();
   }
@@ -175,6 +206,8 @@ class TrashRecovery {
   async _restoreSelected() { await this._restoreIndices(this._selectedIndices()); }
 
   async _restoreAll() {
+    const t = this._t.bind(this);
+    if (this._items.length === 0) { window.alertDialog(t("trash.empty")); return; }
     const all = this._items.map(function (it, i) { return i; });
     await this._restoreIndices(all);
   }

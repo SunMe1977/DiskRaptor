@@ -141,9 +141,14 @@ class DupScanner {
       else if (stats.phase === 2) status.textContent = t("dup.hashing");
       else status.textContent = t("dup.scanning");
     }
-    // Animated bar (indeterminate progress)
+    // Phase-based progress bar
     if (bar) {
-      const pct = Math.min(95, (stats.filesScanned || 0) / 10000 * 100);
+      const scanned = stats.filesScanned || 0;
+      let pct;
+      if (stats.phase === 1) pct = Math.min(33, (scanned / 5000) * 33);
+      else if (stats.phase === 2) pct = Math.min(66, 33 + (scanned / 5000) * 33);
+      else if (stats.phase === 3) pct = 95;
+      else pct = Math.min(95, (scanned / 10000) * 100);
       bar.style.width = pct + "%";
     }
   }
@@ -358,27 +363,38 @@ class DupScanner {
       );
       if (!ok) return;
 
-      // Move one by one with status updates
+      // Move in parallel batches with status updates
       const delBtn = document.getElementById("dup-delete-btn");
       delBtn.disabled = true;
       delBtn.textContent = "Moving to Trash...";
 
-      (function deleteNext(idx) {
-        if (idx >= toDelete.length) {
-          delBtn.textContent = "\u2705 " + toDelete.length + " files moved to Trash";
+      const BATCH = 10;
+      let done = 0;
+      let failed = 0;
+      async function deleteBatch(start) {
+        if (start >= toDelete.length) return;
+        const batch = toDelete.slice(start, start + BATCH);
+        const results = await Promise.allSettled(
+          batch.map(function (p) {
+            return window.__TAURI__.invoke("delete_path", { path: p });
+          }),
+        );
+        results.forEach(function (r) {
+          if (r.status === "fulfilled" && r.value && r.value.success === false) failed++;
+          else if (r.status === "rejected") failed++;
+        });
+        done += batch.length;
+        delBtn.textContent = "Moving " + Math.min(done, toDelete.length) + "/" + toDelete.length + "...";
+        await deleteBatch(start + BATCH);
+      }
+      deleteBatch(0).then(function () {
+        if (failed > 0) {
+          delBtn.textContent = "\u26A0 " + done + " moved, " + failed + " failed";
+        } else {
+          delBtn.textContent = "\u2705 " + done + " files moved to Trash";
           delBtn.style.background = "var(--accent-green)";
-          return;
         }
-        window.__TAURI__.invoke("delete_path", { path: toDelete[idx] })
-          .then(function() {
-            delBtn.textContent = "Moving " + (idx + 1) + "/" + toDelete.length + "...";
-            setTimeout(function() { deleteNext(idx + 1); }, 200);
-          })
-          .catch(function(err) {
-            window.alertDialog("Failed: " + toDelete[idx] + "\n" + err);
-            setTimeout(function() { deleteNext(idx + 1); }, 200);
-          });
-      })(0);
+      });
     };
 
     this.resultsPanel.style.display = "block";

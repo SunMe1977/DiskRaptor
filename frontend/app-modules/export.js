@@ -28,7 +28,7 @@
               const parts = [n.name];
               let p = n.parent;
               let safety = 0;
-              while (p !== 4294967295 && p !== undefined && safety < 100) {
+              while (p !== 4294967295 && p !== undefined && safety < 1000) {
                 const parent = nodes[p];
                 if (parent && parent.name) parts.unshift(parent.name);
                 p = parent ? parent.parent : 4294967295;
@@ -37,7 +37,11 @@
               fullPath = scanPathVal + "/" + parts.join("/");
             }
             const esc = function (v) {
-              return '"' + String(v).replace(/"/g, '""') + '"';
+              const s = String(v);
+              if (s.indexOf(",") >= 0 || s.indexOf('"') >= 0 || s.indexOf("\n") >= 0 || s.indexOf("\r") >= 0) {
+                return '"' + s.replace(/"/g, '""') + '"';
+              }
+              return s;
             };
             csv +=
               esc(fullPath) +
@@ -56,11 +60,12 @@
           const allNodes = nodes.slice(0, topN).map(function (n, i) {
             return { index: i, name: n && n.name, size: n && n.size, file_count: n && n.file_count, dir_count: n && n.dir_count, type: n && n.node_type === 1 ? "File" : "Directory" };
           });
+          const safeStats = stats ? JSON.parse(JSON.stringify(stats)) : {};
           const json = JSON.stringify(
             {
               export_time: new Date().toISOString(),
               scan_path: scanPathVal,
-              stats: stats,
+              stats: safeStats,
               nodes: allNodes,
             },
             null,

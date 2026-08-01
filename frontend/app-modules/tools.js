@@ -10,6 +10,33 @@
     const toolsMenu = document.getElementById("tools-menu");
     if (!btnTools || !toolsMenu) return;
 
+    function resetAllState(message) {
+      if (state.isScanning) {
+        window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
+        state.isScanning = false;
+      }
+      state.currentStats = null;
+      state.currentScanResult = null;
+      const loader = window.__loader;
+      const treeView = window.__treeView;
+      if (loader) loader.release().catch(function () {});
+      if (treeView) {
+        treeView.visibleNodes = [];
+        treeView.expanded.clear();
+        treeView.selectedIndex = null;
+        treeView.rebuild().catch(function () {});
+      }
+      if (window.__statsPanel) window.__statsPanel.clear();
+      if (window.__diagram) window.__diagram.setData(null);
+      if (window.__topFiles) window.__topFiles.render([], true);
+      const expBtn = document.getElementById("btn-export");
+      if (expBtn) expBtn.disabled = true;
+      const dupBtn = document.getElementById("btn-duplicates");
+      if (dupBtn) dupBtn.style.display = "none";
+      document.querySelector(".status-bar").textContent = message;
+      showWelcome();
+    }
+
     btnTools.addEventListener("click", function (e) {
       e.stopPropagation();
       toolsMenu.classList.toggle("active");
@@ -115,47 +142,12 @@
               });
           })
           .catch(function () {});
-      } else if (action === "clear-scan") {
-        state.currentStats = null;
-        state.currentScanResult = null;
-        const loader = window.__loader;
-        const treeView = window.__treeView;
-        if (loader)
-          loader.release().catch(function () {});
-        if (treeView) {
-          treeView.visibleNodes = [];
-          treeView.expanded.clear();
-          treeView.selectedIndex = null;
-          treeView.rebuild().catch(function () {});
-        }
-        if (window.__statsPanel) window.__statsPanel.clear();
-        if (window.__diagram) window.__diagram.setData(null);
-        if (window.__topFiles) window.__topFiles.render([], true);
-        const expBtn = document.getElementById("btn-export");
-        if (expBtn) expBtn.disabled = true;
-        const dupBtn = document.getElementById("btn-duplicates");
-        if (dupBtn) dupBtn.style.display = "none";
-        document.querySelector(".status-bar").textContent = (
-          window.__ || function (s) { return s; }
-        )("status.clear_scan");
-        showWelcome();
-      } else if (action === "reset-view") {
-        state.currentStats = null;
-        state.currentScanResult = null;
-        const loader = window.__loader;
-        const treeView = window.__treeView;
-        if (loader) loader.release().catch(function () {});
-        if (treeView) {
-          treeView.visibleNodes = [];
-          treeView.expanded.clear();
-          treeView.selectedIndex = null;
-          treeView.rebuild().catch(function () {});
-        }
-        if (window.__statsPanel) window.__statsPanel.clear();
-        if (window.__diagram) window.__diagram.setData(null);
-        if (window.__topFiles) window.__topFiles.render([], true);
-        document.querySelector(".status-bar").textContent = "View reset";
-        showWelcome();
+      } else if (action === "clear-scan" || action === "reset-view") {
+        resetAllState(
+          action === "clear-scan"
+            ? (window.__ || function (s) { return s; })("status.clear_scan")
+            : "View reset",
+        );
       } else if (action === "settings") {
         const so = document.getElementById("settings-overlay");
         if (so) {
@@ -200,7 +192,7 @@
             const parts = [n.name];
             let p = n.parent;
             let safety = 0;
-            while (p !== 4294967295 && p !== undefined && safety < 20) {
+            while (p !== 4294967295 && p !== undefined && safety < 1000) {
               const parent = nodes[p];
               if (parent && parent.name) parts.unshift(parent.name);
               p = parent ? parent.parent : 4294967295;
@@ -216,18 +208,15 @@
         }
         const base = scanPath.value.replace(/[\\/]+$/, "");
         let html2 =
-          '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
-        for (
-          let ei = 0;
-          ei < Math.min(emptyDirs.length, 500);
-          ei++
-        ) {
+          '<div style="padding:12px 16px;max-height:300px;overflow-y:auto;">' +
+          '<label style="display:flex;align-items:center;gap:6px;padding:2px 6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-bottom:4px;"><input type="checkbox" id="ef-select-all" checked style="width:14px;height:14px;cursor:pointer;"> Select all</label>';
+        for (let ei = 0; ei < Math.min(emptyDirs.length, 500); ei++) {
+          const full = base + "/" + emptyDirs[ei].path;
           html2 +=
-            '<div class="empty-folder-item" data-idx="' +
-            emptyDirs[ei].arenaIdx +
-            '" title="' + esc(base + "/" + emptyDirs[ei].path) + '" style="padding:3px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:6px;align-items:center;">\uD83D\uDCC2 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-            esc(emptyDirs[ei].path) +
-            "</span></div>";
+            '<label class="empty-folder-item" data-idx="' + emptyDirs[ei].arenaIdx +
+            '" title="' + esc(full) + '" style="display:flex;align-items:center;gap:6px;padding:3px 8px;cursor:pointer;border-radius:4px;font-size:12px;">' +
+            '<input type="checkbox" class="ef-cb" data-path="' + esc(full) + '" checked style="width:14px;height:14px;cursor:pointer;flex-shrink:0;">' +
+            '\uD83D\uDCC2 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(emptyDirs[ei].path) + "</span></label>";
         }
         if (emptyDirs.length > 500)
           html2 +=
@@ -240,41 +229,63 @@
           "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
         const card2 = document.createElement("div");
         card2.style.cssText =
-          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:460px;width:90%;max-height:80vh;overflow:hidden;";
+          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:480px;width:90%;max-height:80vh;overflow:hidden;";
         card2.innerHTML =
           '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDCC2 Empty Folders (' +
           emptyDirs.length +
           ")</div>" +
           html2 +
           '<div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
-          '<button class="ef-delete-btn" style="padding:6px 14px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;">\uD83D\uDDD1 Delete all ' + emptyDirs.length + ' empty folders</button>' +
+          '<button class="ef-delete-btn" style="padding:6px 14px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;">\uD83D\uDDD1 Delete selected</button>' +
           '<button class="ef-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button>' +
           "</div>";
         ov2.appendChild(card2);
         document.body.appendChild(ov2);
+        const efSelAll = ov2.querySelector("#ef-select-all");
+        if (efSelAll) {
+          efSelAll.onchange = function () {
+            ov2.querySelectorAll(".ef-cb").forEach(function (cb) {
+              cb.checked = efSelAll.checked;
+            });
+          };
+        }
         ov2.querySelector(".ef-close-btn").onclick = function () {
           document.body.removeChild(ov2);
         };
         ov2.querySelector(".ef-delete-btn").onclick = async function () {
           const btn = this;
+          const paths = [];
+          ov2.querySelectorAll(".ef-cb:checked").forEach(function (cb) {
+            paths.push(cb.dataset.path);
+          });
+          if (paths.length === 0) {
+            window.showToast("Nothing selected", "info");
+            return;
+          }
           btn.disabled = true;
-          btn.textContent = "Deleting\u2026";
+          btn.textContent = "Checking\u2026";
           const ok = await window.confirmDialog(
-            window.__ ? window.__("tools.empty_folders_delete_confirm").replace("{n}", emptyDirs.length) : "Move " + emptyDirs.length + " empty folder(s) to Trash?",
+            window.__ ? window.__("tools.empty_folders_delete_confirm").replace("{n}", paths.length) : "Move " + paths.length + " empty folder(s) to Trash?",
           );
-          if (!ok) { btn.disabled = false; btn.textContent = "\uD83D\uDDD1 Delete all " + emptyDirs.length + " empty folders"; return; }
-          let done = 0, failed = 0;
-          for (let ei = 0; ei < emptyDirs.length; ei++) {
-            const full = base + "/" + emptyDirs[ei].path;
+          if (!ok) { btn.disabled = false; btn.textContent = "\uD83D\uDDD1 Delete selected"; return; }
+          let done = 0, failed = 0, skipped = 0;
+          for (let ei = 0; ei < paths.length; ei++) {
+            btn.textContent = "Deleting " + (ei + 1) + "/" + paths.length + "\u2026";
             try {
-              const r = await window.__TAURI__.invoke("delete_path", { path: full });
-              if (r && r.success === false) failed++;
-              else done++;
+              const st = await window.__TAURI__.invoke("get_dir_stats", { path: paths[ei] });
+              const d = st && st.data ? st.data : (st || {});
+              if ((d.files === undefined && d.dirs === undefined) || (Number(d.files || 0) === 0 && Number(d.dirs || 0) === 0)) {
+                const r = await window.__TAURI__.invoke("delete_path", { path: paths[ei] });
+                if (r && r.success === false) failed++;
+                else done++;
+              } else {
+                skipped++;
+              }
             } catch (e) { failed++; }
           }
           document.body.removeChild(ov2);
           window.showToast(
-            done + " empty folder(s) moved to trash" + (failed ? ", " + failed + " failed" : ""),
+            done + " moved to trash" + (failed ? ", " + failed + " failed" : "") + (skipped ? ", " + skipped + " skipped (no longer empty)" : ""),
             failed ? "warning" : "success",
           );
           if (btnScan) btnScan.click();
@@ -285,7 +296,8 @@
         ov2.querySelectorAll(".empty-folder-item").forEach(function (
           el,
         ) {
-          el.onclick = function () {
+          el.onclick = function (e) {
+            if (e.target.tagName === "INPUT") return;
             const idx = parseInt(this.dataset.idx);
             if (!isNaN(idx) && window.__treeView) {
               window.__treeView.select(idx);
@@ -307,7 +319,10 @@
         let chartData = "";
         try {
           chartData = svg ? svg.toDataURL() : "";
-        } catch (e) {}
+        } catch (e) {
+          console.warn("Chart export failed (tainted canvas):", e);
+          chartData = "";
+        }
         let fileRows = "";
         const nodes =
           (window.__loader && window.__loader.allNodes) || [];
@@ -359,12 +374,14 @@
         const treeView = window.__treeView;
         if (!loader || !loader.allNodes) return;
         const nodes = loader.allNodes;
-        const results = [];
         const query = params.name || "*";
-        const pattern = query
-          .replace(/\*/g, ".*")
-          .replace(/\?/g, ".")
-          .toLowerCase();
+        function escapeRegex(s) {
+          return s
+            .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+            .replace(/\\\*/g, ".*")
+            .replace(/\\\?/g, ".");
+        }
+        const pattern = escapeRegex(query).toLowerCase();
         let re;
         try {
           re = new RegExp("^" + pattern + "$", "i");
@@ -374,118 +391,140 @@
         const minSize = params.minBytes || 0;
         const maxSize = params.maxBytes || 0;
         const ext = params.ext ? params.ext.toLowerCase() : "";
-        for (let ni = 0; ni < nodes.length; ni++) {
-          const n = nodes[ni];
-          if (!n || !n.name) continue;
-          if (n.node_type === 0 || n.node_type === "Directory") continue;
-          if (ext && n.name.toLowerCase().indexOf("." + ext) !== n.name.length - (ext.length + 1)) continue;
-          if (minSize && (n.size || 0) < minSize) continue;
-          if (maxSize && (n.size || 0) > maxSize) continue;
-          if (re.test(n.name)) {
-            const fullPath = scanPath.value.replace(/[\\/]+$/, "");
-            const parts = [n.name];
-            let p = n.parent;
-            let safety = 0;
-            while (
-              p !== 4294967295 &&
-              p !== undefined &&
-              safety < 20
-            ) {
-              const parent = nodes[p];
-              if (parent && parent.name)
-                parts.unshift(parent.name);
-              p = parent ? parent.parent : 4294967295;
-              safety++;
-            }
-            results.push({
-              name: n.name,
-              path: fullPath + "/" + parts.join("/"),
-              size: n.size,
-              arenaIdx: ni,
-            });
+        const results = [];
+        const st0 = document.querySelector(".status-bar");
+        const CHUNK = 50000;
+
+        function showFindResults() {
+          if (results.length === 0) {
+            const t0 = window.__ || function (s) { return s; };
+            window.showToast(t0("tools.find_no_results"), "info");
+            return;
           }
-        }
-        if (results.length === 0) {
-          const t0 = window.__ || function (s) { return s; };
-          window.showToast(t0("tools.find_no_results"), "info");
-          return;
-        }
-        results.sort(function (a, b) {
-          return b.size - a.size;
-        });
-        let html =
-          '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
-        for (let ri = 0; ri < Math.min(results.length, 500); ri++) {
-          const r = results[ri];
-          html +=
-            '<div class="find-file-item" data-idx="' +
-            r.arenaIdx +
-            '" title="' + esc(r.path) + '" style="padding:4px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:8px;align-items:center;">';
-          html +=
-            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-            esc(r.name) +
-            "</span>";
-          html +=
-            '<span style="font-family:monospace;color:var(--text-muted);font-size:11px;white-space:nowrap;">' +
-            (r.size ? fmtBytes(r.size) : "") +
-            "</span>";
-          html +=
-            '<button class="ff-open" title="Open containing folder" aria-label="Open containing folder" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:2px 4px;">\uD83D\uDCC2</button>' +
-            "</div>";
-        }
-        if (results.length > 500)
-          html +=
-            '<div style="padding:4px;text-align:center;color:var(--text-muted);font-size:11px;">+ ' +
-            (results.length - 500) +
-            " more</div>";
-        html += "</div>";
-        const ov = document.createElement("div");
-        ov.style.cssText =
-          "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
-        const card = document.createElement("div");
-        card.style.cssText =
-          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:560px;width:90%;max-height:80vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
-        card.innerHTML =
-          '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDD0E Find Files (' +
-          results.length +
-          " matches)</div>" +
-          html +
-          '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;"><button class="find-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button></div>';
-        ov.appendChild(card);
-        document.body.appendChild(ov);
-        ov.querySelector(".find-close-btn").onclick = function () {
-          document.body.removeChild(ov);
-        };
-        ov.onclick = function (e) {
-          if (e.target === ov) document.body.removeChild(ov);
-        };
-        ov.querySelectorAll(".find-file-item").forEach(function (el) {
-          el.onclick = function (e) {
-            if (e.target.classList.contains("ff-open")) return;
-            const idx = parseInt(this.dataset.idx);
-            if (!isNaN(idx) && treeView) {
-              treeView.select(idx);
-              document.body.removeChild(ov);
-            }
+          results.sort(function (a, b) {
+            return b.size - a.size;
+          });
+          let html =
+            '<div style="padding:16px;max-height:300px;overflow-y:auto;">';
+          for (let ri = 0; ri < Math.min(results.length, 500); ri++) {
+            const r = results[ri];
+            html +=
+              '<div class="find-file-item" data-idx="' +
+              r.arenaIdx +
+              '" title="' + esc(r.path) + '" style="padding:4px 8px;cursor:pointer;border-radius:4px;font-size:12px;display:flex;gap:8px;align-items:center;">';
+            html +=
+              '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+              esc(r.name) +
+              "</span>";
+            html +=
+              '<span style="font-family:monospace;color:var(--text-muted);font-size:11px;white-space:nowrap;">' +
+              (r.size ? fmtBytes(r.size) : "") +
+              "</span>";
+            html +=
+              '<button class="ff-open" title="Open containing folder" aria-label="Open containing folder" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:2px 4px;">\uD83D\uDCC2</button>' +
+              "</div>";
+          }
+          if (results.length > 500)
+            html +=
+              '<div style="padding:4px;text-align:center;color:var(--text-muted);font-size:11px;">+ ' +
+              (results.length - 500) +
+              " more</div>";
+          html += "</div>";
+          const ov = document.createElement("div");
+          ov.style.cssText =
+            "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+          const card = document.createElement("div");
+          card.style.cssText =
+            "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:560px;width:90%;max-height:80vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+          card.innerHTML =
+            '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDD0E Find Files (' +
+            results.length +
+            " matches)</div>" +
+            html +
+            '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;"><button class="find-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button></div>';
+          ov.appendChild(card);
+          document.body.appendChild(ov);
+          ov.querySelector(".find-close-btn").onclick = function () {
+            document.body.removeChild(ov);
           };
-          el.onmouseenter = function () {
-            this.style.background = "var(--bg-hover)";
+          ov.onclick = function (e) {
+            if (e.target === ov) document.body.removeChild(ov);
           };
-          el.onmouseleave = function () {
-            this.style.background = "transparent";
-          };
-        });
-        const ffOpenBtns = ov.querySelectorAll(".ff-open");
-        for (let fi = 0; fi < ffOpenBtns.length; fi++) {
-          (function (btn, r) {
-            btn.onclick = function (e) {
-              e.stopPropagation();
-              if (r && r.path) {
-                window.__TAURI__.invoke("open_explorer", { path: r.path }).catch(function () {});
+          ov.querySelectorAll(".find-file-item").forEach(function (el) {
+            el.onclick = function (e) {
+              if (e.target.classList.contains("ff-open")) return;
+              const idx = parseInt(this.dataset.idx);
+              if (!isNaN(idx) && treeView) {
+                treeView.select(idx);
+                document.body.removeChild(ov);
               }
             };
-          })(ffOpenBtns[fi], results[fi]);
+            el.onmouseenter = function () {
+              this.style.background = "var(--bg-hover)";
+            };
+            el.onmouseleave = function () {
+              this.style.background = "transparent";
+            };
+          });
+          const ffOpenBtns = ov.querySelectorAll(".ff-open");
+          for (let fi = 0; fi < ffOpenBtns.length; fi++) {
+            (function (btn, r) {
+              btn.onclick = function (e) {
+                e.stopPropagation();
+                if (r && r.path) {
+                  window.__TAURI__.invoke("open_explorer", { path: r.path }).catch(function () {});
+                }
+              };
+            })(ffOpenBtns[fi], results[fi]);
+          }
         }
+
+        function processChunk(start) {
+          const end = Math.min(start + CHUNK, nodes.length);
+          for (let ni = start; ni < end; ni++) {
+            const n = nodes[ni];
+            if (!n || !n.name) continue;
+            if (n.node_type === 0 || n.node_type === "Directory") continue;
+            if (ext && !n.name.toLowerCase().endsWith("." + ext)) continue;
+            if (minSize && (n.size || 0) < minSize) continue;
+            if (maxSize && (n.size || 0) > maxSize) continue;
+            if (re.test(n.name)) {
+              const fullPath = scanPath.value.replace(/[\\/]+$/, "");
+              const parts = [n.name];
+              let p = n.parent;
+              let safety = 0;
+              while (
+                p !== 4294967295 &&
+                p !== undefined &&
+                safety < 1000
+              ) {
+                const parent = nodes[p];
+                if (parent && parent.name)
+                  parts.unshift(parent.name);
+                p = parent ? parent.parent : 4294967295;
+                safety++;
+              }
+              results.push({
+                name: n.name,
+                path: fullPath + "/" + parts.join("/"),
+                size: n.size,
+                arenaIdx: ni,
+              });
+            }
+          }
+          if (end < nodes.length) {
+            if (st0) st0.textContent = "Searching... " + Math.round((end / nodes.length) * 100) + "%";
+            if (typeof requestIdleCallback === "function") {
+              requestIdleCallback(function () { processChunk(end); });
+            } else {
+              setTimeout(function () { processChunk(end); }, 0);
+            }
+          } else {
+            if (st0) st0.textContent = "";
+            showFindResults();
+          }
+        }
+        processChunk(0);
       } else if (action === "cleanup-downloads") {
         openDownloadsCleanup(scanPath, btnScan);
       } else if (action === "smart-tools") {
@@ -676,6 +715,7 @@
       cleanBtn.textContent = "\u23F3 Moving\u2026";
       let done = 0, failed = 0;
       for (let si = 0; si < sel.length; si++) {
+        cleanBtn.textContent = "\u23F3 Moving " + (si + 1) + "/" + sel.length + "...";
         try {
           const r = await window.__TAURI__.invoke("delete_path", { path: sel[si].path });
           if (r && r.success === false) failed++;
@@ -815,6 +855,7 @@
     function loadDrives() {
       statusEl.className = "smart-status";
       statusEl.innerHTML = '<span class="smart-spinner"></span>Loading drives\u2026';
+      select.disabled = true;
       scanBtn.disabled = true;
       window.__TAURI__
       .invoke("list_disks")
@@ -839,6 +880,7 @@
           select.appendChild(opt);
         });
         select.value = String(disks[0].id);
+        select.disabled = false;
         scanBtn.disabled = false;
         statusEl.textContent = "Select a drive and press Scan Health.";
       })
@@ -994,7 +1036,10 @@
         '<div class="banner-score">Health Score ' + (r.score != null ? esc(r.score) : "\u2014") + " / 100</div>" +
         '<div class="banner-scale"><div class="scale-track"><div class="scale-fill" style="width:' + Math.max(0, Math.min(100, Number(r.score) || 0)) + '%"></div></div></div>' +
         "</div>" +
-        '<div style="text-align:right;padding:4px 0 8px;"><button class="smart-export-btn" id="smart-export" style="padding:4px 10px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\uD83D\uDCC4 Export Report</button></div>' +
+        '<div style="text-align:right;padding:4px 0 8px;display:flex;justify-content:flex-end;gap:6px;">' +
+        '<button class="smart-export-btn" id="smart-export" style="padding:4px 10px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\uD83D\uDCC4 Export .txt</button>' +
+        '<button class="smart-export-btn" id="smart-export-json" style="padding:4px 10px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\u2699\uFE0F Export .json</button>' +
+        "</div>" +
         '<div class="smart-info-grid">' +
         cell("Model", r.model || "\u2014") +
         cell("Firmware", r.firmware || "\u2014") +
@@ -1034,18 +1079,52 @@
           lines.push("Power Cycles: " + (cycles != null ? cycles : ""));
           lines.push("Uncorrected Errors: " + uncorrected);
           lines.push("");
-          lines.push("ID\tAttribute\tCurrent\tWorst\tThreshold\tRAW\tStatus");
-          for (let ai = 0; ai < attrs.length; ai++) {
-            const a = attrs[ai];
-            lines.push(
-              [a.id != null ? a.id : "", a.name || "", a.current != null ? a.current : "", a.worst != null ? a.worst : "", a.threshold != null ? a.threshold : "", a.raw || "", a.status || ""].join("\t")
-            );
+          if (attrs.length === 0) {
+            lines.push("No S.M.A.R.T. attributes available for this drive.");
+          } else {
+            lines.push("ID\tAttribute\tCurrent\tWorst\tThreshold\tRAW\tStatus");
+            for (let ai = 0; ai < attrs.length; ai++) {
+              const a = attrs[ai];
+              lines.push(
+                [a.id != null ? a.id : "", a.name || "", a.current != null ? a.current : "", a.worst != null ? a.worst : "", a.threshold != null ? a.threshold : "", a.raw || "", a.status || ""].join("\t")
+              );
+            }
           }
           const blob = new Blob([lines.join("\n")], { type: "text/plain" });
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
           a.download = "smart-report-" + (r.model || "disk").replace(/\W+/g, "_") + ".txt";
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+      }
+      const jsonBtn = resultEl.querySelector("#smart-export-json");
+      if (jsonBtn) {
+        jsonBtn.onclick = function () {
+          const payload = {
+            generated: new Date().toISOString(),
+            device_id: r.device_id || "",
+            model: r.model || "",
+            firmware: r.firmware || "",
+            serial: r.serial || "",
+            interface: r.interface || "",
+            capacity: r.capacity || 0,
+            media: mediaLabel(r.media_type),
+            status: statusTxt,
+            score: r.score != null ? r.score : null,
+            temperature_c: r.temperature_c != null ? r.temperature_c : null,
+            wear: wear != null ? wear : null,
+            power_on_hours: powh,
+            power_cycles: cycles != null ? cycles : null,
+            uncorrected: uncorrected,
+            attributes: attrs,
+          };
+          const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "smart-report-" + (r.model || "disk").replace(/\W+/g, "_") + ".json";
           a.click();
           URL.revokeObjectURL(url);
         };
@@ -1321,7 +1400,7 @@
       for (let i = 0; i < names.length; i++) {
         const n = names[i];
         statusEl.innerHTML =
-          '<span class="smart-spinner"></span>Cleaning ' + esc(n) + "\u2026";
+          '<span class="smart-spinner"></span>Cleaning ' + (i + 1) + "/" + names.length + ": " + esc(n) + "\u2026";
         try {
           const r = await window.__TAURI__.invoke("clean_browser", {
             name: n,
