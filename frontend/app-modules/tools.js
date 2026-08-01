@@ -553,6 +553,11 @@
           document.querySelector(".status-bar").textContent = t(
             "status.trash_emptied",
           );
+          // Refresh the view if we're currently showing the trash folder.
+          const cur = ((scanPath && scanPath.value) || "").toLowerCase();
+          if (cur.indexOf(".trash") >= 0 || cur.indexOf("recycle") >= 0) {
+            if (btnScan && !btnScan.disabled) btnScan.click();
+          }
         } catch (e) {
           console.warn("Empty trash:", e);
           const t0 = window.__ || function (s) { return s; };
