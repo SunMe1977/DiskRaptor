@@ -72,9 +72,7 @@ if %ERRORLEVEL% neq 0 (
     pause
     exit /b 1
 )
-echo OK
-
-REM -- Step 3: Create dist package --------------
+echo OKREM -- Step 3: Create dist package --------------
 echo.
 echo [3/3] Packaging dist...
 cd /d "%~dp0"
@@ -142,5 +140,35 @@ if exist "%MAKENSIS%" (
     echo  NSIS not found - skipping installer creation
     echo  Install NSIS from https://nsis.sourceforge.io to create setup.exe
 )
+
+REM -- Step 4: MSIX (Microsoft Store) package ------------
+echo.
+echo [MSIX] Building MSIX package...
+set "MSIX_CERT=%SIGNTOOL_CERT_PATH%"
+if not exist "%MSIX_CERT%" set "MSIX_CERT=%~dp0certs\DiskRaptor.pfx"
+if exist "%MSIX_CERT%" (
+    REM Build MSIX with the same signing cert used for signtool.
+    call npx tauri build --bundles msix --ci
+    if %ERRORLEVEL% equ 0 (
+        echo  OK - MSIX package built
+        echo  Upload it via Partner Center: https://partner.microsoft.com/dashboard
+    ) else (
+        echo  WARNING: MSIX build failed (check tauri msix prerequisites)
+    )
+) else (
+    echo  SKIP MSIX: no signing certificate found.
+    echo  Set SIGNTOOL_CERT_PATH or place a .pfx at certs\DiskRaptor.pfx
+    echo  Microsoft Store requires an MSIX signed with a cert from your
+    echo  Partner Center account (not the signtool/EV cert).
+)
+
+echo.
+echo ==========================================
+echo   BUILD COMPLETE
+echo ==========================================
+echo.
+echo  EXE: dist\DiskRaptor.exe
+echo  MSIX: src-tauri\target\release\bundle\msix\*
+echo.
 
 pause

@@ -846,7 +846,11 @@
         select.innerHTML = '<option value="">Error</option>';
         const msg = e && e.message ? e.message : String(e);
         statusEl.textContent = "Could not list drives: " + msg;
-        if (/smartctl|smartmontools/i.test(msg)) {
+        if (/sandbox|sandboxed/i.test(msg)) {
+          statusEl.innerHTML =
+            "S.M.A.R.T. is limited in the App Store build.<br>" +
+            '<span style="font-size:12px;color:var(--text-secondary);">Download DiskRaptor from the website for the full S.M.A.R.T. report (smartmontools).</span>';
+        } else if (/smartctl|smartmontools/i.test(msg)) {
           statusEl.innerHTML =
             "Could not list drives.<br>" +
             '<span style="font-size:12px;color:var(--text-secondary);">Install smartmontools to enable full S.M.A.R.T. reports:</span>' +

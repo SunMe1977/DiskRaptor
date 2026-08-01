@@ -85,33 +85,50 @@ echo ""
 
 # ── MAS (Mac App Store) build function ────────────────────────────
 build_mas_pkg() {
-  local APP_SRC="dist/DiskRaptor.app"
   local MAS_DIR="dist-mas"
   local APP_DST="$MAS_DIR/DiskRaptor.app"
   local IDENTIFIER="${BUNDLE_ID}"
   local DIST_CERT="${APPLE_DIST_CERT:-${SIGNING_IDENTITY:-}}"
   local ENTITLEMENTS="installer/DiskRaptor-MAS.entitlements"
 
-  # Ensure Tauri app is built
-  if [ ! -d "$APP_SRC" ]; then
-    echo "  ERROR: $APP_SRC not found. Run main build first."
-    return 1
-  fi
-
   echo ""
   echo "--- MAS Build ---"
-  echo "[MAS] Preparing .app bundle..."
+  echo "[MAS] Building app with the 'store' feature (sandbox-aware)..."
   rm -rf "$MAS_DIR"
   mkdir -p "$MAS_DIR"
 
+  # Build a dedicated store build: the `store` cargo feature disables
+  # sandbox-unsafe code paths (smartctl/system_profiler/osascript subprocesses).
+  cd src-tauri
+  if [ -n "$TAURI_TARGET" ]; then
+    npx tauri build --bundles app --ci --features store --target "$TAURI_TARGET" 2>&1 || true
+  else
+    npx tauri build --bundles app --ci --features store 2>&1 || true
+  fi
+  cd ..
+
+  local APP_SRC=""
+  if [ -n "$TAURI_TARGET" ]; then
+    APP_SRC="src-tauri/target/universal-apple-darwin/release/bundle/macos/DiskRaptor.app"
+  else
+    APP_SRC="src-tauri/target/release/bundle/macos/DiskRaptor.app"
+  fi
   if [ ! -d "$APP_SRC" ]; then
-    echo "  ERROR: $APP_SRC not found. Main build must succeed first."
+    echo "  ERROR: Store build bundle not found at $APP_SRC"
     return 1
   fi
 
   cp -R "$APP_SRC" "$APP_DST"
   plutil -replace CFBundleIdentifier -string "$IDENTIFIER" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
   plutil -replace DiskRaptorDisableUpdates -bool YES "$APP_DST/Contents/Info.plist" 2>/dev/null || true
+  # Tell the frontend this is a store build so it hides the self-update UI.
+  local INDEX_HTML=""
+  for cand in "$APP_DST/Contents/Resources/_up_/frontend/index.html" "$APP_DST/Contents/Resources/frontend/index.html"; do
+    if [ -f "$cand" ]; then INDEX_HTML="$cand"; break; fi
+  done
+  if [ -n "$INDEX_HTML" ]; then
+    perl -pi -e 's/(id="about-update-check")/$1 data-store="true"/' "$INDEX_HTML"
+  fi
 
   # Embed provisioning profile (required for TestFlight & App Store)
   local PROFILE_SRC=""

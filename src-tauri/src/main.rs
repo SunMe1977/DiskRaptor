@@ -80,6 +80,11 @@ fn delete_path(path: String) -> JsonResult {
     }
     #[cfg(target_os = "macos")]
     {
+        if in_mac_sandbox() {
+            // Sandboxed build: the `trash` crate uses NSFileManager which works
+            // for user-selected files; the osascript/Finder path is not allowed.
+            return JsonResult::err("Could not move to trash in sandbox");
+        }
         let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
         if let Ok(s) = std::process::Command::new("osascript")
             .args(["-e", &format!("tell app \"Finder\" to delete POSIX file \"{}\"", escaped)])
@@ -112,7 +117,12 @@ async fn delete_permanent(path: String) -> JsonResult {
 #[tauri::command]
 fn open_explorer(path: String) -> JsonResult {
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("open").args(["-R", &path]).status(); }
+    {
+        if in_mac_sandbox() {
+            return JsonResult::err("Opening in Finder is not available in the sandboxed build.");
+        }
+        let _ = std::process::Command::new("open").args(["-R", &path]).status();
+    }
     #[cfg(target_os = "windows")]
     { let _ = std::process::Command::new("explorer").args(["/select,", &path]).status(); }
     #[cfg(target_os = "linux")]
@@ -130,7 +140,12 @@ fn open_terminal(path: String) -> JsonResult {
         dir.parent().and_then(|p| p.to_str()).unwrap_or(&path)
     };
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("open").args(["-a", "Terminal", dir_str]).status(); }
+    {
+        if in_mac_sandbox() {
+            return JsonResult::err("Opening Terminal is not available in the sandboxed build.");
+        }
+        let _ = std::process::Command::new("open").args(["-a", "Terminal", dir_str]).status();
+    }
     #[cfg(target_os = "windows")]
     { let _ = std::process::Command::new("cmd").args(["/k", "cd", "/d", dir_str]).status(); }
     #[cfg(target_os = "linux")]
@@ -247,6 +262,31 @@ fn get_volume_stats() -> JsonResult {
     list_drives()
 }
 
+/// Enumerate mounted volumes via sysinfo — works without spawning any external
+/// helper, so it survives the macOS App Sandbox (unlike smartctl/system_profiler).
+fn list_volumes_via_sysinfo() -> Vec<serde_json::Value> {
+    let disks_list = sysinfo::Disks::new_with_refreshed_list();
+    let mut out = Vec::new();
+    for d in disks_list.list() {
+        let mount = d.mount_point().to_string_lossy().to_string();
+        if mount.is_empty() { continue; }
+        let total = d.total_space();
+        let free = d.available_space();
+        let used = total.saturating_sub(free);
+        let pct = if total > 0 { (used as f64 / total as f64 * 100.0).round() as u64 } else { 0 };
+        let label = d.name().to_string_lossy().to_string();
+        out.push(serde_json::json!({
+            "id": mount.clone(),
+            "name": if label.is_empty() { mount.clone() } else { label },
+            "size": total,
+            "total_bytes": total, "free_bytes": free, "used_bytes": used,
+            "usage_pct": pct, "percentFull": pct,
+            "is_mac_device": true, "is_internal": false,
+        }));
+    }
+    out
+}
+
 /// Quick top-level stats for a directory: total size, file count, dir count.
 /// Uses a capped walk so it stays fast for the tool previews.
 #[tauri::command]
@@ -336,6 +376,18 @@ fn run_output(cmd: &str, args: &[&str]) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Returns true when running inside the macOS App Sandbox, where spawning
+/// external helpers (smartctl, system_profiler, osascript) is not permitted.
+#[cfg(target_os = "macos")]
+fn in_mac_sandbox() -> bool {
+    std::env::var("APP_SANDBOX_CONTAINER_ID").is_ok()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn in_mac_sandbox() -> bool {
+    false
 }
 
 #[cfg(target_os = "linux")]
@@ -517,6 +569,18 @@ fn list_disks() -> JsonResult {
     }
     #[cfg(target_os = "macos")]
     {
+        if in_mac_sandbox() {
+            // Sandboxed MAS builds cannot spawn smartctl/system_profiler.
+            // Fall back to the app's own mounted-volume enumeration so the
+            // SSD/S.M.A.R.T. tool still shows something.
+            let disks = list_volumes_via_sysinfo();
+            if !disks.is_empty() {
+                return JsonResult::ok(serde_json::json!(disks));
+            }
+            return JsonResult::err(
+                "S.M.A.R.T. is unavailable in the sandboxed App Store build.",
+            );
+        }
         if run_output("smartctl", &["--version"]).is_some() {
             let mut disks = Vec::new();
             for i in 0..8 {
@@ -544,6 +608,11 @@ fn list_disks() -> JsonResult {
             if !disks.is_empty() {
                 return JsonResult::ok(serde_json::json!(disks));
             }
+        }
+        // Last resort: mounted volumes from sysinfo (works everywhere, incl. sandbox).
+        let disks = list_volumes_via_sysinfo();
+        if !disks.is_empty() {
+            return JsonResult::ok(serde_json::json!(disks));
         }
         JsonResult::err("S.M.A.R.T. requires smartmontools (smartctl) on macOS")
     }
@@ -856,6 +925,11 @@ public static class NvmeSmart {
     #[cfg(target_os = "macos")]
     {
         let _ = &state;
+        if in_mac_sandbox() {
+            return JsonResult::err(
+                "S.M.A.R.T. is unavailable in the sandboxed App Store build.",
+            );
+        }
         if let Some(s) = run_output("smartctl", &["-j", "-a", &device_id]) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
                 if let Some(r) = smart_from_smartctl(&v, &device_id) {
@@ -1320,7 +1394,30 @@ fn get_app_info() -> JsonResult {
 #[tauri::command]
 fn empty_trash() -> JsonResult {
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("osascript").args(["-e", "tell app \"Finder\" to empty trash"]).status(); }
+    {
+        if in_mac_sandbox() {
+            // In the sandbox we cannot drive Finder. Empty the user's own
+            // trash container if we can read it; otherwise report clearly.
+            if let Some(home) = dirs::home_dir() {
+                let trash = home.join(".Trash");
+                if let Ok(entries) = std::fs::read_dir(&trash) {
+                    let mut ok = false;
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        let name = entry.file_name();
+                        if name.to_string_lossy().starts_with('.') { continue; }
+                        let r = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+                        if r.is_ok() { ok = true; }
+                    }
+                    if ok || !trash.exists() {
+                        return JsonResult::ok_empty();
+                    }
+                }
+            }
+            return JsonResult::err("Empty Trash is unavailable in the sandboxed build.");
+        }
+        let _ = std::process::Command::new("osascript").args(["-e", "tell app \"Finder\" to empty trash"]).status();
+    }
     #[cfg(target_os = "linux")]
     {
         let _ = std::process::Command::new("gio").args(["trash", "--empty"]).status();
@@ -1437,11 +1534,13 @@ fn request_permissions() -> JsonResult {
 }
 
 #[tauri::command]
+#[cfg(not(feature = "store"))]
 fn check_admin_needed(_path: String) -> JsonResult {
     JsonResult::ok(serde_json::json!(false))
 }
 
 #[tauri::command]
+#[cfg(not(feature = "store"))]
 fn restart_as_admin() -> JsonResult {
     #[cfg(target_os = "windows")]
     {
@@ -1455,10 +1554,31 @@ fn restart_as_admin() -> JsonResult {
 }
 
 #[tauri::command]
+#[cfg(feature = "store")]
+fn check_admin_needed(_path: String) -> JsonResult {
+    JsonResult::ok(serde_json::json!(false))
+}
+
+#[tauri::command]
+#[cfg(feature = "store")]
+fn restart_as_admin() -> JsonResult {
+    JsonResult::err("Admin elevation is not available in the Store build")
+}
+
+#[tauri::command]
 async fn check_for_updates() -> JsonResult {
     // Query the GitHub releases API for the latest tag and compare with the
     // installed version. Async so a slow network call never blocks the UI.
     let installed = env!("CARGO_PKG_VERSION");
+    // Sandboxed Store builds cannot run the curl subprocess; report no update
+    // available (updates are distributed via the store itself).
+    if cfg!(target_os = "macos") && in_mac_sandbox() {
+        return JsonResult::ok(serde_json::json!({
+            "version": installed,
+            "latest": null,
+            "update_available": false,
+        }));
+    }
     let result = tauri::async_runtime::spawn_blocking(|| {
         let out = std::process::Command::new("curl")
             .args([

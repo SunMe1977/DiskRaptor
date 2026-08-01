@@ -12,6 +12,9 @@ crate-type = ["cdylib", "lib"]
 [features]
 default = []
 test-server = ["tokio-tungstenite", "futures-util", "http"]
+# Store builds (Microsoft Store / Apple MAS) disable features that require
+# admin elevation or external helpers, which those platforms forbid.
+store = []
 
 [[bin]]
 name = "diskraptor"

@@ -603,6 +603,14 @@
     window.__checkUpdate = async function () {
       const el = document.getElementById("about-update-check");
       if (!el) return;
+      // Store builds (MAS/MSIX) distribute updates via the store itself, so
+      // hide the self-update UI entirely.
+      const disableUpdates = el.getAttribute("data-store") === "true";
+      if (disableUpdates) {
+        el.textContent = "\u2705 Updates via App Store";
+        el.style.color = "var(--accent-green)";
+        return;
+      }
       el.textContent = "\u23F3 Checking...";
       const current = _currentVersion || "0.0.0";
       try {
