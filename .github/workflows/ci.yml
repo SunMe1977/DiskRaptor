@@ -17,7 +17,7 @@ jobs:
           toolchain: stable
           cache: false
       - name: Install system dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libglib2.0-dev pkg-config
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libglib2.0-dev libwebkit2gtk-4.1-dev librsvg2-dev pkg-config
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - run: cargo check --manifest-path src-tauri/Cargo.toml --features test-server
