@@ -10,7 +10,6 @@ type FnStartScan = unsafe extern "C" fn(*const std::ffi::c_char) -> *mut std::ff
 type FnGetProgress = unsafe extern "C" fn() -> *mut std::ffi::c_char;
 type FnGetResult = unsafe extern "C" fn() -> *mut std::ffi::c_char;
 type FnGetChunk = unsafe extern "C" fn(u32) -> *mut std::ffi::c_char;
-type FnCancelScan = unsafe extern "C" fn() -> bool;
 type FnIsRunning = unsafe extern "C" fn() -> bool;
 type FnFreeString = unsafe extern "C" fn(*mut std::ffi::c_char);
 
@@ -53,7 +52,7 @@ fn main() {
         let get_progress: libloading::Symbol<FnGetProgress> = lib.get(b"dr_get_progress").unwrap();
         let get_result: libloading::Symbol<FnGetResult> = lib.get(b"dr_get_result").unwrap();
         let get_chunk: libloading::Symbol<FnGetChunk> = lib.get(b"dr_get_chunk").unwrap();
-        let is_running: libloading::Symbol<FnIsRunning> = lib.get(b"dr_is_running").unwrap();
+        let _is_running: libloading::Symbol<FnIsRunning> = lib.get(b"dr_is_running").unwrap();
         let free_string: libloading::Symbol<FnFreeString> = lib.get(b"dr_free_string").unwrap();
 
         println!("All 6 symbols resolved");

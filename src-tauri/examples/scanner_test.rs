@@ -68,7 +68,7 @@ fn main() {
         let is_running = prog["is_running"].as_bool().unwrap_or(false);
         let phase = prog["phase"].as_u64().unwrap_or(0);
         let elapsed = prog["elapsed_secs"].as_u64().unwrap_or(0);
-        let current_dir = prog["current_dir"].as_str().unwrap_or("");
+        let _current_dir = prog["current_dir"].as_str().unwrap_or("");
 
         if i % 10 == 0 || !is_running || phase == 3 {
             let rate = if elapsed > 0 { files / elapsed } else { 0 };
