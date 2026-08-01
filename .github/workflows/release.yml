@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    name: Windows x64 (Tauri)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install JS dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build Tauri NSIS installer
+        run: npx tauri build --bundles nsis --ci
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Copy-Item "src-tauri\target\release\diskraptor.exe" "release-assets\DiskRaptor.exe" -Force
+          Copy-Item "src-tauri\target\release\bundle\nsis\DiskRaptor_${ver}_x64-setup.exe" "release-assets\DiskRaptor-${ver}-windows-x64.exe" -Force
+          Write-Host "=== Staged assets ==="
+          Get-ChildItem release-assets | Select-Object Name, Length
+          if (-not (Test-Path "release-assets\DiskRaptor-${ver}-windows-x64.exe")) {
+            Write-Error "NSIS installer not found (DiskRaptor_${ver}_x64-setup.exe)"
+            exit 1
+          }
+      # Signing comes later (Azure Trusted Signing / code-signing cert).
+      # Add a signtool / trusted-signing step here before Deploy.
+      - name: Deploy to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v') { $tag = "v" + (Get-Content package.json | ConvertFrom-Json).version }
+          Write-Host "Target release: $tag"
+          gh release create $tag --title "DiskRaptor $tag" --notes "" 2>$null
+          gh release upload $tag "release-assets/*" --clobber
+          gh release view $tag --json assets --jq '[.assets[] | {name, size}]'
