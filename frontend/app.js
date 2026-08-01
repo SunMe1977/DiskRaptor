@@ -101,6 +101,12 @@
           }
           const sb = document.querySelector(".status-bar");
           if (sb) sb.textContent = "Running in App Store sandbox mode";
+          // Hide tools that rely on subprocesses forbidden in the sandbox.
+          document
+            .querySelectorAll(
+              '.tools-item[data-action="smart-tools"], .tools-item[data-action="trash"]',
+            )
+            .forEach(function (el) { el.style.display = "none"; });
         }
       } catch (e) {}
     })();

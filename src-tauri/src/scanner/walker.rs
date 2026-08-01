@@ -175,9 +175,18 @@ mod platform {
         let mut bytes_found: u64 = 0;
         let mut iter_count = 0u64;
         let mut path_buf = String::with_capacity(4096);
+        // Dynamic node cap: scale with available RAM (~128 bytes/node est.),
+        // bounded between 500k and 20M. On low-memory machines we stop earlier
+        // instead of risking OOM; on big machines we still cap runaway scans.
+        let node_cap = {
+            let mut sys = sysinfo::System::new();
+            sys.refresh_memory();
+            let avail = sys.available_memory().max(256 * 1024 * 1024);
+            (avail / 128).clamp(500_000, 20_000_000) as usize
+        };
 
         for entry_result in WalkDir::new(root_path).follow_links(config.follow_symlinks).sort(false).parallelism(jwalk::Parallelism::RayonNewPool(4)) {
-            if arena.nodes.len() > 20_000_000 {
+            if arena.nodes.len() > node_cap {
                 break;
             }
             iter_count += 1;

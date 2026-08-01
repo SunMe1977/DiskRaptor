@@ -578,87 +578,96 @@ class TreeView {
     }
   }
 
-  async _buildList(arenaIdx, depth) {
+  async _buildList(rootIdx, rootDepth) {
     // If the requested node isn't loaded yet (chunks still arriving), wait a
     // short moment and retry so we never render a half-empty tree.
-    for (let tries = 0; tries < 50 && !this.loader.getNode(arenaIdx); tries++) {
+    for (let tries = 0; tries < 50 && !this.loader.getNode(rootIdx); tries++) {
       await new Promise(function (r) { setTimeout(r, 100); });
     }
-    const node = this.loader.getNode(arenaIdx);
-    if (!node) return;
+    // Iterative traversal with an explicit stack to avoid JS call-stack
+    // overflow on deeply nested directory trees.
+    const stack = [{ idx: rootIdx, depth: rootDepth }];
+    while (stack.length > 0) {
+      const item = stack.pop();
+      const arenaIdx = item.idx;
+      const depth = item.depth;
+      const node = this.loader.getNode(arenaIdx);
+      if (!node) continue;
 
-    // Apply filter: show node if name matches OR it's an ancestor of a match
-    let filterMatch = true;
-    if (this._filterText) {
-      filterMatch = (node.name || "").toLowerCase().indexOf(this._filterText) !== -1;
-      if (!filterMatch && depth > 0) {
-        // Check if any descendant matches (keep ancestors visible)
-        filterMatch = this._hasMatchingDescendant(arenaIdx);
+      const isDir = node.node_type === "Directory" || node.node_type === 0;
+
+      // Apply filter: show node if name matches OR it's an ancestor of a match
+      let filterMatch = true;
+      if (this._filterText) {
+        filterMatch = (node.name || "").toLowerCase().indexOf(this._filterText) !== -1;
+        if (!filterMatch && depth > 0) {
+          filterMatch = this._hasMatchingDescendant(arenaIdx);
+        }
       }
-    }
-    if (depth > 0 && this._filterText && !filterMatch) return;
+      if (depth > 0 && this._filterText && !filterMatch) continue;
 
-    // File type filter
-    if (this._typeFilter && this._typeFilter !== "all" && !isDir) {
-      let ext = (node.name || "").toLowerCase();
-      const dot = ext.lastIndexOf(".");
-      ext = dot >= 0 ? ext.substring(dot + 1) : "";
-      const exts = this._typeFilter.split("|");
-      if (exts.indexOf(ext) === -1) return;
-    }
+      // File type filter
+      if (this._typeFilter && this._typeFilter !== "all" && !isDir) {
+        let ext = (node.name || "").toLowerCase();
+        const dot = ext.lastIndexOf(".");
+        ext = dot >= 0 ? ext.substring(dot + 1) : "";
+        const exts = this._typeFilter.split("|");
+        if (exts.indexOf(ext) === -1) continue;
+      }
 
-    this.visibleNodes.push(arenaIdx);
+      this.visibleNodes.push(arenaIdx);
 
-    const isDir = node.node_type === "Directory" || node.node_type === 0;
-    if (isDir && this.expanded.has(arenaIdx)) {
-      let children = this.loader.getChildrenIndices(arenaIdx);
-      if (children.length === 0) {
-        const rawNodes = await this.loader.fetchChildren(arenaIdx);
-        if (rawNodes && rawNodes.length > 0) {
-          const indices = [];
-          for (const raw of rawNodes) {
-            const found = this._findNodeByNameAndParent(
-              raw.name,
-              raw.size,
-              arenaIdx,
-            );
-            if (found !== null) indices.push(found);
-            else {
-              const newIdx = this.loader.allNodes.length;
-              raw._arenaIndex = newIdx;
-              this.loader.allNodes.push(raw);
-              indices.push(newIdx);
+      if (isDir && this.expanded.has(arenaIdx)) {
+        let children = this.loader.getChildrenIndices(arenaIdx);
+        if (children.length === 0) {
+          const rawNodes = await this.loader.fetchChildren(arenaIdx);
+          if (rawNodes && rawNodes.length > 0) {
+            const indices = [];
+            for (const raw of rawNodes) {
+              const found = this._findNodeByNameAndParent(
+                raw.name,
+                raw.size,
+                arenaIdx,
+              );
+              if (found !== null) indices.push(found);
+              else {
+                const newIdx = this.loader.allNodes.length;
+                raw._arenaIndex = newIdx;
+                this.loader.allNodes.push(raw);
+                indices.push(newIdx);
+              }
+            }
+            if (indices.length > 0) {
+              this.loader.parentMap.set(arenaIdx, indices);
+              children = indices;
             }
           }
-          if (indices.length > 0) {
-            this.loader.parentMap.set(arenaIdx, indices);
-            children = indices;
+        }
+        const sorted = [...children].sort((a, b) => {
+          const na = this.loader.getNode(a);
+          const nb = this.loader.getNode(b);
+          if (!na || !nb) return 0;
+          let cmp = 0;
+          if (this.sortBy === "name") {
+            cmp = (na.name || "").localeCompare(nb.name || "");
+          } else if (this.sortBy === "pct") {
+            cmp = (na.size || 0) - (nb.size || 0);
+          } else if (this.sortBy === "files") {
+            cmp = (na.file_count || 0) - (nb.file_count || 0);
+          } else if (this.sortBy === "dirs") {
+            cmp = (na.dir_count || 0) - (nb.dir_count || 0);
+          } else if (this.sortBy === "date") {
+            cmp = (na.mtime || 0) - (nb.mtime || 0);
+          } else {
+            cmp = (na.size || 0) - (nb.size || 0);
           }
+          return this.sortDesc ? -cmp : cmp;
+        });
+        // Push children in reverse so the stack pops them in sorted order.
+        for (let ci = sorted.length - 1; ci >= 0; ci--) {
+          const childNode = this.loader.getNode(sorted[ci]);
+          if (childNode) stack.push({ idx: sorted[ci], depth: depth + 1 });
         }
-      }
-      const sorted = [...children].sort((a, b) => {
-        const na = this.loader.getNode(a);
-        const nb = this.loader.getNode(b);
-        if (!na || !nb) return 0;
-        let cmp = 0;
-        if (this.sortBy === "name") {
-          cmp = (na.name || "").localeCompare(nb.name || "");
-        } else if (this.sortBy === "pct") {
-          cmp = (na.size || 0) - (nb.size || 0);
-        } else if (this.sortBy === "files") {
-          cmp = (na.file_count || 0) - (nb.file_count || 0);
-        } else if (this.sortBy === "dirs") {
-          cmp = (na.dir_count || 0) - (nb.dir_count || 0);
-        } else if (this.sortBy === "date") {
-          cmp = (na.mtime || 0) - (nb.mtime || 0);
-        } else {
-          cmp = (na.size || 0) - (nb.size || 0);
-        }
-        return this.sortDesc ? -cmp : cmp;
-      });
-      for (const childIdx of sorted) {
-        const childNode = this.loader.getNode(childIdx);
-        if (childNode) await this._buildList(childIdx, depth + 1);
       }
     }
   }
@@ -666,14 +675,21 @@ class TreeView {
   _hasMatchingDescendant(arenaIdx) {
     const filter = this._filterText;
     if (!filter) return true;
-    const children = this.loader.getChildrenIndices(arenaIdx);
-    for (let ci = 0; ci < children.length; ci++) {
-      const child = this.loader.getNode(children[ci]);
+    const stack = this.loader.getChildrenIndices(arenaIdx).slice();
+    let checked = 0;
+    const BUDGET = 50000;
+    while (stack.length > 0 && checked < BUDGET) {
+      const ci = stack.pop();
+      const child = this.loader.getNode(ci);
       if (!child) continue;
+      checked++;
       if ((child.name || "").toLowerCase().indexOf(filter) !== -1) return true;
-      if (this._hasMatchingDescendant(children[ci])) return true;
+      const grand = this.loader.getChildrenIndices(ci);
+      for (let g = grand.length - 1; g >= 0; g--) stack.push(grand[g]);
     }
-    return false;
+    // If the budget ran out without a match, keep the parent visible
+    // (conservative) instead of scanning millions of nodes per keystroke.
+    return checked >= BUDGET;
   }
 
   _findNodeByNameAndParent(name, size, parentIdx) {
