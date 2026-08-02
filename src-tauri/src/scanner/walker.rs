@@ -607,6 +607,7 @@ pub fn scan_directory_with_progress(
 
 /// Build a ScanResult containing only the root node (no files) — used for
 /// paths that can't be meaningfully walked (e.g. the Windows recycle bin).
+#[cfg(target_os = "windows")]
 fn empty_scan_result(root_path: &str) -> Result<ScanResult> {
     let mut arena = TreeNodeArena::with_estimated_capacity(root_path);
     let root_name = std::path::Path::new(root_path)
