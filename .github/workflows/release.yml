@@ -332,7 +332,7 @@ jobs:
           mkdir -p "$HOME/private_keys"
           echo "$APPLE_API_KEY_P8" | base64 --decode > "$HOME/private_keys/AuthKey_$APPLE_API_KEY.p8"
           xcrun altool --upload-app \
-            --file "$pkg" \
+            -f "$pkg" -t osx \
             --apiKey "$APPLE_API_KEY" \
             --apiIssuer "$APPLE_API_ISSUER" \
             --output-format json

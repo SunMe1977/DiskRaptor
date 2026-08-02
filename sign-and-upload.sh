@@ -137,7 +137,7 @@ API_ISSUER="${APPLE_API_ISSUER:-}"
 if [ -z "$API_KEY" ] || [ -z "$API_ISSUER" ]; then
   echo "  SKIP upload: APPLE_API_KEY and APPLE_API_ISSUER not set in .env"
 else
-  xcrun altool --upload-app --file "$PKG" --apiKey "$API_KEY" --apiIssuer "$API_ISSUER" --output-format json 2>&1 || echo "  Upload failed (exit code $?)"
+  xcrun altool --upload-app -f "$PKG" -t osx --apiKey "$API_KEY" --apiIssuer "$API_ISSUER" --output-format json 2>&1 || echo "  Upload failed (exit code $?)"
 fi
 
 echo "=== Done ==="
