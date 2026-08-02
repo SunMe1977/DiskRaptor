@@ -139,6 +139,7 @@ jobs:
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
+          # Only the real build bundles — NOT dist/** which contains frontend
+          # sources/images and would flood the release with junk assets.
           files: |
             src-tauri/target/release/bundle/**/*
-            dist/**/*
