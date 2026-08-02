@@ -444,12 +444,19 @@ pub fn scan_simple(
         let avail = sys.available_memory().max(256 * 1024 * 1024);
         (avail / 512).clamp(250_000, 1_000_000) as usize
     };
+    // Iteration cap: access-denied entries don't add nodes, so a recycle bin
+    // with millions of unreadable files could otherwise never reach node_cap
+    // and the scan would never end. Bound total work by entries processed too.
+    let iter_cap: u64 = 1_500_000;
 
     for entry_result in WalkDir::new(root_path).follow_links(false).into_iter() {
         if arena.nodes.len() > node_cap {
             break;
         }
         iter_count += 1;
+        if iter_count > iter_cap {
+            break;
+        }
         if (iter_count & 0x3FF) == 0 {
             if let Some(ref cf) = config.cancelled {
                 if cf.load(Ordering::Relaxed) {
@@ -461,10 +468,13 @@ pub fn scan_simple(
             Ok(e) => e,
             Err(e) => {
                 // Collect errors like the jwalk path so the caller learns
-                // which folders were inaccessible.
+                // which folders were inaccessible. For a recycle bin most
+                // entries are SYSTEM-owned and unreadable — that's expected,
+                // so don't flood the UI with hundreds of them.
                 if let Some(p) = e.path() {
                     let mut errs = config.errors.lock().unwrap();
-                    if errs.len() < 100 {
+                    let cap = if root_path.contains("$Recycle.Bin") { 3 } else { 100 };
+                    if errs.len() < cap {
                         errs.push(format!("Access denied: {}", p.to_string_lossy()));
                     }
                 }

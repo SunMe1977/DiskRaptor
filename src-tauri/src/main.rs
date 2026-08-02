@@ -1510,10 +1510,48 @@ fn list_trash() -> JsonResult {
     let items = {
         #[cfg(target_os = "macos")] { list_trash_macos() }
         #[cfg(target_os = "linux")] { list_trash_linux() }
-        #[cfg(target_os = "windows")] { Vec::new() }
+        #[cfg(target_os = "windows")] { list_trash_windows() }
         #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))] { Vec::new() }
     };
     JsonResult::ok(serde_json::Value::Array(items))
+}
+
+#[cfg(target_os = "windows")]
+fn list_trash_windows() -> Vec<serde_json::Value> {
+    let script = r#"
+$shell = New-Object -ComObject Shell.Application
+$rb = $shell.Namespace(10)
+$out = @()
+$n = 0
+foreach ($it in $rb.Items()) {
+    if ($n -ge 5000) { break }
+    $orig = $rb.GetDetailsOf($it, 1)
+    $deleted = $rb.GetDetailsOf($it, 2)
+    $out += [pscustomobject]@{
+        name = [string]$it.Name
+        path = [string]$it.Path
+        size = [long]$it.Size
+        is_dir = [bool]$it.IsFolder
+        deleted_at = [string]$deleted
+        original_path = [string]$orig
+    }
+    $n++
+}
+$out | ConvertTo-Json -Depth 3 -Compress
+"#;
+    if let Some(json_str) = win_powershell(script) {
+        let trimmed = json_str.trim();
+        if trimmed.is_empty() || trimmed == "[]" {
+            return Vec::new();
+        }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            match v {
+                serde_json::Value::Array(arr) => return arr,
+                other => return vec![other],
+            }
+        }
+    }
+    Vec::new()
 }
 
 #[cfg(target_os = "linux")]

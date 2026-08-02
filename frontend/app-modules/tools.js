@@ -109,6 +109,18 @@
         });
       } else if (action === "scan-downloads" || action === "scan-trash") {
         const isTrash = action === "scan-trash";
+        const isWin =
+          /win/i.test(navigator.platform || "") ||
+          /Windows/i.test(navigator.userAgent || "");
+        if (isTrash && isWin) {
+          // The Windows recycle bin is a raw $Recycle.Bin full of SID junctions
+          // and SYSTEM-owned files — the tree scanner can't produce a useful
+          // view and can hang on millions of access-denied entries. Show the
+          // friendly Trash Recovery list instead.
+          if (!window.__trashRecovery) window.__trashRecovery = new TrashRecovery();
+          window.__trashRecovery.open();
+          return;
+        }
         const resolveDir = isTrash
           ? window.__TAURI__.invoke("get_trash_path")
           : window.__TAURI__.invoke("get_home_dir");
