@@ -55,3 +55,10 @@ windows = { version = "0.39", features = ["Win32_Storage_FileSystem", "Win32_Fou
 
 [dev-dependencies]
 libloading = "0.8"
+
+# Smaller, faster release binary. Note: panic=abort is intentionally NOT used
+# because the scanner relies on catch_unwind to fall back to walkdir.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

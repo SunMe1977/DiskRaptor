@@ -97,6 +97,32 @@ fn sanitize_delete_path(path: &str) -> Result<std::path::PathBuf, String> {
     Ok(canonical)
 }
 
+/// Validate a user-supplied path before handing it to a shell/system command.
+/// Guards against empty input, NUL/control-character injection and relative
+/// paths (path traversal). Callers may additionally require the path to exist.
+fn validate_system_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let p = path.trim();
+    if p.is_empty() {
+        return Err("Empty path".into());
+    }
+    if p.as_bytes().contains(&0) {
+        return Err("Path contains NUL byte".into());
+    }
+    for b in p.bytes() {
+        if b < 0x20 && b != b'\t' && b != b'\n' && b != b'\r' {
+            return Err("Path contains control characters".into());
+        }
+    }
+    let pb = std::path::PathBuf::from(p);
+    if !pb.is_absolute() {
+        return Err("Only absolute paths are allowed".into());
+    }
+    if !pb.exists() {
+        return Err("Path does not exist".into());
+    }
+    Ok(pb)
+}
+
 #[tauri::command]
 fn delete_path(path: String) -> JsonResult {
     let path = match sanitize_delete_path(&path) {
@@ -148,18 +174,23 @@ async fn delete_permanent(path: String) -> JsonResult {
 
 #[tauri::command]
 fn open_explorer(path: String) -> JsonResult {
+    let path = match validate_system_path(&path) {
+        Ok(p) => p,
+        Err(e) => return JsonResult::err(e),
+    };
+    let path_str = path.to_string_lossy().to_string();
     #[cfg(target_os = "macos")]
     {
         if in_mac_sandbox() {
             return JsonResult::err("Opening in Finder is not available in the sandboxed build.");
         }
-        let _ = std::process::Command::new("open").args(["-R", &path]).status();
+        let _ = std::process::Command::new("open").args(["-R", &path_str]).status();
     }
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("explorer").args(["/select,", &path]).status(); }
+    { let _ = std::process::Command::new("explorer").args(["/select,", &path_str]).status(); }
     #[cfg(target_os = "linux")]
     {
-        let parent = std::path::Path::new(&path).parent().and_then(|p| p.to_str()).unwrap_or(&path);
+        let parent = std::path::Path::new(&path_str).parent().and_then(|p| p.to_str()).unwrap_or(&path_str);
         let _ = std::process::Command::new("xdg-open").args([parent]).status();
     }
     JsonResult::ok_empty()
@@ -167,23 +198,33 @@ fn open_explorer(path: String) -> JsonResult {
 
 #[tauri::command]
 fn open_terminal(path: String) -> JsonResult {
-    let dir = std::path::Path::new(&path);
-    let dir_str = if dir.is_dir() { &path } else {
-        dir.parent().and_then(|p| p.to_str()).unwrap_or(&path)
+    let dir = match validate_system_path(&path) {
+        Ok(p) if p.is_dir() => p,
+        Ok(p) => p.parent().map(|x| x.to_path_buf()).unwrap_or(p),
+        Err(e) => return JsonResult::err(e),
     };
+    let dir_str = dir.to_string_lossy().to_string();
+    #[cfg(target_os = "windows")]
+    {
+        // cmd.exe interprets the whole command line, so reject paths carrying
+        // cmd metacharacters that could break out of the `cd` argument.
+        if dir_str.chars().any(|c| "&|<>^%".contains(c)) {
+            return JsonResult::err("Path contains characters unsafe for cmd.exe");
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         if in_mac_sandbox() {
             return JsonResult::err("Opening Terminal is not available in the sandboxed build.");
         }
-        let _ = std::process::Command::new("open").args(["-a", "Terminal", dir_str]).status();
+        let _ = std::process::Command::new("open").args(["-a", "Terminal", &dir_str]).status();
     }
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("cmd").args(["/k", "cd", "/d", dir_str]).status(); }
+    { let _ = std::process::Command::new("cmd").args(["/k", "cd", "/d", &dir_str]).status(); }
     #[cfg(target_os = "linux")]
     {
         for term in &["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "mate-terminal", "alacritty", "kitty"] {
-            if let Ok(s) = std::process::Command::new(term).arg("--working-directory").arg(dir_str).status() {
+            if let Ok(s) = std::process::Command::new(term).arg("--working-directory").arg(&dir_str).status() {
                 if s.success() { break; }
             }
         }
@@ -358,7 +399,10 @@ fn list_volumes_via_sysinfo() -> Vec<serde_json::Value> {
 #[tauri::command]
 async fn get_dir_stats(path: String) -> JsonResult {
     tauri::async_runtime::spawn_blocking(move || {
-        let p = std::path::PathBuf::from(&path);
+        let p = match validate_system_path(&path) {
+            Ok(p) => p,
+            Err(e) => return JsonResult::err(e),
+        };
         if !p.is_dir() {
             return JsonResult::err("Not a directory");
         }
