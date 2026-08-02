@@ -1482,7 +1482,14 @@ fn empty_trash() -> JsonResult {
         }
     }
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("cmd").args(["/c", "rd /s /q", &format!("{}\\..\\..\\Recycle.Bin", std::env::temp_dir().to_string_lossy())]).status(); }
+    {
+        // The real recycle bin lives at {SystemDrive}\$Recycle.Bin — NOT in the
+        // user profile. The old temp-dir derivation targeted the wrong folder
+        // and silently never emptied anything.
+        let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        let bin = format!("{}\\$Recycle.Bin", system_drive);
+        let _ = std::process::Command::new("cmd").args(["/c", "rd", "/s", "/q", &bin]).status();
+    }
     JsonResult::ok_empty()
 }
 
@@ -1759,10 +1766,54 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
             );
         });
 
-        let result = scanner::walker::scan_directory_with_progress(config, progress);
+        let result = {
+            // Run the walker on a dedicated worker so a hung walker (e.g. a
+            // Windows junction loop in $Recycle.Bin) can be cut off after a
+            // no-progress timeout. Without this, a stuck scan never sets
+            // running=false and the UI hangs forever waiting for it.
+            let (tx, rx) = std::sync::mpsc::channel();
+            let worker = std::thread::Builder::new().name("scan-worker".into()).spawn(move || {
+                let _ = tx.send(scanner::walker::scan_directory_with_progress(config, progress));
+            });
+
+            let poll = std::time::Duration::from_millis(250);
+            let mut last_progress = Instant::now();
+            let mut last_count = (0u64, 0u64);
+            let watchdog_result = loop {
+                match rx.recv_timeout(poll) {
+                    Ok(res) => break Some(res),
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break None,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        let s = result_handle.state::<AppState>();
+                        let f = s.scan.files_found.load(Ordering::Relaxed);
+                        let d = s.scan.dirs_found.load(Ordering::Relaxed);
+                        if (f, d) != last_count {
+                            last_count = (f, d);
+                            last_progress = Instant::now();
+                        }
+                        if last_progress.elapsed().as_secs() > ts {
+                            cancel_flag.store(true, Ordering::Release);
+                            s.scan.cancelled.store(true, Ordering::Release);
+                            s.scan.errors.lock().unwrap().push(format!(
+                                "TIMEOUT: scan made no progress for {}s and was stopped",
+                                ts
+                            ));
+                            eprintln!("[scan] no progress for {}s, stopped walker", ts);
+                            break None;
+                        }
+                    }
+                }
+            };
+            if let Ok(w) = worker {
+                // Keep the worker handle alive while we finish up; dropping it
+                // merely detaches the thread.
+                drop(w);
+            }
+            watchdog_result
+        };
         let s = result_handle.state::<AppState>();
         match result {
-            Ok(sr) => {
+            Some(Ok(sr)) => {
                 let elapsed = sr.stats.scan_time_ms;
                 // NOTE: chunks are built on demand in get_chunk (avoids cloning the
                 // whole arena and doubling peak memory for huge scans).
@@ -1771,11 +1822,14 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
                     errors: Vec::new(),
                 });
             }
-            Err(e) => {
+            Some(Err(e)) => {
                 eprintln!("[scan] error: {}", e);
                 // Surface the error to the UI so the user sees why the tree is empty.
                 s.scan.errors.lock().unwrap().push(e.to_string());
                 let _ = result_handle.emit("scan:error", serde_json::json!({ "error": e.to_string() }));
+            }
+            None => {
+                // Timed out: errors were already pushed by the watchdog.
             }
         }
         s.scan.running.store(false, Ordering::Release);

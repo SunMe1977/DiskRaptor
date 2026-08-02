@@ -405,6 +405,24 @@ pub fn scan_simple(
     root_path: &str,
 ) -> Result<ScanResult> {
     use walkdir::WalkDir;
+
+    // Windows: reparse points (junctions) can loop or pull in huge trees
+    // (e.g. $Recycle.Bin SID junctions). Never descend into them.
+    fn is_reparse_point(path: &Path) -> bool {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+            std::fs::symlink_metadata(path)
+                .map(|m| (m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+                .unwrap_or(false)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = path;
+            false
+        }
+    }
     let start = Instant::now();
     let skip_dirs = Arc::new(config.skip_dirs.clone());
     let top_files = Arc::new(TopFilesAccum::default());
@@ -435,10 +453,23 @@ pub fn scan_simple(
     let mut dirs_found: u64 = 0;
     let mut bytes_found: u64 = 0;
     let mut last_progress = Instant::now();
+    let mut iter_count: u64 = 0;
 
-    for entry_result in WalkDir::new(root_path).follow_links(false) {
+    for entry_result in WalkDir::new(root_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| !is_reparse_point(e.path()))
+    {
         if arena.nodes.len() > 20_000_000 {
             break;
+        }
+        iter_count += 1;
+        if (iter_count & 0x3FF) == 0 {
+            if let Some(ref cf) = config.cancelled {
+                if cf.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
         }
         let entry = match entry_result {
             Ok(e) => e,
@@ -543,6 +574,13 @@ pub fn scan_directory_with_progress(
     progress: ScanProgressCallback,
 ) -> Result<ScanResult> {
     let root_path = config.root_path.clone();
+    // jwalk can hang forever on Windows junction-heavy roots like $Recycle.Bin
+    // (per-user SID junctions). walkdir treats junctions as non-directories and
+    // returns quickly, so route those roots through the simple scanner.
+    #[cfg(target_os = "windows")]
+    if root_path.contains("$Recycle.Bin") {
+        return scan_simple(&config, &progress, &root_path);
+    }
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         platform::scan(&config, &progress, &root_path)
     }));
@@ -653,5 +691,46 @@ mod tests {
         let result = accum.into_sorted();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].extension, "(none)");
+    }
+
+    #[test]
+    fn test_scan_empty_dir_completes() {
+        let cfg = super::ScanConfig {
+            root_path: r"C:\Users\hansj\AppData\Local\Temp\drtest_empty".into(),
+            ..Default::default()
+        };
+        let cb: super::ScanProgressCallback = Box::new(|_, _, _, _| {});
+        let r = super::scan_directory_with_progress(cfg, cb);
+        assert!(
+            r.is_ok(),
+            "empty dir scan should return Ok, got error: {:?}",
+            r.as_ref().err()
+        );
+        let sr = r.unwrap();
+        eprintln!(
+            "nodes={} files={} dirs={}",
+            sr.arena.nodes.len(),
+            sr.stats.total_files,
+            sr.stats.total_dirs
+        );
+        assert!(sr.stats.total_files == 0 && sr.stats.total_dirs == 1);
+    }
+
+    #[test]
+    fn test_scan_nonexistent_path_completes() {
+        let cfg = super::ScanConfig {
+            root_path: r"C:\Users\hansj\.Trash".into(),
+            ..Default::default()
+        };
+        let cb: super::ScanProgressCallback = Box::new(|_, _, _, _| {});
+        let start = std::time::Instant::now();
+        let r = super::scan_directory_with_progress(cfg, cb);
+        eprintln!(
+            "nonexistent path: Ok={} err={:?} elapsed_ms={}",
+            r.is_ok(),
+            r.as_ref().err(),
+            start.elapsed().as_millis()
+        );
+        assert!(start.elapsed().as_secs() < 5, "scan hung on nonexistent path");
     }
 }
