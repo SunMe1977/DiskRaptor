@@ -77,28 +77,78 @@ jobs:
           cache: false
       - name: Add macOS universal targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - name: Build Tauri DMG (universal)
-        run: npx tauri build --bundles dmg --ci --target universal-apple-darwin
-      - name: Stage release assets
+      - name: Build Tauri app bundle (universal, unsigned)
+        run: npx tauri build --bundles app --ci --target universal-apple-darwin
+      - name: Setup code signing keychain
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
         shell: bash
         run: |
+          set -euo pipefail
+          echo "$MACOS_CERT_P12" | base64 --decode > /tmp/mas_certs.p12
+          security create-keychain -p ci /tmp/ci.keychain
+          security default-keychain -s /tmp/ci.keychain
+          security unlock-keychain -p ci /tmp/ci.keychain
+          security set-keychain-settings -t 3600 /tmp/ci.keychain
+          security import /tmp/mas_certs.p12 -P "$MACOS_CERT_PASSWORD" \
+            -A -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: \
+            -s -k ci /tmp/ci.keychain
+          security list-keychains -d user -s /tmp/ci.keychain
+          rm -f /tmp/mas_certs.p12
+          security find-identity -v -p codesigning /tmp/ci.keychain
+      - name: Codesign macOS app
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+          BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/DiskRaptor.app"
+          [ -d "$APP" ] || { echo "App bundle not found: $APP"; exit 1; }
+          xattr -cr "$APP" || true
+          plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$APP/Contents/Info.plist"
+          find "$APP/Contents" -type f -name "*.dylib" -print0 | \
+            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$SIGNING_IDENTITY" "{}" || true
+          find "$APP/Contents" -type d -name "*.framework" -print0 | \
+            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$SIGNING_IDENTITY" "{}" || true
+          codesign --force --options=runtime --entitlements installer/DiskRaptor.entitlements \
+            --sign "$SIGNING_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+      - name: Stage and create DMG
+        shell: bash
+        run: |
+          set -euo pipefail
           ver=$(node -p "require('./package.json').version")
-          mkdir -p release-assets
-          dmg_dir="src-tauri/target/universal-apple-darwin/release/bundle/dmg"
-          app_dir="src-tauri/target/universal-apple-darwin/release/bundle/macos"
-          if ls "$dmg_dir"/*.dmg >/dev/null 2>&1; then
-            cp "$dmg_dir"/*.dmg "release-assets/DiskRaptor-${ver}-macos-universal.dmg"
-          fi
-          if [ -d "$app_dir/DiskRaptor.app" ]; then
-            cp -R "$app_dir/DiskRaptor.app" "release-assets/DiskRaptor-${ver}-macos.app"
-          fi
+          APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/DiskRaptor.app"
+          mkdir -p release-assets dmg-staging
+          cp -R "$APP" "release-assets/DiskRaptor-${ver}-macos.app"
+          cp -R "$APP" "dmg-staging/DiskRaptor.app"
+          ln -s /Applications "dmg-staging/Applications"
+          hdiutil create -volname "DiskRaptor" -srcfolder dmg-staging -ov -format UDZO \
+            "release-assets/DiskRaptor-${ver}-macos-universal.dmg"
+          rm -rf dmg-staging
           ls -la release-assets
-          if [ ! -f "release-assets/DiskRaptor-${ver}-macos-universal.dmg" ] && [ ! -d "release-assets/DiskRaptor-${ver}-macos.app" ]; then
-            echo "No macOS bundle produced"
-            exit 1
-          fi
-      # macOS apps should be signed + notarized for Gatekeeper; that's a later
-      # step (needs a Developer ID cert). For now the unsigned build is shipped.
+      # Notarization requires a "Developer ID Application" certificate. The current
+      # MAS cert may be rejected; continue-on-error ships the signed DMG regardless.
+      - name: Notarize and staple
+        continue-on-error: true
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver=$(node -p "require('./package.json').version")
+          dmg="release-assets/DiskRaptor-${ver}-macos-universal.dmg"
+          app="release-assets/DiskRaptor-${ver}-macos.app"
+          xcrun notarytool submit "$dmg" \
+            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$dmg" "$app"
       - name: Deploy to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
