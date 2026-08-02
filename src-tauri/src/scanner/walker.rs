@@ -570,12 +570,14 @@ pub fn scan_directory_with_progress(
     progress: ScanProgressCallback,
 ) -> Result<ScanResult> {
     let root_path = config.root_path.clone();
-    // jwalk can hang forever on Windows junction-heavy roots like $Recycle.Bin
-    // (per-user SID junctions). walkdir treats junctions as non-directories and
-    // returns quickly, so route those roots through the simple scanner.
+    // The Windows $Recycle.Bin is a junction-heavy raw store of $R/$I files
+    // that can hold millions of SYSTEM-owned entries. Scanning it is either
+    // painfully slow or hangs, and the raw names are useless to the user.
+    // Return an immediate, empty result so the UI shows an empty tree + message
+    // instead of an endless "cancel" scan.
     #[cfg(target_os = "windows")]
     if root_path.contains("$Recycle.Bin") {
-        return scan_simple(&config, &progress, &root_path);
+        return empty_scan_result(&root_path);
     }
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         platform::scan(&config, &progress, &root_path)
@@ -601,6 +603,40 @@ pub fn scan_directory_with_progress(
             scan_simple(&config, &progress, &root_path)
         }
     }
+}
+
+/// Build a ScanResult containing only the root node (no files) — used for
+/// paths that can't be meaningfully walked (e.g. the Windows recycle bin).
+fn empty_scan_result(root_path: &str) -> Result<ScanResult> {
+    let mut arena = TreeNodeArena::with_estimated_capacity(root_path);
+    let root_name = std::path::Path::new(root_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| root_path.into());
+    arena.alloc(TreeNode {
+        name: root_name,
+        size: 0,
+        file_count: 0,
+        dir_count: 1,
+        node_type: NodeType::Directory,
+        parent: u32::MAX,
+        first_child: u32::MAX,
+        next_sibling: u32::MAX,
+        depth: 0,
+        chunk_id: 0,
+        mtime: 0,
+    });
+    Ok(ScanResult {
+        arena,
+        stats: ScanStats {
+            total_files: 0,
+            total_dirs: 0,
+            total_size: 0,
+            scan_time_ms: 0,
+            top_files: Vec::new(),
+            file_type_breakdown: Vec::new(),
+        },
+    })
 }
 
 #[cfg(test)]

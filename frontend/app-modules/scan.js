@@ -604,17 +604,19 @@
           progressElapsedValEl.textContent =
             (em < 10 ? "0" : "") + em + ":" + (es < 10 ? "0" : "") + es;
           const t = window.__ || function (s) { return s; };
-          document.querySelector(".status-bar").textContent = t(
-            "status.complete",
-          )
-            .replace(
-              "{files}",
-              lastFilesFound.toLocaleString(),
-            )
-            .replace(
-              "{dirs}",
-              lastDirsFound.toLocaleString(),
-            );
+          const isTrashPath =
+            /recycle/i.test(path) || /\$recycle\.bin/i.test(path);
+          document.querySelector(".status-bar").textContent = isTrashPath
+            ? t("trash.empty")
+            : t("status.complete")
+                .replace(
+                  "{files}",
+                  lastFilesFound.toLocaleString(),
+                )
+                .replace(
+                  "{dirs}",
+                  lastDirsFound.toLocaleString(),
+                );
           topFiles.render([], true);
         }
 

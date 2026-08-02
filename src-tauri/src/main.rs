@@ -35,10 +35,37 @@ struct ScanResultData {
     errors: Vec<String>,
 }
 
+// ── Duplicate scanner state ──
+
+struct DupState {
+    running: AtomicBool,
+    cancelled: AtomicBool,
+    phase: AtomicU64,
+    files_scanned: AtomicU64,
+    current_file: Mutex<String>,
+    groups: Mutex<Vec<serde_json::Value>>,
+    wasted_bytes: Mutex<u64>,
+}
+
+impl Default for DupState {
+    fn default() -> Self {
+        Self {
+            running: AtomicBool::new(false),
+            cancelled: AtomicBool::new(false),
+            phase: AtomicU64::new(0),
+            files_scanned: AtomicU64::new(0),
+            current_file: Mutex::new(String::new()),
+            groups: Mutex::new(Vec::new()),
+            wasted_bytes: Mutex::new(0),
+        }
+    }
+}
+
 // ── App managed state ──
 
 struct AppState {
     scan: ScanState,
+    dup: DupState,
     settings_path: Mutex<std::path::PathBuf>,
     #[allow(dead_code)] // used on Linux for pkexec caching
     smart_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, JsonResult)>>,
@@ -2107,6 +2134,150 @@ fn release_scan(state: State<AppState>) -> JsonResult {
     JsonResult::ok_empty()
 }
 
+// ── Duplicate file scanner ──
+
+/// Hash the first 1 MiB of a file (plus length) — cheap enough for thousands
+/// of files, accurate after the size pre-filter.
+fn hash_file_head(path: &std::path::Path) -> (u64, String) {
+    use std::io::Read;
+    let mut buf = vec![0u8; 1 << 20];
+    let mut n = 0usize;
+    if let Ok(mut f) = std::fs::File::open(path) {
+        n = f.read(&mut buf).unwrap_or(0);
+    }
+    buf.truncate(n);
+    (n as u64, format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&buf)))
+}
+
+#[tauri::command]
+fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
+    let st = app.state::<AppState>();
+    if st.dup.running.swap(true, Ordering::Acquire) {
+        return JsonResult::err("Duplicate scan already running");
+    }
+    st.dup.cancelled.store(false, Ordering::Release);
+    st.dup.phase.store(1, Ordering::Relaxed);
+    st.dup.files_scanned.store(0, Ordering::Relaxed);
+    *st.dup.current_file.lock().unwrap() = String::new();
+    *st.dup.groups.lock().unwrap() = Vec::new();
+    *st.dup.wasted_bytes.lock().unwrap() = 0;
+
+    let handle = app.clone();
+    std::thread::Builder::new().name("dup-scan".into()).spawn(move || {
+        let st = handle.state::<AppState>();
+        const FILE_CAP: u64 = 200_000;
+
+        // Phase 1: collect files grouped by size.
+        let mut by_size: std::collections::HashMap<u64, Vec<std::path::PathBuf>> =
+            std::collections::HashMap::new();
+        let mut scanned: u64 = 0;
+        for entry in walkdir::WalkDir::new(&path).follow_links(false) {
+            let e = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            if st.dup.cancelled.load(Ordering::Relaxed) {
+                break;
+            }
+            if !e.file_type().is_file() {
+                continue;
+            }
+            let meta = match std::fs::metadata(e.path()) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            scanned += 1;
+            st.dup.files_scanned.store(scanned, Ordering::Relaxed);
+            *st.dup.current_file.lock().unwrap() = e.path().to_string_lossy().to_string();
+            by_size.entry(meta.len()).or_default().push(e.path().to_path_buf());
+            if scanned >= FILE_CAP {
+                break;
+            }
+        }
+
+        // Phase 2: hash candidate groups (same size).
+        st.dup.phase.store(2, Ordering::Relaxed);
+        let mut by_hash: std::collections::HashMap<(u64, String), Vec<std::path::PathBuf>> =
+            std::collections::HashMap::new();
+        for group in by_size.into_values() {
+            if group.len() < 2 {
+                continue;
+            }
+            for p in group {
+                if st.dup.cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                scanned += 1;
+                st.dup.files_scanned.store(scanned, Ordering::Relaxed);
+                *st.dup.current_file.lock().unwrap() = p.to_string_lossy().to_string();
+                let (len, h) = hash_file_head(&p);
+                by_hash.entry((len, h)).or_default().push(p);
+            }
+        }
+
+        // Phase 3: build result groups.
+        st.dup.phase.store(3, Ordering::Relaxed);
+        let mut groups = Vec::new();
+        let mut wasted: u64 = 0;
+        for ((size, _), files) in by_hash {
+            if files.len() < 2 {
+                continue;
+            }
+            let wasted_g = size * (files.len() as u64 - 1);
+            wasted += wasted_g;
+            let paths: Vec<String> = files
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect();
+            groups.push(serde_json::json!({
+                "count": files.len(),
+                "size": size,
+                "sizeHuman": format_size(size),
+                "wasted": wasted_g,
+                "wastedHuman": format_size(wasted_g),
+                "files": paths,
+            }));
+        }
+        groups.sort_by(|a, b| {
+            b["wasted"].as_u64().unwrap_or(0).cmp(&a["wasted"].as_u64().unwrap_or(0))
+        });
+        *st.dup.groups.lock().unwrap() = groups;
+        *st.dup.wasted_bytes.lock().unwrap() = wasted;
+        st.dup.running.store(false, Ordering::Release);
+    }).ok();
+
+    JsonResult::ok_empty()
+}
+
+#[tauri::command]
+fn get_dup_stats(state: State<AppState>) -> JsonResult {
+    let groups = state.dup.groups.lock().unwrap();
+    JsonResult::ok(serde_json::json!({
+        "phase": state.dup.phase.load(Ordering::Relaxed),
+        "filesScanned": state.dup.files_scanned.load(Ordering::Relaxed),
+        "groups": groups.len(),
+        "wastedBytes": *state.dup.wasted_bytes.lock().unwrap(),
+        "currentFile": state.dup.current_file.lock().unwrap().clone(),
+    }))
+}
+
+#[tauri::command]
+fn get_dup_result(state: State<AppState>) -> JsonResult {
+    let groups = state.dup.groups.lock().unwrap().clone();
+    JsonResult::ok(serde_json::json!({
+        "groups": groups,
+        "wastedBytes": *state.dup.wasted_bytes.lock().unwrap(),
+        "filesScanned": state.dup.files_scanned.load(Ordering::Relaxed),
+        "cancelled": state.dup.cancelled.load(Ordering::Relaxed),
+    }))
+}
+
+#[tauri::command]
+fn cancel_dup_scan(state: State<AppState>) -> JsonResult {
+    state.dup.cancelled.store(true, Ordering::Release);
+    JsonResult::ok_empty()
+}
+
 #[tauri::command]
 fn get_stats(state: State<AppState>) -> JsonResult {
     let g = state.scan.result.lock().unwrap();
@@ -2454,6 +2625,7 @@ fn main() {
                 errors: Mutex::new(Vec::new()),
                 live_entries: Mutex::new(None),
             },
+            dup: DupState::default(),
             settings_path: Mutex::new(settings_path),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
         })
@@ -2507,6 +2679,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             check_for_updates, open_url,
             start_scan, get_scan_progress, get_scan_result,
             get_chunk, cancel_scan, release_scan, get_stats,
+            find_duplicates, get_dup_stats, get_dup_result, cancel_dup_scan,
             save_settings, load_settings,
             list_disks, get_smart_status, exit_app,
             list_browser_data, clean_browser, get_browser_icon,

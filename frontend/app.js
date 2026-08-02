@@ -512,9 +512,11 @@
     document.body.appendChild(btnDup);
 
     btnDup.addEventListener("click", function () {
-      const path = state.currentStats
-        ? state.currentStats.scanPath || ""
-        : "";
+      const scanPathInput = document.getElementById("scan-path");
+      const path =
+        (scanPathInput && scanPathInput.value.trim()) ||
+        (state.currentStats && state.currentStats.scanPath) ||
+        "";
       if (!path) {
         window.__TAURI__
           .invoke("get_home_dir")

@@ -109,28 +109,16 @@
         });
       } else if (action === "scan-downloads" || action === "scan-trash") {
         const isTrash = action === "scan-trash";
-        const isWin =
-          /win/i.test(navigator.platform || "") ||
-          /Windows/i.test(navigator.userAgent || "");
-        const resolveDir = isTrash
+        const getDir = isTrash
           ? window.__TAURI__.invoke("get_trash_path")
-          : window.__TAURI__.invoke("get_home_dir");
-        resolveDir
-          .then(function (p) {
-            const dir =
-              typeof p === "string" ? p : (p?.data || "");
+          : window.__TAURI__.invoke("get_home_dir").then(function (home) {
+              const h =
+                typeof home === "string" ? home : (home?.data || "");
+              return h ? h.replace(/[\\/]+$/, "") + "/Downloads" : "";
+            });
+        getDir
+          .then(function (dir) {
             if (!dir) return;
-            if (isTrash && isWin) {
-              // The Windows recycle bin is a raw $Recycle.Bin full of SID
-              // junctions and SYSTEM-owned files — it can't be scanned into a
-              // useful tree and isn't meant for the Recovery UI here. Present
-              // it as empty instead of running a doomed scan or popup.
-              scanPath.value = dir;
-              resetAllState(
-                (window.__ || function (s) { return s; })("trash.empty"),
-              );
-              return;
-            }
             scanPath.value = dir;
             btnScan.click();
           })
@@ -873,12 +861,9 @@
           const opt = document.createElement("option");
           opt.value = String(d.id);
           const sizeStr = fmtBytes(typeof d.size === "number" ? d.size : 0);
-          const parts = [];
-          if (d.serial) parts.push(d.serial);
-          if (d.model) parts.push(d.model);
           opt.textContent =
-            (d.name || "Disk " + d.id) + (sizeStr ? " \u2014 " + sizeStr : "") +
-            (parts.length ? " \u00B7 " + parts.join(" \u00B7 ") : "");
+            (d.name || d.model || "Disk " + d.id) +
+            (sizeStr ? " \u2014 " + sizeStr : "");
           select.appendChild(opt);
         });
         select.value = String(disks[0].id);
