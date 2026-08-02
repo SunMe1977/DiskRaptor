@@ -207,6 +207,18 @@ fn get_home_dir() -> JsonResult {
 }
 
 #[tauri::command]
+fn pick_directory(app: tauri::AppHandle) -> JsonResult {
+    use tauri_plugin_dialog::DialogExt;
+    match app.dialog().file().blocking_pick_folder() {
+        Some(fp) => match fp.into_path() {
+            Ok(p) => JsonResult::ok(serde_json::Value::String(p.to_string_lossy().to_string())),
+            Err(_) => JsonResult::err("Invalid selection"),
+        },
+        None => JsonResult::err("No folder selected"),
+    }
+}
+
+#[tauri::command]
 fn get_trash_path() -> JsonResult {
     let path = {
         #[cfg(target_os = "macos")]
@@ -2344,7 +2356,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
         .invoke_handler(tauri::generate_handler![
             delete_path, delete_permanent,
             open_explorer, open_terminal, get_icon,
-            get_home_dir, get_trash_path, list_drives, get_volume_stats, get_dir_stats,
+            get_home_dir, pick_directory, get_trash_path, list_drives, get_volume_stats, get_dir_stats,
             list_downloads_candidates,
             get_memory_info, get_process_memory, get_app_version, get_app_data_dir, get_app_info,
             empty_trash, list_trash, restore_trash,

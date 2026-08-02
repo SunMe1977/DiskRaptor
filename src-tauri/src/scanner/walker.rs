@@ -405,24 +405,6 @@ pub fn scan_simple(
     root_path: &str,
 ) -> Result<ScanResult> {
     use walkdir::WalkDir;
-
-    // Windows: reparse points (junctions) can loop or pull in huge trees
-    // (e.g. $Recycle.Bin SID junctions). Never descend into them.
-    fn is_reparse_point(path: &Path) -> bool {
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-            std::fs::symlink_metadata(path)
-                .map(|m| (m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
-                .unwrap_or(false)
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = path;
-            false
-        }
-    }
     let start = Instant::now();
     let skip_dirs = Arc::new(config.skip_dirs.clone());
     let top_files = Arc::new(TopFilesAccum::default());
@@ -454,13 +436,17 @@ pub fn scan_simple(
     let mut bytes_found: u64 = 0;
     let mut last_progress = Instant::now();
     let mut iter_count: u64 = 0;
+    // Cap the fallback scanner (used for $Recycle.Bin etc.): a recycle bin can
+    // hold millions of deleted files; a tree that big is useless and heavy.
+    let node_cap = {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_memory();
+        let avail = sys.available_memory().max(256 * 1024 * 1024);
+        (avail / 512).clamp(250_000, 1_000_000) as usize
+    };
 
-    for entry_result in WalkDir::new(root_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|e| !is_reparse_point(e.path()))
-    {
-        if arena.nodes.len() > 20_000_000 {
+    for entry_result in WalkDir::new(root_path).follow_links(false).into_iter() {
+        if arena.nodes.len() > node_cap {
             break;
         }
         iter_count += 1;
