@@ -28,7 +28,30 @@
 
     // Scan
     btnScan.addEventListener("click", async function () {
-      if (state.isScanning) return;
+      if (state.isScanning) {
+        // A scan is already running (e.g. user switched to another folder or
+        // trash while a previous scan was in flight). Cancel it first, then
+        // wait for the old scan loop's finally to release the UI, so the new
+        // path actually scans instead of silently doing nothing.
+        try {
+          await window.__TAURI__.invoke("cancel_scan", {});
+        } catch (e) {}
+        for (let ci = 0; ci < 25; ci++) {
+          await sleep(200);
+          try {
+            const sp = await window.__TAURI__.invoke("get_scan_progress", {
+              scanId: state.currentScanId,
+            });
+            if (sp && !sp.is_running) break;
+          } catch (e) {
+            break;
+          }
+        }
+        const cancelDeadline = Date.now() + 8000;
+        while (state.isScanning && Date.now() < cancelDeadline) {
+          await sleep(100);
+        }
+      }
 
       let path = scanPath.value.trim().replace(/^["']+|["']+$/g, "");
       if (!path) {
@@ -571,10 +594,8 @@
             file_type_breakdown: [],
           };
           state.currentStats = fbStats;
-          if (fbStats.total_files > 0) {
-            statsPanel.render(fbStats);
-            diagram.setData(fbStats);
-          }
+          statsPanel.render(fbStats);
+          diagram.setData(fbStats);
           const totalSecs = Math.floor(
             (Date.now() - pollStartTime) / 1000,
           );
@@ -986,6 +1007,18 @@
             }
           }
         } else {
+          const fbStats = {
+            total_files: state.lastFilesFound || 0,
+            total_dirs: state.lastDirsFound || 0,
+            total_size: 0,
+            scan_time_ms: 0,
+            top_files: [],
+            file_type_breakdown: [],
+          };
+          state.currentStats = fbStats;
+          statsPanel.render(fbStats);
+          diagram.setData(fbStats);
+          topFiles.render([], true);
           document.querySelector(".status-bar").textContent = (
             window.__ || function (s) { return s; }
           )("status.scan_cancelled")
@@ -996,6 +1029,15 @@
         }
       } catch (e) {
         console.warn("cancel partial error:", e);
+        try {
+          const emptyStats = {
+            total_files: 0, total_dirs: 0, total_size: 0,
+            scan_time_ms: 0, top_files: [], file_type_breakdown: [],
+          };
+          statsPanel.render(emptyStats);
+          diagram.setData(emptyStats);
+          topFiles.render([], true);
+        } catch (e2) {}
         document.querySelector(".status-bar").textContent =
           "Scan cancelled - " +
           (state.lastFilesFound || 0).toLocaleString() +

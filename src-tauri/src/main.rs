@@ -207,6 +207,27 @@ fn get_home_dir() -> JsonResult {
 }
 
 #[tauri::command]
+fn get_trash_path() -> JsonResult {
+    let path = {
+        #[cfg(target_os = "macos")]
+        { dirs::home_dir().map(|h| h.join(".Trash")) }
+        #[cfg(target_os = "linux")]
+        { dirs::home_dir().map(|h| h.join(".local/share/Trash/files")) }
+        #[cfg(target_os = "windows")]
+        {
+            let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+            Some(std::path::PathBuf::from(format!("{}\\$Recycle.Bin", system_drive)))
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        { dirs::home_dir().map(|h| h.join(".Trash")) }
+    };
+    match path {
+        Some(p) => JsonResult::ok(serde_json::Value::String(p.to_string_lossy().to_string())),
+        None => JsonResult::err("No home directory"),
+    }
+}
+
+#[tauri::command]
 fn list_drives() -> JsonResult {
     let disks_list = sysinfo::Disks::new_with_refreshed_list();
     let disks: Vec<serde_json::Value> = disks_list.list().iter().map(|d| {
@@ -2269,7 +2290,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
         .invoke_handler(tauri::generate_handler![
             delete_path, delete_permanent,
             open_explorer, open_terminal, get_icon,
-            get_home_dir, list_drives, get_volume_stats, get_dir_stats,
+            get_home_dir, get_trash_path, list_drives, get_volume_stats, get_dir_stats,
             list_downloads_candidates,
             get_memory_info, get_process_memory, get_app_version, get_app_data_dir, get_app_info,
             empty_trash, list_trash, restore_trash,

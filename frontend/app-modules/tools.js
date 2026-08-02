@@ -108,14 +108,14 @@
           btnScan.click();
         });
       } else if (action === "scan-downloads" || action === "scan-trash") {
-        window.__TAURI__
-          .invoke("get_home_dir")
-          .then(function (home) {
-            const p =
-              typeof home === "string" ? home : (home?.data || "");
-            const sub =
-              action === "scan-downloads" ? "Downloads" : ".Trash";
-            const dir = p ? p.replace(/[\\/]+$/, "") + "/" + sub : "";
+        const isTrash = action === "scan-trash";
+        const resolveDir = isTrash
+          ? window.__TAURI__.invoke("get_trash_path")
+          : window.__TAURI__.invoke("get_home_dir");
+        resolveDir
+          .then(function (p) {
+            const dir =
+              typeof p === "string" ? p : (p?.data || "");
             if (!dir) return;
             window.__TAURI__
               .invoke("get_dir_stats", { path: dir })
