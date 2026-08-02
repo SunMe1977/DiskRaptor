@@ -58,3 +58,54 @@ jobs:
           gh release create $tag --title "DiskRaptor $tag" --notes "" 2>$null
           gh release upload $tag "release-assets/*" --clobber
           gh release view $tag --json assets --jq '[.assets[] | {name, size}]'
+
+  macos-universal:
+    name: macOS Universal (Tauri)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install JS dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: false
+      - name: Add macOS universal targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build Tauri DMG (universal)
+        run: npx tauri build --bundles dmg --ci --target universal-apple-darwin
+      - name: Stage release assets
+        shell: bash
+        run: |
+          ver=$(node -p "require('./package.json').version")
+          mkdir -p release-assets
+          dmg_dir="src-tauri/target/universal-apple-darwin/release/bundle/dmg"
+          app_dir="src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          if ls "$dmg_dir"/*.dmg >/dev/null 2>&1; then
+            cp "$dmg_dir"/*.dmg "release-assets/DiskRaptor-${ver}-macos-universal.dmg"
+          fi
+          if [ -d "$app_dir/DiskRaptor.app" ]; then
+            cp -R "$app_dir/DiskRaptor.app" "release-assets/DiskRaptor-${ver}-macos.app"
+          fi
+          ls -la release-assets
+          if [ ! -f "release-assets/DiskRaptor-${ver}-macos-universal.dmg" ] && [ ! -d "release-assets/DiskRaptor-${ver}-macos.app" ]; then
+            echo "No macOS bundle produced"
+            exit 1
+          fi
+      # macOS apps should be signed + notarized for Gatekeeper; that's a later
+      # step (needs a Developer ID cert). For now the unsigned build is shipped.
+      - name: Deploy to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
+          gh release create "$tag" --title "DiskRaptor $tag" --notes "" 2>/dev/null || true
+          gh release upload "$tag" "release-assets/*" --clobber
+          gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
