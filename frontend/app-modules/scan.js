@@ -274,6 +274,48 @@
       speedSamples.length = 0;
       let unlisten = null;
 
+      let lastLiveRender = 0;
+
+      function escLive(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function renderLiveTree(entries) {
+        const now = Date.now();
+        if (now - lastLiveRender < 400) return;
+        lastLiveRender = now;
+        const scrollEl = document.getElementById("tree-scroll");
+        let live = document.getElementById("live-tree");
+        if (!live) {
+          live = document.createElement("div");
+          live.id = "live-tree";
+          live.style.cssText =
+            "position:absolute;inset:0;overflow-y:auto;background:var(--bg-primary);z-index:5;padding:8px 12px;font-size:12px;";
+          if (scrollEl) scrollEl.appendChild(live);
+        }
+        const arr = Array.isArray(entries) ? entries : [];
+        let html =
+          '<div style="color:var(--text-muted);font-size:11px;margin-bottom:6px;">\u23F3 Live scan\u2026 ' +
+          arr.length +
+          ' items so far</div>';
+        const shown = arr.slice(-500);
+        for (let i = shown.length - 1; i >= 0; i--) {
+          html +=
+            '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\uD83D\uDCC4 <span>' +
+            escLive(shown[i]) +
+            "</span></div>";
+        }
+        live.innerHTML = html;
+      }
+
+      function hideLiveTree() {
+        const live = document.getElementById("live-tree");
+        if (live) live.remove();
+      }
+
       try {
         const initScan = await window.__TAURI__.invoke("start_scan", {
           path: path,
@@ -297,49 +339,8 @@
         let emaRate = 0;
         let uiRaf = null;
         let pendingUi = null;
-        let lastLiveRender = 0;
-
-        function escLive(s) {
-          return String(s)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-        }
-
-        function renderLiveTree(entries) {
-          const now = Date.now();
-          if (now - lastLiveRender < 400) return;
-          lastLiveRender = now;
-          const scrollEl = document.getElementById("tree-scroll");
-          let live = document.getElementById("live-tree");
-          if (!live) {
-            live = document.createElement("div");
-            live.id = "live-tree";
-            live.style.cssText =
-              "position:absolute;inset:0;overflow-y:auto;background:var(--bg-primary);z-index:5;padding:8px 12px;font-size:12px;";
-            if (scrollEl) scrollEl.appendChild(live);
-          }
-          const arr = Array.isArray(entries) ? entries : [];
-          let html =
-            '<div style="color:var(--text-muted);font-size:11px;margin-bottom:6px;">\u23F3 Live scan\u2026 ' +
-            arr.length +
-            ' items so far</div>';
-          const shown = arr.slice(-500);
-          for (let i = shown.length - 1; i >= 0; i--) {
-            html +=
-              '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\uD83D\uDCC4 <span>' +
-              escLive(shown[i]) +
-              "</span></div>";
-          }
-          live.innerHTML = html;
-        }
-
-        function hideLiveTree() {
-          const live = document.getElementById("live-tree");
-          if (live) live.remove();
-        }
-
         let _lastProgressRender = 0;
+
         function onProgress(p) {
           if (scanDone) return;
           if (!p) return;
