@@ -112,15 +112,6 @@
         const isWin =
           /win/i.test(navigator.platform || "") ||
           /Windows/i.test(navigator.userAgent || "");
-        if (isTrash && isWin) {
-          // The Windows recycle bin is a raw $Recycle.Bin full of SID junctions
-          // and SYSTEM-owned files — the tree scanner can't produce a useful
-          // view and can hang on millions of access-denied entries. Show the
-          // friendly Trash Recovery list instead.
-          if (!window.__trashRecovery) window.__trashRecovery = new TrashRecovery();
-          window.__trashRecovery.open();
-          return;
-        }
         const resolveDir = isTrash
           ? window.__TAURI__.invoke("get_trash_path")
           : window.__TAURI__.invoke("get_home_dir");
@@ -129,29 +120,19 @@
             const dir =
               typeof p === "string" ? p : (p?.data || "");
             if (!dir) return;
-            window.__TAURI__
-              .invoke("get_dir_stats", { path: dir })
-              .then(function (res) {
-                const st = res && res.data ? res.data : (res || {});
-                const sizeStr = fmtBytes(st.total_bytes);
-                const t0 = window.__ || function (s) { return s; };
-                const label =
-                  action === "scan-downloads" ? "Downloads" : "Trash";
-                const preview =
-                  t0("tools.scan_preview").replace("{folder}", label) +
-                  (sizeStr ? "\n" + t0("tools.preview_size").replace("{size}", sizeStr) : "") +
-                  (st.files != null ? "\n" + t0("tools.preview_files").replace("{n}", st.files) : "") +
-                  (st.dirs != null ? "\n" + t0("tools.preview_dirs").replace("{n}", st.dirs) : "");
-                window.confirmDialog(preview).then(function (ok) {
-                  if (!ok) return;
-                  scanPath.value = dir;
-                  btnScan.click();
-                });
-              })
-              .catch(function () {
-                scanPath.value = dir;
-                btnScan.click();
-              });
+            if (isTrash && isWin) {
+              // The Windows recycle bin is a raw $Recycle.Bin full of SID
+              // junctions and SYSTEM-owned files — it can't be scanned into a
+              // useful tree and isn't meant for the Recovery UI here. Present
+              // it as empty instead of running a doomed scan or popup.
+              scanPath.value = dir;
+              resetAllState(
+                (window.__ || function (s) { return s; })("trash.empty"),
+              );
+              return;
+            }
+            scanPath.value = dir;
+            btnScan.click();
           })
           .catch(function () {});
       } else if (action === "clear-scan" || action === "reset-view") {
@@ -543,10 +524,6 @@
         openSmartTools();
       } else if (action === "browser-tools") {
         openBrowserTools();
-      } else if (action === "trash-recovery") {
-        if (!window.__trashRecovery)
-          window.__trashRecovery = new TrashRecovery();
-        window.__trashRecovery.open();
       } else if (action === "trash") {
         const t = window.__ || function (s) { return s; };
         let trashInfo = "";
