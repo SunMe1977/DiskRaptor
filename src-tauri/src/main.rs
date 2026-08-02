@@ -1562,6 +1562,27 @@ fn list_trash() -> JsonResult {
 
 #[cfg(target_os = "windows")]
 fn list_trash_windows() -> Vec<serde_json::Value> {
+    let mut items = list_trash_windows_shell();
+    // The shell only shows *registered* trash items (those with $I metadata).
+    // Deleted data whose $I file is missing/corrupt is invisible to it — the
+    // recycle bin folder can hold gigabytes while Explorer reports it empty.
+    // Fall back to (and merge in) the physical $R files/folders.
+    let mut seen: std::collections::HashSet<String> = items
+        .iter()
+        .filter_map(|i| i.get("path").and_then(|p| p.as_str()).map(String::from))
+        .collect();
+    for it in list_trash_windows_fs() {
+        let p = it.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if !p.is_empty() && !seen.insert(p.clone()) {
+            continue;
+        }
+        items.push(it);
+    }
+    items
+}
+
+#[cfg(target_os = "windows")]
+fn list_trash_windows_shell() -> Vec<serde_json::Value> {
     let script = r#"
 $shell = New-Object -ComObject Shell.Application
 $rb = $shell.Namespace(10)
@@ -1578,6 +1599,46 @@ foreach ($it in $rb.Items()) {
         is_dir = [bool]$it.IsFolder
         deleted_at = [string]$deleted
         original_path = [string]$orig
+    }
+    $n++
+}
+$out | ConvertTo-Json -Depth 3 -Compress
+"#;
+    if let Some(json_str) = win_powershell(script) {
+        let trimmed = json_str.trim();
+        if trimmed.is_empty() || trimmed == "[]" {
+            return Vec::new();
+        }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            match v {
+                serde_json::Value::Array(arr) => return arr,
+                other => return vec![other],
+            }
+        }
+    }
+    Vec::new()
+}
+
+#[cfg(target_os = "windows")]
+fn list_trash_windows_fs() -> Vec<serde_json::Value> {
+    // Enumerate the physical contents of the current user's recycle-bin folder.
+    // Only the top level is listed (a deleted folder with millions of files
+    // shows up as a single item), so this is fast even for huge recycle bins.
+    let script = r#"
+$ErrorActionPreference = "SilentlyContinue"
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$bin = "$env:SystemDrive\`$Recycle.Bin\$sid"
+$out = @()
+$n = 0
+foreach ($it in Get-ChildItem $bin -Force) {
+    if ($n -ge 2000) { break }
+    $out += [pscustomobject]@{
+        name = [string]$it.Name
+        path = [string]$it.FullName
+        size = if ($it.PSIsContainer) { 0 } else { [long]$it.Length }
+        is_dir = [bool]$it.PSIsContainer
+        deleted_at = ""
+        original_path = ""
     }
     $n++
 }
