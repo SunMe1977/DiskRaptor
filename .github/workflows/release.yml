@@ -189,9 +189,28 @@ jobs:
           cache: false
       - name: Add macOS universal targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      # Upload to Apple only once per version. Re-pushing an existing tag (e.g.
+      # to ship a build fix) must NOT submit the same version to App Store
+      # Connect again — unless it was never uploaded (no marker on the release).
+      - name: Check if version was already uploaded to Apple
+        id: version_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          if gh release view "$tag" >/dev/null 2>&1 && \
+             gh release view "$tag" --json assets --jq '[.assets[].name] | any(. == ".apple-uploaded")' 2>/dev/null | grep -q true; then
+            echo "Version $tag already uploaded to App Store Connect — skipping"
+            echo "SKIP_MAS=true" >> "$GITHUB_ENV"
+          else
+            echo "Version $tag not yet uploaded to Apple — MAS upload will run"
+          fi
       - name: Build MAS app (store feature, universal)
+        if: env.SKIP_MAS != 'true'
         run: npx tauri build --bundles app --ci --features store --target universal-apple-darwin
       - name: Setup code signing keychain
+        if: env.SKIP_MAS != 'true'
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -214,6 +233,7 @@ jobs:
           rm -f /tmp/mas_certs.p12
           security find-identity -v -p codesigning /tmp/mas-ci.keychain
       - name: Prepare MAS bundle (entitlements + provisioning profile)
+        if: env.SKIP_MAS != 'true'
         env:
           BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
           MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
@@ -243,6 +263,7 @@ jobs:
             echo "WARNING: MAS_PROVISIONING_PROFILE not set - App Review may reject"
           fi
       - name: Codesign MAS app
+        if: env.SKIP_MAS != 'true'
         env:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
         shell: bash
@@ -270,6 +291,7 @@ jobs:
             --sign "$MAS_IDENTITY" "$APP_DST"
           codesign --verify --deep --strict --verbose=2 "$APP_DST"
       - name: Create MAS PKG
+        if: env.SKIP_MAS != 'true'
         env:
           BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
         shell: bash
@@ -291,6 +313,7 @@ jobs:
           fi
           ls -lh "$pkg"
       - name: Upload to App Store Connect
+        if: env.SKIP_MAS != 'true'
         continue-on-error: true
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -314,6 +337,9 @@ jobs:
             --apiIssuer "$APPLE_API_ISSUER" \
             --output-format json
           echo "Upload submitted. Check status in App Store Connect -> TestFlight."
+          # Mark this version as uploaded so later re-runs of the same tag skip it.
+          tag="${{ github.ref_name }}"
+          echo "uploaded" | gh release upload "$tag" .apple-uploaded --clobber || true
 
   linux-universal:
     name: Linux (AppImage + DEB + RPM)
