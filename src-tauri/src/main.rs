@@ -1,16 +1,24 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+﻿#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use diskraptor_scanner::scanner;
-use diskraptor_scanner::scanner::tree::TreeChunk;
+use diskraptor_scanner::scanner::tree::{format_size, TreeChunk};
 use diskraptor_scanner::streaming::chunker::CHUNK_SIZE;
 
+mod browser;
+mod menu;
+mod smart;
+#[cfg(feature = "test-server")]
+mod test_server;
+mod trash;
+
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Instant;
 use tauri::{Emitter, Manager, State};
 use serde::Serialize;
 
-// ── Scanner state ──
+// â”€â”€ Scanner state â”€â”€
 
 #[allow(dead_code)]
 struct ScanState {
@@ -24,7 +32,7 @@ struct ScanState {
     cancelled: AtomicBool,
     cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
     errors: Mutex<Vec<String>>,
-    live_entries: Mutex<Option<std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>>>,
+    live_entries: Mutex<Option<std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>>>,
 }
 
 #[allow(dead_code)]
@@ -35,7 +43,7 @@ struct ScanResultData {
     errors: Vec<String>,
 }
 
-// ── Duplicate scanner state ──
+// â”€â”€ Duplicate scanner state â”€â”€
 
 struct DupState {
     running: AtomicBool,
@@ -61,20 +69,22 @@ impl Default for DupState {
     }
 }
 
-// ── App managed state ──
+// â”€â”€ App managed state â”€â”€
 
-struct AppState {
+pub(crate) struct AppState {
     scan: ScanState,
     dup: DupState,
     settings_path: Mutex<std::path::PathBuf>,
+    /// Monotonic scan id counter so `start_scan` can hand back a real `scan_id`.
+    scan_counter: AtomicU64,
     #[allow(dead_code)] // used on Linux for pkexec caching
-    smart_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, JsonResult)>>,
+    pub(crate) smart_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, JsonResult)>>,
 }
 
-// ── Helper types ──
+// â”€â”€ Helper types â”€â”€
 
 #[derive(Serialize)]
-struct JsonResult {
+pub(crate) struct JsonResult {
     success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<serde_json::Value>,
@@ -98,7 +108,7 @@ impl JsonResult {
     }
 }
 
-// ── File Operations ──
+// â”€â”€ File Operations â”€â”€
 
 /// Reject dangerous delete targets (filesystem roots, home dir, drive roots).
 fn sanitize_delete_path(path: &str) -> Result<std::path::PathBuf, String> {
@@ -156,7 +166,7 @@ fn delete_path(path: String) -> JsonResult {
         Ok(p) => p.to_string_lossy().to_string(),
         Err(e) => return JsonResult::err(e),
     };
-    if trash::delete(&path).is_ok() {
+    if ::trash::delete(&path).is_ok() {
         return JsonResult::ok_empty();
     }
     #[cfg(target_os = "macos")]
@@ -260,11 +270,289 @@ fn open_terminal(path: String) -> JsonResult {
 }
 
 #[tauri::command]
-fn get_icon(_path: String, _is_dir: bool) -> JsonResult {
-    JsonResult::ok(serde_json::json!(":file:"))
+fn open_properties(path: String) -> JsonResult {
+    let path = match validate_system_path(&path) {
+        Ok(p) => p,
+        Err(e) => return JsonResult::err(e),
+    };
+    let path_str = path.to_string_lossy().to_string();
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::{PCWSTR, w};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let wide: Vec<u16> = path_str.encode_utf16().chain(std::iter::once(0)).collect();
+        let result = unsafe {
+            ShellExecuteW(
+                None,
+                w!("properties"),
+                PCWSTR(wide.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL.0 as i32,
+            )
+        };
+        // ShellExecute returns a value > 32 on success.
+        if result.0 as usize <= 32 {
+            // Fall back to revealing the item in Explorer.
+            let _ = std::process::Command::new("explorer").args(["/select,", &path_str]).status();
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if in_mac_sandbox() {
+            return JsonResult::err("Show Info is not available in the sandboxed build.");
+        }
+        let _ = std::process::Command::new("open").args(["-R", &path_str]).status();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let parent = std::path::Path::new(&path_str).parent().and_then(|p| p.to_str()).unwrap_or(&path_str);
+        let _ = std::process::Command::new("xdg-open").args([parent]).status();
+    }
+    JsonResult::ok_empty()
 }
 
-// ── System Operations ──
+#[tauri::command]
+fn get_icon(path: String, is_dir: bool) -> JsonResult {
+    #[cfg(target_os = "windows")]
+    {
+        // The frontend sends an extension key (e.g. "exe", "pdf", "__folder__"),
+        // so probe the shell icon for that file type. Empty string â†’ frontend
+        // falls back to its emoji icons.
+        let key = path.trim();
+        let (probe, attrs) = if is_dir {
+            ("folder".to_string(), 0x10) // FILE_ATTRIBUTE_DIRECTORY
+        } else if key.is_empty() {
+            ("file.unk".to_string(), 0x80) // FILE_ATTRIBUTE_NORMAL
+        } else {
+            // Use the key as extension (frontend already strips the dot).
+            (format!("probe.{}", key), 0x80)
+        };
+        match windows_icon_bytes(&probe, attrs) {
+            Some(rgba) => JsonResult::ok(serde_json::json!(base64_encode(&rgba))),
+            None => JsonResult::ok(serde_json::json!("")),
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (path, is_dir);
+        JsonResult::ok(serde_json::json!(""))
+    }
+}
+
+/// Render a shell icon handle into 16×16 RGBA bytes (top-down), as consumed by
+/// the frontend IconCache canvas.
+#[cfg(target_os = "windows")]
+pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option<Vec<u8>> {
+    use std::ffi::c_void;
+    use std::mem::size_of;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Graphics::Gdi::{
+        BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DeleteObject,
+        DIB_RGB_COLORS, HBRUSH, HGDIOBJ, SelectObject,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx};
+
+    const SIZE: i32 = 16;
+    if hicon.0 == 0 {
+        return None;
+    }
+    let mut bits: *mut c_void = std::ptr::null_mut();
+    let bmi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: SIZE,
+            biHeight: -SIZE, // top-down rows → straight RGBA order
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: 0, // BI_RGB
+            ..Default::default()
+        },
+        bmiColors: [Default::default()],
+    };
+
+    let dc = unsafe { CreateCompatibleDC(None) };
+    let hbitmap = unsafe { CreateDIBSection(dc, &bmi, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0) };
+    if hbitmap.is_err() || bits.is_null() {
+        return None;
+    }
+    let hbitmap = hbitmap.unwrap();
+    let _old = unsafe { SelectObject(dc, hbitmap) };
+    unsafe {
+        DrawIconEx(
+            dc,
+            0,
+            0,
+            hicon,
+            SIZE,
+            SIZE,
+            0,
+            HBRUSH::default(),
+            DI_NORMAL,
+        )
+    };
+    let mut bytes: Vec<u8> = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    let src = bits as *const u8;
+    unsafe {
+        // 32bpp DIBs store pixels as BGRA; the frontend canvas expects RGBA.
+        for px in 0..(SIZE * SIZE) as usize {
+            let off = px * 4;
+            let (b, r) = (*src.add(off), *src.add(off + 2));
+            bytes.push(r);
+            bytes.push(*src.add(off + 1));
+            bytes.push(b);
+            bytes.push(*src.add(off + 3));
+        }
+    }
+    unsafe {
+        let _ = DeleteObject(HGDIOBJ(hbitmap.0));
+    }
+    unsafe {
+        let _ = DestroyIcon(hicon);
+    }
+    Some(bytes)
+}
+
+/// Get the shell icon handle for a file type (or a real path) as RGBA bytes.
+#[cfg(target_os = "windows")]
+fn windows_icon_bytes(probe: &str, attributes: u32) -> Option<Vec<u8>> {
+    use std::mem::size_of;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
+    use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON, SHGFI_USEFILEATTRIBUTES};
+
+    let mut shfi = SHFILEINFOW::default();
+    let wide: Vec<u16> = probe.encode_utf16().chain(std::iter::once(0)).collect();
+    let flags = SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES;
+    let ret = unsafe {
+        SHGetFileInfoW(
+            PCWSTR(wide.as_ptr()),
+            FILE_FLAGS_AND_ATTRIBUTES(attributes),
+            &mut shfi,
+            size_of::<SHFILEINFOW>() as u32,
+            flags,
+        )
+    };
+    if ret == 0 || shfi.hIcon.0 == 0 {
+        return None;
+    }
+    hicon_to_rgba(shfi.hIcon)
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
+        out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
+        out.push(if chunk.len() > 1 { ALPHABET[((n >> 6) & 0x3f) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { ALPHABET[(n & 0x3f) as usize] as char } else { '=' });
+    }
+    out
+}
+
+/// Minimal PNG encoder (RGBA, 8-bit, no interlace). Uses stored (uncompressed)
+/// deflate blocks so no compression crate is needed — fine for 16×16 icons.
+fn png_encode_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc: u32 = 0xFFFF_FFFF;
+        for &b in data {
+            crc ^= b as u32;
+            for _ in 0..8 {
+                let mask = (crc & 1).wrapping_neg();
+                crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+            }
+        }
+        !crc
+    }
+    fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        out.extend_from_slice(kind);
+        out.extend_from_slice(data);
+        let mut crc_input = Vec::with_capacity(4 + data.len());
+        crc_input.extend_from_slice(kind);
+        crc_input.extend_from_slice(data);
+        out.extend_from_slice(&crc32(&crc_input).to_be_bytes());
+    }
+
+    let row_bytes = width as usize * 4 + 1; // +1 filter byte per row
+    let mut raw = Vec::with_capacity(row_bytes * height as usize);
+    for y in 0..height as usize {
+        raw.push(0); // filter: None
+        raw.extend_from_slice(&rgba[y * (width as usize * 4)..(y + 1) * (width as usize * 4)]);
+    }
+
+    // zlib: header (0x78 0x01) + one stored deflate block + adler32.
+    let mut zlib = vec![0x78, 0x01];
+    let len = raw.len();
+    debug_assert!(len <= 65535, "icon too large for single stored block");
+    zlib.push(0x01); // BFINAL=1, BTYPE=00 (stored)
+    zlib.extend_from_slice(&(len as u16).to_le_bytes());
+    zlib.extend_from_slice(&(!(len as u16)).to_le_bytes());
+    zlib.extend_from_slice(&raw);
+    let adler = {
+        let mut a: u32 = 1;
+        let mut b: u32 = 0;
+        for &byte in &raw {
+            a = (a + byte as u32) % 65521;
+            b = (b + a) % 65521;
+        }
+        (b << 16) | a
+    };
+    zlib.extend_from_slice(&adler.to_be_bytes());
+
+    let mut out = Vec::new();
+    out.extend_from_slice(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+    let mut ihdr = Vec::with_capacity(13);
+    ihdr.extend_from_slice(&width.to_be_bytes());
+    ihdr.extend_from_slice(&height.to_be_bytes());
+    ihdr.push(8); // bit depth
+    ihdr.push(6); // color type: RGBA
+    ihdr.push(0); // compression
+    ihdr.push(0); // filter
+    ihdr.push(0); // interlace
+    chunk(&mut out, b"IHDR", &ihdr);
+    chunk(&mut out, b"IDAT", &zlib);
+    chunk(&mut out, b"IEND", &[]);
+    out
+}
+
+/// Extract a browser's executable icon as a `data:image/png;base64,...` URL
+/// using the native shell API (SHGetFileInfoW) — no PowerShell.
+#[cfg(target_os = "windows")]
+pub(crate) fn native_browser_icon(exe_path: &str) -> Option<String> {
+    use std::mem::size_of;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
+    use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
+
+    let mut shfi = SHFILEINFOW::default();
+    let wide: Vec<u16> = exe_path.encode_utf16().chain(std::iter::once(0)).collect();
+    // Probe the real executable so its embedded icon is used; USEFILEATTRIBUTES
+    // is omitted so the actual file's icon (not the type icon) is returned.
+    let ret = unsafe {
+        SHGetFileInfoW(
+            PCWSTR(wide.as_ptr()),
+            FILE_FLAGS_AND_ATTRIBUTES(0x80), // FILE_ATTRIBUTE_NORMAL
+            &mut shfi,
+            size_of::<SHFILEINFOW>() as u32,
+            SHGFI_ICON | SHGFI_LARGEICON,
+        )
+    };
+    if ret == 0 || shfi.hIcon.0 == 0 {
+        return None;
+    }
+    let rgba = hicon_to_rgba(shfi.hIcon)?;
+    let png = png_encode_rgba(16, 16, &rgba);
+    Some(format!("data:image/png;base64,{}", base64_encode(&png)))
+}
+
+// â”€â”€ System Operations â”€â”€
 
 #[tauri::command]
 fn get_home_dir() -> JsonResult {
@@ -295,8 +583,10 @@ fn get_trash_path() -> JsonResult {
         { dirs::home_dir().map(|h| h.join(".local/share/Trash/files")) }
         #[cfg(target_os = "windows")]
         {
-            let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
-            Some(std::path::PathBuf::from(format!("{}\\$Recycle.Bin", system_drive)))
+            // Only the current user's recycle bin — scanning the $Recycle.Bin
+            // root hits SYSTEM-owned folders (S-1-5-18) and 8.3 aliases, which
+            // produce access-denied errors.
+            trash::current_user_recycle_bin()
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
         { dirs::home_dir().map(|h| h.join(".Trash")) }
@@ -395,7 +685,7 @@ fn get_volume_stats() -> JsonResult {
     list_drives()
 }
 
-/// Enumerate mounted volumes via sysinfo — works without spawning any external
+/// Enumerate mounted volumes via sysinfo â€” works without spawning any external
 /// helper, so it survives the macOS App Sandbox (unlike smartctl/system_profiler).
 #[allow(dead_code)]
 fn list_volumes_via_sysinfo() -> Vec<serde_json::Value> {
@@ -477,37 +767,20 @@ async fn get_dir_stats(path: String) -> JsonResult {
     .unwrap_or_else(|e| JsonResult::err(format!("Stats failed: {e}")))
 }
 
-// ── S.M.A.R.T. Tools ────────────────────────────────────────────────
+// â”€â”€ S.M.A.R.T. Tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-#[cfg(target_os = "windows")]
-fn win_powershell(script: &str) -> Option<String> {
-    let out = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
-        .output()
-        .ok()?;
-    if out.status.success() {
-        Some(String::from_utf8_lossy(&out.stdout).to_string())
-    } else {
-        None
-    }
+/// Build a `Command` without flashing a console window. Windows GUI apps show
+/// a brief DOS box whenever powershell/cmd/curl/smartctl are launched from
+/// them; `CREATE_NO_WINDOW` suppresses that. Only needed on macOS/Linux now —
+/// every Windows code path uses native APIs.
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn silent_command(cmd: &str) -> std::process::Command {
+    std::process::Command::new(cmd)
 }
 
-#[cfg(target_os = "windows")]
-fn win_powershell_file(path: &std::path::Path) -> Option<String> {
-    let out = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
-        .arg(path)
-        .output()
-        .ok()?;
-    if out.status.success() {
-        Some(String::from_utf8_lossy(&out.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-fn run_output(cmd: &str, args: &[&str]) -> Option<String> {
-    let out = std::process::Command::new(cmd).args(args).output().ok()?;
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn run_output(cmd: &str, args: &[&str]) -> Option<String> {
+    let out = silent_command(cmd).args(args).output().ok()?;
     if out.status.success() {
         Some(String::from_utf8_lossy(&out.stdout).to_string())
     } else {
@@ -518,136 +791,16 @@ fn run_output(cmd: &str, args: &[&str]) -> Option<String> {
 /// Returns true when running inside the macOS App Sandbox, where spawning
 /// external helpers (smartctl, system_profiler, osascript) is not permitted.
 #[cfg(target_os = "macos")]
-fn in_mac_sandbox() -> bool {
+pub(crate) fn in_mac_sandbox() -> bool {
     std::env::var("APP_SANDBOX_CONTAINER_ID").is_ok()
 }
 
 #[cfg(not(target_os = "macos"))]
-fn in_mac_sandbox() -> bool {
+pub(crate) fn in_mac_sandbox() -> bool {
     false
 }
 
-#[cfg(target_os = "linux")]
-fn run_smartctl_linux(device_id: &str) -> Option<String> {
-    // Direct call first (works when user has disk access / is root).
-    if let Some(s) = run_output("smartctl", &["-j", "-a", &format!("/dev/{}", device_id)]) {
-        return Some(s);
-    }
-    // Fall back to pkexec so the polkit dialog elevates smartctl once.
-    run_output("pkexec", &["smartctl", "-j", "-a", &format!("/dev/{}", device_id)])
-}
 
-/// Normalize smartmontools JSON (`smartctl -j -a`) into a common report shape.
-fn smart_from_smartctl(v: &serde_json::Value, device_id: &str) -> Option<serde_json::Value> {
-    let model = v.pointer("/model_name").and_then(|x| x.as_str()).unwrap_or(device_id).to_string();
-    let serial = v.pointer("/serial_number").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    let firmware = v.pointer("/firmware_version").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    let dev_type = v.pointer("/device/type").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    let passed = v.pointer("/smart_status/passed").and_then(|x| x.as_bool()).unwrap_or(false);
-    let temp = v.pointer("/temperature/current").and_then(|x| x.as_u64()).map(|x| x as f64);
-    let powh = v.pointer("/power_on_time/hours").and_then(|x| x.as_u64()).unwrap_or(0);
-    let capacity = v.pointer("/user_capacity/bytes").and_then(|x| x.as_u64()).unwrap_or(0);
-
-    let mut attributes: Vec<serde_json::Value> = Vec::new();
-
-    // Devices that report no SMART support (e.g. virtualized SCSI disks)
-    // still expose model/capacity/interface — return a report that says
-    // "not supported" instead of fabricating a health score.
-    let support_available = v.pointer("/smart_support/available").and_then(|x| x.as_bool());
-    let unsupported = support_available == Some(false) && !dev_type.contains("nvme");
-
-    if dev_type.contains("nvme") {
-        let nvme_fields: &[(&str, &str)] = &[
-            ("02", "Temperature"), ("03", "Available Spare"), ("04", "Available Spare Threshold"),
-            ("05", "Percentage Used"), ("06", "Data Units Read"), ("07", "Data Units Written"),
-            ("08", "Host Read Commands"), ("09", "Host Write Commands"), ("0a", "Controller Busy Time"),
-            ("0b", "Power Cycles"), ("0c", "Power On Hours"), ("0d", "Unsafe Shutdowns"),
-            ("0e", "Media Errors"), ("0f", "Num Err Log Entries"), ("10", "Warning Temp Time"),
-            ("11", "Critical Comp Temp Time"), ("12", "Thermal Sensor 1"), ("13", "Thermal Sensor 2"),
-        ];
-        if let Some(log) = v.pointer("/nvme_smart_health_information_log") {
-            let critical = log.get("critical_warning").and_then(|x| x.as_u64()).unwrap_or(0);
-            for (id, name) in nvme_fields {
-                let key = name.split_whitespace().collect::<Vec<_>>().join("_");
-                let val = log.get(&key).and_then(|x| x.as_u64());
-                attributes.push(serde_json::json!({
-                    "id": id, "name": name,
-                    "current": val, "worst": null, "threshold": null,
-                    "raw": val.map(|x| x.to_string()).unwrap_or_default(),
-                    "status": "OK",
-                }));
-            }
-            attributes.insert(0, serde_json::json!({
-                "id": "01", "name": "Critical Warning",
-                "current": critical, "worst": null, "threshold": null,
-                "raw": critical.to_string(),
-                "status": if critical > 0 { "FAIL" } else { "OK" },
-            }));
-        }
-    } else if let Some(table) = v.pointer("/ata_smart_attributes/table") {
-        if let Some(arr) = table.as_array() {
-            for a in arr {
-                let id = a.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
-                let name = a.get("name").and_then(|x| x.as_str()).unwrap_or("");
-                let val = a.get("value").and_then(|x| x.as_u64());
-                let worst = a.get("worst").and_then(|x| x.as_u64());
-                let thresh = a.get("thresh").and_then(|x| x.as_u64());
-                let raw = a.pointer("/raw/string").and_then(|x| x.as_str()).unwrap_or("");
-                let failed = a.pointer("/flags/failure").and_then(|x| x.as_bool()).unwrap_or(false);
-                attributes.push(serde_json::json!({
-                    "id": format!("{:02X}", id), "name": name,
-                    "current": val, "worst": worst, "threshold": thresh,
-                    "raw": raw, "status": if failed { "FAIL" } else { "OK" },
-                }));
-            }
-        }
-    }
-
-    let (score, status) = if unsupported {
-        (0u64, "Not Supported")
-    } else if passed {
-        (100u64, "Healthy")
-    } else {
-        (30u64, "Critical")
-    };
-    Some(serde_json::json!({
-        "device_id": device_id,
-        "model": model, "serial": serial, "firmware": firmware,
-        "interface": dev_type.to_uppercase(),
-        "capacity": capacity,
-        "score": score, "status": status,
-        "smart_supported": !unsupported,
-        "temperature_c": temp,
-        "power_on_hours": powh,
-        "attributes": attributes,
-        "source": "smartctl",
-    }))
-}
-
-/// Combine OS health status + SMART attributes into a 0-100 score.
-#[cfg(target_os = "windows")]
-fn smart_health_from_attrs(health: i64, wear: Option<f64>, temp: Option<f64>, read_unc: u64, write_unc: u64) -> (u64, &'static str) {
-    let mut score: f64 = 100.0;
-    match health {
-        1 => score -= 20.0,
-        2 => score -= 60.0,
-        _ => {}
-    }
-    if let Some(w) = wear {
-        if w > 90.0 { score -= 40.0; }
-        else if w > 75.0 { score -= 20.0; }
-        else if w > 50.0 { score -= 8.0; }
-    }
-    if let Some(t) = temp {
-        if t >= 60.0 { score -= 30.0; }
-        else if t >= 50.0 { score -= 10.0; }
-        else if t >= 45.0 { score -= 4.0; }
-    }
-    if read_unc + write_unc > 0 { score -= 15.0; }
-    let score = score.clamp(0.0, 100.0).round() as u64;
-    let status = if score >= 85 { "Healthy" } else if score >= 55 { "Warning" } else { "Critical" };
-    (score, status)
-}
 
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
@@ -658,26 +811,10 @@ fn exit_app(app: tauri::AppHandle) {
 fn list_disks() -> JsonResult {
     #[cfg(target_os = "windows")]
     {
-        let script = "try { $d = Get-CimInstance -ClassName MSFT_PhysicalDisk -Namespace 'root\\Microsoft\\Windows\\Storage' | Select-Object DeviceId, FriendlyName, MediaType, HealthStatus, OperationalStatus, Size, Model, SerialNumber, BusType, SpindleSpeed, FirmwareVersion; if (-not $d) { '[]'; exit 0 }; @($d) | ConvertTo-Json -Compress } catch { exit 1 }";
-        if let Some(s) = win_powershell(script) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                let arr = if v.is_array() { v } else { serde_json::json!([v]) };
-                let norm: Vec<serde_json::Value> = arr.as_array().map(|a| a.iter().map(|d| {
-                    let id = d["DeviceId"].as_str().unwrap_or("0");
-                    serde_json::json!({
-                        "id": id, "name": d["FriendlyName"],
-                        "media_type": d["MediaType"], "health": d["HealthStatus"],
-                        "size": d["Size"], "model": d["Model"],
-                        "serial": d["SerialNumber"], "bus": d["BusType"],
-                        "firmware": d["FirmwareVersion"],
-                        "status": d["OperationalStatus"],
-                        "device": format!("\\\\.\\PHYSICALDRIVE{}", id),
-                    })
-                }).collect()).unwrap_or_default();
-                return JsonResult::ok(serde_json::json!(norm));
-            }
-        }
-        JsonResult::err("Could not enumerate physical disks")
+        // 100% native: probe \\.\PHYSICALDRIVE0..31 via DeviceIoControl.
+        // Opening a physical drive needs admin rights; without them the list is
+        // empty (S.M.A.R.T. reads need admin anyway).
+        JsonResult::ok(serde_json::json!(smart::native_list_disks()))
     }
     #[cfg(target_os = "linux")]
     {
@@ -794,680 +931,7 @@ fn parse_system_profiler_disks(s: &str) -> Vec<serde_json::Value> {
         .unwrap_or_default()
 }
 
-#[tauri::command]
-fn get_smart_status(state: State<AppState>, device_id: String) -> JsonResult {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = &state;
-        // 1) Prefer smartmontools for a full CrystalDiskInfo-style report.
-        if let Some(s) = run_output("smartctl", &["-j", "-a", &format!("\\\\.\\PHYSICALDRIVE{}", device_id)]) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                if let Some(r) = smart_from_smartctl(&v, &device_id) {
-                    return JsonResult::ok(r);
-                }
-            }
-        }
-        // 2) WMI fallback + NVMe SMART passthrough (fills firmware/interface/capacity/temperature).
-        let ps = r#"param()
-$id = "__ID__"
-try {
-  $d = Get-CimInstance -Namespace 'root\Microsoft\Windows\Storage' -ClassName MSFT_PhysicalDisk -Filter "DeviceId = $id"
-  if (-not $d) { Write-Output '{}'; exit 0 }
 
-  $result = [ordered]@{
-    device_id = $d.DeviceId
-    friendly_name = $d.FriendlyName
-    model = $d.Model
-    serial = $d.SerialNumber
-    media_type = $d.MediaType
-    health = [int]($d.HealthStatus)
-    size = $d.Size
-    firmware = $d.FirmwareVersion
-    bus = $d.BusType
-  }
-
-  # NVMe SMART health log via storage protocol passthrough
-  $nvme = $null
-  try {
-    Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public static class NvmeSmart {
-  [DllImport("kernel32.dll", SetLastError = true)]
-  public static extern IntPtr CreateFile(string f, uint a, uint s, IntPtr sa, uint cd, uint fa, IntPtr t);
-  [DllImport("kernel32.dll", SetLastError = true)]
-  public static extern bool DeviceIoControl(IntPtr h, uint c, IntPtr i, uint isz, IntPtr o, uint osz, out uint r, IntPtr ov);
-  [DllImport("kernel32.dll", SetLastError = true)]
-  public static extern bool CloseHandle(IntPtr h);
-  const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000, FS_READ = 1, FS_WRITE = 2, OPEN = 3, NORMAL = 0x80;
-  static uint CTL(uint dev, uint fn, uint m, uint a) { return (dev << 16) | (a << 14) | (fn << 2) | m; }
-  static uint IOCTL_STORAGE_QUERY_PROPERTY = CTL(0x2D, 0x0500, 0, 0);
-  const uint StorageDeviceProtocolSpecificProperty = 50;
-  const uint ProtocolTypeNvme = 3;
-  const uint NVMeDataTypeLogPage = 2;
-  const uint LOG_PAGE_SMART = 0x02;
-  [StructLayout(LayoutKind.Sequential)] struct PROP_QUERY { public uint id; public uint type; public byte extra; }
-  [StructLayout(LayoutKind.Sequential)] struct PROTO { public uint t; public uint dt; public uint rv; public uint rsv; public uint off; public uint len; public uint fix; public uint rsv2; }
-  static ulong U64(byte[] d, int o) { return (ulong)d[o] | ((ulong)d[o + 1] << 8) | ((ulong)d[o + 2] << 16) | ((ulong)d[o + 3] << 24) | ((ulong)d[o + 4] << 32) | ((ulong)d[o + 5] << 40) | ((ulong)d[o + 6] << 48) | ((ulong)d[o + 7] << 56); }
-  public static object GetSmart(string dev) {
-    IntPtr h = CreateFile(dev, GENERIC_READ | GENERIC_WRITE, FS_READ | FS_WRITE, IntPtr.Zero, OPEN, NORMAL, IntPtr.Zero);
-    if (h == (IntPtr)(-1)) return null;
-    try {
-      int qs = Marshal.SizeOf(typeof(PROP_QUERY)) + Marshal.SizeOf(typeof(PROTO));
-      int total = qs + 512;
-      IntPtr buf = Marshal.AllocHGlobal(total);
-      try {
-        Marshal.WriteInt32(buf, 0, (int)StorageDeviceProtocolSpecificProperty);
-        Marshal.WriteInt32(buf, 4, 0);
-        Marshal.WriteInt32(buf, 8, (int)ProtocolTypeNvme);
-        Marshal.WriteInt32(buf, 12, (int)NVMeDataTypeLogPage);
-        Marshal.WriteInt32(buf, 16, (int)LOG_PAGE_SMART);
-        Marshal.WriteInt32(buf, 20, 0);
-        Marshal.WriteInt32(buf, 24, qs);
-        Marshal.WriteInt32(buf, 28, 512);
-        Marshal.WriteInt32(buf, 32, 0);
-        Marshal.WriteInt32(buf, 36, 0);
-        uint ret = 0;
-        if (!DeviceIoControl(h, IOCTL_STORAGE_QUERY_PROPERTY, buf, (uint)total, buf, (uint)total, out ret, IntPtr.Zero)) return null;
-        byte[] d = new byte[512];
-        Marshal.Copy(IntPtr.Add(buf, qs), d, 0, 512);
-        int kelvin = d[1] | (d[2] << 8);
-        return new {
-          temperature_c = kelvin > 0 ? kelvin - 273 : 0,
-          critical_warning = d[0],
-          available_spare = d[3],
-          available_spare_threshold = d[4],
-          percentage_used = d[5],
-          data_units_read = U64(d, 15),
-          data_units_written = U64(d, 23),
-          host_read_commands = U64(d, 31),
-          host_write_commands = U64(d, 39),
-          power_cycles = U64(d, 47),
-          power_on_hours = U64(d, 55),
-          unsafe_shutdowns = U64(d, 63),
-          media_errors = U64(d, 71),
-          num_err_log_entries = U64(d, 79)
-        };
-      } finally { Marshal.FreeHGlobal(buf); }
-    } finally { CloseHandle(h); }
-  }
-}
-"@
-    $nvme = [NvmeSmart]::GetSmart('\\.\PHYSICALDRIVE' + $id)
-  } catch { $nvme = $null }
-
-  # Reliability counters (needs admin) - best effort
-  $rel = @()
-  try {
-    $rel = @($d | Get-CimAssociatedInstance -ResultClassName MSFT_StorageReliabilityCounter | Select-Object Temperature, Wear, PowerOnHours, ReadErrorsTotal, WriteErrorsTotal, ReadErrorsUncorrected, WriteErrorsUncorrected, StartStopCycleCount, LoadUnloadCycleCount)
-  } catch { $rel = @() }
-
-  if ($nvme) {
-    $result.temperature_c = $nvme.temperature_c
-    $result.power_on_hours = $nvme.power_on_hours
-    $result.power_cycles = $nvme.power_cycles
-    $result.percentage_used = $nvme.percentage_used
-    $result.available_spare = $nvme.available_spare
-    $result.available_spare_threshold = $nvme.available_spare_threshold
-    $result.data_units_read = $nvme.data_units_read
-    $result.data_units_written = $nvme.data_units_written
-    $result.host_read_commands = $nvme.host_read_commands
-    $result.host_write_commands = $nvme.host_write_commands
-    $result.unsafe_shutdowns = $nvme.unsafe_shutdowns
-    $result.media_errors = $nvme.media_errors
-    $result.num_err_log_entries = $nvme.num_err_log_entries
-    $result.critical_warning = $nvme.critical_warning
-    $result.nvme = $true
-  } else {
-    $t = @($rel | Measure-Object -Property Temperature -Maximum)
-    $result.temperature_c = if ($t.Count -gt 0 -and $t.Maximum) { [math]::Round($t.Maximum) } else { $null }
-    $w = @($rel | Measure-Object -Property Wear -Maximum)
-    $result.wear = if ($w.Count -gt 0 -and $w.Maximum) { [math]::Round($w.Maximum, 1) } else { $null }
-    $ph = @($rel | Measure-Object -Property PowerOnHours -Sum)
-    $result.power_on_hours = if ($ph.Count -gt 0 -and $ph.Sum) { $ph.Sum } else { 0 }
-    $ru = @($rel | Measure-Object -Property ReadErrorsUncorrected -Sum)
-    $result.read_errors_uncorrected = if ($ru.Count -gt 0 -and $ru.Sum) { $ru.Sum } else { 0 }
-    $wu = @($rel | Measure-Object -Property WriteErrorsUncorrected -Sum)
-    $result.write_errors_uncorrected = if ($wu.Count -gt 0 -and $wu.Sum) { $wu.Sum } else { 0 }
-    $result.nvme = $false
-  }
-
-  $result | ConvertTo-Json -Compress
-  exit 0
-} catch {
-  Write-Output '{}'
-  exit 1
-}
-"#;
-        let ps_path = std::env::temp_dir().join("diskraptor_smart.ps1");
-        let _ = std::fs::write(&ps_path, ps.replace("__ID__", &device_id));
-        let out = win_powershell_file(&ps_path);
-        let _ = std::fs::remove_file(&ps_path);
-        if let Some(s) = out {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                if v.get("device_id").is_some() {
-                    let health = v.get("health").and_then(|x| x.as_i64()).unwrap_or(-1);
-                    let bus = v.get("bus").and_then(|x| x.as_i64()).unwrap_or(0);
-                    let interface = match bus {
-                        17 => "NVMe", 11 => "SATA", 10 => "SAS", 7 => "USB", 3 => "ATA",
-                        8 => "RAID", 9 => "iSCSI", 12 => "SD", 13 => "MMC", 18 => "SCM",
-                        _ => "Unknown",
-                    };
-                    let temp = v.get("temperature_c").and_then(|x| x.as_f64());
-                    let wear = v.get("wear").and_then(|x| x.as_f64());
-                    let powh = v.get("power_on_hours").and_then(|x| x.as_u64()).unwrap_or(0);
-                    let cycles = v.get("power_cycles").and_then(|x| x.as_u64());
-                    let pct_used = v.get("percentage_used").and_then(|x| x.as_u64());
-                    let avail_spare = v.get("available_spare").and_then(|x| x.as_u64());
-                    let du_read = v.get("data_units_read").and_then(|x| x.as_u64());
-                    let du_written = v.get("data_units_written").and_then(|x| x.as_u64());
-                    let unsafe_shutdowns = v.get("unsafe_shutdowns").and_then(|x| x.as_u64());
-                    let media_errors = v.get("media_errors").and_then(|x| x.as_u64());
-                    let num_err = v.get("num_err_log_entries").and_then(|x| x.as_u64());
-                    let critical_warning = v.get("critical_warning").and_then(|x| x.as_u64()).unwrap_or(0);
-                    let is_nvme = v.get("nvme").and_then(|x| x.as_bool()).unwrap_or(false);
-                    let read_u = v.get("read_errors_uncorrected").and_then(|x| x.as_u64()).unwrap_or(0);
-                    let write_u = v.get("write_errors_uncorrected").and_then(|x| x.as_u64()).unwrap_or(0);
-
-                    let (score, status) = smart_health_from_attrs(health, wear, temp, read_u, write_u);
-
-                    let attributes: Vec<serde_json::Value> = if is_nvme {
-                        vec![
-                            serde_json::json!({"id":"01","name":"Critical Warning","current":critical_warning,"worst":null,"threshold":null,"raw":critical_warning.to_string(),"status":if critical_warning > 0 {"FAIL"} else {"OK"}}),
-                            serde_json::json!({"id":"02","name":"Temperature","current":temp.map(|t| t.round() as u64),"worst":null,"threshold":null,"raw":temp.map(|t| format!("{} C", t.round())).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                            serde_json::json!({"id":"03","name":"Available Spare","current":avail_spare,"worst":null,"threshold":null,"raw":avail_spare.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                            serde_json::json!({"id":"05","name":"Percentage Used","current":pct_used,"worst":null,"threshold":null,"raw":pct_used.map(|x| format!("{}%", x)).unwrap_or_else(|| "n/a".into()),"status":if pct_used.unwrap_or(0) >= 90 {"WARN"} else {"OK"}}),
-                            serde_json::json!({"id":"06","name":"Data Units Read","current":du_read,"worst":null,"threshold":null,"raw":du_read.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                            serde_json::json!({"id":"07","name":"Data Units Written","current":du_written,"worst":null,"threshold":null,"raw":du_written.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                            serde_json::json!({"id":"0b","name":"Power Cycles","current":cycles,"worst":null,"threshold":null,"raw":cycles.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                            serde_json::json!({"id":"0c","name":"Power On Hours","current":Some(powh),"worst":null,"threshold":null,"raw":powh.to_string(),"status":"OK"}),
-                            serde_json::json!({"id":"0d","name":"Unsafe Shutdowns","current":unsafe_shutdowns,"worst":null,"threshold":null,"raw":unsafe_shutdowns.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                            serde_json::json!({"id":"0e","name":"Media Errors","current":media_errors,"worst":null,"threshold":null,"raw":media_errors.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":if media_errors.unwrap_or(0) > 0 {"WARN"} else {"OK"}}),
-                            serde_json::json!({"id":"0f","name":"Num Err Log Entries","current":num_err,"worst":null,"threshold":null,"raw":num_err.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                        ]
-                    } else {
-                        vec![
-                            serde_json::json!({"id":"01","name":"Health Status","current":health,"worst":null,"threshold":null,"raw":health.to_string(),"status":if health == 0 {"OK"} else {"WARN"}}),
-                            serde_json::json!({"id":"02","name":"Temperature","current":temp.map(|t| t.round() as u64),"worst":null,"threshold":null,"raw":temp.map(|t| format!("{} C", t.round())).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                            serde_json::json!({"id":"03","name":"Wear Level","current":wear.map(|w| w.round() as u64),"worst":null,"threshold":null,"raw":wear.map(|w| format!("{}%", w.round())).unwrap_or_else(|| "n/a".into()),"status":"OK"}),
-                            serde_json::json!({"id":"04","name":"Power On Hours","current":Some(powh),"worst":null,"threshold":null,"raw":powh.to_string(),"status":"OK"}),
-                            serde_json::json!({"id":"05","name":"Read Errors Uncorrected","current":Some(read_u),"worst":null,"threshold":null,"raw":read_u.to_string(),"status":if read_u > 0 {"WARN"} else {"OK"}}),
-                            serde_json::json!({"id":"06","name":"Write Errors Uncorrected","current":Some(write_u),"worst":null,"threshold":null,"raw":write_u.to_string(),"status":if write_u > 0 {"WARN"} else {"OK"}}),
-                        ]
-                    };
-
-                    return JsonResult::ok(serde_json::json!({
-                        "device_id": v["device_id"].as_str().unwrap_or(&device_id),
-                        "friendly_name": v["friendly_name"].as_str().unwrap_or(""),
-                        "model": v["model"].as_str().unwrap_or(""),
-                        "serial": v["serial"].as_str().unwrap_or(""),
-                        "firmware": v["firmware"].as_str().unwrap_or(""),
-                        "interface": interface,
-                        "media_type": v["media_type"].as_i64().unwrap_or(-1),
-                        "capacity": v["size"].as_u64().unwrap_or(0),
-                        "health": health,
-                        "score": score,
-                        "status": status,
-                        "temperature_c": temp,
-                        "wear": wear,
-                        "power_on_hours": powh,
-                        "power_cycles": cycles,
-                        "percentage_used": pct_used,
-                        "available_spare": avail_spare,
-                        "media_errors": media_errors,
-                        "read_errors_uncorrected": read_u,
-                        "write_errors_uncorrected": write_u,
-                        "attributes": attributes,
-                        "source": if is_nvme { "nvme" } else { "wmi" },
-                    }));
-                }
-            }
-        }
-        JsonResult::err("S.M.A.R.T. data not available for this disk")
-    }
-    #[cfg(target_os = "linux")]
-    {
-        // Cache pkexec results (success AND failure) for 5 minutes so we
-        // don't prompt for the admin password on every scan.
-        const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
-        {
-            let cache = state.smart_cache.lock().unwrap();
-            if let Some((when, cached)) = cache.get(&device_id) {
-                if when.elapsed() < CACHE_TTL {
-                    return cached.clone();
-                }
-            }
-        }
-        let result = if let Some(s) = run_smartctl_linux(&device_id) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                smart_from_smartctl(&v, &device_id)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        let out = match result {
-            Some(r) => JsonResult::ok(r),
-            None => JsonResult::err(
-                "S.M.A.R.T. data not available (is smartmontools installed, and does this disk support SMART?)",
-            ),
-        };
-        state
-            .smart_cache
-            .lock()
-            .unwrap()
-            .insert(device_id.clone(), (std::time::Instant::now(), out.clone()));
-        out
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = &state;
-        if in_mac_sandbox() {
-            return JsonResult::err(
-                "S.M.A.R.T. is unavailable in the sandboxed App Store build.",
-            );
-        }
-        if let Some(s) = run_output("smartctl", &["-j", "-a", &device_id]) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                if let Some(r) = smart_from_smartctl(&v, &device_id) {
-                    return JsonResult::ok(r);
-                }
-            }
-        }
-        JsonResult::err("S.M.A.R.T. data not available (is smartmontools installed?)")
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-    {
-        JsonResult::err("Unsupported platform")
-    }
-}
-
-// ── Browser Cleanup Tools ─────────────────────────────────────────
-
-#[derive(Clone)]
-struct BrowserDef {
-    name: &'static str,
-    #[allow(dead_code)] // used by browser_paths_windows
-    sub: &'static str,
-    kind: &'static str,
-    #[allow(dead_code)] // used by browser_paths_windows
-    base: &'static str, // "local" | "appdata"
-}
-
-fn dir_size(path: &std::path::Path) -> u64 {
-    let meta = match std::fs::symlink_metadata(path) {
-        Ok(m) => m,
-        Err(_) => return 0,
-    };
-    if meta.is_file() {
-        return meta.len();
-    }
-    if !meta.is_dir() {
-        return 0;
-    }
-    let mut total = 0u64;
-    if let Ok(rd) = std::fs::read_dir(path) {
-        for entry in rd.flatten() {
-            total += dir_size(&entry.path());
-        }
-    }
-    total
-}
-
-fn sum_sizes(paths: &[std::path::PathBuf]) -> u64 {
-    paths.iter().map(|p| dir_size(p)).sum()
-}
-
-fn delete_path_recursive(path: &std::path::Path) -> u64 {
-    let size = dir_size(path);
-    if size > 0 {
-        let _ = if path.is_dir() {
-            std::fs::remove_dir_all(path)
-        } else {
-            std::fs::remove_file(path)
-        };
-    }
-    size
-}
-
-fn browser_defs() -> Vec<BrowserDef> {
-    vec![
-        BrowserDef { name: "Google Chrome", sub: r"Google\Chrome\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Microsoft Edge", sub: r"Microsoft\Edge\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Safari", sub: r"com.apple.Safari", kind: "safari", base: "local" },
-        BrowserDef { name: "Chromium", sub: r"Chromium\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Brave", sub: r"BraveSoftware\Brave-Browser\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Vivaldi", sub: r"Vivaldi\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Yandex Browser", sub: r"Yandex\YandexBrowser\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Avast Secure Browser", sub: r"AVAST Software\Browser\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "AVG Secure Browser", sub: r"AVG\Browser\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "CocCoc", sub: r"CocCoc\Browser\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Maxthon", sub: r"Maxthon5\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Arc", sub: r"Arc\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Epic Privacy Browser", sub: r"Epic Privacy Browser\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Slimjet", sub: r"Slimjet\User Data", kind: "chrome", base: "local" },
-        BrowserDef { name: "Opera", sub: r"Opera Software\Opera Stable", kind: "opera", base: "appdata" },
-        BrowserDef { name: "Opera GX", sub: r"Opera Software\Opera GX Stable", kind: "opera", base: "appdata" },
-        BrowserDef { name: "Firefox", sub: r"Mozilla\Firefox\Profiles", kind: "firefox", base: "appdata" },
-        BrowserDef { name: "Waterfox", sub: r"Waterfox\Profiles", kind: "firefox", base: "appdata" },
-        BrowserDef { name: "Pale Moon", sub: r"Moonchild Productions\Pale Moon\Profiles", kind: "firefox", base: "appdata" },
-        BrowserDef { name: "Tor Browser", sub: r"Tor Browser\Browser\TorBrowser\Data\Browser", kind: "firefox", base: "appdata" },
-        BrowserDef { name: "Internet Explorer", sub: r"Microsoft\Windows\Cookies", kind: "ie", base: "appdata" },
-    ]
-}
-
-#[cfg(target_os = "windows")]
-fn browser_paths_windows(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
-    let local = std::env::var("LOCALAPPDATA").ok()?;
-    let appdata = std::env::var("APPDATA").ok()?;
-    let base_dir = if def.base == "local" { &local } else { &appdata };
-    let base = std::path::PathBuf::from(base_dir).join(def.sub);
-    let (cookies, cache) = match def.kind {
-        "chrome" | "opera" => (
-            vec![
-                base.join("Default").join("Network").join("Cookies"),
-                base.join("Default").join("Cookies"),
-            ],
-            vec![
-                base.join("Default").join("Cache"),
-                base.join("Default").join("Code Cache"),
-                base.join("Default").join("GPUCache"),
-                base.join("Default").join("Service Worker").join("CacheStorage"),
-            ],
-        ),
-        "firefox" => {
-            let mut cookies = Vec::new();
-            let mut cache = Vec::new();
-            if let Ok(rd) = std::fs::read_dir(&base) {
-                for entry in rd.flatten() {
-                    let p = entry.path();
-                    if !p.is_dir() { continue; }
-                    let ck = p.join("cookies.sqlite");
-                    if ck.exists() { cookies.push(ck); }
-                    cache.push(p.join("cache2"));
-                    cache.push(p.join("startupCache"));
-                }
-            }
-            (cookies, cache)
-        }
-        "ie" => (
-            vec![base.join("Cookies")],
-            vec![std::path::PathBuf::from(&local).join(r"Microsoft\Windows\INetCache")],
-        ),
-        _ => (Vec::new(), Vec::new()),
-    };
-    Some((base, cookies, cache))
-}
-
-#[cfg(target_os = "linux")]
-fn browser_paths_linux(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
-    let home = std::env::var("HOME").ok()?;
-    let cfg = |p: &str| std::path::PathBuf::from(&home).join(".config").join(p);
-    let cache = |p: &str| std::path::PathBuf::from(&home).join(".cache").join(p);
-    let (base, cookies, cache_paths): (std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>) = match def.name {
-        "Google Chrome" => (cfg("google-chrome"), vec![cfg("google-chrome/Default/Network/Cookies")], vec![cache("google-chrome/Default/Cache")]),
-        "Chromium" => (cfg("chromium"), vec![cfg("chromium/Default/Network/Cookies")], vec![cache("chromium/Default/Cache")]),
-        "Microsoft Edge" => (cfg("microsoft-edge"), vec![cfg("microsoft-edge/Default/Network/Cookies")], vec![cache("microsoft-edge/Default/Cache")]),
-        "Brave" => (cfg("BraveSoftware/Brave-Browser"), vec![cfg("BraveSoftware/Brave-Browser/Default/Network/Cookies")], vec![cache("BraveSoftware/Brave-Browser/Default/Cache")]),
-        "Opera" => (cfg("opera"), vec![cfg("opera/Default/Network/Cookies")], vec![cache("opera/Default/Cache")]),
-        "Firefox" => {
-            let base = std::path::PathBuf::from(&home).join(".mozilla").join("firefox");
-            let mut cookies = Vec::new();
-            let mut caches = Vec::new();
-            if let Ok(rd) = std::fs::read_dir(&base) {
-                for entry in rd.flatten() {
-                    let p = entry.path();
-                    if !p.is_dir() { continue; }
-                    if p.join("cookies.sqlite").exists() { cookies.push(p.join("cookies.sqlite")); }
-                    caches.push(p.join("cache2"));
-                }
-            }
-            (base, cookies, caches)
-        }
-        _ => return None,
-    };
-    Some((base, cookies, cache_paths))
-}
-
-#[cfg(target_os = "macos")]
-fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
-    let home = std::env::var("HOME").ok()?;
-    let support = |p: &str| std::path::PathBuf::from(&home).join("Library/Application Support").join(p);
-    let caches = |p: &str| std::path::PathBuf::from(&home).join("Library/Caches").join(p);
-    let (base, cookies, cache_paths) = match def.name {
-        "Google Chrome" => (support("Google/Chrome"), vec![support("Google/Chrome/Default/Network/Cookies")], vec![caches("Google/Chrome/Default/Cache")]),
-        "Microsoft Edge" => (support("Microsoft Edge"), vec![support("Microsoft Edge/Default/Network/Cookies")], vec![caches("Microsoft Edge/Default/Cache")]),
-        "Safari" => {
-            let base = support("com.apple.Safari");
-            let container = std::path::PathBuf::from(&home).join("Library/Containers/com.apple.Safari/Data/Library");
-            let cookies = if container.join("Cookies/Cookies.binarycookies").exists() {
-                vec![container.join("Cookies/Cookies.binarycookies")]
-            } else {
-                vec![base.join("Cookies.binarycookies")]
-            };
-            let mut cache = Vec::new();
-            for p in [
-                container.join("Caches/com.apple.Safari"),
-                container.join("WebKit/com.apple.WebKit"),
-                container.join("WebKit/com.apple.Safari"),
-                caches("com.apple.Safari"),
-            ] {
-                if p.exists() { cache.push(p); }
-            }
-            if cache.is_empty() { cache.push(base.join("Cache")); }
-            (base, cookies, cache)
-        }
-        "Firefox" => {
-            let base = support("Firefox/Profiles");
-            let mut cookies = Vec::new();
-            let mut caches = Vec::new();
-            if let Ok(rd) = std::fs::read_dir(&base) {
-                for entry in rd.flatten() {
-                    let p = entry.path();
-                    if !p.is_dir() { continue; }
-                    if p.join("cookies.sqlite").exists() { cookies.push(p.join("cookies.sqlite")); }
-                    caches.push(p.join("cache2"));
-                }
-            }
-            (base, cookies, caches)
-        }
-        _ => return None,
-    };
-    Some((base, cookies, cache_paths))
-}
-
-#[allow(clippy::needless_return)] // cfg-gated returns keep each platform arm type-consistent
-fn browser_paths(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
-    #[cfg(target_os = "windows")]
-    { return browser_paths_windows(def); }
-    #[cfg(target_os = "linux")]
-    { return browser_paths_linux(def); }
-    #[cfg(target_os = "macos")]
-    { return browser_paths_macos(def); }
-    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-    { None }
-}
-
-#[cfg(target_os = "windows")]
-fn browser_exe_path(name: &str) -> Option<std::path::PathBuf> {
-    let local = std::env::var("LOCALAPPDATA").ok()?;
-    let pf = std::env::var("ProgramFiles").unwrap_or_default();
-    let pf86 = std::env::var("ProgramFiles(x86)").unwrap_or_default();
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    match name {
-        "Google Chrome" => {
-            candidates.push(std::path::PathBuf::from(&pf).join(r"Google\Chrome\Application\chrome.exe"));
-            candidates.push(std::path::PathBuf::from(&pf86).join(r"Google\Chrome\Application\chrome.exe"));
-            candidates.push(std::path::PathBuf::from(&local).join(r"Google\Chrome\Application\chrome.exe"));
-        }
-        "Microsoft Edge" => {
-            candidates.push(std::path::PathBuf::from(&pf86).join(r"Microsoft\Edge\Application\msedge.exe"));
-            candidates.push(std::path::PathBuf::from(&pf).join(r"Microsoft\Edge\Application\msedge.exe"));
-        }
-        "Firefox" => {
-            candidates.push(std::path::PathBuf::from(&pf).join(r"Mozilla Firefox\firefox.exe"));
-            candidates.push(std::path::PathBuf::from(&pf86).join(r"Mozilla Firefox\firefox.exe"));
-            candidates.push(std::path::PathBuf::from(&local).join(r"Programs\Mozilla Firefox\firefox.exe"));
-        }
-        "Opera" => {
-            candidates.push(std::path::PathBuf::from(&local).join(r"Programs\Opera\opera.exe"));
-            candidates.push(std::path::PathBuf::from(&local).join(r"Programs\Opera\launcher.exe"));
-            candidates.push(std::path::PathBuf::from(&pf).join(r"Opera\launcher.exe"));
-        }
-        "Opera GX" => {
-            candidates.push(std::path::PathBuf::from(&local).join(r"Programs\Opera GX\opera.exe"));
-            candidates.push(std::path::PathBuf::from(&local).join(r"Programs\Opera GX\launcher.exe"));
-        }
-        "Brave" => {
-            candidates.push(std::path::PathBuf::from(&pf).join(r"BraveSoftware\Brave-Browser\Application\brave.exe"));
-            candidates.push(std::path::PathBuf::from(&pf86).join(r"BraveSoftware\Brave-Browser\Application\brave.exe"));
-        }
-        "Chromium" => {
-            candidates.push(std::path::PathBuf::from(&local).join(r"Chromium\Application\chrome.exe"));
-            candidates.push(std::path::PathBuf::from(&pf).join(r"Chromium\Application\chrome.exe"));
-        }
-        "Vivaldi" => {
-            candidates.push(std::path::PathBuf::from(&local).join(r"Vivaldi\Application\vivaldi.exe"));
-            candidates.push(std::path::PathBuf::from(&pf).join(r"Vivaldi\Application\vivaldi.exe"));
-        }
-        "Yandex Browser" => {
-            candidates.push(std::path::PathBuf::from(&pf).join(r"Yandex\YandexBrowser\Application\browser.exe"));
-            candidates.push(std::path::PathBuf::from(&local).join(r"Yandex\YandexBrowser\Application\browser.exe"));
-        }
-        "Avast Secure Browser" => {
-            candidates.push(std::path::PathBuf::from(&pf).join(r"AVAST Software\Browser\Application\AvastBrowser.exe"));
-            candidates.push(std::path::PathBuf::from(&local).join(r"AVAST Software\Browser\Application\AvastBrowser.exe"));
-        }
-        "AVG Secure Browser" => {
-            candidates.push(std::path::PathBuf::from(&pf).join(r"AVG\Browser\Application\AVGBrowser.exe"));
-            candidates.push(std::path::PathBuf::from(&local).join(r"AVG\Browser\Application\AVGBrowser.exe"));
-        }
-        "Tor Browser" => {
-            candidates.push(std::path::PathBuf::from(&local).join(r"Tor Browser\Browser\firefox.exe"));
-        }
-        "Internet Explorer" => {
-            candidates.push(std::path::PathBuf::from(&pf).join(r"Internet Explorer\iexplore.exe"));
-            candidates.push(std::path::PathBuf::from(&pf86).join(r"Internet Explorer\iexplore.exe"));
-        }
-        _ => {}
-    }
-    candidates.into_iter().find(|p| p.exists())
-}
-
-#[cfg(target_os = "windows")]
-fn simple_hash(s: &str) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x1000_0000_01b3);
-    }
-    format!("{:016x}", h)
-}
-
-#[tauri::command]
-fn get_browser_icon(exe: String) -> JsonResult {
-    #[cfg(target_os = "windows")]
-    {
-        let cache_dir = dirs::config_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("diskraptor").join("browser-icons");
-        let cache_file = cache_dir.join(format!("{}.txt", simple_hash(&exe)));
-        // Fast path: read previously extracted icon from disk cache.
-        if let Ok(s) = std::fs::read_to_string(&cache_file) {
-            if s.starts_with("data:image") {
-                return JsonResult::ok(serde_json::Value::String(s.trim().to_string()));
-            }
-        }
-        let script = r#"Add-Type -AssemblyName System.Drawing; try { $i = [System.Drawing.Icon]::ExtractAssociatedIcon('__EXE__'); if ($i) { $b = $i.ToBitmap(); $ms = New-Object System.IO.MemoryStream; $b.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); $bytes = $ms.ToArray(); Write-Output ('data:image/png;base64,' + [Convert]::ToBase64String($bytes)) } else { exit 1 } } catch { exit 1 }"#;
-        let script = script.replace("__EXE__", &exe.replace('\'', "''"));
-        if let Some(s) = win_powershell(&script) {
-            let s = s.trim();
-            if s.starts_with("data:image") {
-                let _ = std::fs::create_dir_all(&cache_dir);
-                let _ = std::fs::write(&cache_file, s);
-                return JsonResult::ok(serde_json::Value::String(s.to_string()));
-            }
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    { let _ = &exe; }
-    JsonResult::err("Could not extract browser icon")
-}
-
-#[tauri::command]
-async fn list_browser_data() -> JsonResult {
-    // Summing cache sizes walks large directory trees, so run it off the
-    // main/UI thread to avoid freezing the window.
-    tauri::async_runtime::spawn_blocking(|| {
-        let mut list: Vec<serde_json::Value> = Vec::new();
-        for def in browser_defs() {
-            if let Some((_base, cookies, cache)) = browser_paths(&def) {
-                let cookie_size = sum_sizes(&cookies);
-                let cache_size = sum_sizes(&cache);
-                if cookie_size == 0 && cache_size == 0 { continue; }
-                let exe: Option<String> = {
-                    #[cfg(target_os = "windows")]
-                    {
-                        browser_exe_path(def.name).map(|p| p.to_string_lossy().to_string())
-                    }
-                    #[cfg(not(target_os = "windows"))]
-                    { None }
-                };
-                let cookie_paths: Vec<String> = cookies.iter()
-                    .filter(|p| p.exists())
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect();
-                let cache_paths: Vec<String> = cache.iter()
-                    .filter(|p| p.exists())
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect();
-                list.push(serde_json::json!({
-                    "name": def.name,
-                    "cookie_size": cookie_size,
-                    "cache_size": cache_size,
-                    "total_size": cookie_size + cache_size,
-                    "kind": def.kind,
-                    "exe": exe,
-                    "cookie_paths": cookie_paths,
-                    "cache_paths": cache_paths,
-                }));
-            }
-        }
-        list.sort_by(|a, b| b["total_size"].as_u64().unwrap_or(0).cmp(&a["total_size"].as_u64().unwrap_or(0)));
-        JsonResult::ok(serde_json::json!(list))
-    })
-    .await
-    .unwrap_or_else(|e| JsonResult::err(format!("Browser scan failed: {e}")))
-}
-
-#[tauri::command]
-async fn clean_browser(name: String, cookies: bool, cache: bool) -> JsonResult {
-    tauri::async_runtime::spawn_blocking(move || {
-        for def in browser_defs() {
-            if def.name != name { continue; }
-            if let Some((_base, cookie_paths, cache_paths)) = browser_paths(&def) {
-                let mut freed = 0u64;
-                if cookies {
-                    for p in &cookie_paths {
-                        if p.exists() { freed += delete_path_recursive(p); }
-                    }
-                }
-                if cache {
-                    for p in &cache_paths {
-                        if p.exists() { freed += delete_path_recursive(p); }
-                    }
-                }
-                return JsonResult::ok(serde_json::json!({
-                    "name": name, "freed": freed,
-                }));
-            }
-        }
-        JsonResult::err(format!("Browser not found: {}", name))
-    })
-    .await
-    .unwrap_or_else(|e| JsonResult::err(format!("Clean failed: {e}")))
-}
 
 #[tauri::command]
 fn get_memory_info() -> JsonResult {
@@ -1529,247 +993,6 @@ fn get_app_info() -> JsonResult {
     }))
 }
 
-#[tauri::command]
-fn empty_trash() -> JsonResult {
-    #[cfg(target_os = "macos")]
-    {
-        if in_mac_sandbox() {
-            // In the sandbox we cannot drive Finder. Empty the user's own
-            // trash container if we can read it; otherwise report clearly.
-            if let Some(home) = dirs::home_dir() {
-                let trash = home.join(".Trash");
-                if let Ok(entries) = std::fs::read_dir(&trash) {
-                    let mut ok = false;
-                    for entry in entries.flatten() {
-                        let p = entry.path();
-                        let name = entry.file_name();
-                        if name.to_string_lossy().starts_with('.') { continue; }
-                        let r = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
-                        if r.is_ok() { ok = true; }
-                    }
-                    if ok || !trash.exists() {
-                        return JsonResult::ok_empty();
-                    }
-                }
-            }
-            return JsonResult::err("Empty Trash is unavailable in the sandboxed build.");
-        }
-        let _ = std::process::Command::new("osascript").args(["-e", "tell app \"Finder\" to empty trash"]).status();
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = std::process::Command::new("gio").args(["trash", "--empty"]).status();
-        if let Some(home) = dirs::home_dir() {
-            let _ = std::fs::remove_dir_all(home.join(".local/share/Trash/files"));
-            let _ = std::fs::remove_dir_all(home.join(".local/share/Trash/info"));
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // The real recycle bin lives at {SystemDrive}\$Recycle.Bin — NOT in the
-        // user profile. The old temp-dir derivation targeted the wrong folder
-        // and silently never emptied anything.
-        let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
-        let bin = format!("{}\\$Recycle.Bin", system_drive);
-        let _ = std::process::Command::new("cmd").args(["/c", "rd", "/s", "/q", &bin]).status();
-    }
-    JsonResult::ok_empty()
-}
-
-#[tauri::command]
-fn list_trash() -> JsonResult {
-    let items = {
-        #[cfg(target_os = "macos")] { list_trash_macos() }
-        #[cfg(target_os = "linux")] { list_trash_linux() }
-        #[cfg(target_os = "windows")] { list_trash_windows() }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))] { Vec::new() }
-    };
-    JsonResult::ok(serde_json::Value::Array(items))
-}
-
-#[cfg(target_os = "windows")]
-fn list_trash_windows() -> Vec<serde_json::Value> {
-    let mut items = list_trash_windows_shell();
-    // The shell only shows *registered* trash items (those with $I metadata).
-    // Deleted data whose $I file is missing/corrupt is invisible to it — the
-    // recycle bin folder can hold gigabytes while Explorer reports it empty.
-    // Fall back to (and merge in) the physical $R files/folders.
-    let mut seen: std::collections::HashSet<String> = items
-        .iter()
-        .filter_map(|i| i.get("path").and_then(|p| p.as_str()).map(String::from))
-        .collect();
-    for it in list_trash_windows_fs() {
-        let p = it.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        if !p.is_empty() && !seen.insert(p.clone()) {
-            continue;
-        }
-        items.push(it);
-    }
-    items
-}
-
-#[cfg(target_os = "windows")]
-fn list_trash_windows_shell() -> Vec<serde_json::Value> {
-    let script = r#"
-$shell = New-Object -ComObject Shell.Application
-$rb = $shell.Namespace(10)
-$out = @()
-$n = 0
-foreach ($it in $rb.Items()) {
-    if ($n -ge 5000) { break }
-    $orig = $rb.GetDetailsOf($it, 1)
-    $deleted = $rb.GetDetailsOf($it, 2)
-    $out += [pscustomobject]@{
-        name = [string]$it.Name
-        path = [string]$it.Path
-        size = [long]$it.Size
-        is_dir = [bool]$it.IsFolder
-        deleted_at = [string]$deleted
-        original_path = [string]$orig
-    }
-    $n++
-}
-$out | ConvertTo-Json -Depth 3 -Compress
-"#;
-    if let Some(json_str) = win_powershell(script) {
-        let trimmed = json_str.trim();
-        if trimmed.is_empty() || trimmed == "[]" {
-            return Vec::new();
-        }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            match v {
-                serde_json::Value::Array(arr) => return arr,
-                other => return vec![other],
-            }
-        }
-    }
-    Vec::new()
-}
-
-#[cfg(target_os = "windows")]
-fn list_trash_windows_fs() -> Vec<serde_json::Value> {
-    // Enumerate the physical contents of the current user's recycle-bin folder.
-    // Only the top level is listed (a deleted folder with millions of files
-    // shows up as a single item), so this is fast even for huge recycle bins.
-    let script = r#"
-$ErrorActionPreference = "SilentlyContinue"
-$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$bin = "$env:SystemDrive\`$Recycle.Bin\$sid"
-$out = @()
-$n = 0
-foreach ($it in Get-ChildItem $bin -Force) {
-    if ($n -ge 2000) { break }
-    $out += [pscustomobject]@{
-        name = [string]$it.Name
-        path = [string]$it.FullName
-        size = if ($it.PSIsContainer) { 0 } else { [long]$it.Length }
-        is_dir = [bool]$it.PSIsContainer
-        deleted_at = ""
-        original_path = ""
-    }
-    $n++
-}
-$out | ConvertTo-Json -Depth 3 -Compress
-"#;
-    if let Some(json_str) = win_powershell(script) {
-        let trimmed = json_str.trim();
-        if trimmed.is_empty() || trimmed == "[]" {
-            return Vec::new();
-        }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            match v {
-                serde_json::Value::Array(arr) => return arr,
-                other => return vec![other],
-            }
-        }
-    }
-    Vec::new()
-}
-
-#[cfg(target_os = "linux")]
-fn list_trash_linux() -> Vec<serde_json::Value> {
-    let trash_dir = dirs::home_dir().unwrap_or_default().join(".local/share/Trash/files");
-    let mut items = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&trash_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') { continue; }
-            let meta = entry.metadata().ok();
-            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-            let size = if is_dir {
-                dir_size(&entry.path())
-            } else {
-                meta.as_ref().map(|m| m.len()).unwrap_or(0)
-            };
-            items.push(serde_json::json!({
-                "name": name,
-                "path": entry.path().to_string_lossy(),
-                "size": size,
-                "is_dir": is_dir,
-                "deleted_at": "",
-            }));
-        }
-    }
-    items
-}
-
-#[cfg(target_os = "macos")]
-fn list_trash_macos() -> Vec<serde_json::Value> {
-    let script = r#"import os,json
-t=os.path.expanduser('~/.Trash')
-out=[]
-for f in os.listdir(t):
-    if f.startswith('.'): continue
-    p=os.path.join(t,f)
-    try:
-        st=os.lstat(p)
-        isdir=os.path.isdir(p)
-        size=0
-        if isdir:
-            for root,dirs,files in os.walk(p):
-                for n in files:
-                    try: size+=os.lstat(os.path.join(root,n)).st_size
-                    except: pass
-        else:
-            size=st.st_size
-        out.append({'name':f,'path':p,'size':size,'is_dir':isdir,'deleted_at':''})
-    except: pass
-print(json.dumps(out))"#;
-    let output = std::process::Command::new("python3")
-        .args(["-c", script])
-        .output();
-    if let Ok(out) = output {
-        if let Ok(s) = String::from_utf8(out.stdout) {
-            let trimmed = s.trim();
-            if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(trimmed) {
-                return items;
-            }
-        }
-    }
-    Vec::new()
-}
-
-#[tauri::command]
-fn restore_trash(trash_path: String) -> JsonResult {
-    let src = std::path::Path::new(&trash_path);
-    if !src.exists() { return JsonResult::err("File not found"); }
-    let home = dirs::home_dir().unwrap_or_default();
-    let fname = src.file_name().and_then(|n| n.to_str()).unwrap_or("restored");
-    let mut dest = home.join(fname);
-    if dest.exists() {
-        let base = src.file_stem().and_then(|n| n.to_str()).unwrap_or("file");
-        let ext = src.extension().and_then(|n| n.to_str()).unwrap_or("");
-        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-        dest = home.join(format!("{}_{}", base, ts));
-        if !ext.is_empty() { dest = dest.with_extension(ext); }
-    }
-    if std::fs::copy(src, &dest).is_ok() {
-        let _ = std::fs::remove_file(src);
-        JsonResult::ok(serde_json::json!({"restored_to": dest.to_string_lossy().to_string()}))
-    } else {
-        JsonResult::err("Failed to restore")
-    }
-}
 
 #[tauri::command]
 fn request_permissions() -> JsonResult {
@@ -1793,9 +1016,22 @@ fn check_admin_needed(_path: String) -> JsonResult {
 fn restart_as_admin() -> JsonResult {
     #[cfg(target_os = "windows")]
     {
+        use windows::core::{PCWSTR, w};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
         if let Ok(exe) = std::env::current_exe() {
-            let _ = std::process::Command::new("powershell")
-                .args(["Start-Process", exe.to_str().unwrap_or(""), "-Verb", "runAs"]).spawn();
+            let exe_str = exe.to_string_lossy().to_string();
+            let wide: Vec<u16> = exe_str.encode_utf16().chain(std::iter::once(0)).collect();
+            unsafe {
+                ShellExecuteW(
+                    None,
+                    w!("runas"),
+                    PCWSTR(wide.as_ptr()),
+                    None,
+                    None,
+                    SW_SHOWNORMAL.0 as i32,
+                );
+            }
             std::process::exit(0);
         }
     }
@@ -1817,9 +1053,10 @@ fn restart_as_admin() -> JsonResult {
 #[tauri::command]
 async fn check_for_updates() -> JsonResult {
     // Query the GitHub releases API for the latest tag and compare with the
-    // installed version. Async so a slow network call never blocks the UI.
+    // installed version. Pure Rust (ureq) — no curl subprocess. Async so a slow
+    // network call never blocks the UI.
     let installed = env!("CARGO_PKG_VERSION");
-    // Sandboxed Store builds cannot run the curl subprocess; report no update
+    // Sandboxed Store builds cannot do the network call; report no update
     // available (updates are distributed via the store itself).
     if cfg!(target_os = "macos") && in_mac_sandbox() {
         return JsonResult::ok(serde_json::json!({
@@ -1829,21 +1066,18 @@ async fn check_for_updates() -> JsonResult {
         }));
     }
     let result = tauri::async_runtime::spawn_blocking(|| {
-        let out = std::process::Command::new("curl")
-            .args([
-                "-s",
-                "-m",
-                "8",
-                "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
-            ])
-            .output()
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(8))
+            .build();
+        let resp = agent
+            .get("https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest")
+            .set("User-Agent", "DiskRaptor")
+            .call()
             .ok()?;
-        if !out.status.success() { return None; }
-        let s = String::from_utf8_lossy(&out.stdout);
-        let v: serde_json::Value = serde_json::from_str(&s).ok()?;
+        let body = resp.into_string().ok()?;
+        let v: serde_json::Value = serde_json::from_str(&body).ok()?;
         let tag = v.get("tag_name").and_then(|t| t.as_str())?;
-        let latest = tag.trim_start_matches('v').to_string();
-        Some(latest)
+        Some(tag.trim_start_matches('v').to_string())
     })
     .await;
     match result {
@@ -1878,13 +1112,13 @@ fn open_url(url: String) -> JsonResult {
     JsonResult::ok_empty()
 }
 
-// ── Scanner Commands ──
+// â”€â”€ Scanner Commands â”€â”€
 
 fn scan_config(
     path: &str,
     follow_symlinks: bool,
     timeout_secs: u64,
-    live: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    live: std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>,
 ) -> scanner::walker::ScanConfig {
     scanner::walker::ScanConfig {
         root_path: path.into(),
@@ -1903,22 +1137,23 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
     if scan.scan.running.swap(true, Ordering::Acquire) {
         return JsonResult::err("Scan already running");
     }
+    let scan_id = scan.scan_counter.fetch_add(1, Ordering::Relaxed) + 1;
     scan.scan.cancelled.store(false, Ordering::Release);
     scan.scan.files_found.store(0, Ordering::Relaxed);
     scan.scan.dirs_found.store(0, Ordering::Relaxed);
     scan.scan.bytes_found.store(0, Ordering::Relaxed);
-    *scan.scan.current_dir.lock().unwrap() = path.clone();
-    *scan.scan.start_time.lock().unwrap() = Instant::now();
-    *scan.scan.result.lock().unwrap() = None;
-    *scan.scan.errors.lock().unwrap() = Vec::new();
+    *scan.scan.current_dir.lock() = path.clone();
+    *scan.scan.start_time.lock() = Instant::now();
+    *scan.scan.result.lock() = None;
+    *scan.scan.errors.lock() = Vec::new();
 
     let p = path.clone();
     let fs = follow_symlinks.unwrap_or(false);
     let ts = timeout_secs.unwrap_or(30);
     let handle = app.clone();
 
-    let live = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
-    *scan.scan.live_entries.lock().unwrap() = Some(live.clone());
+    let live = std::sync::Arc::new(parking_lot::Mutex::new(std::collections::VecDeque::new()));
+    *scan.scan.live_entries.lock() = Some(live.clone());
 
     let result_handle = handle.clone();
     std::thread::Builder::new().name("scan".into()).spawn(move || {
@@ -1926,7 +1161,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
         let cancel_flag = config.cancelled.clone().unwrap();
         {
             let s = result_handle.state::<AppState>();
-            *s.scan.cancel_flag.lock().unwrap() = Some(cancel_flag.clone());
+            *s.scan.cancel_flag.lock() = Some(cancel_flag.clone());
             if s.scan.cancelled.load(Ordering::Acquire) { return; }
         }
 
@@ -1938,7 +1173,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
             s.scan.dirs_found.store(dirs, Ordering::Relaxed);
             s.scan.bytes_found.store(bytes, Ordering::Relaxed);
             if !msg.is_empty() {
-                *s.scan.current_dir.lock().unwrap() = msg.to_owned();
+                *s.scan.current_dir.lock() = msg.to_owned();
             }
             let _ = emit_handle.emit(
                 "scan:progress",
@@ -1976,7 +1211,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
                         if last_progress.elapsed().as_secs() > ts {
                             cancel_flag.store(true, Ordering::Release);
                             s.scan.cancelled.store(true, Ordering::Release);
-                            s.scan.errors.lock().unwrap().push(format!(
+                            s.scan.errors.lock().push(format!(
                                 "TIMEOUT: scan made no progress for {}s and was stopped",
                                 ts
                             ));
@@ -1999,7 +1234,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
                 let elapsed = sr.stats.scan_time_ms;
                 // NOTE: chunks are built on demand in get_chunk (avoids cloning the
                 // whole arena and doubling peak memory for huge scans).
-                *s.scan.result.lock().unwrap() = Some(ScanResultData {
+                *s.scan.result.lock() = Some(ScanResultData {
                     arena: sr.arena, stats: sr.stats, scan_time_ms: elapsed,
                     errors: Vec::new(),
                 });
@@ -2007,7 +1242,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
             Some(Err(e)) => {
                 eprintln!("[scan] error: {}", e);
                 // Surface the error to the UI so the user sees why the tree is empty.
-                s.scan.errors.lock().unwrap().push(e.to_string());
+                s.scan.errors.lock().push(e.to_string());
                 let _ = result_handle.emit("scan:error", serde_json::json!({ "error": e.to_string() }));
             }
             None => {
@@ -2017,12 +1252,12 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
         s.scan.running.store(false, Ordering::Release);
     }).ok();
 
-    JsonResult::ok(serde_json::json!({"status": "started"}))
+    JsonResult::ok(serde_json::json!({"status": "started", "scan_id": scan_id}))
 }
 
 fn scan_progress_data(state: &AppState) -> serde_json::Value {
     let is_running = state.scan.running.load(Ordering::Acquire);
-    let rg = state.scan.result.lock().unwrap();
+    let rg = state.scan.result.lock();
     let has_result = rg.is_some();
     let (files, dirs, bytes) = if has_result {
         let r = rg.as_ref().unwrap();
@@ -2030,18 +1265,17 @@ fn scan_progress_data(state: &AppState) -> serde_json::Value {
     } else {
         (state.scan.files_found.load(Ordering::Relaxed), state.scan.dirs_found.load(Ordering::Relaxed), state.scan.bytes_found.load(Ordering::Relaxed))
     };
-    let errors: Vec<String> = state.scan.errors.lock().unwrap().clone();
+    let errors: Vec<String> = state.scan.errors.lock().clone();
     drop(rg);
     let phase: u64 = if !is_running && has_result { 3 } else if is_running { 0 } else { 3 };
-    let elapsed = state.scan.start_time.lock().unwrap().elapsed().as_secs();
-    let cd = state.scan.current_dir.lock().unwrap().clone();
+    let elapsed = state.scan.start_time.lock().elapsed().as_secs();
+    let cd = state.scan.current_dir.lock().clone();
     let live: Vec<String> = state
         .scan
         .live_entries
         .lock()
-        .unwrap()
         .as_ref()
-        .map(|q| q.lock().unwrap().iter().cloned().collect())
+        .map(|q| q.lock().iter().cloned().collect())
         .unwrap_or_default();
     serde_json::json!({
         "files_found": files, "dirs_found": dirs, "bytes_found": bytes,
@@ -2082,7 +1316,7 @@ fn build_chunk(arena: &scanner::tree::TreeNodeArena, chunk_id: u32) -> Option<Tr
 
 #[tauri::command]
 fn get_scan_result(state: State<AppState>) -> JsonResult {
-    let g = state.scan.result.lock().unwrap();
+    let g = state.scan.result.lock();
     if let Some(ref d) = *g {
         let sj = serde_json::json!({
             "total_files": d.stats.total_files, "total_dirs": d.stats.total_dirs,
@@ -2103,7 +1337,7 @@ fn get_scan_result(state: State<AppState>) -> JsonResult {
 
 #[tauri::command]
 fn get_chunk(state: State<AppState>, chunk_index: u32) -> JsonResult {
-    let g = state.scan.result.lock().unwrap();
+    let g = state.scan.result.lock();
     if let Some(ref d) = *g {
         if let Some(chunk) = build_chunk(&d.arena, chunk_index) {
             if let Ok(json) = serde_json::to_value(&chunk) {
@@ -2116,13 +1350,49 @@ fn get_chunk(state: State<AppState>, chunk_index: u32) -> JsonResult {
     JsonResult::err("Chunk not found")
 }
 
+/// Return the direct children of a node as full node objects, mirroring what
+/// `loadChunk` hands the UI. Used by the frontend when a node's children have
+/// not been received in any loaded chunk yet.
+#[tauri::command]
+fn get_children(state: State<AppState>, node_index: u32) -> JsonResult {
+    let g = state.scan.result.lock();
+    if let Some(ref d) = *g {
+        let arena = &d.arena;
+        if (node_index as usize) >= arena.nodes.len() {
+            return JsonResult::ok(serde_json::json!([]));
+        }
+        let mut children: Vec<scanner::tree::TreeNode> = Vec::new();
+        let mut cur = arena.nodes[node_index as usize].first_child;
+        while cur != u32::MAX {
+            match arena.nodes.get(cur as usize) {
+                Some(n) => {
+                    let next = n.next_sibling;
+                    let mut node = n.clone();
+                    node.chunk_id = cur / CHUNK_SIZE;
+                    children.push(node);
+                    cur = next;
+                }
+                None => break,
+            }
+        }
+        drop(g);
+        match serde_json::to_value(&children) {
+            Ok(v) => JsonResult::ok(v),
+            Err(_) => JsonResult::err("Failed to serialize children"),
+        }
+    } else {
+        drop(g);
+        JsonResult::ok(serde_json::json!([]))
+    }
+}
+
 #[tauri::command]
 fn cancel_scan(state: State<AppState>) -> JsonResult {
     if !state.scan.running.load(Ordering::Acquire) {
         return JsonResult::ok(serde_json::json!(false));
     }
     state.scan.cancelled.store(true, Ordering::Release);
-    if let Some(ref cf) = *state.scan.cancel_flag.lock().unwrap() {
+    if let Some(ref cf) = *state.scan.cancel_flag.lock() {
         cf.store(true, Ordering::Release);
     }
     JsonResult::ok(serde_json::json!(true))
@@ -2130,24 +1400,11 @@ fn cancel_scan(state: State<AppState>) -> JsonResult {
 
 #[tauri::command]
 fn release_scan(state: State<AppState>) -> JsonResult {
-    *state.scan.result.lock().unwrap() = None;
+    *state.scan.result.lock() = None;
     JsonResult::ok_empty()
 }
 
-// ── Duplicate file scanner ──
-
-/// Hash the first 1 MiB of a file (plus length) — cheap enough for thousands
-/// of files, accurate after the size pre-filter.
-fn hash_file_head(path: &std::path::Path) -> (u64, String) {
-    use std::io::Read;
-    let mut buf = vec![0u8; 1 << 20];
-    let mut n = 0usize;
-    if let Ok(mut f) = std::fs::File::open(path) {
-        n = f.read(&mut buf).unwrap_or(0);
-    }
-    buf.truncate(n);
-    (n as u64, format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&buf)))
-}
+// â”€â”€ Duplicate file scanner â”€â”€
 
 #[tauri::command]
 fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
@@ -2158,9 +1415,9 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
     st.dup.cancelled.store(false, Ordering::Release);
     st.dup.phase.store(1, Ordering::Relaxed);
     st.dup.files_scanned.store(0, Ordering::Relaxed);
-    *st.dup.current_file.lock().unwrap() = String::new();
-    *st.dup.groups.lock().unwrap() = Vec::new();
-    *st.dup.wasted_bytes.lock().unwrap() = 0;
+    *st.dup.current_file.lock() = String::new();
+    *st.dup.groups.lock() = Vec::new();
+    *st.dup.wasted_bytes.lock() = 0;
 
     let handle = app.clone();
     std::thread::Builder::new().name("dup-scan".into()).spawn(move || {
@@ -2188,7 +1445,7 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
             };
             scanned += 1;
             st.dup.files_scanned.store(scanned, Ordering::Relaxed);
-            *st.dup.current_file.lock().unwrap() = e.path().to_string_lossy().to_string();
+            *st.dup.current_file.lock() = e.path().to_string_lossy().to_string();
             by_size.entry(meta.len()).or_default().push(e.path().to_path_buf());
             if scanned >= FILE_CAP {
                 break;
@@ -2197,7 +1454,7 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
 
         // Phase 2: hash candidate groups (same size).
         st.dup.phase.store(2, Ordering::Relaxed);
-        let mut by_hash: std::collections::HashMap<(u64, String), Vec<std::path::PathBuf>> =
+        let mut by_hash: std::collections::HashMap<(u64, u64), Vec<std::path::PathBuf>> =
             std::collections::HashMap::new();
         for group in by_size.into_values() {
             if group.len() < 2 {
@@ -2209,9 +1466,9 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
                 }
                 scanned += 1;
                 st.dup.files_scanned.store(scanned, Ordering::Relaxed);
-                *st.dup.current_file.lock().unwrap() = p.to_string_lossy().to_string();
-                let (len, h) = hash_file_head(&p);
-                by_hash.entry((len, h)).or_default().push(p);
+                *st.dup.current_file.lock() = p.to_string_lossy().to_string();
+                let h = scanner::duplicates::hash_file_head(&p, scanner::duplicates::HEAD_HASH_BYTES);
+                by_hash.entry(h).or_default().push(p);
             }
         }
 
@@ -2241,8 +1498,8 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
         groups.sort_by(|a, b| {
             b["wasted"].as_u64().unwrap_or(0).cmp(&a["wasted"].as_u64().unwrap_or(0))
         });
-        *st.dup.groups.lock().unwrap() = groups;
-        *st.dup.wasted_bytes.lock().unwrap() = wasted;
+        *st.dup.groups.lock() = groups;
+        *st.dup.wasted_bytes.lock() = wasted;
         st.dup.running.store(false, Ordering::Release);
     }).ok();
 
@@ -2251,22 +1508,22 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
 
 #[tauri::command]
 fn get_dup_stats(state: State<AppState>) -> JsonResult {
-    let groups = state.dup.groups.lock().unwrap();
+    let groups = state.dup.groups.lock();
     JsonResult::ok(serde_json::json!({
         "phase": state.dup.phase.load(Ordering::Relaxed),
         "filesScanned": state.dup.files_scanned.load(Ordering::Relaxed),
         "groups": groups.len(),
-        "wastedBytes": *state.dup.wasted_bytes.lock().unwrap(),
-        "currentFile": state.dup.current_file.lock().unwrap().clone(),
+        "wastedBytes": *state.dup.wasted_bytes.lock(),
+        "currentFile": state.dup.current_file.lock().clone(),
     }))
 }
 
 #[tauri::command]
 fn get_dup_result(state: State<AppState>) -> JsonResult {
-    let groups = state.dup.groups.lock().unwrap().clone();
+    let groups = state.dup.groups.lock().clone();
     JsonResult::ok(serde_json::json!({
         "groups": groups,
-        "wastedBytes": *state.dup.wasted_bytes.lock().unwrap(),
+        "wastedBytes": *state.dup.wasted_bytes.lock(),
         "filesScanned": state.dup.files_scanned.load(Ordering::Relaxed),
         "cancelled": state.dup.cancelled.load(Ordering::Relaxed),
     }))
@@ -2280,7 +1537,7 @@ fn cancel_dup_scan(state: State<AppState>) -> JsonResult {
 
 #[tauri::command]
 fn get_stats(state: State<AppState>) -> JsonResult {
-    let g = state.scan.result.lock().unwrap();
+    let g = state.scan.result.lock();
     if let Some(ref d) = *g {
         let sj = serde_json::json!({
             "total_files": d.stats.total_files, "total_dirs": d.stats.total_dirs,
@@ -2297,41 +1554,9 @@ fn get_stats(state: State<AppState>) -> JsonResult {
     }
 }
 
-// ── Test/Diagnostic Commands ──
+// â”€â”€ Test/Diagnostic Commands â”€â”€
 
-#[cfg(feature = "test-server")]
-use std::collections::HashMap;
-#[cfg(feature = "test-server")]
-use std::sync::Mutex as StdMutex;
-
-#[cfg(feature = "test-server")]
-static CDP_RESULTS: std::sync::LazyLock<StdMutex<HashMap<String, String>>> =
-    std::sync::LazyLock::new(|| StdMutex::new(HashMap::new()));
-
-#[cfg(feature = "test-server")]
-#[tauri::command]
-fn __cdp_result(key: String, value: String) -> JsonResult {
-    CDP_RESULTS.lock().unwrap().insert(key, value);
-    JsonResult::ok_empty()
-}
-
-#[cfg(feature = "test-server")]
-fn get_cdp_result(key: &str) -> Option<String> {
-    CDP_RESULTS.lock().unwrap().remove(key)
-}
-
-#[cfg(feature = "test-server")]
-fn parse_cdp_value(v: &str) -> serde_json::Value {
-    if let Some(inner) = v.strip_prefix("__err:") {
-        return serde_json::json!({"type": "string", "value": inner});
-    }
-    match serde_json::from_str::<serde_json::Value>(v) {
-        Ok(parsed) => serde_json::json!({"type": "object", "value": parsed}),
-        Err(_) => serde_json::json!({"type": "string", "value": v}),
-    }
-}
-
-// ── Settings ──
+// â”€â”€ Settings â”€â”€
 
 #[tauri::command]
 fn save_settings(state: State<AppState>, settings: serde_json::Value) -> JsonResult {
@@ -2340,7 +1565,7 @@ fn save_settings(state: State<AppState>, settings: serde_json::Value) -> JsonRes
         Some(inner) if inner.is_object() => inner.clone(),
         _ => settings,
     };
-    let path = state.settings_path.lock().unwrap().clone();
+    let path = state.settings_path.lock().clone();
     let mut merged = std::fs::read_to_string(&path)
         .ok()
         .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
@@ -2360,7 +1585,7 @@ fn save_settings(state: State<AppState>, settings: serde_json::Value) -> JsonRes
 
 #[tauri::command]
 fn load_settings(state: State<AppState>) -> JsonResult {
-    let path = state.settings_path.lock().unwrap().clone();
+    let path = state.settings_path.lock().clone();
     if let Ok(json) = std::fs::read_to_string(&path) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
             return JsonResult::ok(v);
@@ -2369,235 +1594,9 @@ fn load_settings(state: State<AppState>) -> JsonResult {
     JsonResult::ok(serde_json::json!({}))
 }
 
-// ── Helpers ──
+// â”€â”€ Helpers â”€â”€
 
-fn format_size(b: u64) -> String {
-    const U: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB"];
-    if b == 0 { return "0 B".into(); }
-    let bf = b as f64;
-    let i = (bf.log2() / 10.0).floor() as usize;
-    let i = i.min(U.len() - 1);
-    let v = bf / (1024f64.powi(i as i32));
-    if i == 0 { format!("{} {}", b, U[i]) }
-    else { format!("{:.2} {}", v, U[i]) }
-}
-
-// ── Main ──
-
-// ── Native menu ────────────────────────────────────────────
-const MENU_LANGUAGES: &[(&str, &str)] = &[
-    ("lang_en", "English"),
-    ("lang_de", "Deutsch"),
-    ("lang_fr", "Français"),
-    ("lang_es", "Español"),
-    ("lang_it", "Italiano"),
-    ("lang_pt", "Português"),
-    ("lang_nl", "Nederlands"),
-    ("lang_pl", "Polski"),
-    ("lang_sv", "Svenska"),
-    ("lang_da", "Dansk"),
-    ("lang_nb", "Norsk"),
-    ("lang_fi", "Suomi"),
-    ("lang_cs", "Čeština"),
-    ("lang_ro", "Română"),
-    ("lang_tr", "Türkçe"),
-    ("lang_id", "Bahasa Indonesia"),
-    ("lang_vi", "Tiếng Việt"),
-    ("lang_ru", "Русский"),
-    ("lang_uk", "Українська"),
-    ("lang_ar", "العربية"),
-    ("lang_zh", "简体中文"),
-    ("lang_zh-tw", "繁體中文"),
-    ("lang_ja", "日本語"),
-    ("lang_ko", "한국어"),
-    ("lang_hi", "हिन्दी"),
-];
-
-#[cfg(desktop)]
-fn build_native_menu<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-
-    let about = MenuItem::with_id(app, "about", "About DiskRaptor", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
-
-    let app_submenu = Submenu::with_items(
-        app,
-        "DiskRaptor",
-        true,
-        &[
-            &about as &dyn IsMenuItem<R>,
-            &PredefinedMenuItem::separator(app)?,
-            &settings,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::services(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::hide(app, None)?,
-            &PredefinedMenuItem::hide_others(app, None)?,
-            &PredefinedMenuItem::show_all(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, None)?,
-        ],
-    )?;
-
-    let view_pie = MenuItem::with_id(app, "view_pie", "Pie Chart", true, Some("CmdOrCtrl+1"))?;
-    let view_galaxy = MenuItem::with_id(app, "view_galaxy", "Galaxy", true, Some("CmdOrCtrl+3"))?;
-    let view_treemap = MenuItem::with_id(app, "view_treemap", "Treemap", true, Some("CmdOrCtrl+4"))?;
-
-    let lang_auto = MenuItem::with_id(app, "lang_auto", "Auto (System)", true, None::<&str>)?;
-    let lang_sep = PredefinedMenuItem::separator(app)?;
-    let mut lang_items_owned: Vec<tauri::menu::MenuItem<R>> =
-        Vec::with_capacity(MENU_LANGUAGES.len());
-    for (id, label) in MENU_LANGUAGES {
-        lang_items_owned.push(MenuItem::with_id(app, *id, *label, true, None::<&str>)?);
-    }
-    let mut lang_items: Vec<&dyn IsMenuItem<R>> = vec![&lang_auto, &lang_sep];
-    for item in &lang_items_owned {
-        lang_items.push(item);
-    }
-    let lang_submenu = Submenu::with_items(app, "Language", true, &lang_items)?;
-
-    let view_submenu = Submenu::with_items(
-        app,
-        "View",
-        true,
-        &[
-            &view_pie as &dyn IsMenuItem<R>,
-            &view_galaxy,
-            &view_treemap,
-            &PredefinedMenuItem::separator(app)?,
-            &lang_submenu,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::fullscreen(app, None)?,
-        ],
-    )?;
-
-    let scan_dl =
-        MenuItem::with_id(app, "scan_downloads", "Scan Downloads", true, None::<&str>)?;
-    let scan_trash = MenuItem::with_id(app, "scan_trash", "Scan Trash", true, None::<&str>)?;
-    let trash_recovery =
-        MenuItem::with_id(app, "trash_recovery", "Trash Recovery…", true, None::<&str>)?;
-    let find_files = MenuItem::with_id(app, "find_files", "Find Files…", true, None::<&str>)?;
-    let empty_folders =
-        MenuItem::with_id(app, "empty_folders", "Empty Folders…", true, None::<&str>)?;
-    let cleanup_dl =
-        MenuItem::with_id(app, "cleanup_downloads", "Downloads Cleanup", true, None::<&str>)?;
-    let smart_tools =
-        MenuItem::with_id(app, "smart_tools", "S.M.A.R.T. Tools…", true, None::<&str>)?;
-    let browser_tools =
-        MenuItem::with_id(app, "browser_tools", "Clean Browser Tools…", true, None::<&str>)?;
-    let find_dupes =
-        MenuItem::with_id(app, "find_duplicates", "Find Duplicate Files…", true, Some("CmdOrCtrl+D"))?;
-    let export_html =
-        MenuItem::with_id(app, "export_html", "Export HTML Report…", true, None::<&str>)?;
-    let preferences =
-        MenuItem::with_id(app, "preferences", "Preferences…", true, None::<&str>)?;
-    let clear_scan = MenuItem::with_id(app, "clear_scan", "Clear Scan", true, None::<&str>)?;
-    let empty_trash = MenuItem::with_id(app, "empty_trash", "Empty Trash…", true, None::<&str>)?;
-    let exit_app_item = MenuItem::with_id(app, "menu_exit", "Exit", true, Some("CmdOrCtrl+Q"))?;
-    let tools_submenu = Submenu::with_items(
-        app,
-        "Tools",
-        true,
-        &[
-            &scan_dl as &dyn IsMenuItem<R>,
-            &scan_trash,
-            &trash_recovery,
-            &find_files,
-            &empty_folders,
-            &cleanup_dl,
-            &smart_tools,
-            &browser_tools,
-            &find_dupes,
-            &PredefinedMenuItem::separator(app)?,
-            &export_html,
-            &preferences,
-            &clear_scan,
-            &PredefinedMenuItem::separator(app)?,
-            &empty_trash,
-            &PredefinedMenuItem::separator(app)?,
-            &exit_app_item,
-        ],
-    )?;
-
-    let window_submenu = Submenu::with_items(
-        app,
-        "Window",
-        true,
-        &[
-            &PredefinedMenuItem::minimize(app, None)? as &dyn IsMenuItem<R>,
-            &PredefinedMenuItem::maximize(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::close_window(app, None)?,
-        ],
-    )?;
-
-    let check_updates =
-        MenuItem::with_id(app, "check_updates", "Check for Updates…", true, None::<&str>)?;
-    let help_about = MenuItem::with_id(app, "about_help", "About DiskRaptor", true, Some("CmdOrCtrl+I"))?;
-    let help_submenu = Submenu::with_items(
-        app,
-        "Help",
-        true,
-        &[
-            &check_updates as &dyn IsMenuItem<R>,
-            &PredefinedMenuItem::separator(app)?,
-            &help_about,
-        ],
-    )?;
-
-    Menu::with_items(
-        app,
-        &[
-            &app_submenu as &dyn IsMenuItem<R>,
-            &view_submenu,
-            &tools_submenu,
-            &window_submenu,
-            &help_submenu,
-        ],
-    )
-}
-
-#[cfg(desktop)]
-fn handle_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str) {
-    let run = |js: &str| {
-        if let Some(win) = app.get_webview_window("main") {
-            let _ = win.eval(js);
-        }
-    };
-    let click = |sel: &str| run(&format!("var e=document.querySelector(\"{sel}\");if(e)e.click();"));
-    match id {
-        "view_pie" => click(".diagram-mode[data-mode='pie']"),
-        "view_galaxy" => click(".diagram-mode[data-mode='galaxy']"),
-        "view_treemap" => click(".diagram-mode[data-mode='treemap']"),
-        "scan_downloads" => click(".tools-item[data-action='scan-downloads']"),
-        "scan_trash" => click(".tools-item[data-action='scan-trash']"),
-        "trash_recovery" => click(".tools-item[data-action='trash-recovery']"),
-        "find_files" => click(".tools-item[data-action='find-files']"),
-        "empty_folders" => click(".tools-item[data-action='empty-folders']"),
-        "cleanup_downloads" => click(".tools-item[data-action='cleanup-downloads']"),
-        "smart_tools" => click(".tools-item[data-action='smart-tools']"),
-        "browser_tools" => click(".tools-item[data-action='browser-tools']"),
-        "find_duplicates" => click("#btn-duplicates"),
-        "export_html" => click(".tools-item[data-action='export-html']"),
-        "preferences" => click(".tools-item[data-action='settings']"),
-        "clear_scan" => click(".tools-item[data-action='clear-scan']"),
-        "empty_trash" => click(".tools-item[data-action='trash']"),
-        "menu_exit" => {
-            app.exit(0);
-        }
-        "check_updates" => run("if(window.__checkUpdate)window.__checkUpdate();"),
-        "settings" => run("var s=document.getElementById('settings-overlay');if(s)s.style.display='flex';"),
-        "about" | "about_help" => run("var o=document.getElementById('about-overlay');if(o)o.classList.add('active');"),
-        "lang_auto" => run("if(window.I18N)window.I18N.setLocale('auto');"),
-        _ => {
-            if let Some(code) = id.strip_prefix("lang_") {
-                run(&format!("if(window.I18N)window.I18N.setLocale('{code}');"));
-            }
-        }
-    }
-}
+// â”€â”€ Main â”€â”€
 
 fn main() {
     let settings_path = dirs::config_dir()
@@ -2627,6 +1626,7 @@ fn main() {
             },
             dup: DupState::default(),
             settings_path: Mutex::new(settings_path),
+            scan_counter: AtomicU64::new(0),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
         })
         .setup(|_app| {
@@ -2652,243 +1652,43 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
                     let handle = _app.handle().clone();
                     std::thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(cdp_server(port, handle));
+                        rt.block_on(test_server::cdp_server(port, handle));
                     });
                 }
             }
             #[cfg(target_os = "windows")]
             {
                 if let Some(win) = _app.get_webview_window("main") {
-                    if let Ok(menu) = build_native_menu(_app.handle()) {
+                    if let Ok(menu) = menu::build_native_menu(_app.handle()) {
                         let _ = win.set_menu(menu);
                     }
                 }
             }
             Ok(())
         })
-        .menu(build_native_menu)
-        .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
+        .menu(menu::build_native_menu)
+        .on_menu_event(|app, event| menu::handle_menu_event(app, event.id().as_ref()))
         .invoke_handler(tauri::generate_handler![
             delete_path, delete_permanent,
-            open_explorer, open_terminal, get_icon,
+            open_explorer, open_terminal, open_properties, get_icon,
             get_home_dir, pick_directory, get_trash_path, list_drives, get_volume_stats, get_dir_stats,
             list_downloads_candidates,
             get_memory_info, get_process_memory, get_app_version, get_app_data_dir, get_app_info,
-            empty_trash, list_trash, restore_trash,
+            trash::empty_trash, trash::list_trash, trash::restore_trash,
             request_permissions, check_admin_needed, restart_as_admin, is_sandboxed,
             check_for_updates, open_url,
             start_scan, get_scan_progress, get_scan_result,
-            get_chunk, cancel_scan, release_scan, get_stats,
+            get_chunk, get_children, cancel_scan, release_scan, get_stats,
             find_duplicates, get_dup_stats, get_dup_result, cancel_dup_scan,
             save_settings, load_settings,
-            list_disks, get_smart_status, exit_app,
-            list_browser_data, clean_browser, get_browser_icon,
+            list_disks, exit_app,
+            smart::get_smart_status,
+            browser::list_browser_data, browser::clean_browser, browser::get_browser_icon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
-// ── CDP Server ──
-
-#[cfg(feature = "test-server")]
-use tokio_tungstenite::accept_async;
-#[cfg(feature = "test-server")]
-use futures_util::{StreamExt, SinkExt};
-#[cfg(feature = "test-server")]
-use tokio::sync::Mutex as AsyncMutex;
-#[cfg(feature = "test-server")]
-use tokio::io::AsyncReadExt;
-
-#[cfg(feature = "test-server")]
-async fn handle_http(stream: tokio::net::TcpStream, buf: &[u8], port: u16) {
-    let req = String::from_utf8_lossy(buf);
-    if req.starts_with("OPTIONS") {
-        let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: 0\r\n\r\n";
-        let _ = stream.writable().await;
-        let _ = stream.try_write(resp.as_bytes());
-        return;
-    }
-    if req.starts_with("POST /cdp_result") {
-        if let Some(body_start) = req.find("\r\n\r\n") {
-            let body = &req[body_start + 4..];
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(body.trim()) {
-                if let (Some(id), Some(value)) = (
-                    data.get("id").and_then(|v| v.as_str()),
-                    data.get("value").and_then(|v| v.as_str()),
-                ) {
-                    CDP_RESULTS.lock().unwrap().insert(id.to_string(), value.to_string());
-                }
-            }
-        }
-        let resp = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: 2\r\n\r\n{}";
-        let _ = stream.writable().await;
-        let _ = stream.try_write(resp.as_bytes());
-        return;
-    }
-    if req.starts_with("GET /json") {
-        let body = serde_json::json!([{
-            "id": "page-1", "description": "", "title": "DiskRaptor",
-            "type": "page", "url": "tauri://localhost",
-            "webSocketDebuggerUrl": format!("ws://127.0.0.1:{}/devtools/page/page-1", port),
-        }]).to_string();
-        let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\n\r\n{}", body.len(), body);
-        let _ = stream.writable().await;
-        let _ = stream.try_write(resp.as_bytes());
-    }
-}
-
-#[cfg(feature = "test-server")]
-async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::SocketAddr, app: tauri::AppHandle, _cdp_port: u16) {
-    struct PrependReader {
-        buf: Vec<u8>,
-        pos: usize,
-        stream: tokio::net::TcpStream,
-    }
-    impl tokio::io::AsyncRead for PrependReader {
-        fn poll_read(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &mut tokio::io::ReadBuf<'_>,
-        ) -> std::task::Poll<std::io::Result<()>> {
-            let me = self.get_mut();
-            if me.pos < me.buf.len() {
-                let len = std::cmp::min(buf.remaining(), me.buf.len() - me.pos);
-                buf.put_slice(&me.buf[me.pos..me.pos + len]);
-                me.pos += len;
-                std::task::Poll::Ready(Ok(()))
-            } else {
-                std::pin::Pin::new(&mut me.stream).poll_read(cx, buf)
-            }
-        }
-    }
-    impl tokio::io::AsyncWrite for PrependReader {
-        fn poll_write(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &[u8],
-        ) -> std::task::Poll<std::io::Result<usize>> {
-            let me = self.get_mut();
-            std::pin::Pin::new(&mut me.stream).poll_write(cx, buf)
-        }
-        fn poll_flush(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<std::io::Result<()>> {
-            let me = self.get_mut();
-            std::pin::Pin::new(&mut me.stream).poll_flush(cx)
-        }
-        fn poll_shutdown(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<std::io::Result<()>> {
-            let me = self.get_mut();
-            std::pin::Pin::new(&mut me.stream).poll_shutdown(cx)
-        }
-    }
-    let prepend = PrependReader { buf, pos: 0, stream };
-    eprintln!("[CDP] WS handshaking with {}...", addr);
-    let ws = match accept_async(prepend).await {
-        Ok(ws) => { eprintln!("[CDP] WS handshake OK"); ws }
-        Err(e) => { eprintln!("[CDP] WS error on {}: {}", addr, e); return; }
-    };
-    eprintln!("[CDP] WS connected: {}", addr);
-    let (write, mut read) = ws.split();
-    let write = Arc::new(AsyncMutex::new(write));
-
-    eprintln!("[CDP] WS entering message loop");
-    while let Some(msg) = read.next().await {
-        match msg {
-            Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                eprintln!("[CDP] WS text msg: {} bytes", text.len());
-                if let Ok(req) = serde_json::from_str::<serde_json::Value>(&text) {
-                    let id = req.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let result = match method.as_str() {
-                        "Runtime.evaluate" | "Runtime.awaitPromise" => {
-                            let expr = req.get("params").and_then(|p| p.get("expression"))
-                                .and_then(|e| e.as_str()).unwrap_or("");
-                            let await_promise = method == "Runtime.awaitPromise" || req.get("params")
-                                .and_then(|p| p.get("awaitPromise")).and_then(|b| b.as_bool()).unwrap_or(false);
-                            let cdp_id = format!("__cdp_{}", id);
-
-                            if let Some(w) = app.get_webview_window("main") {
-                                let ejs = format!(
-                                    "try{{var r=eval({});var s=JSON.stringify(r);var x=new XMLHttpRequest();x.open('POST','http://127.0.0.1:{}/cdp_result',true);x.setRequestHeader('Content-Type','text/plain');x.send(JSON.stringify({{id:'{}',value:s}}));}}catch(e){{}}",
-                                    serde_json::Value::String(expr.to_string()), _cdp_port, cdp_id
-                                );
-                                let _ = w.eval(&ejs).ok();
-                            }
-
-                            let mut value = serde_json::Value::Null;
-                            if await_promise {
-                                for _ in 0..300 {
-                                    if let Some(v) = get_cdp_result(&cdp_id) {
-                                                value = parse_cdp_value(&v);
-                                        break;
-                                    }
-                                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                }
-                                if value.is_null() {
-                                    value = serde_json::json!({"type": "undefined"});
-                                }
-                            }
-                            serde_json::json!({"result": value})
-                        }
-                        "Page.getResourceTree" => {
-                            serde_json::json!({"frameTree": {"frame": {"id": "1", "url": "tauri://localhost", "mimeType": "text/html", "securityOrigin": "tauri://localhost", "loaderId": "1"}}})
-                        }
-                        _ => serde_json::json!({}),
-                    };
-                    let resp = serde_json::json!({"id": id, "result": result});
-                    let mut w = write.lock().await;
-                    let _ = w.send(tokio_tungstenite::tungstenite::Message::Text(
-                        serde_json::to_string(&resp).unwrap()
-                    )).await;
-                }
-            }
-            Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
-            _ => {}
-        }
-    }
-    eprintln!("[CDP] WS disconnected: {}", addr);
-}
-
-#[cfg(feature = "test-server")]
-async fn cdp_server(port: u16, app: tauri::AppHandle) {
-    let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await {
-        Ok(l) => l,
-        Err(e) => { eprintln!("[CDP] Failed to listen: {}", e); return; }
-    };
-    eprintln!("[CDP] Listening on ws://127.0.0.1:{}/", port);
-
-    loop {
-        let (mut stream, addr) = match listener.accept().await {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        let app_clone = app.clone();
-        tokio::spawn(async move {
-            let mut buf = vec![0u8; 8192];
-            let n = match stream.read(&mut buf).await {
-                Ok(n) if n > 0 => n,
-                _ => return,
-            };
-            let buf = buf[..n].to_vec();
-
-            let req_str = String::from_utf8_lossy(&buf);
-            if req_str.starts_with("GET /json") || req_str.starts_with("POST /cdp_result") {
-                handle_http(stream, &buf, port).await;
-            } else if req_str.contains("Upgrade: websocket") || req_str.contains("upgrade: websocket") {
-                handle_ws(stream, buf, addr, app_clone, port).await;
-            } else {
-                let resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-                let _ = stream.writable().await;
-                let _ = stream.try_write(resp.as_bytes());
-            }
-        });
-    }
-}
 
 #[cfg(test)]
 mod tests {

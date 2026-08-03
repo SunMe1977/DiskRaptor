@@ -17,11 +17,11 @@ pub struct ScanConfig {
     pub follow_symlinks: bool,
     pub scan_timeout_secs: u64,
     /// Shared error list — scanner pushes inaccessible paths here
-    pub errors: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    pub errors: std::sync::Arc<parking_lot::Mutex<Vec<String>>>,
     /// When set to true, scanner should stop as soon as possible
     pub cancelled: Option<std::sync::Arc<AtomicBool>>,
     /// Ring buffer of recently discovered entries, for live scanning views.
-    pub live_entries: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    pub live_entries: std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>,
 }
 
 impl Default for ScanConfig {
@@ -42,9 +42,9 @@ impl Default for ScanConfig {
             top_files_count: 100,
             follow_symlinks: false,
             scan_timeout_secs: 0,
-            errors: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            errors: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
             cancelled: None,
-            live_entries: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
+            live_entries: std::sync::Arc::new(parking_lot::Mutex::new(std::collections::VecDeque::new())),
         }
     }
 }
@@ -58,8 +58,8 @@ fn path_has_component(path: &str, target: &str) -> bool {
 const LIVE_CAP: usize = 1000;
 
 /// Record a discovered entry into the live ring buffer (capped).
-fn push_live(live: &std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>, name: &str) {
-    let mut q = live.lock().unwrap();
+fn push_live(live: &std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>, name: &str) {
+    let mut q = live.lock();
     if q.len() >= LIVE_CAP {
         q.pop_front();
     }
@@ -161,6 +161,91 @@ pub struct ScanResult {
     pub stats: ScanStats,
 }
 
+// ── Shared tree-building helpers ──────────────────────────
+// Both the parallel (jwalk) and fallback (walkdir) walkers build the arena
+// with identical logic; these helpers keep the two loops from drifting apart.
+
+fn alloc_root(arena: &mut TreeNodeArena, root_path: &str) -> u32 {
+    let root_name = Path::new(root_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| root_path.into());
+    arena.alloc(TreeNode {
+        name: root_name,
+        size: 0,
+        file_count: 0,
+        dir_count: 1,
+        node_type: NodeType::Directory,
+        parent: u32::MAX,
+        first_child: u32::MAX,
+        next_sibling: u32::MAX,
+        depth: 0,
+        chunk_id: 0,
+        mtime: 0,
+    })
+}
+
+fn child_depth(arena: &TreeNodeArena, parent: u32, root_idx: u32) -> u16 {
+    if parent == root_idx {
+        1
+    } else {
+        arena.nodes[parent as usize].depth + 1
+    }
+}
+
+fn alloc_directory(
+    arena: &mut TreeNodeArena,
+    name: String,
+    parent: u32,
+    depth: u16,
+) -> u32 {
+    arena.alloc(TreeNode {
+        name,
+        size: 0,
+        file_count: 0,
+        dir_count: 1,
+        node_type: NodeType::Directory,
+        parent,
+        first_child: u32::MAX,
+        next_sibling: u32::MAX,
+        depth,
+        chunk_id: 0,
+        mtime: 0,
+    })
+}
+
+fn alloc_file(
+    arena: &mut TreeNodeArena,
+    name: String,
+    size: u64,
+    parent: u32,
+    depth: u16,
+    mtime: u64,
+) -> u32 {
+    arena.alloc(TreeNode {
+        name,
+        size,
+        file_count: 1,
+        dir_count: 0,
+        node_type: NodeType::File,
+        parent,
+        first_child: u32::MAX,
+        next_sibling: u32::MAX,
+        depth,
+        chunk_id: 0,
+        mtime,
+    })
+}
+
+/// Link `child` as the next sibling of the parent's last child.
+fn link_child(arena: &mut TreeNodeArena, lc: &mut HashMap<u32, u32>, parent: u32, child: u32) {
+    match lc.get(&parent) {
+        Some(&last) => arena.nodes[last as usize].next_sibling = child,
+        None => arena.nodes[parent as usize].first_child = child,
+    }
+    lc.insert(parent, child);
+}
+
 
 // ─── macOS scanner (jwalk parallel traversal) ────────────
 // Uses jwalk for parallel directory walking, significantly faster
@@ -181,23 +266,7 @@ mod platform {
         let live_entries = config.live_entries.clone();
         let top_count = config.top_files_count;
         let mut arena = TreeNodeArena::with_estimated_capacity(root_path);
-        let root_name = Path::new(root_path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| root_path.into());
-        let root_idx = arena.alloc(TreeNode {
-            name: root_name,
-            size: 0,
-            file_count: 0,
-            dir_count: 1,
-            node_type: NodeType::Directory,
-            parent: u32::MAX,
-            first_child: u32::MAX,
-            next_sibling: u32::MAX,
-            depth: 0,
-            chunk_id: 0,
-        mtime: 0,
-        });
+        let root_idx = alloc_root(&mut arena, root_path);
         let mut ptix: HashMap<String, u32> = HashMap::new();
         ptix.insert(root_path.into(), root_idx);
         let mut lc: HashMap<u32, u32> = HashMap::new();
@@ -236,7 +305,7 @@ mod platform {
                 && (iter_count & 0x1FFF) == 0
                 && last_progress.elapsed().as_secs() > timeout
             {
-                errors.lock().unwrap().push(format!(
+                errors.lock().push(format!(
                     "TIMEOUT: No progress for {}s at {}",
                     timeout, root_path
                 ));
@@ -247,7 +316,7 @@ mod platform {
                 Err(e) => {
                     if let Some(path) = e.path() {
                         let err_path = path.to_string_lossy().to_string();
-                        let mut errs = errors.lock().unwrap();
+                        let mut errs = errors.lock();
                         if errs.len() < 100 {
                             errs.push(format!("Access denied: {}", err_path));
                         }
@@ -279,62 +348,22 @@ mod platform {
                 if skip_dirs.iter().any(|sd| path_has_component(&path_buf, sd.as_str())) {
                     continue;
                 }
-                let depth = if pi == root_idx {
-                    1
-                } else {
-                    arena.nodes[pi as usize].depth + 1
-                };
-            let ci = arena.alloc(TreeNode {
-                name: file_name.into_owned(),
-                size: 0,
-                file_count: 0,
-                dir_count: 1,
-                node_type: NodeType::Directory,
-                parent: pi,
-                first_child: u32::MAX,
-                next_sibling: u32::MAX,
-                depth,
-                chunk_id: 0,
-                mtime: 0,
-            });
-                match lc.get(&pi) {
-                    Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                    None => arena.nodes[pi as usize].first_child = ci,
-                }
-                lc.insert(pi, ci);
+                let depth = child_depth(&arena, pi, root_idx);
+                let ci = alloc_directory(&mut arena, file_name.into_owned(), pi, depth);
+                link_child(&mut arena, &mut lc, pi, ci);
                 ptix.insert(path_buf.clone(), ci);
             } else {
                 files_found += 1;
                 let meta = entry.metadata();
                 let sz = meta.as_ref().map(|m| m.len()).unwrap_or(0);
                 bytes_found += sz;
-                let depth = if pi == root_idx {
-                    1
-                } else {
-                    arena.nodes[pi as usize].depth + 1
-                };
+                let depth = child_depth(&arena, pi, root_idx);
                 let mtime = meta.as_ref()
                     .map(|m| m.modified().map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()).unwrap_or(0))
                     .unwrap_or(0);
                 let fname = file_name.into_owned();
-                let ci = arena.alloc(TreeNode {
-                    name: fname.clone(),
-                    size: sz,
-                    file_count: 1,
-                    dir_count: 0,
-                    node_type: NodeType::File,
-                    parent: pi,
-                    first_child: u32::MAX,
-                    next_sibling: u32::MAX,
-                    depth,
-                    chunk_id: 0,
-                    mtime,
-                });
-                match lc.get(&pi) {
-                    Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                    None => arena.nodes[pi as usize].first_child = ci,
-                }
-                lc.insert(pi, ci);
+                let ci = alloc_file(&mut arena, fname.clone(), sz, pi, depth, mtime);
+                link_child(&mut arena, &mut lc, pi, ci);
                 if sz > 0 {
                     top_files.insert(path_buf.clone(), sz, top_count);
                     file_types.add(&fname, sz);
@@ -411,23 +440,7 @@ pub fn scan_simple(
     let file_types = Arc::new(FileTypeAccum::default());
     let top_count = config.top_files_count;
     let mut arena = TreeNodeArena::with_estimated_capacity(root_path);
-    let root_name = Path::new(root_path)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| root_path.into());
-    let root_idx = arena.alloc(TreeNode {
-        name: root_name,
-        size: 0,
-        file_count: 0,
-        dir_count: 1,
-        node_type: NodeType::Directory,
-        parent: u32::MAX,
-        first_child: u32::MAX,
-        next_sibling: u32::MAX,
-        depth: 0,
-        chunk_id: 0,
-        mtime: 0,
-    });
+    let root_idx = alloc_root(&mut arena, root_path);
     let mut ptix: HashMap<String, u32> = HashMap::new();
     ptix.insert(root_path.into(), root_idx);
     let mut lc: HashMap<u32, u32> = HashMap::new();
@@ -472,7 +485,7 @@ pub fn scan_simple(
                 // entries are SYSTEM-owned and unreadable — that's expected,
                 // so don't flood the UI with hundreds of them.
                 if let Some(p) = e.path() {
-                    let mut errs = config.errors.lock().unwrap();
+                    let mut errs = config.errors.lock();
                     let cap = if root_path.contains("$Recycle.Bin") { 3 } else { 100 };
                     if errs.len() < cap {
                         errs.push(format!("Access denied: {}", p.to_string_lossy()));
@@ -499,61 +512,21 @@ pub fn scan_simple(
             if skip_dirs.iter().any(|sd| path_has_component(&full, sd.as_str())) {
                 continue;
             }
-            let depth = if pi == root_idx {
-                1
-            } else {
-                arena.nodes[pi as usize].depth + 1
-            };
-            let ci = arena.alloc(TreeNode {
-                name: file_name,
-                size: 0,
-                file_count: 0,
-                dir_count: 1,
-                node_type: NodeType::Directory,
-                parent: pi,
-                first_child: u32::MAX,
-                next_sibling: u32::MAX,
-                depth,
-                chunk_id: 0,
-        mtime: 0,
-            });
-            match lc.get(&pi) {
-                Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                None => arena.nodes[pi as usize].first_child = ci,
-            }
-            lc.insert(pi, ci);
+            let depth = child_depth(&arena, pi, root_idx);
+            let ci = alloc_directory(&mut arena, file_name, pi, depth);
+            link_child(&mut arena, &mut lc, pi, ci);
             ptix.insert(full.clone(), ci);
         } else {
             files_found += 1;
             let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
             bytes_found += sz;
-            let depth = if pi == root_idx {
-                1
-            } else {
-                arena.nodes[pi as usize].depth + 1
-            };
+            let depth = child_depth(&arena, pi, root_idx);
             let fname = file_name.clone();
-            let ci = arena.alloc(TreeNode {
-            name: fname,
-                    size: sz,
-                file_count: 1,
-                dir_count: 0,
-                node_type: NodeType::File,
-                parent: pi,
-                first_child: u32::MAX,
-                next_sibling: u32::MAX,
-                depth,
-                chunk_id: 0,
-        mtime: 0,
-            });
-            match lc.get(&pi) {
-                Some(&last) => arena.nodes[last as usize].next_sibling = ci,
-                None => arena.nodes[pi as usize].first_child = ci,
-            }
-            lc.insert(pi, ci);
+            let ci = alloc_file(&mut arena, fname.clone(), sz, pi, depth, 0);
+            link_child(&mut arena, &mut lc, pi, ci);
             if sz > 0 {
                 top_files.insert(full.clone(), sz, top_count);
-                file_types.add(&full, sz);
+                file_types.add(&fname, sz);
             }
         }
         if last_progress.elapsed().as_millis() >= 100 {
@@ -728,8 +701,10 @@ mod tests {
 
     #[test]
     fn test_scan_empty_dir_completes() {
+        let dir = std::env::temp_dir().join("diskraptor_walker_empty");
+        let _ = std::fs::create_dir_all(&dir);
         let cfg = super::ScanConfig {
-            root_path: r"C:\Users\hansj\AppData\Local\Temp\drtest_empty".into(),
+            root_path: dir.to_string_lossy().to_string(),
             ..Default::default()
         };
         let cb: super::ScanProgressCallback = Box::new(|_, _, _, _| {});
@@ -747,12 +722,17 @@ mod tests {
             sr.stats.total_dirs
         );
         assert!(sr.stats.total_files == 0 && sr.stats.total_dirs == 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_scan_nonexistent_path_completes() {
+        let missing = std::env::temp_dir()
+            .join("diskraptor_walker_missing_7f9a3")
+            .to_string_lossy()
+            .to_string();
         let cfg = super::ScanConfig {
-            root_path: r"C:\Users\hansj\.Trash".into(),
+            root_path: missing,
             ..Default::default()
         };
         let cb: super::ScanProgressCallback = Box::new(|_, _, _, _| {});

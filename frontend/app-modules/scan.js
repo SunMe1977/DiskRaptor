@@ -1,6 +1,24 @@
-(function () {
+﻿(function () {
   "use strict";
   window.app = window.app || {};
+
+  // Pure helpers kept outside the scan handler so it stays focused on flow.
+  function formatBytesPerSec(bps) {
+    return window.fmtSpeed(bps);
+  }
+
+  function speedColor(ratio) {
+    if (ratio > 0.8) return "#f85149";
+    if (ratio > 0.4) return "#3fb950";
+    return "#d29922";
+  }
+
+  function escLive(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
 
   window.app.initScan = function (refs) {
     const state = window.app.state;
@@ -35,7 +53,7 @@
         // path actually scans instead of silently doing nothing.
         try {
           await window.__TAURI__.invoke("cancel_scan", {});
-        } catch (e) {}
+        } catch (e) { console.debug("[DiskRaptor]", e); }
         for (let ci = 0; ci < 25; ci++) {
           await sleep(200);
           try {
@@ -84,7 +102,7 @@
               settings: { scan_history: hist },
             });
           }
-        } catch (e) {}
+        } catch (e) { console.debug("[DiskRaptor]", e); }
       })();
 
       // Multi-path: if path contains semicolons, scan each separately
@@ -114,8 +132,12 @@
       const followLinks = chkFollow.querySelector("input").checked;
 
       const safetyTimer = setTimeout(function () {
+        // A scan that runs this long without the poll loop finishing is stuck
+        // (e.g. a network drive that never answers). Hide the overlay AND tell
+        // the backend to stop so we don't leave a zombie scan running.
         progressOverlay.classList.remove("active");
         document.querySelector(".status-bar").textContent = "Timeout triggered";
+        window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
       }, 1800000);
 
       // Progress elements
@@ -132,18 +154,6 @@
         : null;
       const speedSamples = [];
       const maxSamples = 40;
-
-      function formatBytesPerSec(bps) {
-        if (bps <= 0) return "0 MB/s";
-        const mbps = bps / (1024 * 1024);
-        return mbps.toFixed(mbps < 10 ? 2 : 1) + " MB/s";
-      }
-
-      function speedColor(ratio) {
-        if (ratio > 0.8) return "#f85149";
-        if (ratio > 0.4) return "#3fb950";
-        return "#d29922";
-      }
 
       function drawSpeedChart() {
         if (!speedChartCtx) return;
@@ -276,13 +286,6 @@
 
       let lastLiveRender = 0;
 
-      function escLive(s) {
-        return String(s)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-      }
-
       function renderLiveTree(entries) {
         const now = Date.now();
         if (now - lastLiveRender < 400) return;
@@ -360,7 +363,7 @@
             try {
               rawDisplay.textContent =
                 "raw: " + JSON.stringify(p).substring(0, 150);
-            } catch (e) {}
+            } catch (e) { console.debug("[DiskRaptor]", e); }
           }
 
           const filesFound = Number(p.files_found || p.filesFound || 0);
@@ -648,7 +651,7 @@
           treeView.expanded.add(0);
           try {
             await treeView.rebuild();
-          } catch (e) {}
+          } catch (e) { console.debug("[DiskRaptor]", e); }
 
           (async function () {
             const BATCH = 20;
@@ -672,13 +675,13 @@
                 await Promise.all(promises);
                 try {
                   await treeView.rebuild();
-                } catch (e) {}
+                } catch (e) { console.debug("[DiskRaptor]", e); }
                 await sleep(0);
               }
             }
             try {
               await treeView.rebuild();
-            } catch (e) {}
+            } catch (e) { console.debug("[DiskRaptor]", e); }
             if (treeStatusBar) treeStatusBar.textContent = "Ready";
             showCleanupPanel();
           })();
@@ -698,7 +701,7 @@
               window.showToast("Scan errors: " + first.substring(0, 160), "warning");
             }
           }
-        } catch (e) {}
+        } catch (e) { console.debug("[DiskRaptor]", e); }
 
         if (
           !hadChunks &&
@@ -724,7 +727,7 @@
             treeView.expanded.add(0);
             try {
               await treeView.rebuild();
-            } catch (e) {}
+            } catch (e) { console.debug("[DiskRaptor]", e); }
           } catch (e) {
             console.warn("Synthetic root:", e);
           }
@@ -833,14 +836,14 @@
           var headerHtml = '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">' +
             '<h3 style="margin:0;font-size:15px;color:var(--text-primary);">\uD83E\uDDF9 Downloads Cleanup</h3>' +
             '<span style="font-size:12px;color:var(--text-muted);">' + cleanable.length + ' items \u00B7 ' +
-            (function (b) { var u = ["B", "KB", "MB", "GB"]; var i = Math.min(Math.floor(Math.log(b || 1) / Math.log(1024)), 3); return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i]; })(totalWaste) + ' reclaimable</span></div>';
+            window.fmtSize(totalWaste) + ' reclaimable</span></div>';
           var listHtml = '<div style="flex:1;overflow-y:auto;padding:6px 0;">';
           for (var ci = 0; ci < Math.min(cleanable.length, 200); ci++) {
             var item = cleanable[ci];
             var badge = item.reason === "duplicate" ? "\uD83D\uDD01" : item.reason === "old" ? "\u23F3" : item.reason === "temp" ? "\uD83D\uDDD1\uFE0F" : "\uD83D\uDCE6";
             var escName = item.name.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
             var fullPath = (scanPath.value || "").replace(/[\\/]+$/, "") + "/" + escName;
-            var sizeStr = (function (b) { var u = ["B", "KB", "MB", "GB"]; var i = Math.min(Math.floor(Math.log(b || 1) / Math.log(1024)), 3); return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i]; })(item.size);
+            var sizeStr = window.fmtSize(item.size);
             listHtml += '<div class="cleanup-item" data-file="' + escName + '" title="' + fullPath.replace(/"/g, "&quot;") + '" style="display:flex;align-items:center;gap:8px;padding:5px 14px;cursor:pointer;border-radius:4px;font-size:12px;color:var(--text-secondary);transition:background 0.15s;">' +
               '<input type="checkbox" checked style="width:15px;height:15px;cursor:pointer;flex-shrink:0;">' +
               '<span style="flex-shrink:0;">' + badge + '</span>' +
@@ -947,7 +950,7 @@
       btnCancel.disabled = true;
       try {
         await window.__TAURI__.invoke("cancel_scan", {});
-      } catch (e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
       for (let ci = 0; ci < 25; ci++) {
         await sleep(200);
         try {
@@ -1048,7 +1051,7 @@
       }
       try {
         await loader.release();
-      } catch (e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
       state.isScanning = false;
       btnScan.disabled = false;
       btnBrowse.disabled = false;

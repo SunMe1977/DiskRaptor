@@ -1,5 +1,5 @@
-/**
- * Duplicate File Scanner — progress overlay + results UI
+﻿/**
+ * Duplicate File Scanner â€” progress overlay + results UI
  * Same animated popup style as the main tree scanner.
  */
 class DupScanner {
@@ -10,13 +10,13 @@ class DupScanner {
   }
 
   _createUI() {
-    // ── Progress Overlay ──────────────────────────────
+    // â”€â”€ Progress Overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     this.overlay = document.createElement("div");
     this.overlay.id = "dup-progress-overlay";
     this.overlay.style.cssText = "display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);align-items:center;justify-content:center;";
     this.overlay.innerHTML = `
       <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:32px 40px;max-width:480px;width:90%;text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.4);">
-        <div style="font-size:40px;margin-bottom:12px;">🔍</div>
+        <div style="font-size:40px;margin-bottom:12px;">ðŸ”</div>
         <h3 style="margin:0 0 6px 0;font-size:16px;color:var(--text-primary);">Scanning for Duplicates</h3>
         <p id="dup-progress-status" style="margin:0 0 20px 0;font-size:13px;color:var(--text-secondary);" data-i18n="dup.scanning">Scanning files...</p>
         <div style="display:flex;gap:20px;justify-content:center;margin-bottom:16px;">
@@ -27,21 +27,21 @@ class DupScanner {
         <div id="dup-progress-bar-wrap" style="width:100%;height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;margin-bottom:16px;">
           <div id="dup-progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--accent-green),var(--accent-green));border-radius:2px;transition:width 0.3s;"></div>
         </div>
-        <div id="dup-progress-file" style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:16px;">—</div>
+        <div id="dup-progress-file" style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:16px;">â€”</div>
         <div style="display:flex;gap:8px;justify-content:center;">
-          <button id="dup-cancel-btn" style="padding:8px 20px;font-size:13px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">✖ Cancel</button>
+          <button id="dup-cancel-btn" style="padding:8px 20px;font-size:13px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">âœ– Cancel</button>
         </div>
       </div>
     `;
     document.body.appendChild(this.overlay);
 
-    // ── Results Panel ──────────────────────────────
+    // â”€â”€ Results Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     this.resultsPanel = document.createElement("div");
     this.resultsPanel.id = "dup-results-panel";
     this.resultsPanel.style.cssText = "display:none;margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);overflow:hidden;";
     this.resultsPanel.innerHTML = `
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="margin:0;font-size:14px;color:var(--text-primary);">🔍 Duplicate Files</h3>
+        <h3 style="margin:0;font-size:14px;color:var(--text-primary);">ðŸ” Duplicate Files</h3>
         <span id="dup-summary" style="font-size:12px;color:var(--text-muted);"></span>
       </div>
       <div id="dup-groups-list" style="max-height:400px;overflow-y:auto;padding:8px;"></div>
@@ -51,7 +51,7 @@ class DupScanner {
     `;
     document.body.appendChild(this.resultsPanel);
 
-    // ── Event wiring ──
+    // â”€â”€ Event wiring â”€â”€
     document.getElementById("dup-cancel-btn").onclick = () => this.cancel();
     document.getElementById("dup-close-results").onclick = () => {
       this.resultsPanel.style.display = "none";
@@ -97,7 +97,7 @@ class DupScanner {
             self.overlay.style.display = "none";
           }
         }
-      } catch(e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
     }, 200);
   }
 
@@ -113,7 +113,7 @@ class DupScanner {
         // data is valid if it has 'groups' (even empty array is valid)
         if (data && data.groups !== undefined) break;
         data = null;
-      } catch(e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
     }
     if (data && data.groups) {
       this._showResults(data, true);
@@ -162,7 +162,7 @@ class DupScanner {
     const t = window.__ || function(s){return s;};
     let headerText = groups.length + " groups \u00B7 " + this._fmtSize(data.wastedBytes || 0) + " reclaimable";
     if (cancelled && groups.length > 0) {
-      headerText = "⚠ " + t("dup.cancelled") + " \u2014 " + headerText + " (partial)";
+      headerText = "âš  " + t("dup.cancelled") + " \u2014 " + headerText + " (partial)";
     } else if (cancelled) {
       headerText = t("dup.cancelled") + " \u2014 " + t("dup.no_duplicates");
     }
@@ -288,14 +288,29 @@ class DupScanner {
         const checked = preSelected.indexOf(fi) >= 0;
         const row = document.createElement("div");
         row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:0;font-size:12px;color:var(--text-secondary);transition:background 0.15s;";
-        row.innerHTML = `
-          <input type="checkbox" ${checked ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent-red);flex-shrink:0;">
-          <span style="color:var(--text-muted);font-size:10px;width:20px;flex-shrink:0;">${fi === 0 ? '\uD83D\uDD19 keep' : '\uD83D\uDDD1'}</span>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${fp}</span>
-          <span style="color:var(--text-muted);font-size:10px;">${self._fmtSize(g.size)}</span>
-        `;
-        
-        const cb = row.querySelector('input');
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = checked;
+        cb.style.cssText = "width:15px;height:15px;cursor:pointer;accent-color:var(--accent-red);flex-shrink:0;";
+        const kindSpan = document.createElement("span");
+        kindSpan.textContent = fi === 0 ? "\uD83D\uDD19 keep" : "\uD83D\uDDD1";
+        kindSpan.style.cssText = "color:var(--text-muted);font-size:10px;width:20px;flex-shrink:0;";
+        const pathSpan = document.createElement("span");
+        pathSpan.textContent = fp;
+        pathSpan.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;";
+        const sizeSpan = document.createElement("span");
+        sizeSpan.textContent = self._fmtSize(g.size);
+        sizeSpan.style.cssText = "color:var(--text-muted);font-size:10px;";
+        row.appendChild(cb);
+        row.appendChild(kindSpan);
+        row.appendChild(pathSpan);
+        row.appendChild(sizeSpan);
+        row.onclick = function(e) {
+          if (e.target !== cb) {
+            cb.checked = !cb.checked;
+            cb.onchange();
+          }
+        };
         cb.onchange = function() {
           if (cb.checked) {
             checkStates[gi].add(fi);
@@ -307,13 +322,6 @@ class DupScanner {
           updateSelectedCount();
         };
 
-        // Click on row (not checkbox) toggles checkbox
-        row.onclick = function(e) {
-          if (e.target !== cb) {
-            cb.checked = !cb.checked;
-            cb.onchange();
-          }
-        };
         row.onmouseenter = function() { this.style.background = "var(--bg-hover)"; };
         row.onmouseleave = function() { this.style.background = "transparent"; };
 
@@ -407,10 +415,6 @@ class DupScanner {
   }
 
   _fmtSize(bytes) {
-    if (!bytes || bytes <= 0) return "0 B";
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    const v = bytes / Math.pow(1024, i);
-    return (i === 0 ? v : v.toFixed(1)) + " " + units[i];
+    return window.fmtSize(bytes);
   }
 }

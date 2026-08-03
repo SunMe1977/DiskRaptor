@@ -159,3 +159,203 @@ jobs:
           gh release create "$tag" --title "DiskRaptor $tag" --notes "" 2>/dev/null || true
           gh release upload "$tag" "release-assets/*" --clobber
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
+
+  # Mac App Store build: signed universal .pkg, uploaded to App Store Connect
+  # (TestFlight / App Review). Best-effort — if the Apple cert/profile/API-key
+  # secrets aren't configured the job is skipped, never blocking the release.
+  macos-mas:
+    name: macOS App Store (MAS PKG + upload)
+    runs-on: macos-14
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install JS dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: false
+      - name: Add macOS universal targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build MAS app (store feature, universal)
+        run: npx tauri build --bundles app --ci --features store --target universal-apple-darwin
+      - name: Setup code signing keychain
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$MACOS_CERT_P12" ] || [ -z "$MACOS_CERT_PASSWORD" ]; then
+            echo "SKIP: MACOS_CERT_P12/MACOS_CERT_PASSWORD not configured"; exit 0
+          fi
+          echo "$MACOS_CERT_P12" | base64 --decode > /tmp/mas_certs.p12
+          security create-keychain -p ci /tmp/mas-ci.keychain
+          security default-keychain -s /tmp/mas-ci.keychain
+          security unlock-keychain -p ci /tmp/mas-ci.keychain
+          security set-keychain-settings -t 3600 /tmp/mas-ci.keychain
+          security import /tmp/mas_certs.p12 -P "$MACOS_CERT_PASSWORD" \
+            -A -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: \
+            -s -k ci /tmp/mas-ci.keychain
+          security list-keychains -d user -s /tmp/mas-ci.keychain
+          rm -f /tmp/mas_certs.p12
+          security find-identity -v -p codesigning /tmp/mas-ci.keychain
+      - name: Prepare MAS bundle (entitlements + provisioning profile)
+        env:
+          BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/DiskRaptor.app"
+          [ -d "$APP" ] || { echo "App bundle not found: $APP"; exit 1; }
+          ver=$(node -p "require('./package.json').version")
+          APP_DST="dist-mas/DiskRaptor.app"
+          mkdir -p dist-mas
+          cp -R "$APP" "$APP_DST"
+          plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$APP_DST/Contents/Info.plist"
+          plutil -replace CFBundleVersion -string "$ver" "$APP_DST/Contents/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "$ver" "$APP_DST/Contents/Info.plist"
+          # Tell the frontend this is a store build so it hides the self-update UI.
+          INDEX_HTML=""
+          for cand in "$APP_DST/Contents/Resources/_up_/frontend/index.html" "$APP_DST/Contents/Resources/frontend/index.html"; do
+            if [ -f "$cand" ]; then INDEX_HTML="$cand"; break; fi
+          done
+          if [ -n "$INDEX_HTML" ]; then
+            perl -pi -e 's/(id="about-update-check")/$1 data-store="true"/' "$INDEX_HTML"
+          fi
+          if [ -n "$MAS_PROVISIONING_PROFILE" ]; then
+            echo "$MAS_PROVISIONING_PROFILE" | base64 --decode > "$APP_DST/Contents/embedded.provisionprofile"
+          else
+            echo "WARNING: MAS_PROVISIONING_PROFILE not set - App Review may reject"
+          fi
+      - name: Codesign MAS app
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$SIGNING_IDENTITY" ]; then echo "SKIP: SIGNING_IDENTITY not configured"; exit 0; fi
+          APP_DST="dist-mas/DiskRaptor.app"
+          xattr -cr "$APP_DST" || true
+          find "$APP_DST/Contents" -type f -name "*.dylib" -print0 | \
+            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$SIGNING_IDENTITY" "{}" || true
+          find "$APP_DST/Contents" -type d -name "*.framework" -print0 | \
+            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$SIGNING_IDENTITY" "{}" || true
+          codesign --force --options=runtime --entitlements installer/DiskRaptor-MAS.entitlements \
+            --sign "$SIGNING_IDENTITY" "$APP_DST"
+          codesign --verify --deep --strict --verbose=2 "$APP_DST"
+      - name: Create MAS PKG
+        env:
+          BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver=$(node -p "require('./package.json').version")
+          APP_DST="dist-mas/DiskRaptor.app"
+          pkg="dist-mas/DiskRaptor-${ver}-mas.pkg"
+          # Detect a "3rd Party Mac Developer Installer" identity for pkg signing.
+          INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i "3rd Party Mac Developer Installer\|Mac Developer Installer" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+          if [ -n "$INSTALLER_CERT" ]; then
+            productbuild --component "$APP_DST" /Applications \
+              --sign "$INSTALLER_CERT" \
+              --identifier "$BUNDLE_ID" --version "$ver" "$pkg"
+          else
+            echo "WARNING: no installer cert found, building unsigned pkg"
+            productbuild --component "$APP_DST" /Applications \
+              --identifier "$BUNDLE_ID" --version "$ver" "$pkg"
+          fi
+          ls -lh "$pkg"
+      - name: Upload to App Store Connect
+        continue-on-error: true
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$APPLE_API_KEY" ] || [ -z "$APPLE_API_ISSUER" ] || [ -z "$APPLE_API_KEY_P8" ]; then
+            echo "SKIP upload: App Store Connect API key secrets not configured (APPLE_API_KEY / APPLE_API_ISSUER / APPLE_API_KEY_P8)"
+            exit 0
+          fi
+          ver=$(node -p "require('./package.json').version")
+          pkg="dist-mas/DiskRaptor-${ver}-mas.pkg"
+          [ -f "$pkg" ] || { echo "PKG not found: $pkg"; exit 1; }
+          mkdir -p "$HOME/private_keys"
+          echo "$APPLE_API_KEY_P8" | base64 --decode > "$HOME/private_keys/AuthKey_$APPLE_API_KEY.p8"
+          xcrun altool --upload-app \
+            --file "$pkg" \
+            --apiKey "$APPLE_API_KEY" \
+            --apiIssuer "$APPLE_API_ISSUER" \
+            --output-format json
+          echo "Upload submitted. Check status in App Store Connect -> TestFlight."
+
+  linux-universal:
+    name: Linux (AppImage + DEB + RPM)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install JS dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: false
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev pkg-config libfuse2 rpm
+      - name: Build Tauri bundles (AppImage = universal, DEB, RPM)
+        run: npx tauri build --bundles deb,rpm,appimage --ci
+      - name: Stage release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver=$(node -p "require('./package.json').version")
+          mkdir -p release-assets
+          # Tauri writes the binary architecture into the bundle names; keep
+          # that, but prefix a stable "DiskRaptor-<version>" so all three
+          # platform jobs use a consistent naming scheme.
+          for deb in src-tauri/target/release/bundle/deb/*.deb; do
+            [ -f "$deb" ] || continue
+            cp "$deb" "release-assets/DiskRaptor-${ver}-$(basename "$deb")"
+          done
+          for rpm in src-tauri/target/release/bundle/rpm/*.rpm; do
+            [ -f "$rpm" ] || continue
+            cp "$rpm" "release-assets/DiskRaptor-${ver}-$(basename "$rpm")"
+          done
+          for appimage in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            [ -f "$appimage" ] || continue
+            cp "$appimage" "release-assets/DiskRaptor-${ver}-$(basename "$appimage")"
+          done
+          cp src-tauri/target/release/diskraptor "release-assets/DiskRaptor-${ver}-linux-x86_64.bin" 2>/dev/null || true
+          echo "=== Staged assets ==="
+          ls -la release-assets
+          if ! compgen -G "release-assets/*.AppImage" > /dev/null; then
+            echo "ERROR: no AppImage produced" >&2
+            exit 1
+          fi
+      - name: Deploy to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
+          gh release create "$tag" --title "DiskRaptor $tag" --notes "" 2>/dev/null || true
+          gh release upload "$tag" "release-assets/*" --clobber
+          gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'

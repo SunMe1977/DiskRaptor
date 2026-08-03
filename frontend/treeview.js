@@ -1,5 +1,5 @@
-/**
- * TreeView — Virtual tree view for the directory hierarchy.
+﻿/**
+ * TreeView â€” Virtual tree view for the directory hierarchy.
  * With right-click context menu matching the diagram menu.
  */
 class TreeView {
@@ -268,7 +268,7 @@ class TreeView {
     this._ctxMenu.innerHTML =
       '<div class="tctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
       '<div class="tctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
-      '<div class="tctx-item" data-action="scan-here">🔍 Scan this Folder</div>' +
+      '<div class="tctx-item" data-action="scan-here">ðŸ” Scan this Folder</div>' +
       '<div class="tctx-sep"></div>' +
       '<div class="tctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
       '<div class="tctx-item" data-action="copy">\u{1F4CB} ' + (window.__ ? window.__("action.copy_path") : "Copy Path") + '</div>' +
@@ -441,7 +441,7 @@ class TreeView {
       await navigator.clipboard.writeText(sizeStr);
       const t = window.__ || function(s){return s;};
       document.querySelector(".status-bar").textContent = t("status.copied").replace("{path}", sizeStr);
-    } catch(e) {}
+    } catch (e) { console.debug("[DiskRaptor]", e); }
   }
 
   async _handleOpenFile(arenaIdx) {
@@ -808,7 +808,7 @@ class TreeView {
     iconEl.className = "icon";
     iconEl.style.cssText =
       "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;";
-    iconEl.textContent = isDir ? "📁" : this._fileIcon(node.name || "");
+    iconEl.textContent = isDir ? "ðŸ“" : this._fileIcon(node.name || "");
     el.appendChild(iconEl);
     if (window.__ICON_CACHE__) {
       const iconKey = isDir ? "__folder__" : node.name || "file";
@@ -831,7 +831,7 @@ class TreeView {
         .catch(function () {});
     }
 
-    // Gradient percentage bar (green → yellow → red, like RAM bar)
+    // Gradient percentage bar (green â†’ yellow â†’ red, like RAM bar)
     const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
     const pctBar = document.createElement("span");
     pctBar.className = "tree-pct-bar";
@@ -865,13 +865,13 @@ class TreeView {
     // File count column
     const fc = document.createElement("span");
     fc.className = "node-files";
-    fc.textContent = isDir ? (node.file_count || 0).toLocaleString() : "—";
+    fc.textContent = isDir ? (node.file_count || 0).toLocaleString() : "â€”";
     el.appendChild(fc);
 
     // Directory count column
     const dc = document.createElement("span");
     dc.className = "node-dirs";
-    dc.textContent = isDir ? (node.dir_count || 0).toLocaleString() : "—";
+    dc.textContent = isDir ? (node.dir_count || 0).toLocaleString() : "â€”";
     el.appendChild(dc);
 
     // Date column
@@ -882,7 +882,7 @@ class TreeView {
       const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
       dateEl.textContent = d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
     } else {
-      dateEl.textContent = "—";
+      dateEl.textContent = "â€”";
     }
     el.appendChild(dateEl);
 
@@ -943,26 +943,22 @@ class TreeView {
 
   _fileIcon(name) {
     const ext = name.lastIndexOf(".") >= 0 ? name.substring(name.lastIndexOf(".")).toLowerCase() : "";
-    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg|ico|heic|avif)$/i.test(ext)) return "🖼️";
-    if (/\.(mp4|mov|avi|mkv|wmv|flv|webm|m4v)$/i.test(ext)) return "🎬";
-    if (/\.(mp3|wav|flac|ogg|aac|m4a|wma)$/i.test(ext)) return "🎵";
-    if (/\.(zip|tar|gz|bz2|7z|rar|dmg|iso)$/i.test(ext)) return "🗜️";
-    if (/\.(pdf)$/i.test(ext)) return "📕";
-    if (/\.(doc|docx|xls|xlsx|ppt|pptx|pages|numbers|key)$/i.test(ext)) return "📄";
-    if (/\.(exe|msi|dll|app|dmg|pkg)$/i.test(ext)) return "⚙️";
-    if (/\.(deb|rpm|apk)$/i.test(ext)) return "📦";
-    if (/\.(txt|md|rtf|csv|log|json|xml|yml|yaml|toml)$/i.test(ext)) return "📝";
-    if (/\.(js|ts|py|rs|cpp|c|h|hpp|java|go|rb|php|swift|kt)$/i.test(ext)) return "💻";
-    if (/\.(html|css|scss|less)$/i.test(ext)) return "🌐";
-    if (/\.(ttf|otf|woff|woff2)$/i.test(ext)) return "🔤";
-    return "📄";
+    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg|ico|heic|avif)$/i.test(ext)) return "ðŸ–¼ï¸";
+    if (/\.(mp4|mov|avi|mkv|wmv|flv|webm|m4v)$/i.test(ext)) return "ðŸŽ¬";
+    if (/\.(mp3|wav|flac|ogg|aac|m4a|wma)$/i.test(ext)) return "ðŸŽµ";
+    if (/\.(zip|tar|gz|bz2|7z|rar|dmg|iso)$/i.test(ext)) return "ðŸ—œï¸";
+    if (/\.(pdf)$/i.test(ext)) return "ðŸ“•";
+    if (/\.(doc|docx|xls|xlsx|ppt|pptx|pages|numbers|key)$/i.test(ext)) return "ðŸ“„";
+    if (/\.(exe|msi|dll|app|dmg|pkg)$/i.test(ext)) return "âš™ï¸";
+    if (/\.(deb|rpm|apk)$/i.test(ext)) return "ðŸ“¦";
+    if (/\.(txt|md|rtf|csv|log|json|xml|yml|yaml|toml)$/i.test(ext)) return "ðŸ“";
+    if (/\.(js|ts|py|rs|cpp|c|h|hpp|java|go|rb|php|swift|kt)$/i.test(ext)) return "ðŸ’»";
+    if (/\.(html|css|scss|less)$/i.test(ext)) return "ðŸŒ";
+    if (/\.(ttf|otf|woff|woff2)$/i.test(ext)) return "ðŸ”¤";
+    return "ðŸ“„";
   }
 
   _formatSize(bytes) {
-    if (bytes === 0) return "0 B";
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    const val = bytes / Math.pow(1024, i);
-    return i === 0 ? bytes + " B" : val.toFixed(2) + " " + units[i];
+    return window.fmtSize(bytes);
   }
 }

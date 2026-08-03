@@ -88,7 +88,7 @@
           try {
             const svg = document.querySelector("#diagram-container canvas");
             chartData = svg ? svg.toDataURL() : "";
-          } catch (e) {}
+          } catch (e) { console.debug("[DiskRaptor]", e); }
           const summaryBlock = includeSummary
             ? '<div style="margin:16px 0;padding:12px 14px;background:#f6f8fa;border:1px solid #e5e7eb;border-radius:8px;">' +
               '<strong>Summary</strong><br/>' +

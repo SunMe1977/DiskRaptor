@@ -238,8 +238,5 @@ function escHtml(s) {
 }
 
 function fmtTrash(b) {
-  if (!b || b <= 0) return "0 B";
-  const u = ["B","KB","MB","GB","TB"];
-  const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 4);
-  return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + u[i];
+  return window.fmtSize(b);
 }

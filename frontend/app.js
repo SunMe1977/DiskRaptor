@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DiskRaptor - Main application controller.
  */
 (function () {
@@ -52,7 +52,7 @@
 
     console.debug("DiskRaptor initializing...");
 
-    // ── Shared state ────────────────────────────────────
+    // â”€â”€ Shared state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     window.app = window.app || {};
     const state = window.app.state = {
       isScanning: false,
@@ -63,7 +63,7 @@
       lastDirsFound: 0,
     };
 
-    // ── Settings helpers ───────────────────────────────────
+    // â”€â”€ Settings helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     window.app.getSetting = async function (key, fallback) {
       try {
         const r = await window.__TAURI__.invoke("load_settings");
@@ -85,10 +85,10 @@
     const getSetting = window.app.getSetting;
     const setSetting = window.app.setSetting;
 
-    // ── Theme toggle ───────────────────────────────────────
+    // â”€â”€ Theme toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     await window.app.initTheme(getSetting, setSetting);
 
-    // ── Sandbox notice (macOS App Store build) ─────────────
+    // â”€â”€ Sandbox notice (macOS App Store build) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     (async function () {
       try {
         const r = await window.__TAURI__.invoke("is_sandboxed");
@@ -108,7 +108,7 @@
             )
             .forEach(function (el) { el.style.display = "none"; });
         }
-      } catch (e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
     })();
 
     const loader = new ChunkLoader();
@@ -116,7 +116,7 @@
     const treeView = new TreeView("tree-viewport", loader);
     window.__treeView = treeView;
 
-    // ── Column resize ────────────────────────────────────
+    // â”€â”€ Column resize â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     (function () {
       let dragCol = null,
         startX = 0,
@@ -185,7 +185,7 @@
       });
     });
 
-    // ── Welcome placeholder ──────────────────────────────
+    // â”€â”€ Welcome placeholder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const welcomeEl = document.getElementById("welcome-placeholder");
     const welcomeClose = document.getElementById("welcome-close");
     const welcomeDont = document.getElementById("welcome-dont-show");
@@ -193,7 +193,7 @@
     const welcomeBrowseBtn = document.getElementById("welcome-browse-btn");
     const welcomeAboutBtn = document.getElementById("welcome-about-btn");
 
-    // ── Exit button (toolbar) ────────────────────────────
+    // â”€â”€ Exit button (toolbar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const btnExit = document.getElementById("btn-exit");
     if (btnExit) {
       btnExit.addEventListener("click", function () {
@@ -226,7 +226,7 @@
       try {
         const s = await window.__TAURI__.invoke("load_settings", {});
         if (s && s.welcome_dismissed) hideWelcome();
-      } catch (e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
     })();
 
     if (welcomeScanBtn) {
@@ -260,7 +260,7 @@
       });
     }
 
-    // ── Focus trap for the about + settings modals ─────────
+    // â”€â”€ Focus trap for the about + settings modals â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Activates whenever the overlay becomes visible (class .active or display
     // flex), so Tab/Shift+Tab stays inside the modal.
     (function initModalFocusTraps() {
@@ -297,7 +297,7 @@
       check();
     })();
 
-    // ── Collapsible detail cards ─────────────────────────
+    // â”€â”€ Collapsible detail cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     document.querySelectorAll(".collapsible .card-header").forEach(function (
       h,
     ) {
@@ -338,7 +338,7 @@
       if (savedPath && scanPath && !scanPath.value) {
         scanPath.value = savedPath;
       }
-    } catch (e) {}
+    } catch (e) { console.debug("[DiskRaptor]", e); }
     try {
       const home = await window.__TAURI__.invoke("get_home_dir");
       let homePath = null;
@@ -347,7 +347,7 @@
           try {
             const j = JSON.parse(home);
             if (j && j.data) homePath = String(j.data);
-          } catch (e) {}
+          } catch (e) { console.debug("[DiskRaptor]", e); }
         }
         if (!homePath) homePath = home;
       } else if (home && typeof home === "object") {
@@ -365,10 +365,10 @@
       console.warn("get_home_dir failed:", e && e.message ? e.message : e);
     }
 
-    // ── Favorites/Bookmarked directories ─────────────────
+    // â”€â”€ Favorites/Bookmarked directories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     window.app.initFavorites(scanPath, btnFav);
 
-    // ── Drive Selector ──────────────────────────────────
+    // â”€â”€ Drive Selector â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     window.app.initDrives(scanPath, btnScan);
 
     // Galaxy view state
@@ -493,8 +493,8 @@
           isGalaxyMode = false;
           if (galaxyContainer) galaxyContainer.style.display = "none";
           if (galaxyView) {
-            try { galaxyView.hide(); } catch (e) {}
-            try { if (galaxyView.dispose) galaxyView.dispose(); } catch (e) {}
+            try { galaxyView.hide(); } catch (e) { console.debug("[DiskRaptor]", e); }
+            try { if (galaxyView.dispose) galaxyView.dispose(); } catch (e) { console.debug("[DiskRaptor]", e); }
             galaxyView = null;
           }
           if (diagramContainer) diagramContainer.style.display = "block";
@@ -503,7 +503,7 @@
       });
     });
 
-    // ── Duplicate Scanner ───────────────────────────────
+    // â”€â”€ Duplicate Scanner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const dupScanner = new DupScanner();
 
     const btnDup = document.createElement("button");
@@ -558,7 +558,7 @@
         if (wsub) {
           const sep = document.createElement("span");
           sep.style.cssText = "color:var(--text-muted);margin:0 6px;";
-          sep.textContent = "·";
+          sep.textContent = "Â·";
           const vspan = document.createElement("span");
           vspan.style.color = "var(--text-muted)";
           vspan.textContent = "v" + ver;
@@ -654,10 +654,56 @@
     try {
       const vv = await window.__TAURI__.invoke("get_app_info");
       _currentVersion = vv && vv.version ? (vv.version || "") : (vv && vv.data ? (vv.data.version || "") : "");
-    } catch (e) {}
+    } catch (e) { console.debug("[DiskRaptor]", e); }
+    // Deferred external links (replaces inline onclick handlers so script CSP
+    // does not need 'unsafe-inline').
+    document.addEventListener("click", function (ev) {
+      const target = ev.target && ev.target.closest
+        ? ev.target.closest("[data-open-url]")
+        : null;
+      if (!target) return;
+      const url = target.getAttribute("data-open-url");
+      if (!url) return;
+      ev.preventDefault();
+      window.__TAURI__.invoke("open_url", { url: url }).catch(function () {});
+    });
+    const aboutLogo = document.getElementById("about-logo-img");
+    if (aboutLogo) {
+      aboutLogo.addEventListener("error", function () {
+        aboutLogo.style.display = "none";
+      });
+    }
+    const updateCheckEl = document.getElementById("about-update-check");
+    if (updateCheckEl) {
+      updateCheckEl.addEventListener("click", function () {
+        window.__checkUpdate();
+      });
+    }
     window.__checkUpdate = async function () {
       const el = document.getElementById("about-update-check");
       if (!el) return;
+      const installLatest = function (latest) {
+        // Make the element an "Install" button: opens the release page where
+        // the installer for the current OS is published.
+        el.textContent = "\u2B07\uFE0F Install v" + latest;
+        el.style.color = "var(--accent-orange)";
+        el.style.cursor = "pointer";
+        el.style.textDecoration = "underline";
+        el.onclick = function () {
+          window.__TAURI__
+            .invoke("open_url", {
+              url: "https://github.com/SunMe1977/DiskRaptor/releases/tag/v" + latest,
+            })
+            .catch(function () {});
+        };
+      };
+      const noUpdate = function (current) {
+        el.textContent = "\u2705 No update available (v" + current + ")";
+        el.style.color = "var(--accent-green)";
+        el.style.cursor = "default";
+        el.style.textDecoration = "none";
+        el.onclick = null;
+      };
       // Store builds (MAS/MSIX) distribute updates via the store itself, so
       // hide the self-update UI entirely.
       const disableUpdates = el.getAttribute("data-store") === "true";
@@ -674,17 +720,9 @@
         const data = res && res.data ? res.data : res;
         const latest = data && data.latest ? String(data.latest) : "";
         if (latest && latest !== current) {
-          el.textContent =
-            "\u2B07\uFE0F Update available: v" +
-            latest +
-            " (current: v" +
-            current +
-            ")";
-          el.style.color = "var(--accent-orange)";
+          installLatest(latest);
         } else {
-          el.textContent =
-            "\u2705 You have the latest version (v" + current + ")";
-          el.style.color = "var(--accent-green)";
+          noUpdate(current);
         }
       } catch (e) {
         // Fallback: query GitHub directly from the frontend.
@@ -695,26 +733,20 @@
           const d2 = await r.json();
           const latest2 = (d2.tag_name || "").replace(/^v/, "");
           if (latest2 && latest2 !== current) {
-            el.textContent =
-              "\u2B07\uFE0F Update available: v" +
-              latest2 +
-              " (current: v" +
-              current +
-              ")";
-            el.style.color = "var(--accent-orange)";
+            installLatest(latest2);
           } else {
-            el.textContent =
-              "\u2705 You have the latest version (v" + current + ")";
-            el.style.color = "var(--accent-green)";
+            noUpdate(current);
           }
         } catch (e2) {
           el.textContent = "\u26A0\uFE0F Update check failed";
           el.style.color = "var(--accent-red)";
+          el.style.cursor = "default";
+          el.onclick = null;
         }
       }
     };
 
-    // ── Language Switcher ──────────────────────────────────
+    // â”€â”€ Language Switcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     (function initLangSwitcher() {
       const btnLang = document.getElementById("btn-lang");
       const langMenu = document.getElementById("lang-menu");
@@ -838,7 +870,7 @@
             try {
               const j = JSON.parse(selected);
               if (j && j.data) dir = String(j.data);
-            } catch (e) {}
+            } catch (e) { console.debug("[DiskRaptor]", e); }
           }
           if (!dir) dir = selected;
         } else if (selected && typeof selected === "object" && selected.data) {
@@ -857,7 +889,7 @@
       }
     });
 
-    // ── Follow symlinks toggle ──
+    // â”€â”€ Follow symlinks toggle â”€â”€
     let chkFollow = document.getElementById("chk-follow-symlinks");
     if (!chkFollow) {
       chkFollow = document.createElement("label");
@@ -868,7 +900,7 @@
       btnScan.parentNode.insertBefore(chkFollow, btnScan);
     }
 
-    // ── Error display ──
+    // â”€â”€ Error display â”€â”€
     let errDisplay = document.getElementById("scan-errors");
     if (!errDisplay) {
       errDisplay = document.createElement("div");
@@ -878,7 +910,7 @@
       document.getElementById("progress-overlay").appendChild(errDisplay);
     }
 
-    // ── Scan ────────────────────────────────────────────
+    // â”€â”€ Scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     window.app.initScan({
       loader: loader,
       treeView: treeView,
@@ -900,14 +932,14 @@
       sleep: sleep,
     });
 
-    // ── Export ──────────────────────────────────────────
+    // â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     window.app.initExport({
       scanPath: scanPath,
       btnExport: btnExport,
       loader: loader,
     });
 
-    // ── Drag & drop from Finder ─────────────────────────
+    // â”€â”€ Drag & drop from Finder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     document.addEventListener("dragover", function (e) {
       e.preventDefault();
     });
@@ -928,14 +960,14 @@
       }
     });
 
-    // ── Settings ────────────────────────────────────────
+    // â”€â”€ Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     window.app.initSettings({
       scanPath: scanPath,
       btnScan: btnScan,
       btnBrowse: btnBrowse,
     });
 
-    // ── Tools dropdown ──────────────────────────────────
+    // â”€â”€ Tools dropdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     window.app.initTools({
       scanPath: scanPath,
       btnScan: btnScan,

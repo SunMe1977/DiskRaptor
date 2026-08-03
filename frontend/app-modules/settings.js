@@ -8,7 +8,7 @@
       try {
         const s = await window.__TAURI__.invoke("load_settings", {});
         if (s && s.tips_dismissed) return;
-      } catch (e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
       const tipOv = document.getElementById("tip-overlay");
       const tipClose = document.getElementById("tip-close");
       const tipDont = document.getElementById("tip-dont-show");
@@ -45,7 +45,7 @@
           const p = r && r.path ? r.path : (r && r.data ? r.data.path : "");
           const el = document.getElementById("settings-appdata");
           if (el && p) el.textContent = p;
-        } catch (e) {}
+        } catch (e) { console.debug("[DiskRaptor]", e); }
       })();
 
       const isWin = /win/i.test(navigator.platform || "");
@@ -138,10 +138,7 @@
     const ramAppText = document.getElementById("ram-app-text");
     const ramSysText = document.getElementById("ram-sys-text");
     function formatBytes(v) {
-      const u = ["B", "KB", "MB", "GB", "TB"];
-      let i = 0;
-      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-      return (i === 0 ? v : v.toFixed(1)) + " " + u[i];
+      return window.fmtSize(v);
     }
     async function updateRam() {
       try {
@@ -166,7 +163,7 @@
           ramAppFill.style.width = appPct + "%";
           ramAppText.textContent = formatBytes(appMem) + " (" + appPct + "%)";
         }
-      } catch(e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
     }
     updateRam();
     setInterval(updateRam, 3000);

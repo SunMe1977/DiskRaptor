@@ -43,7 +43,7 @@
       try {
         const s = await window.__TAURI__.invoke("load_settings", {});
         if (s && s.favorites) favorites = normalizeFavorites(s.favorites);
-      } catch (e) {}
+      } catch (e) { console.debug("[DiskRaptor]", e); }
     }
 
     async function saveFavorites() {

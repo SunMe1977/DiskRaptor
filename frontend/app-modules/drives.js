@@ -47,10 +47,7 @@
           shown++;
         }
         function fmtVol(bytes) {
-          const u = ["B", "KB", "MB", "GB", "TB"];
-          let v = bytes || 0, i = 0;
-          while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-          return (i === 0 ? v : v.toFixed(1)) + " " + u[i];
+          return window.fmtSize(bytes);
         }
         if (vols.length > 10) {
           html +=
@@ -127,11 +124,7 @@
     }
 
     function formatSize(bytes) {
-      if (!bytes || bytes === 0) return "0 B";
-      const units = ["B", "KB", "MB", "GB", "TB"];
-      const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 4);
-      const v = bytes / Math.pow(1024, i);
-      return v.toFixed(1) + " " + units[i];
+      return window.fmtSize(bytes);
     }
 
     async function loadDrives() {

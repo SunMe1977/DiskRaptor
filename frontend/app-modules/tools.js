@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
   window.app = window.app || {};
 
@@ -316,7 +316,7 @@
           if (!hn) continue;
           fileRows +=
             "<tr><td>" +
-            (hn.name || "") +
+            esc(hn.name || "") +
             "</td><td>" +
             (hn.size || 0) +
             "</td></tr>\n";
@@ -325,7 +325,7 @@
           '<!DOCTYPE html><html><head><meta charset="utf-8"><title>DiskRaptor Report</title><style>body{font-family:sans-serif;margin:20px;color:#333}h1{color:var(--accent-green)}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5}</style></head><body>' +
           "<h1>\uD83E\uDD96 DiskRaptor Report</h1>" +
           "<p>Path: " +
-          (scanPath.value || "") +
+          esc(scanPath.value || "") +
           "</p>" +
           "<p>Files: " +
           (stats.total_files || 0) +
@@ -522,7 +522,7 @@
             const sz = arr.reduce(function (s2, it) { return s2 + (it.size || 0); }, 0);
             trashInfo = "\n\n" + arr.length + " item(s) \u00B7 " + fmtBytes(sz);
           }
-        } catch (e) {}
+        } catch (e) { console.debug("[DiskRaptor]", e); }
         if (!(await window.confirmDialog(t("confirm.empty_trash") + trashInfo))) return;
         try {
           item.textContent = "\u23F3 Emptying...";
@@ -553,7 +553,7 @@
     });
   };
 
-  // ── Downloads Cleanup overlay ────────────────────────────
+  // â”€â”€ Downloads Cleanup overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function openDownloadsCleanup(scanPath, btnScan) {
     const old = document.getElementById("downloads-cleanup-overlay");
     if (old) old.remove();
@@ -724,7 +724,7 @@
     load();
   }
 
-  // ── Find Files dialog ────────────────────────────────────
+  // â”€â”€ Find Files dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function findFilesDialog() {
     return new Promise(function (resolve) {
       const ov = document.createElement("div");
@@ -773,12 +773,9 @@
     });
   }
 
-  // ── S.M.A.R.T. Tools overlay ─────────────────────────────
+  // â”€â”€ S.M.A.R.T. Tools overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function fmtBytes(b) {
-    if (!b || b <= 0) return "";
-    const u = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 4);
-    return (b / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0) + " " + u[i];
+    return window.fmtSize(b);
   }
   function esc(s) {
     return String(s)
@@ -788,7 +785,7 @@
       .replace(/>/g, "&gt;");
   }
   function fmtHours(h) {
-    if (!h) return "—";
+    if (!h) return "â€”";
     const y = Math.floor(h / 8760);
     const d = Math.floor((h % 8760) / 24);
     return y > 0 ? y + "y " + d + "d" : d > 0 ? d + "d " + (h % 24) + "h" : h + "h";
@@ -1152,14 +1149,9 @@
     }
   }
 
-  // ── Clean Browser Tools overlay ─────────────────────────────
+  // â”€â”€ Clean Browser Tools overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function fmtSize(b) {
-    if (!b || b <= 0) return "0 B";
-    const gb = b / (1024 * 1024 * 1024);
-    if (gb >= 1) return gb.toFixed(2) + " GB";
-    const mb = b / (1024 * 1024);
-    if (mb >= 1) return mb.toFixed(1) + " MB";
-    return Math.round(b / 1024) + " KB";
+    return window.fmtSize(b);
   }
 
   function openBrowserTools() {

@@ -1190,10 +1190,6 @@ class DiagramRenderer {
   }
 
   _formatSize(bytes) {
-    if (bytes === 0) return "0 B";
-    const u = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    const v = bytes / Math.pow(1024, i);
-    return i === 0 ? bytes + " B" : v.toFixed(2) + " " + u[i];
+    return window.fmtSize(bytes);
   }
 }

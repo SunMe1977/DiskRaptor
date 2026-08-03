@@ -1,6 +1,6 @@
 [package]
 name = "diskraptor"
-version = "1.0.10"
+version = "1.0.11"
 description = "Ultra-fast disk space analyzer"
 authors = ["DiskRaptor Team"]
 edition = "2021"
@@ -15,10 +15,29 @@ test-server = ["tokio-tungstenite", "futures-util", "http"]
 # Store builds (Microsoft Store / Apple MAS) disable features that require
 # admin elevation or external helpers, which those platforms forbid.
 store = []
+# Legacy C FFI surface for the old Qt app. Not used by the Tauri app itself;
+# kept behind a feature so it is excluded from normal builds.
+ffi = []
 
 [[bin]]
 name = "diskraptor"
 path = "src/main.rs"
+
+[[example]]
+name = "dll_test"
+required-features = ["ffi"]
+
+[[example]]
+name = "scanner_test"
+required-features = ["ffi"]
+
+[[example]]
+name = "gen_testdata"
+required-features = ["ffi"]
+
+[[example]]
+name = "clean_testdata"
+required-features = ["ffi"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -40,6 +59,7 @@ dirs = "5"
 sysinfo = "0.33"
 trash = "5"
 open = "5"
+ureq = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.24", optional = true }
 futures-util = { version = "0.3", optional = true }
@@ -51,7 +71,7 @@ objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.39", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_UI_Shell", "Win32_System_Registry", "Win32_Graphics_Gdi"] }
+windows = { version = "0.39", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry", "Win32_Graphics_Gdi", "Win32_System_IO", "Win32_System_Com"] }
 
 [dev-dependencies]
 libloading = "0.8"

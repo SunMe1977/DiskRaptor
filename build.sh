@@ -450,6 +450,23 @@ case "$PLATFORM" in
         "$APP" 2>/dev/null || true
     fi
 
+    # ── Create DMG ──
+    echo "  Creating DMG..."
+    DMG_OUT="dist/DiskRaptor-$VERSION-macos.dmg"
+    DMG_STAGING="/tmp/diskraptor-dmg-staging"
+    rm -rf "$DMG_STAGING"
+    mkdir -p "$DMG_STAGING"
+    cp -R "$APP" "$DMG_STAGING/DiskRaptor.app"
+    ln -s /Applications "$DMG_STAGING/Applications"
+    if command -v hdiutil &>/dev/null; then
+      hdiutil create -volname "DiskRaptor" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_OUT"
+      rm -rf "$DMG_STAGING"
+      echo "  DMG: $DMG_OUT"
+    else
+      rm -rf "$DMG_STAGING"
+      echo "  SKIP DMG: 'hdiutil' not available"
+    fi
+
     # Notarization (requires Apple ID email, team ID, and app-specific password)
     if [ -n "$CODESIGN_IDENTITY" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
         echo "  Notarizing DMG..."

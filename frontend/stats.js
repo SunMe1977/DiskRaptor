@@ -50,11 +50,7 @@ class StatsPanel {
   }
 
   _formatSize(bytes) {
-    if (bytes === 0) return "0 B";
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    const val = bytes / Math.pow(1024, i);
-    return i === 0 ? `${bytes} B` : `${val.toFixed(2)} ${units[i]}`;
+    return window.fmtSize(bytes);
   }
 
   _formatDuration(ms) {
