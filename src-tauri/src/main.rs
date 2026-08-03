@@ -440,6 +440,7 @@ fn windows_icon_bytes(probe: &str, attributes: u32) -> Option<Vec<u8>> {
     hicon_to_rgba(shfi.hIcon)
 }
 
+#[cfg(target_os = "windows")]
 fn base64_encode(data: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
@@ -458,6 +459,7 @@ fn base64_encode(data: &[u8]) -> String {
 
 /// Minimal PNG encoder (RGBA, 8-bit, no interlace). Uses stored (uncompressed)
 /// deflate blocks so no compression crate is needed — fine for 16×16 icons.
+#[cfg(target_os = "windows")]
 fn png_encode_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     fn crc32(data: &[u8]) -> u32 {
         let mut crc: u32 = 0xFFFF_FFFF;

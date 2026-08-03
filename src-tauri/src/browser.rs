@@ -14,7 +14,7 @@ struct BrowserDef {
     base: &'static str, // "local" | "appdata"
 }
 
-fn dir_size(path: &std::path::Path) -> u64 {
+pub(crate) fn dir_size(path: &std::path::Path) -> u64 {
     let meta = match std::fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(_) => return 0,
