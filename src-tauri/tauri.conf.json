@@ -47,8 +47,7 @@
         "language": "en-US"
       },
       "nsis": {
-        "languages": ["English"],
-        "installMode": "currentUser"
+        "languages": ["English"]
       }
     }
   }
