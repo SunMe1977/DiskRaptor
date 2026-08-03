@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "windows": {
+      "wix": {
+        "template": "../installer/wix/silent.wxs"
+      }
+    }
+  }
+}
