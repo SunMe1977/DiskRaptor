@@ -241,15 +241,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "$SIGNING_IDENTITY" ]; then echo "SKIP: SIGNING_IDENTITY not configured"; exit 0; fi
           APP_DST="dist-mas/DiskRaptor.app"
+          # Prefer the "3rd Party Mac Developer Application" identity from the
+          # imported keychain (mirrors sign-and-upload.sh); SIGNING_IDENTITY is
+          # an override for the Developer ID / Distribution cert.
+          MAS_IDENTITY="${SIGNING_IDENTITY:-}"
+          if [ -z "$MAS_IDENTITY" ]; then
+            MAS_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -i '3rd Party Mac Developer Application' | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+          fi
+          if [ -z "$MAS_IDENTITY" ]; then
+            echo "SKIP: no Mac App Store signing identity found (set SIGNING_IDENTITY secret or add certs to MACOS_CERT_P12)"
+            exit 0
+          fi
+          echo "MAS identity: $MAS_IDENTITY"
           xattr -cr "$APP_DST" || true
           find "$APP_DST/Contents" -type f -name "*.dylib" -print0 | \
-            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$SIGNING_IDENTITY" "{}" || true
+            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$MAS_IDENTITY" "{}" || true
           find "$APP_DST/Contents" -type d -name "*.framework" -print0 | \
-            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$SIGNING_IDENTITY" "{}" || true
+            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$MAS_IDENTITY" "{}" || true
           codesign --force --options=runtime --entitlements installer/DiskRaptor-MAS.entitlements \
-            --sign "$SIGNING_IDENTITY" "$APP_DST"
+            --sign "$MAS_IDENTITY" "$APP_DST"
           codesign --verify --deep --strict --verbose=2 "$APP_DST"
       - name: Create MAS PKG
         env:

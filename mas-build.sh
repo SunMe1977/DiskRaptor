@@ -17,8 +17,12 @@ VERSION="$(node -p "require('${SCRIPT_DIR}/package.json').version" 2>/dev/null)"
 [ -z "$VERSION" ] && VERSION="0.0.2"
 IDENTIFIER="diskraptor"
 APP_NAME="DiskRaptor"
-TEAM_ID="7TK444BCPC"
-DIST_CERT="Apple Distribution: Hansjoerg Hofer (${TEAM_ID})"
+# Team ID + signing identity come from the environment (secrets), not hardcoded.
+TEAM_ID="${APPLE_TEAM_ID:-}"
+DIST_CERT="${APPLE_DIST_CERT:-${SIGNING_IDENTITY:-}}"
+if [ -z "$DIST_CERT" ] && [ -n "$TEAM_ID" ]; then
+  DIST_CERT="Apple Distribution: Hansjoerg Hofer (${TEAM_ID})"
+fi
 OUTPUT_DIR="$(pwd)/dist-mas"
 
 echo "=========================================="
