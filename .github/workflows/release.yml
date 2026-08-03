@@ -31,7 +31,7 @@ jobs:
           toolchain: stable
           cache: false
       - name: Build Tauri installers (NSIS + MSI)
-        run: npx tauri build --bundles nsis,wix --ci
+        run: npx tauri build --bundles nsis,msi --ci
       - name: Stage release assets
         shell: pwsh
         run: |
