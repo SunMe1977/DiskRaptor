@@ -121,14 +121,14 @@ jobs:
           codesign --force --options=runtime --entitlements installer/DiskRaptor.entitlements \
             --sign "$SIGNING_IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
-      - name: Stage and create DMG
+      - name: Stage and create DMG + PKG
         shell: bash
         run: |
           set -euo pipefail
           ver=$(node -p "require('./package.json').version")
           APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/DiskRaptor.app"
           # The .app is a directory — keep it OUT of release-assets (gh release
-          # upload only accepts files). Ship the DMG as the release asset.
+          # upload only accepts files). Ship the DMG + PKG as release assets.
           mkdir -p release-assets macos-app dmg-staging
           cp -R "$APP" "macos-app/DiskRaptor-${ver}-macos.app"
           cp -R "$APP" "dmg-staging/DiskRaptor.app"
@@ -136,6 +136,18 @@ jobs:
           hdiutil create -volname "DiskRaptor" -srcfolder dmg-staging -ov -format UDZO \
             "release-assets/DiskRaptor-${ver}-macos-universal.dmg"
           rm -rf dmg-staging
+          # macOS .pkg installer (the .deb equivalent) for direct distribution.
+          PKG="release-assets/DiskRaptor-${ver}-macos-universal.pkg"
+          INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i 'Developer ID Installer' | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+          if [ -n "$INSTALLER_CERT" ]; then
+            echo "Signing PKG with: $INSTALLER_CERT"
+            productbuild --component "macos-app/DiskRaptor-${ver}-macos.app" /Applications \
+              --sign "$INSTALLER_CERT" --identifier diskraptor --version "$ver" "$PKG"
+          else
+            echo "WARNING: no 'Developer ID Installer' cert found — building unsigned pkg"
+            productbuild --component "macos-app/DiskRaptor-${ver}-macos.app" /Applications \
+              --identifier diskraptor --version "$ver" "$PKG"
+          fi
           ls -la release-assets
       # Notarization requires a "Developer ID Application" certificate. The current
       # MAS cert may be rejected; continue-on-error ships the signed DMG regardless.
@@ -150,12 +162,14 @@ jobs:
           set -euo pipefail
           ver=$(node -p "require('./package.json').version")
           dmg="release-assets/DiskRaptor-${ver}-macos-universal.dmg"
+          pkg="release-assets/DiskRaptor-${ver}-macos-universal.pkg"
           app="macos-app/DiskRaptor-${ver}-macos.app"
           xcrun notarytool submit "$dmg" \
             --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           xcrun stapler staple "$dmg"
+          xcrun stapler staple "$pkg"
           xcrun stapler staple "$app"
-          xcrun stapler validate "$dmg" "$app"
+          xcrun stapler validate "$dmg" "$pkg" "$app"
       - name: Deploy to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
