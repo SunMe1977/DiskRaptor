@@ -127,8 +127,10 @@ jobs:
           set -euo pipefail
           ver=$(node -p "require('./package.json').version")
           APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/DiskRaptor.app"
-          mkdir -p release-assets dmg-staging
-          cp -R "$APP" "release-assets/DiskRaptor-${ver}-macos.app"
+          # The .app is a directory — keep it OUT of release-assets (gh release
+          # upload only accepts files). Ship the DMG as the release asset.
+          mkdir -p release-assets macos-app dmg-staging
+          cp -R "$APP" "macos-app/DiskRaptor-${ver}-macos.app"
           cp -R "$APP" "dmg-staging/DiskRaptor.app"
           ln -s /Applications "dmg-staging/Applications"
           hdiutil create -volname "DiskRaptor" -srcfolder dmg-staging -ov -format UDZO \
@@ -148,7 +150,7 @@ jobs:
           set -euo pipefail
           ver=$(node -p "require('./package.json').version")
           dmg="release-assets/DiskRaptor-${ver}-macos-universal.dmg"
-          app="release-assets/DiskRaptor-${ver}-macos.app"
+          app="macos-app/DiskRaptor-${ver}-macos.app"
           xcrun notarytool submit "$dmg" \
             --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           xcrun stapler staple "$dmg"
