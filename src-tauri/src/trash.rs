@@ -301,23 +301,111 @@ print(json.dumps(out))"#;
 }
 
 #[tauri::command]
-pub fn restore_trash(trash_path: String) -> JsonResult {
+pub fn restore_trash(trash_path: String, original_path: Option<String>) -> JsonResult {
+    use std::path::PathBuf;
+
     let src = std::path::Path::new(&trash_path);
-    if !src.exists() { return JsonResult::err("File not found"); }
-    let home = dirs::home_dir().unwrap_or_default();
-    let fname = src.file_name().and_then(|n| n.to_str()).unwrap_or("restored");
-    let mut dest = home.join(fname);
+    if !src.exists() {
+        return JsonResult::err("File not found");
+    }
+    let meta = match std::fs::symlink_metadata(src) {
+        Ok(m) => m,
+        Err(e) => return JsonResult::err(format!("Cannot inspect {}: {e}", src.display())),
+    };
+    let is_dir = meta.is_dir();
+
+    // Prefer the original location (parsed from trash metadata on Windows).
+    let mut dest: Option<PathBuf> = original_path
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from)
+        .filter(|p| is_safe_restore_target(p));
+    if dest.is_none() {
+        // Fallback: home directory, named after the trashed file.
+        let home = dirs::home_dir().unwrap_or_default();
+        let fname = src.file_name().and_then(|n| n.to_str()).unwrap_or("restored");
+        dest = Some(home.join(fname));
+    }
+    let mut dest = dest.unwrap();
+
     if dest.exists() {
-        let base = src.file_stem().and_then(|n| n.to_str()).unwrap_or("file");
-        let ext = src.extension().and_then(|n| n.to_str()).unwrap_or("");
-        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-        dest = home.join(format!("{}_{}", base, ts));
-        if !ext.is_empty() { dest = dest.with_extension(ext); }
+        // Conflict strategy: rename with a timestamp suffix.
+        let base = dest
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .map(String::from)
+            .unwrap_or_else(|| "file".into());
+        let ext = dest
+            .extension()
+            .and_then(|n| n.to_str())
+            .map(String::from)
+            .unwrap_or_default();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let mut new_name = format!("{}_{}", base, ts);
+        if !ext.is_empty() {
+            new_name = format!("{}.{}", new_name, ext);
+        }
+        dest = dest.with_file_name(new_name);
     }
-    if std::fs::copy(src, &dest).is_ok() {
-        let _ = std::fs::remove_file(src);
-        JsonResult::ok(serde_json::json!({"restored_to": dest.to_string_lossy().to_string()}))
+    if let Some(parent) = dest.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return JsonResult::err(format!("Cannot create {}: {e}", parent.display()));
+            }
+        }
+    }
+
+    // Atomic move where possible; fall back to copy + remove across devices.
+    let moved = if is_dir {
+        std::fs::rename(src, &dest)
+            .or_else(|_| copy_dir_all(src, &dest).and_then(|_| std::fs::remove_dir_all(src)))
     } else {
-        JsonResult::err("Failed to restore")
+        std::fs::rename(src, &dest)
+            .or_else(|_| std::fs::copy(src, &dest).and_then(|_| std::fs::remove_file(src)))
+    };
+    match moved {
+        Ok(()) => JsonResult::ok(serde_json::json!({
+            "restored_to": dest.to_string_lossy().to_string(),
+        })),
+        Err(e) => JsonResult::err(format!("Failed to restore: {e}")),
     }
+}
+
+/// A restore target must never be a filesystem root, the home directory or
+/// contain NUL bytes (a malicious trash entry could otherwise be used to write
+/// anywhere on disk).
+fn is_safe_restore_target(path: &std::path::Path) -> bool {
+    if path.as_os_str().to_string_lossy().as_bytes().contains(&0) {
+        return false;
+    }
+    if path.parent().map(|x| x == path).unwrap_or(false) {
+        return false; // filesystem root
+    }
+    #[cfg(target_os = "windows")]
+    if path.components().count() == 1 {
+        return false; // drive root
+    }
+    let home = dirs::home_dir().unwrap_or_default();
+    if !home.as_os_str().is_empty() && path == home {
+        return false;
+    }
+    true
+}
+
+/// Recursive directory copy (used when `rename` crosses filesystem boundaries).
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let target = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }

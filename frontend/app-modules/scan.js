@@ -520,7 +520,11 @@
 
         unlisten = window.__TAURI__.event.listen(
           "scan:progress",
-          function () {
+          function (ev) {
+            // Ignore progress belonging to a stale scan.
+            if (ev && ev.payload && ev.payload.scan_id != null && Number(ev.payload.scan_id) !== scanId) {
+              return;
+            }
             // Event only signals "something changed"; fetch the full progress
             // payload so all fields (phase, is_running, errors...) are present.
             window.__TAURI__
@@ -566,6 +570,21 @@
         clearTimeout(safetyTimer);
         progressOverlay.classList.remove("active");
         hideWelcome();
+
+        // A partial scan must never be presented as complete.
+        const term = result && result.stats ? result.stats.termination : "";
+        if (term && term !== "completed") {
+          const t = window.__ || function (s) { return s; };
+          const msg =
+            term === "cancelled"
+              ? "Scan was cancelled - results are partial"
+              : term === "timed_out"
+                ? "Scan timed out - results are partial"
+                : term === "limit_reached"
+                  ? "Scan hit the size limit - results are partial"
+                  : "Scan was interrupted - results are partial";
+          window.showToast(msg, "warning");
+        }
 
         if (result && result.stats && result.stats.total_files > 0) {
           state.currentScanResult = result;

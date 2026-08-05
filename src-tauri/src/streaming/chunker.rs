@@ -8,8 +8,10 @@ pub const CHUNK_SIZE: u32 = 10_000;
 
 /// Splits the arena tree into ordered chunks for streaming to the UI.
 ///
-/// The chunking uses a BFS order so that parent nodes reliably arrive before
-/// their children — the UI can insert them immediately without back‑patching.
+/// Nodes are taken in **arena allocation order**. The walker always allocates a
+/// directory before its children, so every parent appears earlier than its
+/// children — the UI can insert nodes immediately without back‑patching. The
+/// order is *not* BFS; it is the preorder in which the walker discovered nodes.
 ///
 /// # Arguments
 /// * `arena` - The completed arena tree.
@@ -150,6 +152,52 @@ mod tests {
         let chunks = chunk_tree(&arena).unwrap();
         for node in &chunks[0].nodes {
             assert_eq!(node.chunk_id, 0);
+        }
+    }
+
+    /// Parents must always arrive before their children, including across chunk
+    /// boundaries, and `start_index`/`chunk_id`/`total_chunks` must line up.
+    #[test]
+    fn test_chunk_tree_parent_before_child_multiple_chunks() {
+        // Build a deep tree big enough to span several chunks: each node is its
+        // parent's child, allocated in preorder (parent first).
+        let mut arena = TreeNodeArena::new();
+        let mut last = arena.alloc(make_node("root", 0, NodeType::Directory));
+        for i in 0..(CHUNK_SIZE as usize * 2 + 5) {
+            let child = arena.alloc(make_node(&format!("n{}", i), 1, NodeType::File));
+            arena.get_mut(last).first_child = child;
+            arena.get_mut(child).parent = last;
+            last = child;
+        }
+        let chunks = chunk_tree(&arena).unwrap();
+        assert!(chunks.len() >= 3, "expected >= 3 chunks, got {}", chunks.len());
+
+        // start_index continuity across chunks
+        let mut expect_start = 0u32;
+        for c in &chunks {
+            assert_eq!(c.start_index, expect_start);
+            assert_eq!(c.total_chunks, chunks.len() as u32);
+            expect_start += c.nodes.len() as u32;
+        }
+        assert_eq!(expect_start, arena.len() as u32);
+
+        // every node in the flat stream must appear after its parent
+        let mut parent_index: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        let mut order = 0usize;
+        for c in &chunks {
+            for (i, n) in c.nodes.iter().enumerate() {
+                let arena_index = c.start_index + i as u32;
+                if n.parent != u32::MAX {
+                    let parent_pos = parent_index[&n.parent];
+                    assert!(
+                        parent_pos < order,
+                        "parent of '{}' appears after child (index {})",
+                        n.name, arena_index
+                    );
+                }
+                parent_index.insert(arena_index, order);
+                order += 1;
+            }
         }
     }
 

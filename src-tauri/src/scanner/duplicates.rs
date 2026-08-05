@@ -21,6 +21,41 @@ pub fn hash_file_head(path: &Path, read_len: usize) -> (u64, u64) {
     (n as u64, xxhash_rust::xxh3::xxh3_64(&buf))
 }
 
+/// Stream-hash an entire file. Returns `(size, full_hash, changed_during_scan)`;
+/// `changed_during_scan` is true when the file's metadata changed while we were
+/// reading it (or it could not be read at all), so its hash is not trustworthy.
+pub fn hash_file_full(path: &Path) -> (u64, u64, bool) {
+    use std::io::Read;
+    let before = std::fs::metadata(path)
+        .ok()
+        .map(|m| (m.len(), m.modified().ok()));
+    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+    let mut buf = vec![0u8; 1 << 20];
+    let mut total = 0u64;
+    if let Ok(mut f) = std::fs::File::open(path) {
+        loop {
+            match f.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    hasher.update(&buf[..n]);
+                    total += n as u64;
+                }
+                Err(_) => return (0, 0, true),
+            }
+        }
+    } else {
+        return (0, 0, true);
+    }
+    let after = std::fs::metadata(path)
+        .ok()
+        .map(|m| (m.len(), m.modified().ok()));
+    let changed = before
+        .zip(after)
+        .map(|(a, b)| a != b)
+        .unwrap_or(true);
+    (total, hasher.digest(), changed)
+}
+
 /// Synchronous duplicate scan: groups files by size, then hashes same-sized
 /// candidates. Returns `(groups, total_files_scanned, wasted_bytes)`.
 pub fn find_duplicate_groups(root: &str) -> (Vec<serde_json::Value>, u64, u64) {
@@ -47,29 +82,46 @@ pub fn find_duplicate_groups(root: &str) -> (Vec<serde_json::Value>, u64, u64) {
         if files.len() < 2 {
             continue;
         }
+        // Fast candidate filter: group same-size files by their head hash.
         let mut by_hash: HashMap<(u64, u64), Vec<PathBuf>> = HashMap::new();
         for p in &files {
             let h = hash_file_head(p, HEAD_HASH_BYTES);
             by_hash.entry(h).or_default().push(p.clone());
         }
-        for ((_len, _h), dup_files) in by_hash {
-            if dup_files.len() < 2 {
+        for ((_len, _h), head_group) in by_hash {
+            if head_group.len() < 2 {
                 continue;
             }
-            let wasted_g = size * (dup_files.len() as u64 - 1);
-            wasted += wasted_g;
-            let paths: Vec<String> = dup_files
-                .iter()
-                .map(|p| p.to_string_lossy().to_string())
-                .collect();
-            groups.push(serde_json::json!({
-                "count": dup_files.len(),
-                "size": size,
-                "sizeHuman": format_size(size),
-                "wasted": wasted_g,
-                "wastedHuman": format_size(wasted_g),
-                "files": paths,
-            }));
+            // Full verification: stream-hash each candidate and only treat
+            // files with an identical full hash as true duplicates. Files that
+            // changed during the scan are excluded (never suggested for delete).
+            let mut by_full: HashMap<(u64, u64), Vec<PathBuf>> = HashMap::new();
+            for p in &head_group {
+                let (fsize, fhash, changed) = hash_file_full(p);
+                if changed || fsize != size {
+                    continue;
+                }
+                by_full.entry((fsize, fhash)).or_default().push(p.clone());
+            }
+            for ((_s, _fh), dup_files) in by_full {
+                if dup_files.len() < 2 {
+                    continue;
+                }
+                let wasted_g = size * (dup_files.len() as u64 - 1);
+                wasted += wasted_g;
+                let paths: Vec<String> = dup_files
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect();
+                groups.push(serde_json::json!({
+                    "count": dup_files.len(),
+                    "size": size,
+                    "sizeHuman": format_size(size),
+                    "wasted": wasted_g,
+                    "wastedHuman": format_size(wasted_g),
+                    "files": paths,
+                }));
+            }
         }
     }
     (groups, total, wasted)

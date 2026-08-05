@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main window",
+  "description": "Default capability for the main window. Only `core:default` — all file/system access goes through custom Rust commands (pick_directory, list_drives, delete_path, ...), so no plugin permissions are granted to the frontend. Plugins (dialog/fs/shell/store) are not exposed to JS.",
   "windows": ["main"],
   "permissions": ["core:default"]
 }

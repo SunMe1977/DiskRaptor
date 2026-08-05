@@ -4,7 +4,7 @@
 
 # DiskRaptor
 
-**Ultra-fast disk space analyzer** -- A modern, cross-platform successor to WinDirStat / DaisyDisk, built with **Rust + Qt 6 (WebEngine)**.
+**Ultra-fast disk space analyzer** -- A modern, cross-platform successor to WinDirStat / DaisyDisk, built with **Rust + Tauri 2**.
 
 <p align="center">
   <img src="images/demo.gif" alt="DiskRaptor Demo" style="width:100%;max-width:800px">
@@ -160,7 +160,7 @@ cd src-tauri && cargo test
 # JS syntax check
 for f in frontend/*.js; do node --check "$f"; done
 
-# Full UI test via CDP (requires Qt WebEngine debug port)
+# Full UI test via CDP (requires the app built with the `test-server` feature)
 node tests/test_ui.mjs
 ```
 
@@ -169,24 +169,21 @@ node tests/test_ui.mjs
 ## Project Structure
 
 ```
-├── qt-app/                  # C++ Qt 6 application
+├── src-tauri/               # Rust scanner + Tauri commands
 │   ├── src/
-│   │   ├── commands/        # IPC command handlers (scanner, file_ops, ...)
-│   │   ├── ipcbridge.cpp    # QWebChannel bridge dispatcher
-│   │   └── webviewwindow    # Main window with WebEngineView
-│   └── CMakeLists.txt
-├── src-tauri/               # Rust scanner (shared library)
-│   ├── src/
-│   │   ├── scanner/         # Tree data structures, directory walker
+│   │   ├── scanner/         # Tree data structures, directory walker, duplicates
 │   │   ├── streaming/       # Tree chunking for UI streaming
-│   │   ├── scanner_api.rs   # C FFI surface
-│   │   └── lib.rs
+│   │   ├── menu.rs          # Native menu builder
+│   │   ├── smart.rs         # S.M.A.R.T. disk health (native APIs)
+│   │   ├── trash.rs         # Trash listing / restore / empty
+│   │   ├── browser.rs       # Browser cache / cookie cleanup
+│   │   └── main.rs          # Tauri command layer
 │   └── Cargo.toml
-├── frontend/                # JS UI rendered in WebEngine
+├── frontend/                # JS UI rendered in the system WebView
 │   ├── app.js               # Main app logic
 │   ├── app-modules/         # Scan, drives, settings, tools, export
 │   ├── galaxyview/          # 3D galaxy visualization
-│   ├── qt-bridge.js         # QWebChannel <-> window.__TAURI__ bridge
+│   ├── format.js            # Shared human-readable size formatting
 │   └── index.html
 ├── installer/               # Packaging scripts
 │   ├── nsis/                # Windows NSIS installer

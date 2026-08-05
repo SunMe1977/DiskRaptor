@@ -1,4 +1,9 @@
-# Hybrid WKWebView Migration Plan
+# Hybrid WKWebView Migration Plan — ARCHIVED
+
+> **Status: Superseded.** This plan described migrating the legacy Qt 6 (WebEngine)
+> app to a macOS WKWebView hybrid. DiskRaptor was since fully rebuilt on **Tauri 2**
+> (Rust + system WebView), so the Qt codebase and this migration no longer apply.
+> Kept for historical reference only — do not implement.
 
 **Goal:** Replace QtWebEngine (QWebEngineView + QWebChannel) with macOS native WKWebView, keeping QtCore/QtWidgets for windowing, menus, tray, settings, and command handlers.
 

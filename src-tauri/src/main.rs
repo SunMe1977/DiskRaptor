@@ -32,6 +32,9 @@ struct ScanState {
     cancelled: AtomicBool,
     cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
     errors: Mutex<Vec<String>>,
+    /// The scan id currently active (or last started). Responses/events are
+    /// only valid while they match this id.
+    active_scan_id: AtomicU64,
     live_entries: Mutex<Option<std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>>>,
 }
 
@@ -41,6 +44,7 @@ struct ScanResultData {
     stats: scanner::tree::ScanStats,
     scan_time_ms: u64,
     errors: Vec<String>,
+    termination: scanner::walker::ScanTermination,
 }
 
 // â”€â”€ Duplicate scanner state â”€â”€
@@ -199,14 +203,39 @@ async fn delete_permanent(path: String) -> JsonResult {
         Ok(p) => p,
         Err(e) => return JsonResult::err(e),
     };
-    tauri::async_runtime::spawn_blocking(move || {
-        let p = &path;
-        if p.is_dir() { std::fs::remove_dir_all(p).ok(); }
-        else { std::fs::remove_file(p).ok(); }
-        JsonResult::ok_empty()
+    tauri::async_runtime::spawn_blocking(move || match delete_path_checked(&path) {
+        Ok(()) => JsonResult::ok_empty(),
+        Err(msg) => JsonResult::err(msg),
     })
     .await
     .unwrap_or_else(|e| JsonResult::err(format!("Delete failed: {e}")))
+}
+
+/// Delete a validated path, never following symlinks for directory recursion
+/// and reporting failures instead of silently swallowing them (the frontend
+/// must not claim success when nothing was removed).
+fn delete_path_checked(path: &std::path::Path) -> Result<(), String> {
+    let meta = std::fs::symlink_metadata(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!("Not found: {}", path.display())
+        } else {
+            format!("Cannot inspect {}: {e}", path.display())
+        }
+    })?;
+    if meta.is_symlink() {
+        // Remove the link itself, never the target it points to.
+        std::fs::remove_file(path)
+            .map_err(|e| format!("Cannot remove {}: {e}", path.display()))?;
+    } else if meta.is_dir() {
+        // remove_dir_all does not follow symlinks; junctions/links are removed
+        // as links. This prevents recursive deletion through a swapped target.
+        std::fs::remove_dir_all(path)
+            .map_err(|e| format!("Cannot remove {}: {e}", path.display()))?;
+    } else {
+        std::fs::remove_file(path)
+            .map_err(|e| format!("Cannot remove {}: {e}", path.display()))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1140,6 +1169,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
         return JsonResult::err("Scan already running");
     }
     let scan_id = scan.scan_counter.fetch_add(1, Ordering::Relaxed) + 1;
+    scan.scan.active_scan_id.store(scan_id, Ordering::Release);
     scan.scan.cancelled.store(false, Ordering::Release);
     scan.scan.files_found.store(0, Ordering::Relaxed);
     scan.scan.dirs_found.store(0, Ordering::Relaxed);
@@ -1180,6 +1210,7 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
             let _ = emit_handle.emit(
                 "scan:progress",
                 serde_json::json!({
+                    "scan_id": s.scan.active_scan_id.load(Ordering::Acquire),
                     "files": files, "dirs": dirs, "bytes": bytes, "path": msg,
                 }),
             );
@@ -1236,9 +1267,10 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
                 let elapsed = sr.stats.scan_time_ms;
                 // NOTE: chunks are built on demand in get_chunk (avoids cloning the
                 // whole arena and doubling peak memory for huge scans).
+                let termination = sr.termination;
                 *s.scan.result.lock() = Some(ScanResultData {
                     arena: sr.arena, stats: sr.stats, scan_time_ms: elapsed,
-                    errors: Vec::new(),
+                    errors: Vec::new(), termination,
                 });
             }
             Some(Err(e)) => {
@@ -1255,6 +1287,16 @@ fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<
     }).ok();
 
     JsonResult::ok(serde_json::json!({"status": "started", "scan_id": scan_id}))
+}
+
+/// True when the caller's `scan_id` matches the currently active scan (or the
+/// caller did not pass an id). Guards against late IPC responses from a stale
+/// scan being applied to a newer one.
+fn scan_id_matches(state: &AppState, scan_id: Option<u64>) -> bool {
+    match scan_id {
+        Some(id) => id == state.scan.active_scan_id.load(Ordering::Acquire),
+        None => true,
+    }
 }
 
 fn scan_progress_data(state: &AppState) -> serde_json::Value {
@@ -1288,7 +1330,10 @@ fn scan_progress_data(state: &AppState) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn get_scan_progress(state: State<AppState>) -> JsonResult {
+fn get_scan_progress(state: State<AppState>, scan_id: Option<u64>) -> JsonResult {
+    if !scan_id_matches(&state, scan_id) {
+        return JsonResult::err("Scan id is stale");
+    }
     JsonResult::ok(scan_progress_data(&state))
 }
 
@@ -1317,7 +1362,10 @@ fn build_chunk(arena: &scanner::tree::TreeNodeArena, chunk_id: u32) -> Option<Tr
 }
 
 #[tauri::command]
-fn get_scan_result(state: State<AppState>) -> JsonResult {
+fn get_scan_result(state: State<AppState>, scan_id: Option<u64>) -> JsonResult {
+    if !scan_id_matches(&state, scan_id) {
+        return JsonResult::err("Scan id is stale");
+    }
     let g = state.scan.result.lock();
     if let Some(ref d) = *g {
         let sj = serde_json::json!({
@@ -1326,6 +1374,7 @@ fn get_scan_result(state: State<AppState>) -> JsonResult {
             "top_files": d.stats.top_files, "file_type_breakdown": d.stats.file_type_breakdown,
             "size_human": format_size(d.stats.total_size),
             "time_human": format!("{:.2}s", d.scan_time_ms as f64 / 1000.0),
+            "termination": d.termination,
         });
         let total_chunks = (d.arena.len() as u32).div_ceil(CHUNK_SIZE);
         let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": total_chunks});
@@ -1338,7 +1387,10 @@ fn get_scan_result(state: State<AppState>) -> JsonResult {
 }
 
 #[tauri::command]
-fn get_chunk(state: State<AppState>, chunk_index: u32) -> JsonResult {
+fn get_chunk(state: State<AppState>, chunk_index: u32, scan_id: Option<u64>) -> JsonResult {
+    if !scan_id_matches(&state, scan_id) {
+        return JsonResult::err("Scan id is stale");
+    }
     let g = state.scan.result.lock();
     if let Some(ref d) = *g {
         if let Some(chunk) = build_chunk(&d.arena, chunk_index) {
@@ -1356,7 +1408,10 @@ fn get_chunk(state: State<AppState>, chunk_index: u32) -> JsonResult {
 /// `loadChunk` hands the UI. Used by the frontend when a node's children have
 /// not been received in any loaded chunk yet.
 #[tauri::command]
-fn get_children(state: State<AppState>, node_index: u32) -> JsonResult {
+fn get_children(state: State<AppState>, node_index: u32, scan_id: Option<u64>) -> JsonResult {
+    if !scan_id_matches(&state, scan_id) {
+        return JsonResult::err("Scan id is stale");
+    }
     let g = state.scan.result.lock();
     if let Some(ref d) = *g {
         let arena = &d.arena;
@@ -1474,7 +1529,7 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
             }
         }
 
-        // Phase 3: build result groups.
+        // Phase 3: full verification of head-hash groups, then build result groups.
         st.dup.phase.store(3, Ordering::Relaxed);
         let mut groups = Vec::new();
         let mut wasted: u64 = 0;
@@ -1482,20 +1537,40 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
             if files.len() < 2 {
                 continue;
             }
-            let wasted_g = size * (files.len() as u64 - 1);
-            wasted += wasted_g;
-            let paths: Vec<String> = files
-                .iter()
-                .map(|p| p.to_string_lossy().to_string())
-                .collect();
-            groups.push(serde_json::json!({
-                "count": files.len(),
-                "size": size,
-                "sizeHuman": format_size(size),
-                "wasted": wasted_g,
-                "wastedHuman": format_size(wasted_g),
-                "files": paths,
-            }));
+            // Full stream-hash each candidate: only files with identical full
+            // content are true duplicates. Files that changed while scanning
+            // are excluded so we never suggest deleting them.
+            let mut by_full: std::collections::HashMap<(u64, u64), Vec<std::path::PathBuf>> =
+                std::collections::HashMap::new();
+            for p in &files {
+                if st.dup.cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                let (fsize, fhash, changed) = scanner::duplicates::hash_file_full(p);
+                if changed || fsize != size {
+                    continue;
+                }
+                by_full.entry((fsize, fhash)).or_default().push(p.clone());
+            }
+            for ((_s, _fh), dup_files) in by_full {
+                if dup_files.len() < 2 {
+                    continue;
+                }
+                let wasted_g = size * (dup_files.len() as u64 - 1);
+                wasted += wasted_g;
+                let paths: Vec<String> = dup_files
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect();
+                groups.push(serde_json::json!({
+                    "count": dup_files.len(),
+                    "size": size,
+                    "sizeHuman": format_size(size),
+                    "wasted": wasted_g,
+                    "wastedHuman": format_size(wasted_g),
+                    "files": paths,
+                }));
+            }
         }
         groups.sort_by(|a, b| {
             b["wasted"].as_u64().unwrap_or(0).cmp(&a["wasted"].as_u64().unwrap_or(0))
@@ -1538,7 +1613,10 @@ fn cancel_dup_scan(state: State<AppState>) -> JsonResult {
 }
 
 #[tauri::command]
-fn get_stats(state: State<AppState>) -> JsonResult {
+fn get_stats(state: State<AppState>, scan_id: Option<u64>) -> JsonResult {
+    if !scan_id_matches(&state, scan_id) {
+        return JsonResult::err("Scan id is stale");
+    }
     let g = state.scan.result.lock();
     if let Some(ref d) = *g {
         let sj = serde_json::json!({
@@ -1547,6 +1625,7 @@ fn get_stats(state: State<AppState>) -> JsonResult {
             "top_files": d.stats.top_files, "file_type_breakdown": d.stats.file_type_breakdown,
             "size_human": format_size(d.stats.total_size),
             "time_human": format!("{:.2}s", d.scan_time_ms as f64 / 1000.0),
+            "termination": d.termination,
         });
         drop(g);
         JsonResult::ok(sj)
@@ -1610,8 +1689,6 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             scan: ScanState {
                 result: Mutex::new(None),
@@ -1625,6 +1702,7 @@ fn main() {
                 cancel_flag: Mutex::new(None),
                 errors: Mutex::new(Vec::new()),
                 live_entries: Mutex::new(None),
+                active_scan_id: AtomicU64::new(0),
             },
             dup: DupState::default(),
             settings_path: Mutex::new(settings_path),

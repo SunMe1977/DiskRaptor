@@ -1,4 +1,4 @@
-name: Release
+﻿name: Release
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install JS dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -88,7 +88,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install JS dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -141,7 +141,7 @@ jobs:
           set -euo pipefail
           ver=$(node -p "require('./package.json').version")
           APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/DiskRaptor.app"
-          # The .app is a directory — keep it OUT of release-assets (gh release
+          # The .app is a directory â€” keep it OUT of release-assets (gh release
           # upload only accepts files). Ship the DMG + PKG as release assets.
           mkdir -p release-assets macos-app dmg-staging
           cp -R "$APP" "macos-app/DiskRaptor-${ver}-macos.app"
@@ -158,7 +158,7 @@ jobs:
             productbuild --component "macos-app/DiskRaptor-${ver}-macos.app" /Applications \
               --sign "$INSTALLER_CERT" --identifier diskraptor --version "$ver" "$PKG"
           else
-            echo "WARNING: no 'Developer ID Installer' cert found — building unsigned pkg"
+            echo "WARNING: no 'Developer ID Installer' cert found â€” building unsigned pkg"
             productbuild --component "macos-app/DiskRaptor-${ver}-macos.app" /Applications \
               --identifier diskraptor --version "$ver" "$PKG"
           fi
@@ -196,7 +196,7 @@ jobs:
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
 
   # Mac App Store build: signed universal .pkg, uploaded to App Store Connect
-  # (TestFlight / App Review). Best-effort — if the Apple cert/profile/API-key
+  # (TestFlight / App Review). Best-effort â€” if the Apple cert/profile/API-key
   # secrets aren't configured the job is skipped, never blocking the release.
   macos-mas:
     name: macOS App Store (MAS PKG + upload)
@@ -209,7 +209,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install JS dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -219,7 +219,7 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       # Upload to Apple only once per version. Re-pushing an existing tag (e.g.
       # to ship a build fix) must NOT submit the same version to App Store
-      # Connect again — unless it was never uploaded (no marker on the release).
+      # Connect again â€” unless it was never uploaded (no marker on the release).
       - name: Check if version was already uploaded to Apple
         id: version_check
         env:
@@ -229,10 +229,10 @@ jobs:
           tag="${{ github.ref_name }}"
           if gh release view "$tag" >/dev/null 2>&1 && \
              gh release view "$tag" --json assets --jq '[.assets[].name] | any(. == ".apple-uploaded")' 2>/dev/null | grep -q true; then
-            echo "Version $tag already uploaded to App Store Connect — skipping"
+            echo "Version $tag already uploaded to App Store Connect â€” skipping"
             echo "SKIP_MAS=true" >> "$GITHUB_ENV"
           else
-            echo "Version $tag not yet uploaded to Apple — MAS upload will run"
+            echo "Version $tag not yet uploaded to Apple â€” MAS upload will run"
           fi
       - name: Build MAS app (store feature, universal)
         if: env.SKIP_MAS != 'true'
@@ -379,7 +379,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install JS dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -431,3 +431,27 @@ jobs:
           gh release create "$tag" --title "DiskRaptor $tag" --notes "" 2>/dev/null || true
           gh release upload "$tag" "release-assets/*" --clobber
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
+
+  checksums:
+    name: Publish SHA-256 checksums
+    runs-on: ubuntu-latest
+    needs: [windows-x64, macos-universal, linux-universal]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download release assets and generate checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
+          mkdir -p checksum-assets
+          gh release download "$tag" --dir checksum-assets
+          cd checksum-assets
+          # Checksum every file (skip the checksum file itself).
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          cd ..
+          gh release upload "$tag" checksum-assets/SHA256SUMS.txt --clobber
+          echo "SHA256SUMS.txt published for $tag"

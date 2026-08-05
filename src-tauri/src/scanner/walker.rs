@@ -156,9 +156,20 @@ impl FileTypeAccum {
     }
 }
 
+/// Why a scan run ended. The UI must not treat partial results as complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanTermination {
+    Completed,
+    Cancelled,
+    TimedOut,
+    LimitReached,
+}
+
 pub struct ScanResult {
     pub arena: TreeNodeArena,
     pub stats: ScanStats,
+    pub termination: ScanTermination,
 }
 
 // ── Shared tree-building helpers ──────────────────────────
@@ -288,15 +299,18 @@ mod platform {
             let avail = sys.available_memory().max(256 * 1024 * 1024);
             (avail / 128).clamp(500_000, 20_000_000) as usize
         };
+        let mut termination = ScanTermination::Completed;
 
         for entry_result in WalkDir::new(root_path).follow_links(config.follow_symlinks).sort(false).parallelism(jwalk::Parallelism::RayonNewPool(4)) {
             if arena.nodes.len() > node_cap {
+                termination = ScanTermination::LimitReached;
                 break;
             }
             iter_count += 1;
             if (iter_count & 0x3FF) == 0 {
                 if let Some(ref cf) = cancel {
                     if cf.load(Ordering::Relaxed) {
+                        termination = ScanTermination::Cancelled;
                         break;
                     }
                 }
@@ -309,6 +323,7 @@ mod platform {
                     "TIMEOUT: No progress for {}s at {}",
                     timeout, root_path
                 ));
+                termination = ScanTermination::TimedOut;
                 break;
             }
             let entry = match entry_result {
@@ -375,7 +390,7 @@ mod platform {
             }
         }
         progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
-        finish_scan(start, arena, top_files, file_types, progress)
+        finish_scan(start, arena, top_files, file_types, progress, termination)
     }
 }
 
@@ -385,6 +400,7 @@ fn finish_scan(
     top_files: Arc<TopFilesAccum>,
     file_types: Arc<FileTypeAccum>,
     _progress: &ScanProgressCallback,
+    termination: ScanTermination,
 ) -> Result<ScanResult> {
     let n = arena.nodes.len();
     for i in (1..n).rev() {
@@ -424,7 +440,7 @@ fn finish_scan(
             }
         },
     };
-    Ok(ScanResult { arena, stats })
+    Ok(ScanResult { arena, stats, termination })
 }
 
 /// Simple walkdir-based scanner (fallback for when Win32 scanner panics)
@@ -461,18 +477,22 @@ pub fn scan_simple(
     // with millions of unreadable files could otherwise never reach node_cap
     // and the scan would never end. Bound total work by entries processed too.
     let iter_cap: u64 = 1_500_000;
+    let mut termination = ScanTermination::Completed;
 
     for entry_result in WalkDir::new(root_path).follow_links(false).into_iter() {
         if arena.nodes.len() > node_cap {
+            termination = ScanTermination::LimitReached;
             break;
         }
         iter_count += 1;
         if iter_count > iter_cap {
+            termination = ScanTermination::LimitReached;
             break;
         }
         if (iter_count & 0x3FF) == 0 {
             if let Some(ref cf) = config.cancelled {
                 if cf.load(Ordering::Relaxed) {
+                    termination = ScanTermination::Cancelled;
                     break;
                 }
             }
@@ -535,7 +555,7 @@ pub fn scan_simple(
         }
     }
     progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
-    finish_scan(start, arena, top_files, file_types, progress)
+    finish_scan(start, arena, top_files, file_types, progress, termination)
 }
 
 pub fn scan_directory_with_progress(
@@ -610,6 +630,7 @@ fn empty_scan_result(root_path: &str) -> Result<ScanResult> {
             top_files: Vec::new(),
             file_type_breakdown: Vec::new(),
         },
+        termination: ScanTermination::Completed,
     })
 }
 

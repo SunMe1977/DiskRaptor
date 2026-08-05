@@ -182,7 +182,10 @@ class TrashRecovery {
       const batch = idxs.slice(start, start + BATCH);
       const results = await Promise.allSettled(batch.map(function (i) {
         const item = self._items[i];
-        return window.__TAURI__.invoke("restore_trash", { path: item.path });
+        return window.__TAURI__.invoke("restore_trash", {
+          path: item.path,
+          originalPath: item.original_path || "",
+        });
       }));
       results.forEach(function (r, ri) {
         const item = self._items[batch[ri]];

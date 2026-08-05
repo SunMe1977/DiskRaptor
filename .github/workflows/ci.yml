@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npx eslint frontend/ frontend/app-modules/ frontend/galaxyview/
 
   test:
@@ -66,7 +66,7 @@ jobs:
           toolchain: stable
           cache: false
       - name: Install JS dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -129,7 +129,7 @@ jobs:
           toolchain: stable
           cache: false
       - name: Install JS dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Linux dependencies
         run: |
           sudo apt-get update -qq
@@ -139,7 +139,7 @@ jobs:
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
-          # Only the real build bundles — NOT dist/** which contains frontend
+          # Only the real build bundles â€” NOT dist/** which contains frontend
           # sources/images and would flood the release with junk assets.
           files: |
             src-tauri/target/release/bundle/**/*
