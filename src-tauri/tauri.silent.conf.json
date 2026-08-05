@@ -1,6 +1,9 @@
 {
   "bundle": {
     "windows": {
+      "webviewInstallMode": {
+        "type": "skip"
+      },
       "wix": {
         "template": "../installer/wix/silent.wxs"
       }
