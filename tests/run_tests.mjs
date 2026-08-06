@@ -28,7 +28,7 @@ const EXE_PATH = fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
                 fs.existsSync(TAURI_DEBUG_ALT_PATH) ? TAURI_DEBUG_ALT_PATH :
                 (IS_MAC ? MAC_PATH : BIN_PATH);
 
-const ALL_TESTS = [
+const CORE_TESTS = [
   { name: "Scan",          file: "test_scan_ui.mjs",    port: 9200 },
   { name: "Welcome",       file: "test_welcome_ui.mjs", port: 9201 },
   { name: "Settings",      file: "test_settings_ui.mjs", port: 9202 },
@@ -54,6 +54,28 @@ const ALL_TESTS = [
   { name: "Cleanup",       file: "test_cleanup_ui.mjs",    port: 9222 },
   { name: "Downloads-Trash",file: "test_downloads_cleanup_trash.mjs", port: 9230 },
 ];
+
+// Auto-discover every standalone UI test (`test_*_ui.mjs`) so newly added
+// tests are picked up automatically without editing this list.
+function discoverAdditionalTests() {
+  const existing = new Set(CORE_TESTS.map(t => t.file));
+  const files = fs
+    .readdirSync(__dirname)
+    .filter(f => /^test_.*_ui\.mjs$/.test(f))
+    .filter(f => !existing.has(f))
+    .sort();
+  return files.map((file, i) => {
+    const base = file.replace(/^test_/, "").replace(/_ui\.mjs$/, "");
+    const name = base
+      .split("_")
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+    // Ports start above the curated range; the runner passes DISKraptor_TEST_PORT.
+    return { name, file, port: 9231 + i };
+  });
+}
+
+const ALL_TESTS = [...CORE_TESTS, ...discoverAdditionalTests()];
 
 function printBanner() {
   console.log();
@@ -143,10 +165,18 @@ async function main() {
   let testList = ALL_TESTS;
 
   if (args.includes("--quick")) {
-    testList = ALL_TESTS.filter(t =>
-      ["Scan", "Welcome", "Menu/Diagram", "Theme", "Tree View", "Galaxy"].includes(t.name)
-    );
-    console.log("Quick mode: running subset\n");
+    const quickFiles = new Set([
+      "test_scan_ui.mjs",
+      "test_welcome_ui.mjs",
+      "test_menus_ui.mjs",
+      "test_theme_ui.mjs",
+      "test_tree_ui.mjs",
+      "test_galaxy_ui.mjs",
+      "test_backend_roundtrip_ui.mjs",
+      "test_system_info_ui.mjs",
+    ]);
+    testList = ALL_TESTS.filter(t => quickFiles.has(t.file));
+    console.log(`Quick mode: running ${testList.length} smoke tests\n`);
   }
 
   const namedTests = args.filter(a => !a.startsWith("--"));
