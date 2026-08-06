@@ -9,11 +9,11 @@
     const statusBar = document.querySelector(".status-bar");
 
     const bridgeReady = new Promise((resolve) => {
-      if (window.__TAURI__ && typeof window.__TAURI__.invoke === "function" && window.__TAURI__.__qtBridgeReady) {
+      if (window.__TAURI__?.invoke && window.__TAURI__.__qtBridgeReady) {
         resolve(true);
         return;
       }
-      if (window.__TAURI__ && typeof window.__TAURI__.invoke === "function") {
+      if (window.__TAURI__?.invoke) {
         const check = () => {
           if (window.__TAURI__.__qtBridgeReady) { resolve(true); return; }
           setTimeout(check, 50);
@@ -45,7 +45,7 @@
       return;
     }
 
-    if (!window.__TAURI__ || typeof window.__TAURI__.invoke !== "function") {
+    if (!window.__TAURI__?.invoke) {
       console.error("Tauri invoke still unavailable");
       return;
     }
@@ -67,7 +67,7 @@
     window.app.getSetting = async function (key, fallback) {
       try {
         const r = await window.__TAURI__.invoke("load_settings");
-        if (r && r[key] !== undefined) return r[key];
+        if (r?.[key] !== undefined) return r[key];
       } catch (e) {
         console.warn("load_settings failed:", e && e.message ? e.message : e);
       }
@@ -346,7 +346,7 @@
         if (home.charAt(0) === "{") {
           try {
             const j = JSON.parse(home);
-            if (j && j.data) homePath = String(j.data);
+            if (j?.data) homePath = String(j.data);
           } catch (e) { console.debug("[DiskRaptor]", e); }
         }
         if (!homePath) homePath = home;
@@ -546,8 +546,8 @@
 
     // About dialog
     try {
-      const v = await window.__TAURI__.invoke("get_app_info");
-      const ver = v && v.version ? v.version : (v && v.data ? v.data.version : "");
+        const v = await window.__TAURI__.invoke("get_app_info");
+        const ver = v?.version ? v.version : v?.data?.version || "";
       if (ver) {
         const el = document.querySelector(".about-version");
         if (el) {
@@ -653,14 +653,12 @@
     let _currentVersion = "";
     try {
       const vv = await window.__TAURI__.invoke("get_app_info");
-      _currentVersion = vv && vv.version ? (vv.version || "") : (vv && vv.data ? (vv.data.version || "") : "");
+      _currentVersion = vv?.version || vv?.data?.version || "";
     } catch (e) { console.debug("[DiskRaptor]", e); }
     // Deferred external links (replaces inline onclick handlers so script CSP
     // does not need 'unsafe-inline').
     document.addEventListener("click", function (ev) {
-      const target = ev.target && ev.target.closest
-        ? ev.target.closest("[data-open-url]")
-        : null;
+      const target = ev.target?.closest("[data-open-url]");
       if (!target) return;
       const url = target.getAttribute("data-open-url");
       if (!url) return;

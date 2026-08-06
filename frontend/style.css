@@ -77,6 +77,37 @@
     --toolbar-height: 52px;
 }
 
+/* Light theme variables (used when system prefers light mode) */
+@media (prefers-color-scheme: light) {
+    :root {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f6f8fa;
+        --bg-tertiary: #eaeef2;
+        --bg-hover: #d0d7de;
+        --bg-active: #0969da14;
+        --bg-selected: #0969da18;
+        --text-primary: #1f2328;
+        --text-secondary: #656d76;
+        --text-muted: #8c959f;
+        --accent: #0969da;
+        --accent-hover: #0550ae;
+        --accent-green: #1a7f37;
+        --accent-orange: #9a6700;
+        --accent-red: #cf222e;
+        --accent-purple: #8250df;
+        --accent-cyan: #057dcd;
+        --border: #d0d7de;
+        --border-light: #d8dee4;
+        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.08);
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+        --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+        --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06);
+        --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.08);
+        --glass-bg: rgba(255, 255, 255, 0.85);
+        --glass-border: rgba(0, 0, 0, 0.08);
+    }
+}
+
 /* ── Reset ───────────────────────────────────────────────── */
 *,
 *::before,
@@ -229,6 +260,7 @@ button {
     gap: var(--space-sm);
     transition: all var(--transition-fast);
     line-height: 1.4;
+    user-select: none;
 }
 button:hover:not(:disabled) {
     background: var(--bg-hover);

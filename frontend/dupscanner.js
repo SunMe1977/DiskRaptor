@@ -6,6 +6,7 @@ class DupScanner {
   constructor() {
     this.overlay = null;
     this.resultsPanel = null;
+    this._lastProgressUpdate = 0;
     this._createUI();
   }
 
@@ -124,6 +125,10 @@ class DupScanner {
   }
 
   _updateProgress(stats) {
+    const now = Date.now();
+    if (this._lastProgressUpdate && now - this._lastProgressUpdate < 100) return;
+    this._lastProgressUpdate = now;
+
     const files = document.getElementById("dup-progress-files");
     const groups = document.getElementById("dup-progress-groups");
     const wasted = document.getElementById("dup-progress-wasted");

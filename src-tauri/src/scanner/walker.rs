@@ -81,11 +81,10 @@ impl Default for TopFilesAccum {
 impl TopFilesAccum {
     fn insert(&self, path: String, size: u64, max_count: usize) {
         let mut files = self.files.lock();
-        // Quick check: if smaller than current minimum, skip (files lock held, no TOCTOU race)
-        if size <= *self.min_size.lock() && files.len() >= max_count {
+        let min_size = *self.min_size.lock();
+        if size <= min_size && files.len() >= max_count {
             return;
         }
-        // Binary-search insertion point (list kept sorted descending by size) - O(log n).
         let idx = files
             .binary_search_by(|f| f.size.cmp(&size).reverse())
             .unwrap_or_else(|e| e);

@@ -1,14 +1,14 @@
 (function () {
   "use strict";
 
-  var bridgeReady = false;
-  var isWkMode = false;
-  var isTauriV2 = false;
-  var pendingInvokes = [];
-  var callIdCounter = 0;
-  var pendingCalls = {};
+  const bridgeReady = false;
+  const isWkMode = false;
+  let isTauriV2 = false;
+  let pendingInvokes = [];
+  let callIdCounter = 0;
+  let pendingCalls = {};
   if (!window.__TAURI__) window.__TAURI__ = {};
-  var tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
+  let tauriInvoke = (window.__TAURI__ && typeof window.__TAURI__.invoke === "function")
     ? window.__TAURI__.invoke
     : (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === "function")
       ? window.__TAURI__.core.invoke
@@ -66,7 +66,7 @@
   }
 
   function flushPending() {
-    var q = pendingInvokes;
+    const q = pendingInvokes;
     pendingInvokes = [];
     q.forEach(function (fn) {
       try { fn(); } catch (e) { console.error("[DiskRaptor] Pending invoke error:", e); }
@@ -76,7 +76,7 @@
   // ── WKWebView IPC: send message to native, wait for response ─
   function wkInvoke(cmd, args) {
     return new Promise(function (resolve, reject) {
-      var callId = "dr_" + (++callIdCounter);
+      const callId = "dr_" + (++callIdCounter);
       pendingCalls[callId] = { resolve: resolve, reject: reject };
 
       try {
@@ -94,12 +94,12 @@
 
   // ── Called by native code to resolve a pending call ──────────
   window.__TAURI__._resolve = function (callId, resultJson) {
-    var call = pendingCalls[callId];
+    const call = pendingCalls[callId];
     if (!call) return;
     delete pendingCalls[callId];
 
     try {
-      var parsed = JSON.parse(resultJson);
+      const parsed = JSON.parse(resultJson);
       if (parsed && typeof parsed === "object" && parsed.hasOwnProperty("data")) {
         call.resolve(parsed.data);
       } else {
@@ -138,7 +138,7 @@
   }
 
   // ── Event system ───────────────────────────────────────────
-  var eventListeners = {};
+  const eventListeners = {};
 
   function listen(eventName, callback) {
     if (!eventListeners[eventName]) {
@@ -146,13 +146,13 @@
     }
     eventListeners[eventName].push(callback);
     return function () {
-      var idx = eventListeners[eventName].indexOf(callback);
+      const idx = eventListeners[eventName].indexOf(callback);
       if (idx !== -1) eventListeners[eventName].splice(idx, 1);
     };
   }
 
   function emit(eventName, payload) {
-    var listeners = eventListeners[eventName] || [];
+    const listeners = eventListeners[eventName] || [];
     listeners.forEach(function (cb) {
       try {
         cb({ payload: payload, event: eventName });

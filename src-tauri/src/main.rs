@@ -35,8 +35,10 @@ struct ScanState {
     /// The scan id currently active (or last started). Responses/events are
     /// only valid while they match this id.
     active_scan_id: AtomicU64,
-    live_entries: Mutex<Option<std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>>>,
+    live_entries: Mutex<Option<LiveEntries>>,
 }
+
+type LiveEntries = std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>;
 
 #[allow(dead_code)]
 struct ScanResultData {
@@ -87,7 +89,8 @@ pub(crate) struct AppState {
 
 // â”€â”€ Helper types â”€â”€
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
+#[must_use]
 pub(crate) struct JsonResult {
     success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -106,10 +109,6 @@ impl JsonResult {
     fn err(msg: impl Into<String>) -> Self {
         Self { success: false, data: None, error: Some(msg.into()) }
     }
-    #[allow(dead_code)] // used on Linux for smartctl cache
-    fn clone(&self) -> Self {
-        Self { success: self.success, data: self.data.clone(), error: self.error.clone() }
-    }
 }
 
 // â”€â”€ File Operations â”€â”€
@@ -126,7 +125,9 @@ fn sanitize_delete_path(path: &str) -> Result<std::path::PathBuf, String> {
     if !home.as_os_str().is_empty() && canonical == home {
         return Err("Refusing to delete the home directory".into());
     }
-    if canonical.parent().map(|x| x == canonical).unwrap_or(false) {
+    if canonical.parent().map(|p| p.as_os_str() == std::ffi::OsStr::new("")).unwrap_or(false)
+        || canonical.parent().map(|p| p == std::path::Path::new("/")).unwrap_or(false)
+    {
         return Err("Refusing to delete a filesystem root".into());
     }
     #[cfg(target_os = "windows")]
@@ -1149,7 +1150,7 @@ fn scan_config(
     path: &str,
     follow_symlinks: bool,
     timeout_secs: u64,
-    live: std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>,
+    live: LiveEntries,
 ) -> scanner::walker::ScanConfig {
     scanner::walker::ScanConfig {
         root_path: path.into(),
@@ -1377,9 +1378,10 @@ fn get_scan_result(state: State<AppState>, scan_id: Option<u64>) -> JsonResult {
             "termination": d.termination,
         });
         let total_chunks = (d.arena.len() as u32).div_ceil(CHUNK_SIZE);
+        let active_id = state.scan.active_scan_id.load(Ordering::Acquire);
         let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": total_chunks});
         drop(g);
-        JsonResult::ok(serde_json::json!({"stats": sj, "root_info": ri, "scan_id": 0, "errors": []}))
+        JsonResult::ok(serde_json::json!({"stats": sj, "root_info": ri, "scan_id": active_id, "errors": []}))
     } else {
         drop(g);
         JsonResult::err("No scan result")
@@ -1586,11 +1588,12 @@ fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
 #[tauri::command]
 fn get_dup_stats(state: State<AppState>) -> JsonResult {
     let groups = state.dup.groups.lock();
+    let wasted = *state.dup.wasted_bytes.lock();
     JsonResult::ok(serde_json::json!({
         "phase": state.dup.phase.load(Ordering::Relaxed),
         "filesScanned": state.dup.files_scanned.load(Ordering::Relaxed),
         "groups": groups.len(),
-        "wastedBytes": *state.dup.wasted_bytes.lock(),
+        "wastedBytes": wasted,
         "currentFile": state.dup.current_file.lock().clone(),
     }))
 }
@@ -1598,9 +1601,10 @@ fn get_dup_stats(state: State<AppState>) -> JsonResult {
 #[tauri::command]
 fn get_dup_result(state: State<AppState>) -> JsonResult {
     let groups = state.dup.groups.lock().clone();
+    let wasted = *state.dup.wasted_bytes.lock();
     JsonResult::ok(serde_json::json!({
         "groups": groups,
-        "wastedBytes": *state.dup.wasted_bytes.lock(),
+        "wastedBytes": wasted,
         "filesScanned": state.dup.files_scanned.load(Ordering::Relaxed),
         "cancelled": state.dup.cancelled.load(Ordering::Relaxed),
     }))
@@ -1773,6 +1777,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn parse_system_profiler_handles_empty_input() {

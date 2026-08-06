@@ -143,15 +143,12 @@ impl TreeNodeArena {
 
 /// Try to estimate number of files/dirs in a tree from filesystem info.
 fn estimate_node_capacity(root_path: &str) -> usize {
-    // Default: 1M nodes
     let mut cap = 1_000_000usize;
-    // Try to get filesystem block count as a proxy for file density
-    if let Ok(_meta) = std::fs::metadata(root_path) {
-        // Use available space as rough proxy: less free space = more files
-        // Typically a modern drive has ~100K-10M files
-        cap = 2_000_000;
+    if let Ok(meta) = std::fs::metadata(root_path) {
+        if meta.is_dir() {
+            cap = 2_000_000;
+        }
     }
-    // Clamp between 100K and 20M
     cap.clamp(100_000, 20_000_000)
 }
 

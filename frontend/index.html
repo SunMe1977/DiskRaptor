@@ -21,14 +21,15 @@
                     <div id="drive-menu" class="drive-menu"></div>
                 </div>
                 <div style="position:relative;flex:1;display:flex;">
-                    <input
-                        type="text"
-                        id="scan-path"
-                        data-i18n-placeholder="scan.path.placeholder"
-                        placeholder="Select or type a directory path..."
-                        value=""
-                        style="flex:1;"
-                    />
+                <input
+                    type="text"
+                    id="scan-path"
+                    data-i18n-placeholder="scan.path.placeholder"
+                    placeholder="Select or type a directory path..."
+                    value=""
+                    spellcheck="false"
+                    style="flex:1;"
+                />
                     <button id="btn-fav" title="Bookmark this path" aria-label="Bookmark this path" style="padding:4px 8px;font-size:14px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">☆</button>
                     <div id="fav-menu" class="fav-dropdown"></div>
                 </div>
