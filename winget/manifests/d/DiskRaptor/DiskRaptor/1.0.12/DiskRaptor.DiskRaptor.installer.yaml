@@ -1,5 +1,5 @@
 PackageIdentifier: DiskRaptor.DiskRaptor
-PackageVersion: 1.0.9
+PackageVersion: 1.0.12
 InstallerLocale: en-US
 InstallerType: nullsoft
 Scope: machine
@@ -9,7 +9,7 @@ InstallerSwitches:
 UpgradeBehavior: install
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/SunMe1977/DiskRaptor/releases/download/v1.0.9/DiskRaptor-1.0.9-windows-x64.exe
-    InstallerSha256: 2fff357b62de015063ac0e25e5680aa2d28f5f999a7234dd8ef891e8a91d1d76
+    InstallerUrl: https://github.com/SunMe1977/DiskRaptor/releases/download/v1.0.12/DiskRaptor-1.0.12-windows-x64.exe
+    InstallerSha256: b6c03648d5b008a445131fbb8f0696f810060ab4da83d1d40e2ffbb16dd86f7b
 ManifestType: installer
 ManifestVersion: 1.9.0
