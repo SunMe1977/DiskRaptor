@@ -1777,7 +1777,6 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
     fn parse_system_profiler_handles_empty_input() {
@@ -1942,7 +1941,7 @@ mod tests {
         let mut arena = TreeNodeArena::with_capacity(25_000);
         for i in 0..25_000u32 {
             let mut n = TreeNode {
-                name: format!("n{i}").into(),
+                name: format!("n{i}"),
                 size: i as u64,
                 file_count: 1,
                 dir_count: 0,
