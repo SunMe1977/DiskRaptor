@@ -50,7 +50,17 @@
     "test:about-dialog": "node tests/test_about_dialog_ui.mjs",
     "test:drive-selector": "node tests/test_drive_selector_ui.mjs",
     "test:scan-history": "node tests/test_scan_history_ui.mjs",
-    "test:empty-folders": "node tests/test_empty_folders_ui.mjs"
+    "test:empty-folders": "node tests/test_empty_folders_ui.mjs",
+    "test:browser-cleanup": "node tests/test_browser_cleanup_ui.mjs",
+    "test:downloads-cleanup": "node tests/test_downloads_cleanup_ui.mjs",
+    "test:system-info": "node tests/test_system_info_ui.mjs",
+    "test:scan-cancel-restart": "node tests/test_scan_cancel_restart_ui.mjs",
+    "test:tree-selection": "node tests/test_tree_selection_ui.mjs",
+    "test:diagram-zoom": "node tests/test_diagram_zoom_ui.mjs",
+    "test:status-bar": "node tests/test_status_bar_ui.mjs",
+    "test:tree-expand-collapse": "node tests/test_tree_expand_collapse_ui.mjs",
+    "test:backend-roundtrip": "node tests/test_backend_roundtrip_ui.mjs",
+    "test:stats-accuracy": "node tests/test_stats_accuracy_ui.mjs"
   },
   "dependencies": {
     "ws": "^8.21.1"
