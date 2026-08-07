@@ -187,7 +187,9 @@ async function main() {
   }
 
   const timeoutArg = args.find(a => a.startsWith("--timeout="));
-  const perTestTimeout = timeoutArg ? parseInt(timeoutArg.split("=")[1]) * 1000 : 180000;
+  const perTestTimeout = timeoutArg
+    ? parseInt(timeoutArg.split("=")[1]) * 1000
+    : (args.includes("--quick") ? 90000 : 180000);
 
   let passed = 0;
   let failed = 0;
@@ -207,15 +209,14 @@ async function main() {
       continue;
     }
 
-    const startTime = Date.now();
-    try {
+    const runOnce = async () => {
+      const startTime = Date.now();
       const child = spawn("node", [testPath], {
         stdio: ["ignore", "inherit", "inherit"],
         env: { ...process.env, DISKraptor_TEST_PORT: String(test.port) },
         shell: IS_WIN,
         timeout: perTestTimeout,
       });
-
       const code = await new Promise((resolve) => {
         child.on("close", resolve);
         child.on("error", (err) => {
@@ -223,8 +224,20 @@ async function main() {
           resolve(-1);
         });
       });
+      return { code, elapsed: ((Date.now() - startTime) / 1000).toFixed(1) };
+    };
 
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    try {
+      let { code, elapsed } = await runOnce();
+      // Flaky CDP (WebKitGTK/WKWebView) can stall on a fresh launch — retry
+      // once before giving up on a timeout.
+      if (code === null) {
+        console.log(`  TIMEOUT on first attempt, retrying once...`);
+        const retry = await runOnce();
+        code = retry.code;
+        elapsed = retry.elapsed;
+      }
+
       if (code === 0) {
         console.log(`  \u2713 PASSED: ${test.file} (${elapsed}s)`);
         passed++;

@@ -1101,15 +1101,26 @@ async fn check_for_updates() -> JsonResult {
         let agent = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_secs(8))
             .build();
-        let resp = agent
-            .get("https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest")
-            .set("User-Agent", "DiskRaptor")
-            .call()
-            .ok()?;
-        let body = resp.into_string().ok()?;
-        let v: serde_json::Value = serde_json::from_str(&body).ok()?;
-        let tag = v.get("tag_name").and_then(|t| t.as_str())?;
-        Some(tag.trim_start_matches('v').to_string())
+        // One retry for transient network failures.
+        for attempt in 0..2 {
+            let resp = agent
+                .get("https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest")
+                .set("User-Agent", "DiskRaptor")
+                .call();
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            let resp = match resp {
+                Ok(r) => r,
+                Err(_) if attempt == 0 => continue,
+                Err(_) => return None,
+            };
+            let body = resp.into_string().ok()?;
+            let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+            let tag = v.get("tag_name").and_then(|t| t.as_str())?;
+            return Some(tag.trim_start_matches('v').to_string());
+        }
+        None
     })
     .await;
     match result {
@@ -1660,7 +1671,13 @@ fn save_settings(state: State<AppState>, settings: serde_json::Value) -> JsonRes
             obj.insert(k.clone(), v.clone());
         }
         if let Ok(json) = serde_json::to_string_pretty(&merged) {
-            if std::fs::write(&path, &json).is_ok() {
+            // Atomic write: write to a temp file then rename, so a crash in the
+            // middle never leaves a truncated/corrupt settings.json behind.
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let tmp = path.with_extension("json.tmp");
+            if std::fs::write(&tmp, &json).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
                 return JsonResult::ok_empty();
             }
         }

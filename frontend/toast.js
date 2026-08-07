@@ -29,6 +29,13 @@
     const duration = DURATIONS[type] || 4000;
     const c = getContainer();
 
+    // Cap visible toasts so a burst of notifications doesn't stack forever.
+    const MAX_VISIBLE = 3;
+    while (c.children.length >= MAX_VISIBLE) {
+      const first = c.firstElementChild;
+      if (first) c.removeChild(first);
+    }
+
     const toast = document.createElement("div");
     toast.className = "toast toast-" + type;
 

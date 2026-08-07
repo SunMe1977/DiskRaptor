@@ -75,8 +75,13 @@ class DupScanner {
     }
 
     const self = this;
+    let pollInflight = false;
     const poll = setInterval(async function() {
       if (!self._running) { clearInterval(poll); return; }
+      // Never stack IPC calls: skip this tick if the previous poll is still
+      // awaiting the backend (slow disks / large scans).
+      if (pollInflight) return;
+      pollInflight = true;
       try {
         const stats = await window.__TAURI__.invoke("get_dup_stats", {});
         if (stats) {
@@ -98,6 +103,7 @@ class DupScanner {
           }
         }
       } catch (e) { console.debug("[DiskRaptor]", e); }
+      finally { pollInflight = false; }
     }, 200);
   }
 

@@ -12,13 +12,22 @@ pub const HEAD_HASH_BYTES: usize = 1 << 20;
 /// Returns `(bytes_read, xxh3_64 hash)`; `(0, 0)` when the file can't be read.
 pub fn hash_file_head(path: &Path, read_len: usize) -> (u64, u64) {
     use std::io::Read;
-    let mut buf = vec![0u8; read_len];
-    let mut n = 0usize;
-    if let Ok(mut f) = std::fs::File::open(path) {
-        n = f.read(&mut buf).unwrap_or(0);
+    // Reuse a thread-local read buffer so the duplicate scanner doesn't
+    // allocate 1 MiB per file (hundreds of thousands of allocations).
+    thread_local! {
+        static BUF: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(vec![0u8; 1 << 20]);
     }
-    buf.truncate(n);
-    (n as u64, xxhash_rust::xxh3::xxh3_64(&buf))
+    BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        if buf.len() < read_len {
+            buf.resize(read_len, 0);
+        }
+        let mut n = 0usize;
+        if let Ok(mut f) = std::fs::File::open(path) {
+            n = f.read(&mut buf[..read_len]).unwrap_or(0);
+        }
+        (n as u64, xxhash_rust::xxh3::xxh3_64(&buf[..n]))
+    })
 }
 
 /// Stream-hash an entire file. Returns `(size, full_hash, changed_during_scan)`;
@@ -26,24 +35,33 @@ pub fn hash_file_head(path: &Path, read_len: usize) -> (u64, u64) {
 /// reading it (or it could not be read at all), so its hash is not trustworthy.
 pub fn hash_file_full(path: &Path) -> (u64, u64, bool) {
     use std::io::Read;
+    thread_local! {
+        static BUF: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(vec![0u8; 1 << 20]);
+    }
     let before = std::fs::metadata(path)
         .ok()
         .map(|m| (m.len(), m.modified().ok()));
     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
-    let mut buf = vec![0u8; 1 << 20];
     let mut total = 0u64;
-    if let Ok(mut f) = std::fs::File::open(path) {
-        loop {
-            match f.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    hasher.update(&buf[..n]);
-                    total += n as u64;
+    let read_ok = BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        if let Ok(mut f) = std::fs::File::open(path) {
+            loop {
+                match f.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        hasher.update(&buf[..n]);
+                        total += n as u64;
+                    }
+                    Err(_) => return false,
                 }
-                Err(_) => return (0, 0, true),
             }
+            true
+        } else {
+            false
         }
-    } else {
+    });
+    if !read_ok {
         return (0, 0, true);
     }
     let after = std::fs::metadata(path)

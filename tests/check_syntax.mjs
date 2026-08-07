@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const roots = ["frontend"];
+const roots = ["frontend", "tests"];
 const exts = new Set([".js", ".mjs", ".cjs"]);
 
 function collect(dir, out) {

@@ -27,7 +27,9 @@ class ChunkLoader {
     this.scanId = scanId;
     this.totalNodes = totalNodes;
     this.totalChunks = totalChunks;
-    this.allNodes = new Array(totalNodes);
+    // Lazily grown instead of `new Array(totalNodes)` — pre-allocating a
+    // 20M-element array for huge scans spikes memory before any chunk loads.
+    this.allNodes = [];
     this.loadedChunks = new Set();
     this.parentMap = new Map();
     this.loadedCount = 0;
@@ -61,8 +63,8 @@ class ChunkLoader {
     const touchedParents = new Set();
     for (let i = 0; i < chunk.nodes.length; i++) {
       const arenaIdx = baseIdx + i;
-      if (arenaIdx >= this.allNodes.length) {
-        console.warn("loadChunk: arena index out of bounds", arenaIdx, "allNodes", this.allNodes.length);
+      if (arenaIdx >= this.totalNodes) {
+        console.warn("loadChunk: arena index out of bounds", arenaIdx, "totalNodes", this.totalNodes);
         break;
       }
       const node = chunk.nodes[i];

@@ -180,7 +180,10 @@ class DiagramRenderer {
     }, { passive: false });
 
     this._resize();
-    window.addEventListener("resize", () => this._resize());
+    window.addEventListener(
+      "resize",
+      window.debounce(() => this._resize(), 100),
+    );
   }
 
   // ── Premium overlay layers (GPU-accelerated, no canvas repaints) ──

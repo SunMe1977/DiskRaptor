@@ -80,9 +80,15 @@ export async function connectCDP(wsUrl) {
     send(method, params = {}) {
       return new Promise((resolve, reject) => {
         const id = ++msgId;
-        pending.set(id, { resolve, reject });
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`CDP timeout: ${method}`));
+        }, 60000);
+        pending.set(id, {
+          resolve: (m) => { clearTimeout(timer); resolve(m); },
+          reject: (e) => { clearTimeout(timer); reject(e); },
+        });
         ws.send(JSON.stringify({ id, method, params }));
-        setTimeout(() => reject(new Error(`CDP timeout: ${method}`)), 60000);
       });
     },
     close() { ws.close(); },
@@ -106,12 +112,24 @@ export function killAll() {
 }
 
 export async function jsExpr(cdp, expr) {
-  const r = await cdp.send("Runtime.evaluate", {
-    expression: expr,
-    returnByValue: true,
-    awaitPromise: true,
-  });
-  return cdpVal(r);
+  // Retry once on a transient CDP timeout (WebKitGTK/WKWebView can stall
+  // the first evaluate after a fresh launch).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: expr,
+        returnByValue: true,
+        awaitPromise: true,
+      });
+      return cdpVal(r);
+    } catch (e) {
+      if (attempt === 0 && /CDP timeout/.test(String(e && e.message))) {
+        await sleep(300);
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 let _invokeId = 0;

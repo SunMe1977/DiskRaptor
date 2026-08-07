@@ -141,18 +141,26 @@ impl TreeNodeArena {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/// Try to estimate number of files/dirs in a tree from filesystem info.
+/// Try to estimate number of files/dirs in a tree from available RAM.
+/// ~128 bytes per node → the arena should stay comfortably under available
+/// memory so huge scans don't OOM.
 fn estimate_node_capacity(root_path: &str) -> usize {
-    let mut cap = 1_000_000usize;
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let avail = sys.available_memory().max(256 * 1024 * 1024);
+    let by_ram = (avail / 128) as usize;
+    // Filesystem-free-space proxy: a nearly full disk usually has more files.
+    let mut fs_factor = 1usize;
     if let Ok(meta) = std::fs::metadata(root_path) {
         if meta.is_dir() {
-            cap = 2_000_000;
+            fs_factor = 2;
         }
     }
-    cap.clamp(100_000, 20_000_000)
+    (by_ram * fs_factor).clamp(100_000, 20_000_000)
 }
 
 /// Format bytes to a human-readable string.
+#[inline]
 pub fn format_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB"];
     if bytes == 0 {

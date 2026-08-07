@@ -537,9 +537,10 @@
         );
 
         let done = false;
-        // 10-minute safety cap; normally the scan:progress event drives progress.
-        for (let i = 0; i < 1200; i++) {
-          await sleep(500);
+        // 10-minute safety cap; the scan:progress event drives live updates, so
+        // this loop only needs to detect completion (polled at 1s to halve IPC).
+        for (let i = 0; i < 600; i++) {
+          await sleep(1000);
           if (scanDone) {
             done = true;
             break;
@@ -549,7 +550,14 @@
             .catch(function () {
               return null;
             });
-          if (p) onProgress(p);
+          if (p) {
+            onProgress(p);
+            // Backend reports the scan as finished — stop polling early.
+            if (p.is_running === false && p.phase >= 3) {
+              done = true;
+              break;
+            }
+          }
         }
 
         if (!done) throw new Error("Scan timeout");

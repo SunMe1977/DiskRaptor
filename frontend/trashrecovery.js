@@ -42,10 +42,10 @@ class TrashRecovery {
     document.getElementById("trash-restore-selected").onclick = () => this._restoreSelected();
     document.getElementById("trash-delete-selected").onclick = () => this._deleteSelected();
     document.getElementById("trash-restore-all").onclick = () => this._restoreAll();
-    document.getElementById("trash-search").oninput = (e) => {
+    document.getElementById("trash-search").oninput = window.debounce((e) => {
       this._filter = e.target.value.toLowerCase();
       this._render();
-    };
+    }, 150);
     document.getElementById("trash-sort").onchange = (e) => {
       this._sort = e.target.value;
       this._render();
@@ -233,11 +233,7 @@ class TrashRecovery {
 }
 
 function escHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return window.escHtml(s);
 }
 
 function fmtTrash(b) {

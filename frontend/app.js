@@ -812,9 +812,9 @@
         }
       });
 
-      langFilter.addEventListener("input", function () {
+      langFilter.addEventListener("input", window.debounce(function () {
         renderLangs(this.value);
-      });
+      }, 150));
 
       document.addEventListener("click", function (e) {
         if (!e.target.closest(".lang-dropdown-wrap")) {
