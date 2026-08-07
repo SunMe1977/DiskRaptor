@@ -60,7 +60,22 @@
     "test:status-bar": "node tests/test_status_bar_ui.mjs",
     "test:tree-expand-collapse": "node tests/test_tree_expand_collapse_ui.mjs",
     "test:backend-roundtrip": "node tests/test_backend_roundtrip_ui.mjs",
-    "test:stats-accuracy": "node tests/test_stats_accuracy_ui.mjs"
+    "test:stats-accuracy": "node tests/test_stats_accuracy_ui.mjs",
+    "test:welcome-dismissal": "node tests/test_welcome_dismissal_ui.mjs",
+    "test:scan-button-states": "node tests/test_scan_button_states_ui.mjs",
+    "test:context-menu-actions": "node tests/test_context_menu_actions_ui.mjs",
+    "test:duplicates-flow": "node tests/test_duplicates_flow_ui.mjs",
+    "test:export-html-flow": "node tests/test_export_html_flow_ui.mjs",
+    "test:drag-drop-scan": "node tests/test_drag_drop_scan_ui.mjs",
+    "test:follow-symlinks": "node tests/test_follow_symlinks_ui.mjs",
+    "test:speed-chart": "node tests/test_speed_chart_ui.mjs",
+    "test:topfiles-row-click": "node tests/test_topfiles_row_click_ui.mjs",
+    "test:galaxy-init-dispose": "node tests/test_galaxy_init_dispose_ui.mjs",
+    "test:scan-errors-panel": "node tests/test_scan_errors_panel_ui.mjs",
+    "test:chunk-loading-progress": "node tests/test_chunk_loading_progress_ui.mjs",
+    "test:reset-view-tool": "node tests/test_reset_view_tool_ui.mjs",
+    "test:lang-keyboard-nav": "node tests/test_lang_keyboard_nav_ui.mjs",
+    "test:about-update-check": "node tests/test_about_update_check_ui.mjs"
   },
   "dependencies": {
     "ws": "^8.21.1"
