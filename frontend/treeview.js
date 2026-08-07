@@ -357,13 +357,11 @@ class TreeView {
     const parent = node.parent;
 
     const toRemove = [arenaIdx];
-    const toRemoveSet = new Set(toRemove);
     let i = 0;
     while (i < toRemove.length) {
       const children = this.loader.getChildrenIndices(toRemove[i]);
       for (let ci = 0; ci < children.length; ci++) {
         toRemove.push(children[ci]);
-        toRemoveSet.add(children[ci]);
       }
       i++;
     }
@@ -380,7 +378,7 @@ class TreeView {
       if (siblings) {
         const filtered = [];
         for (let si = 0; si < siblings.length; si++) {
-          if (!toRemoveSet.has(siblings[si])) filtered.push(siblings[si]);
+          if (toRemove.indexOf(siblings[si]) === -1) filtered.push(siblings[si]);
         }
         this.loader.parentMap.set(parent, filtered);
       }

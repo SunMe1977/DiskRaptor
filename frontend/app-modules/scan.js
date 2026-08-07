@@ -180,6 +180,11 @@
         ctx.font = "8px monospace";
         ctx.textAlign = "right";
         ctx.textBaseline = "middle";
+        (function fmtSpeed(bps) {
+          return (
+            (bps / 1024 / 1024).toFixed(bps > 1048576 ? 0 : 1) + " MB/s"
+          );
+        });
         ctx.fillText(
           (function (bps) {
             return (
@@ -837,17 +842,17 @@
             return;
           }
           cleanable.sort(function (a, b) { return b.size - a.size; });
-          const existingOverlay = document.getElementById("cleanup-overlay");
+          var existingOverlay = document.getElementById("cleanup-overlay");
           if (existingOverlay) existingOverlay.remove();
-          const overlay = document.createElement("div");
+          var overlay = document.createElement("div");
           overlay.id = "cleanup-overlay";
           overlay.className = "overlay-base";
           overlay.style.cssText = "display:flex;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);z-index:1000;";
-          const card = document.createElement("div");
+          var card = document.createElement("div");
           card.className = "overlay-card";
           card.style.cssText = "max-width:560px;width:90%;max-height:80vh;display:flex;flex-direction:column;";
-          const totalWaste = cleanable.reduce(function (s, i) { return s + i.size; }, 0);
-          const headerHtml = '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">' +
+          var totalWaste = cleanable.reduce(function (s, i) { return s + i.size; }, 0);
+          var headerHtml = '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">' +
             '<h3 style="margin:0;font-size:15px;color:var(--text-primary);">\uD83E\uDDF9 Downloads Cleanup</h3>' +
             '<span style="font-size:12px;color:var(--text-muted);">' + cleanable.length + ' items \u00B7 ' +
             window.fmtSize(totalWaste) + ' reclaimable</span></div>';
@@ -866,7 +871,7 @@
               '<span style="font-size:10px;color:var(--text-muted);padding:1px 6px;border-radius:3px;background:var(--bg-tertiary);flex-shrink:0;">' + item.reason + '</span></div>';
           }
           listHtml += '</div>';
-          const footerHtml = '<div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:6px;justify-content:flex-end;flex-shrink:0;">' +
+          var footerHtml = '<div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:6px;justify-content:flex-end;flex-shrink:0;">' +
             '<button id="cleanup-select-all" style="padding:5px 14px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg-tertiary);cursor:pointer;color:var(--text-primary);">Select All</button>' +
             '<button id="cleanup-move-trash" style="padding:5px 14px;font-size:12px;border:none;border-radius:5px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">\uD83D\uDDD1\uFE0F Move to Trash</button>' +
             '<button id="cleanup-close-btn" style="padding:5px 14px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg-tertiary);cursor:pointer;color:var(--text-primary);">Close</button></div>';
@@ -876,25 +881,25 @@
           overlay.addEventListener("click", function (e) { if (e.target === overlay) overlay.style.display = "none"; });
           document.getElementById("cleanup-close-btn").onclick = function () { overlay.remove(); };
           document.getElementById("cleanup-select-all").onclick = function () {
-            const btn = document.getElementById("cleanup-select-all");
-            const cbs = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]');
-            const someUnchecked = Array.from(cbs).some(function (cb) { return !cb.checked; });
+            var btn = document.getElementById("cleanup-select-all");
+            var cbs = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]');
+            var someUnchecked = Array.from(cbs).some(function (cb) { return !cb.checked; });
             cbs.forEach(function (cb) { cb.checked = someUnchecked; });
             if (btn) btn.textContent = someUnchecked ? "Select All" : "Select None";
           };
           document.getElementById("cleanup-move-trash").onclick = function () {
-            const items = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');
-            const files = Array.from(items).map(function (cb) { return cb.closest(".cleanup-item").dataset.file; });
+            var items = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');
+            var files = Array.from(items).map(function (cb) { return cb.closest(".cleanup-item").dataset.file; });
             if (files.length === 0) { const t0 = window.__ || function (s) { return s; }; window.showToast(t0("toast.no_items"), "warning"); return; }
             window.confirmDialog("Move " + files.length + " file(s) to Trash?").then(function (ok) {
               if (!ok) return;
-            const rootPath = (scanPath && scanPath.value || "").replace(/[\\/]+$/, "");
-              (async function () {
-                let ok2 = 0, fail = 0;
-                for (let fi = 0; fi < files.length; fi++) {
-                  const fullPath = rootPath + "/" + files[fi];
-                  try {
-                    const delRes = await window.__TAURI__.invoke("delete_path", { path: fullPath });
+            var rootPath = (scanPath && scanPath.value || "").replace(/[\\/]+$/, "");
+            (async function () {
+              var ok2 = 0, fail = 0;
+              for (var fi = 0; fi < files.length; fi++) {
+                var fullPath = rootPath + "/" + files[fi];
+                try {
+                  var delRes = await window.__TAURI__.invoke("delete_path", { path: fullPath });
                   if (delRes && delRes.success === false) { fail++; console.warn("Cleanup failed:", fullPath, delRes.error); }
                   else { ok2++; }
                 } catch (e) { fail++; console.warn("Cleanup failed:", fullPath, e); }

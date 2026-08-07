@@ -85,12 +85,13 @@ class ChunkLoader {
 
     // Only re-sort the parent lists that actually gained children this round
     // (avoids an O(all_nodes log n) sort on every chunk load).
+    const _self = this;
     const entries = Array.from(touchedParents);
     for (let ei = 0; ei < entries.length; ei++) {
       const children = this.parentMap.get(entries[ei]) || [];
       children.sort(function (a, b) {
-        const na = self.allNodes[a];
-        const nb = self.allNodes[b];
+        const na = _self.allNodes[a];
+        const nb = _self.allNodes[b];
         return (nb ? nb.size : 0) - (na ? na.size : 0);
       });
     }
