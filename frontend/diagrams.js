@@ -345,7 +345,7 @@ class DiagramRenderer {
       contentH = (this._baseH || viewH || 200);
     } else if (this.mode === "bar") {
       contentW = this._baseW || viewW || 1200;
-      contentH = Math.max(this.files.length * 14 + 40, this._baseH || viewH || 400);
+      contentH = this._baseH || viewH || 400;
     } else {
       contentW = this._baseW || viewW;
       contentH = this._baseH || viewH || 200;

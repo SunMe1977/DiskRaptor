@@ -50,6 +50,33 @@
       return;
     }
 
+    // ── IPC contract guard ────────────────────────────────────────────────
+    // Wrap invoke so every response is validated against the documented shapes
+    // in contracts.js. Log-only: a violation logs a console warning but never
+    // throws, so a contract drift can never break the running app.
+    (function wrapInvokeForContract() {
+      const contract = window.__contract;
+      if (!contract) return;
+      const wrap = function (invoke) {
+        return async function (cmd, ...args) {
+          const res = await invoke(cmd, ...args);
+          try {
+            contract.check(cmd, res);
+          } catch (e) {
+            /* contract check must never affect the app */
+          }
+          return res;
+        };
+      };
+      const api = window.__TAURI__;
+      if (api && typeof api.invoke === "function") {
+        api.invoke = wrap(api.invoke.bind(api));
+      }
+      if (api && api.core && typeof api.core.invoke === "function") {
+        api.core.invoke = wrap(api.core.invoke.bind(api.core));
+      }
+    })();
+
     console.debug("DiskRaptor initializing...");
 
     // â”€â”€ Shared state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -683,17 +710,29 @@
       const el = document.getElementById("about-update-check");
       if (!el) return;
       const installLatest = function (latest) {
-        // Make the element an "Install" button: opens the release page where
-        // the installer for the current OS is published.
+        // Make the element an "Install" button that downloads the installer
+        // for the current OS directly.
+        const platform = (navigator.platform || "").toLowerCase();
+        const isMac = platform.indexOf("mac") === 0;
+        const isWin = platform.indexOf("win") === 0;
+        const asset =
+          isMac
+            ? "DiskRaptor-" + latest + "-macos-universal.dmg"
+            : isWin
+              ? "DiskRaptor-" + latest + "-windows-x64.exe"
+              : "DiskRaptor-" + latest + "-linux-x86_64.AppImage";
+        const dl =
+          "https://github.com/SunMe1977/DiskRaptor/releases/download/v" +
+          latest +
+          "/" +
+          asset;
         el.textContent = "\u2B07\uFE0F Install v" + latest;
         el.style.color = "var(--accent-orange)";
         el.style.cursor = "pointer";
         el.style.textDecoration = "underline";
         el.onclick = function () {
           window.__TAURI__
-            .invoke("open_url", {
-              url: "https://github.com/SunMe1977/DiskRaptor/releases/tag/v" + latest,
-            })
+            .invoke("open_url", { url: dl })
             .catch(function () {});
         };
       };

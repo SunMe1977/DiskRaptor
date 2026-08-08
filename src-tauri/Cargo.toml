@@ -3,6 +3,7 @@ name = "diskraptor"
 version = "1.0.13"
 description = "Ultra-fast disk space analyzer"
 authors = ["DiskRaptor Team"]
+license = "MIT"
 edition = "2021"
 
 [lib]
