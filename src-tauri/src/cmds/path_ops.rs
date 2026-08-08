@@ -595,7 +595,8 @@ mod tests {
         assert!(validate_system_path("").is_err());
         assert!(validate_system_path("relative/path").is_err());
         assert!(validate_system_path("C:\\foo\0bar").is_err());
-        let p = validate_system_path("C:\\Windows").unwrap_or_else(|_| validate_system_path(".").unwrap());
+        let p = validate_system_path(&std::env::temp_dir().to_string_lossy())
+            .expect("temp dir is absolute and exists");
         assert!(p.is_absolute());
     }
 
