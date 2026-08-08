@@ -170,5 +170,6 @@ jobs:
         with:
           # Only the real build bundles â€” NOT dist/** which contains frontend
           # sources/images and would flood the release with junk assets.
+          generate_release_notes: true
           files: |
             src-tauri/target/release/bundle/**/*

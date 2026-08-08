@@ -74,7 +74,7 @@ jobs:
           $tag = "${{ github.ref_name }}"
           if ($tag -notmatch '^v') { $tag = "v" + (Get-Content package.json | ConvertFrom-Json).version }
           Write-Host "Target release: $tag"
-          gh release create $tag --title "DiskRaptor $tag" --notes "" 2>$null
+          gh release create $tag --title "DiskRaptor $tag" --generate-notes 2>$null
           gh release upload $tag "release-assets/*" --clobber
           gh release view $tag --json assets --jq '[.assets[] | {name, size}]'
 
@@ -191,7 +191,7 @@ jobs:
         run: |
           tag="${{ github.ref_name }}"
           if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
-          gh release create "$tag" --title "DiskRaptor $tag" --notes "" 2>/dev/null || true
+          gh release create "$tag" --title "DiskRaptor $tag" --generate-notes 2>/dev/null || true
           gh release upload "$tag" "release-assets/*" --clobber
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
 
@@ -428,7 +428,7 @@ jobs:
         run: |
           tag="${{ github.ref_name }}"
           if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
-          gh release create "$tag" --title "DiskRaptor $tag" --notes "" 2>/dev/null || true
+          gh release create "$tag" --title "DiskRaptor $tag" --generate-notes 2>/dev/null || true
           gh release upload "$tag" "release-assets/*" --clobber
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
 
