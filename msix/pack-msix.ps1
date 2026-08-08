@@ -10,12 +10,12 @@
 
   Run from the repo root. Example:
     powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
-      -MsiPath src-tauri\target\release\bundle\msi\DiskRaptor_1.0.13_x64_en-US.msi `
-      -Version 1.0.13.0
+      -MsiPath src-tauri\target\release\bundle\msi\DiskRaptor_1.0.14_x64_en-US.msi `
+      -Version 1.0.14.0
 #>
 param(
   [Parameter(Mandatory=$true)][string]$MsiPath,
-  [string]$Version = "1.0.13.0",
+  [string]$Version = "1.0.14.0",
   [string]$PackageName = "DiskRaptor.DiskRaptor",
   [string]$Publisher = "CN=Hansjoerg Hofer",
   [string]$DisplayName = "DiskRaptor",
