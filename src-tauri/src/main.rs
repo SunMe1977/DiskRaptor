@@ -27,7 +27,7 @@ pub(crate) use cmds::{
     start_scan, validate_system_path,
 };
 #[cfg(not(target_os = "windows"))]
-pub(crate) use cmds::{run_output, silent_command};
+pub(crate) use cmds::run_output;
 #[cfg(target_os = "windows")]
 pub(crate) use cmds::native_browser_icon;
 
@@ -35,6 +35,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 use parking_lot::Mutex;
 use std::time::Instant;
+#[cfg(any(target_os = "windows", feature = "test-server"))]
 use tauri::Manager;
 use serde::Serialize;
 

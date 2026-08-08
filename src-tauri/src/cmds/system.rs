@@ -3,7 +3,9 @@
 //! (`silent_command`, `run_output`, `win_powershell`, `in_mac_sandbox`) that
 //! sibling modules (smart, trash) use.
 use crate::cmds::path_ops::validate_system_path;
-use crate::{trash, JsonResult};
+use crate::JsonResult;
+#[cfg(target_os = "windows")]
+use crate::trash;
 use diskraptor_scanner::scanner::tree::format_size;
 
 /// Build a `Command` without flashing a console window. Windows GUI apps show

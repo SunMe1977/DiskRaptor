@@ -30,6 +30,6 @@ pub(crate) use system::{
     request_permissions, restart_as_admin,
 };
 #[cfg(not(target_os = "windows"))]
-pub(crate) use system::{run_output, silent_command};
+pub(crate) use system::run_output;
 #[cfg(target_os = "windows")]
 pub(crate) use path_ops::native_browser_icon;
