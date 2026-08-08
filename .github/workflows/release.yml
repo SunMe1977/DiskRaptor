@@ -65,7 +65,18 @@ jobs:
             exit 1
           }
       # Signing comes later (Azure Trusted Signing / code-signing cert).
-      # Add a signtool / trusted-signing step here before Deploy.
+      # MSIX (below) is the Microsoft Store artifact — Microsoft signs it on
+      # submission, so no code-signing certificate is required for the store.
+      - name: Install Pillow (MSIX logo generation)
+        shell: pwsh
+        run: python -m pip install --quiet pillow
+      - name: Build MSIX package (for Microsoft Store)
+        shell: pwsh
+        run: |
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          powershell -NoProfile -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
+            -MsiPath "src-tauri\target\release\bundle\msi\DiskRaptor_${ver}_x64_en-US.msi" `
+            -Version "$($ver).0"
       - name: Deploy to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
