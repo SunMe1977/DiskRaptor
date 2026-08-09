@@ -68,12 +68,32 @@
           return res;
         };
       };
+      // Tauri v2 exposes `window.__TAURI__.invoke` / `core.invoke` as
+      // non-writable properties, so assignment throws and would break app
+      // startup. Wrap best-effort: only replace when writable (or redefinable)
+      // and swallow any error so this guard can never crash the app.
+      const tryWrap = function (owner, key) {
+        if (!owner || typeof owner[key] !== "function") return;
+        try {
+          const desc = Object.getOwnPropertyDescriptor(owner, key);
+          if (desc && !desc.writable) {
+            if (!desc.configurable) return; // cannot redefine → skip
+            Object.defineProperty(owner, key, {
+              value: wrap(owner[key].bind(owner)),
+              writable: true,
+              configurable: true,
+            });
+            return;
+          }
+          owner[key] = wrap(owner[key].bind(owner));
+        } catch (e) {
+          /* best-effort only — never break the running app */
+        }
+      };
       const api = window.__TAURI__;
-      if (api && typeof api.invoke === "function") {
-        api.invoke = wrap(api.invoke.bind(api));
-      }
-      if (api && api.core && typeof api.core.invoke === "function") {
-        api.core.invoke = wrap(api.core.invoke.bind(api.core));
+      if (api) {
+        tryWrap(api, "invoke");
+        if (api.core) tryWrap(api.core, "invoke");
       }
     })();
 

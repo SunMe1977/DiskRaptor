@@ -50,6 +50,27 @@ Oder per **MSIX Packaging Tool** (GUI): â†’ **â€žMSIX conversion"** â�
 das Silent-MSI auswÃ¤hlen â†’ fertigstellen. Der Publisher im Manifest muss
 `CN=Hansjoerg Hofer` sein.
 
+## Lokal testen (Optional)
+
+Das gebaute MSIX ist absichtlich **unsigniert** (Microsoft signiert erst beim
+Einreichen), daher schlÃ¤gt eine lokale Installation mit `Add-AppxPackage` mit
+`0x800B0100` fehl. Zum lokalen Test das Paket mit dem Hilfsskript signieren,
+das Zertifikat in die Maschinen-Stores (`LocalMachine\Root` +
+`LocalMachine\TrustedPeople`) installieren und installieren:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File msix\install-msix.ps1
+```
+
+- Fordert bei Bedarf per UAC **Admin-Rechte** an (der AppX-Dienst vertraut nur
+  Maschinen-Zertifikaten) und erzeugt ein wiederverwendbares Selbstzertifikat
+  (FriendlyName `DiskRaptor MSIX test`).
+- Signiert eine **Kopie** in `%TEMP%` â€” die Store-Datei in `release-assets`
+  bleibt unsigniert und damit einreichbar.
+- Optionen: `-SkipSign` (nur installieren, wenn schon signiert),
+  `-SignOnly` (nur signieren + Zertifikat vertrauen), `-Uninstall`
+  (Paket wieder entfernen).
+
 ## Partner Center (wichtig â€” einmalig pro App)
 
 Beim Wechsel von Win32 â†’ MSIX gilt laut Microsoft:

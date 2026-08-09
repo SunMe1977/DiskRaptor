@@ -173,7 +173,12 @@
   if (!window.__TAURI__) {
     window.__TAURI__ = {};
   }
-  window.__TAURI__.invoke = invoke;
+  // Tauri v2 (withGlobalTauri) already provides a native `window.__TAURI__.invoke`
+  // that is read-only; overwriting it throws in strict mode and breaks app
+  // startup. Only install our bridge invoke when no native one exists.
+  if (typeof window.__TAURI__.invoke !== "function") {
+    window.__TAURI__.invoke = invoke;
+  }
   window.__TAURI__.__qtBridgeReady = bridgeReady;
   window.__TAURI__.event = window.__TAURI__.event || {
     listen: listen,
