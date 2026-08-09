@@ -2,9 +2,17 @@
   <img src="images/logo6_transparent.webp" alt="DiskRaptor Logo" width="400px">
 </p>
 
+<p align="center">
+  <a href="https://www.diskraptor.com"><img src="https://img.shields.io/badge/Website-diskraptor.com-2ea043?style=for-the-badge" alt="DiskRaptor Website"></a>
+  <a href="https://github.com/SunMe1977/DiskRaptor/releases"><img src="https://img.shields.io/github/v/release/SunMe1977/DiskRaptor?style=for-the-badge" alt="Latest Release"></a>
+  <a href="https://github.com/SunMe1977/DiskRaptor/blob/main/LICENSE"><img src="https://img.shields.io/github/license/SunMe1977/DiskRaptor?style=for-the-badge" alt="License"></a>
+</p>
+
 # DiskRaptor
 
 **Ultra-fast disk space analyzer** -- A modern, cross-platform successor to WinDirStat / DaisyDisk, built with **Rust + Tauri 2**.
+
+Visit the official website: **[https://www.diskraptor.com](https://www.diskraptor.com)** — documentation, screenshots and download links.
 
 <p align="center">
   <img src="images/demo.gif" alt="DiskRaptor Demo" style="width:100%;max-width:800px">
@@ -87,7 +95,7 @@ The UI is **pure JavaScript** rendered in the system webview (no bundled Chromiu
 
 ## Download
 
-Pre-built binaries are available on the [Releases](https://github.com/SunMe1977/DiskRaptor/releases) page.
+Pre-built binaries are available on the [Releases](https://github.com/SunMe1977/DiskRaptor/releases) page, or grab the latest version directly from the official website: **[https://www.diskraptor.com](https://www.diskraptor.com)**.
 
 | Platform | Format |
 |----------|--------|
@@ -95,6 +103,7 @@ Pre-built binaries are available on the [Releases](https://github.com/SunMe1977/
 | **Uninstall** | `bash installer/uninstall.sh` (macOS) |
 | **Windows** | `.exe` (NSIS Installer) |
 | **Linux** | `.deb` (Debian/Ubuntu) |
+| **Website** | [www.diskraptor.com](https://www.diskraptor.com) |
 
 ### Homebrew (macOS & Linux)
 
@@ -106,7 +115,7 @@ cd DiskRaptor
 brew install --cask ./homebrew/Casks/diskraptor.rb
 ```
 
-The cask installs the `.dmg` (macOS) or `.deb` (Linux) from the [Releases](https://github.com/SunMe1977/DiskRaptor/releases) page.
+The cask installs the `.dmg` (macOS) or `.deb` (Linux) from the [Releases](https://github.com/SunMe1977/DiskRaptor/releases) page. You can also download pre-built installers from the official website: [www.diskraptor.com](https://www.diskraptor.com).
 
 To install as `brew install diskraptor` (no tap, no path), the cask must first be merged into the official [homebrew/homebrew-cask](https://github.com/Homebrew/homebrew-cask) repository (macOS only) — submit a PR against `Casks/d/diskraptor.rb` once the macOS `.dmg` with a fixed SHA256 is published. Linux has no official cask repo.
 
@@ -200,3 +209,11 @@ node tests/test_ui.mjs
 ## License
 
 MIT License -- see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  <a href="https://www.diskraptor.com">www.diskraptor.com</a> &nbsp;·&nbsp;
+  <a href="https://github.com/SunMe1977/DiskRaptor">GitHub</a> &nbsp;·&nbsp;
+  <a href="https://github.com/SunMe1977/DiskRaptor/releases">Releases</a>
+</p>

@@ -722,56 +722,104 @@
     }
     const updateCheckEl = document.getElementById("about-update-check");
     if (updateCheckEl) {
-      updateCheckEl.addEventListener("click", function () {
-        window.__checkUpdate();
-      });
+      // Store builds (Mac App Store) update via the store. The About entry
+      // becomes a button that opens the DiskRaptor page in the Mac App Store
+      // app (macOS routes apps.apple.com URLs to the App Store app).
+      if (updateCheckEl.getAttribute("data-store") === "true") {
+        updateCheckEl.textContent = "\u{1F3EC} Open in Mac App Store";
+        updateCheckEl.style.color = "var(--accent-green)";
+        updateCheckEl.style.cursor = "pointer";
+        updateCheckEl.style.textDecoration = "underline";
+        updateCheckEl.addEventListener("click", function () {
+          window.__TAURI__.invoke("open_url", {
+            url: "https://apps.apple.com/us/app/diskraptor/id6793462969?mt=12",
+          }).catch(function () {});
+        });
+      } else {
+        updateCheckEl.addEventListener("click", function () {
+          window.__checkUpdate();
+        });
+      }
     }
     window.__checkUpdate = async function () {
       const el = document.getElementById("about-update-check");
-      if (!el) return;
-      const installLatest = function (latest) {
-        // Make the element an "Install" button that downloads the installer
-        // for the current OS directly.
-        const platform = (navigator.platform || "").toLowerCase();
-        const isMac = platform.indexOf("mac") === 0;
-        const isWin = platform.indexOf("win") === 0;
-        const asset =
-          isMac
-            ? "DiskRaptor-" + latest + "-macos-universal.dmg"
-            : isWin
-              ? "DiskRaptor-" + latest + "-windows-x64.exe"
-              : "DiskRaptor-" + latest + "-linux-x86_64.AppImage";
-        const dl =
-          "https://github.com/SunMe1977/DiskRaptor/releases/download/v" +
-          latest +
-          "/" +
-          asset;
-        el.textContent = "\u2B07\uFE0F Install v" + latest;
-        el.style.color = "var(--accent-orange)";
-        el.style.cursor = "pointer";
-        el.style.textDecoration = "underline";
-        el.onclick = function () {
-          window.__TAURI__
-            .invoke("open_url", { url: dl })
-            .catch(function () {});
-        };
+      const openPopup = function (contentHtml, clickHandler) {
+        const overlay = document.createElement("div");
+        overlay.style.cssText =
+          "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.55);" +
+          "display:flex;align-items:center;justify-content:center;";
+        const card = document.createElement("div");
+        card.style.cssText =
+          "background:var(--bg-secondary,#1c2128);border:1px solid var(--border,#30363d);" +
+          "border-radius:12px;max-width:420px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);" +
+          "overflow:hidden;text-align:center;";
+        const body = document.createElement("div");
+        body.style.cssText =
+          "padding:22px 24px;font-size:13px;color:var(--text-primary,#e6edf3);" +
+          "line-height:1.6;word-break:break-word;";
+        body.innerHTML = contentHtml;
+        const footer = document.createElement("div");
+        footer.style.cssText =
+          "padding:10px 16px;border-top:1px solid var(--border,#30363d);" +
+          "display:flex;justify-content:flex-end;gap:8px;";
+        const btnClose = document.createElement("button");
+        btnClose.textContent = "Close";
+        btnClose.style.cssText =
+          "padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;" +
+          "border:1px solid var(--border,#30363d);background:var(--bg-tertiary,#161b22);color:var(--text-primary);";
+        btnClose.addEventListener("click", close);
+        footer.appendChild(btnClose);
+        if (clickHandler) {
+          const btnAction = document.createElement("button");
+          btnAction.textContent = "⬇ Download";
+          btnAction.style.cssText =
+            "padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid var(--border,#30363d);" +
+            "background:linear-gradient(135deg,#238636,var(--accent-green,#2ea043));color:#fff;font-weight:600;";
+          btnAction.addEventListener("click", function () { clickHandler(); });
+          footer.insertBefore(btnAction, btnClose);
+        }
+        function close() {
+          document.removeEventListener("keydown", onKey);
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }
+        function onKey(e) { if (e.key === "Escape") close(); }
+        document.addEventListener("keydown", onKey);
+        card.appendChild(body);
+        card.appendChild(footer);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+        return { close: close, body: body };
       };
-      const noUpdate = function (current) {
-        el.textContent = "\u2705 No update available (v" + current + ")";
-        el.style.color = "var(--accent-green)";
-        el.style.cursor = "default";
-        el.style.textDecoration = "none";
-        el.onclick = null;
-      };
-      // Store builds (MAS/MSIX) distribute updates via the store itself, so
-      // hide the self-update UI entirely.
-      const disableUpdates = el.getAttribute("data-store") === "true";
+
+      // Store builds (MAS/MSIX) distribute updates via the store itself, so do
+      // not contact GitHub. On the Mac App Store build, open the App Store page
+      // instead of checking (macOS opens the App Store app for apps.apple.com).
+      const disableUpdates =
+        el && el.getAttribute("data-store") === "true";
       if (disableUpdates) {
-        el.textContent = "\u2705 Updates via App Store";
-        el.style.color = "var(--accent-green)";
+        window.__TAURI__.invoke("open_url", {
+          url: "https://apps.apple.com/us/app/diskraptor/id6793462969?mt=12",
+        }).catch(function () {});
         return;
       }
-      el.textContent = "\u23F3 Checking...";
+
+      // Show a popup with live status instead of only inline text.
+      const popup = openPopup(
+        "<div id='upd-status' style='font-size:14px;'>" +
+          "<div style='font-size:18px;margin-bottom:6px;'>🔍</div>" +
+          "<b>Checking for updates…</b>" +
+          "<div id='upd-sub' style='margin-top:6px;color:var(--text-secondary);font-size:12px;'>Contacting GitHub…</div>" +
+          "</div>",
+      );
+      const setStatus = function (icon, title, sub, isSuccess) {
+        const st = popup.body.querySelector("#upd-status");
+        if (!st) return;
+        st.innerHTML =
+          "<div style='font-size:18px;margin-bottom:6px;'>" + icon + "</div>" +
+          "<b style='color:" + (isSuccess ? "var(--accent-green)" : "inherit") + "'>" + title + "</b>" +
+          (sub ? "<div style='margin-top:6px;color:var(--text-secondary);font-size:12px;'>" + sub + "</div>" : "");
+      };
+
       const current = _currentVersion || "0.0.0";
       try {
         // Prefer the native check (knows installed version, does the network call off the UI thread).
@@ -779,9 +827,58 @@
         const data = res && res.data ? res.data : res;
         const latest = data && data.latest ? String(data.latest) : "";
         if (latest && latest !== current) {
-          installLatest(latest);
+          const platform = (navigator.platform || "").toLowerCase();
+          const isMac = platform.indexOf("mac") === 0;
+          const isWin = platform.indexOf("win") === 0;
+          const asset =
+            isMac
+              ? "DiskRaptor-" + latest + "-macos-universal.dmg"
+              : isWin
+                ? "DiskRaptor-" + latest + "-windows-x64.exe"
+                : "DiskRaptor-" + latest + "-linux-x86_64.AppImage";
+          const dl =
+            "https://github.com/SunMe1977/DiskRaptor/releases/download/v" +
+            latest +
+            "/" +
+            asset;
+          setStatus(
+            "⬇️",
+            "Update available: v" + latest,
+            "You are on v" + current + ". Download the latest version below.",
+            true,
+          );
+          const btn = document.createElement("button");
+          btn.textContent = "⬇ Download v" + latest;
+          btn.style.cssText =
+            "margin-top:14px;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:none;" +
+            "background:linear-gradient(135deg,#238636,var(--accent-green,#2ea043));color:#fff;font-weight:600;";
+          btn.addEventListener("click", function () {
+            window.__TAURI__.invoke("open_url", { url: dl }).catch(function () {});
+          });
+          popup.body.appendChild(btn);
+          if (el) {
+            el.textContent = "\u2B07\uFE0F Install v" + latest;
+            el.style.color = "var(--accent-orange)";
+            el.style.cursor = "pointer";
+            el.style.textDecoration = "underline";
+            el.onclick = function () {
+              window.__TAURI__.invoke("open_url", { url: dl }).catch(function () {});
+            };
+          }
         } else {
-          noUpdate(current);
+          setStatus(
+            "✅",
+            "No update needed",
+            "You are on the latest version (v" + current + ").",
+            true,
+          );
+          if (el) {
+            el.textContent = "\u2705 No update available (v" + current + ")";
+            el.style.color = "var(--accent-green)";
+            el.style.cursor = "default";
+            el.style.textDecoration = "none";
+            el.onclick = null;
+          }
         }
       } catch (e) {
         // Fallback: query GitHub directly from the frontend.
@@ -792,15 +889,50 @@
           const d2 = await r.json();
           const latest2 = (d2.tag_name || "").replace(/^v/, "");
           if (latest2 && latest2 !== current) {
-            installLatest(latest2);
+            const platform = (navigator.platform || "").toLowerCase();
+            const isMac = platform.indexOf("mac") === 0;
+            const isWin = platform.indexOf("win") === 0;
+            const asset =
+              isMac
+                ? "DiskRaptor-" + latest2 + "-macos-universal.dmg"
+                : isWin
+                  ? "DiskRaptor-" + latest2 + "-windows-x64.exe"
+                  : "DiskRaptor-" + latest2 + "-linux-x86_64.AppImage";
+            const dl =
+              "https://github.com/SunMe1977/DiskRaptor/releases/download/v" +
+              latest2 +
+              "/" +
+              asset;
+            setStatus(
+              "⬇️",
+              "Update available: v" + latest2,
+              "You are on v" + current + ". Download the latest version below.",
+              true,
+            );
+            const btn = document.createElement("button");
+            btn.textContent = "⬇ Download v" + latest2;
+            btn.style.cssText =
+              "margin-top:14px;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:none;" +
+              "background:linear-gradient(135deg,#238636,var(--accent-green,#2ea043));color:#fff;font-weight:600;";
+            btn.addEventListener("click", function () {
+              window.__TAURI__.invoke("open_url", { url: dl }).catch(function () {});
+            });
+            popup.body.appendChild(btn);
           } else {
-            noUpdate(current);
+            setStatus(
+              "✅",
+              "No update needed",
+              "You are on the latest version (v" + current + ").",
+              true,
+            );
           }
         } catch (e2) {
-          el.textContent = "\u26A0\uFE0F Update check failed";
-          el.style.color = "var(--accent-red)";
-          el.style.cursor = "default";
-          el.onclick = null;
+          setStatus(
+            "⚠️",
+            "Update check failed",
+            "Could not reach GitHub. Check your internet connection.",
+            false,
+          );
         }
       }
     };

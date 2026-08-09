@@ -170,6 +170,12 @@
       if (this.interaction && typeof this.interaction.onHover === "function") {
         this.interaction.onHover((x, y, camera) => this._handleHover(x, y));
       }
+      if (this.interaction && typeof this.interaction.onContextMenu === "function") {
+        this.interaction.onContextMenu((x, y, camera) => this._handleContextMenu(x, y));
+      }
+
+      // Build the right-click context menu (Info / Delete)
+      this._createContextMenu();
 
       // Register built-in plugins
       if (typeof GV.registerBuiltinPlugins === "function") {
@@ -673,8 +679,9 @@
     }
 
     _renderPlanet(ctx, screen, planet, state, time) {
-      // Minimum planet size so tiny planets are always clickable
-      const baseScale = Math.max(planet.scale || 1, 6);
+      // Planet size follows its data-driven scale so big files/folders appear
+      // clearly larger than small ones (min 4 keeps tiny planets visible).
+      const baseScale = Math.max(planet.scale || 1, 4);
       const r = baseScale * state.pulse;
       const c = planet.color;
       const rotation = state.rotation || 0;
@@ -683,8 +690,8 @@
 
       ctx.save();
 
-      // Orbit trail hint
-      if (planet.orbitRadius > 30) {
+      // Orbit trail hint (only for the largest planets, flagged by the mapper)
+      if (planet.orbitRadius > 30 && planet.showOrbit) {
         ctx.strokeStyle = `rgba(100,100,180,0.08)`;
         ctx.lineWidth = 0.5;
         ctx.setLineDash([3, 6]);
@@ -1040,6 +1047,160 @@
       }
     }
 
+    // ── Context menu (Info / Delete) ───────────────────────────
+
+    _createContextMenu() {
+      if (this._contextMenu) return;
+      const menu = document.createElement("div");
+      menu.id = "galaxy-context-menu";
+      Object.assign(menu.style, {
+        position: "fixed",
+        display: "none",
+        zIndex: 10000,
+        background: "#161b22",
+        border: "1px solid #30363d",
+        borderRadius: "6px",
+        padding: "4px 0",
+        minWidth: "180px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+      });
+      menu.innerHTML =
+        '<div class="gx-ctx-item" data-action="info">\u2139\uFE0F Info</div>' +
+        '<div class="gx-ctx-item" data-action="open">\u{1F4C2} Open in Explorer</div>' +
+        '<div class="gx-ctx-sep"></div>' +
+        '<div class="gx-ctx-item gx-ctx-del" data-action="delete">\u{1F5D1}\uFE0F Move to Trash</div>';
+      document.body.appendChild(menu);
+
+      const style = document.createElement("style");
+      style.textContent =
+        ".gx-ctx-item{padding:7px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
+        ".gx-ctx-item:hover{background:#30363d;}" +
+        ".gx-ctx-sep{height:1px;background:#30363d;margin:4px 8px;}" +
+        ".gx-ctx-del{color:#f85149;}";
+      document.head.appendChild(style);
+
+      menu.addEventListener("click", (e) => this._onContextMenuAction(e));
+      document.addEventListener("click", (e) => {
+        if (!menu.contains(e.target) && e.target !== this.canvas) this._hideContextMenu();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") this._hideContextMenu();
+      });
+
+      this._contextMenu = menu;
+    }
+
+    _handleContextMenu(x, y) {
+      // Hit-test like hover: fixed generous radius so tiny planets are reachable
+      const visible = this._getVisibleObjects();
+      let nearest = null;
+      let nearestDist = 30;
+      for (const obj of visible) {
+        if (obj._screenX === undefined) continue;
+        const dx = obj._screenX - x;
+        const dy = obj._screenY - y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 30 && dist < nearestDist) {
+          nearest = obj;
+          nearestDist = dist;
+        }
+      }
+      if (!nearest) {
+        this._hideContextMenu();
+        return;
+      }
+      this.selectedObject = nearest;
+      this._showContextMenu(x, y, nearest);
+    }
+
+    _showContextMenu(x, y, obj) {
+      const menu = this._contextMenu;
+      if (!menu) return;
+      menu._obj = obj;
+      menu.style.display = "block";
+      const mw = menu.offsetWidth;
+      const mh = menu.offsetHeight;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let left = x;
+      if (left + mw > vw - 8) left = vw - mw - 8;
+      let top = y;
+      if (top + mh > vh - 8) top = vh - mh - 8;
+      menu.style.left = Math.max(0, left) + "px";
+      menu.style.top = Math.max(0, top) + "px";
+    }
+
+    _hideContextMenu() {
+      if (this._contextMenu) this._contextMenu.style.display = "none";
+    }
+
+    _contextObjPath(obj) {
+      if (!obj) return "";
+      if (typeof obj.path === "string" && obj.path) return obj.path;
+      if (obj.data && typeof obj.data.path === "string" && obj.data.path) return obj.data.path;
+      return "";
+    }
+
+    _onContextMenuAction(e) {
+      const item = e.target.closest(".gx-ctx-item");
+      if (!item) return;
+      const action = item.dataset.action;
+      const menu = this._contextMenu;
+      const obj = menu ? menu._obj : null;
+      const path = this._contextObjPath(obj);
+      const t = window.__ || function (s) { return s; };
+      const sb = document.getElementById("tree-status") || document.querySelector(".status-bar");
+
+      switch (action) {
+        case "info":
+          this._showInfoDialog(obj);
+          break;
+        case "open":
+          if (path) window.__TAURI__.invoke("open_explorer", { path }).catch(() => {});
+          break;
+        case "delete":
+          if (!path) break;
+          const self = this;
+          window.confirmDialog(t("confirm.move_trash_file") + path).then(function (ok) {
+            if (!ok) return;
+            window.__TAURI__.invoke("delete_path", { path }).then(function (res) {
+              if (res && res.success !== false) {
+                self.objects = self.objects.filter((o) => o !== obj);
+                if (self.selectedObject === obj) self.selectedObject = null;
+                if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
+              }
+            }).catch(function () {});
+          });
+          break;
+      }
+      this._hideContextMenu();
+    }
+
+    _showInfoDialog(obj) {
+      if (!obj) return;
+      const path = this._contextObjPath(obj);
+      const size = (obj.data && obj.data.size) || obj.size || 0;
+      const files = (obj.data && (obj.data.files || obj.data.totalFiles)) || 0;
+      const name = obj.name || path.split(/[/\\]/).pop() || obj.type || "?";
+      const typeLabel = String(obj.type || "").replace(/^[a-z]/, function (c) { return c.toUpperCase(); });
+
+      const lines = [
+        name + "  (" + typeLabel + ")",
+        "",
+        size > 0 ? "Size: " + this._fmtSize(size) : "Size: —",
+        files > 0 ? "Files: " + files.toLocaleString() : "",
+        path ? "Path: " + path : "",
+      ].filter(function (l) { return l !== ""; });
+
+      window.alertDialog(lines.join("\n")).catch(function () {});
+    }
+
+    _escHtml(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }
+
     _handleHover(x, y) {
       const visible = this._getVisibleObjects();
       let nearest = null;
@@ -1183,6 +1344,7 @@
         document.removeEventListener("keydown", this._escHandler);
         this._escHandler = null;
       }
+      this._hideContextMenu();
     }
 
     /** Format bytes */
@@ -1204,6 +1366,10 @@
       if (this.canvas && this.canvas.parentElement) {
         this.canvas.parentElement.removeChild(this.canvas);
       }
+      if (this._contextMenu && this._contextMenu.parentElement) {
+        this._contextMenu.parentElement.removeChild(this._contextMenu);
+      }
+      this._contextMenu = null;
       this.objects = [];
       this.container.innerHTML = "";
     }

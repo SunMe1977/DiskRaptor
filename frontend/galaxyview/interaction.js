@@ -21,6 +21,7 @@
       this.selectedObject = null;
       this.clickHandler = null;
       this.hoverHandler = null;
+      this.contextMenuHandler = null;
       this.cameraDamping = 0.08;
 
       this._bindEvents();
@@ -30,7 +31,13 @@
     _bindEvents() {
       const c = this.canvas;
 
-      c.addEventListener("contextmenu", (e) => e.preventDefault());
+      c.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        if (this.contextMenuHandler) {
+          const rect = c.getBoundingClientRect();
+          this.contextMenuHandler(e.clientX - rect.left, e.clientY - rect.top, this.camera);
+        }
+      });
 
       c.addEventListener("mousedown", (e) => {
         this.mouse.down = true;
@@ -299,6 +306,11 @@
       this.hoverHandler = handler;
     }
 
+    /** Set callback for right-click context menu: function(screenX, screenY, camera) */
+    onContextMenu(handler) {
+      this.contextMenuHandler = handler;
+    }
+
     /** Reset camera to default position */
     resetCamera() {
       if (!this.camera) return;
@@ -316,6 +328,7 @@
     dispose() {
       this.clickHandler = null;
       this.hoverHandler = null;
+      this.contextMenuHandler = null;
       this.keys = {};
     }
   }

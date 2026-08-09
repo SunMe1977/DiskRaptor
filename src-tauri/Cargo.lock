@@ -645,7 +645,7 @@ dependencies = [
 
 [[package]]
 name = "diskraptor"
-version = "1.0.15"
+version = "1.0.16"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",

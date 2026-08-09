@@ -111,14 +111,17 @@
     return drivePath.replace(":", "").replace("\\", "").toUpperCase();
   }
 
-  function sizeToRadius(size, minR, maxR) {
+  function sizeToRadius(size, minR, maxR, maxRef) {
     minR = minR || 1;
     maxR = maxR || 25;
     if (!size || size <= 0) return minR;
-    // Logarithmic scale: ln(size) normalized
-    const logSize = Math.log(size + 1);
-    const logMax = Math.log(1e12); // ~1TB
-    const t = Math.min(logSize / logMax, 1);
+    // Power curve normalized against a reference size (default ~1TB). The
+    // exponent controls how much small vs. large files differ: 0.45 spreads
+    // values strongly (a 10MB file ~1/4 of the reference radius, 1GB ~3/4),
+    // so planets are clearly proportional to their file size. Clamped to
+    // [minR, maxR].
+    const ref = (maxRef && maxRef > 0 ? maxRef : 1e12);
+    const t = Math.min(Math.pow(size / ref, 0.45), 1);
     return minR + t * (maxR - minR);
   }
 
@@ -179,6 +182,11 @@
       const totalDirs = (scanResult && scanResult.totalDirs) || stats.total_dirs || 0;
       const totalSize = (scanResult && scanResult.totalSize) || stats.total_size || 0;
 
+      // Reference size for proportional planet scaling: the largest file of
+      // the scan (fallback: total size). Planets/moons are then sized relative
+      // to it and clamped to the configured min/max radius.
+      this.maxRefSize = (topFiles || []).reduce((m, f) => Math.max(m, (f && f.size) || 0), 0) || totalSize;
+
       // 1. Create Stars from drives / scan root
       this._createStars(scanPath, totalSize, totalFiles);
 
@@ -218,6 +226,16 @@
         ...this.diamonds,
         ...this.satellites,
       ];
+
+      // Only draw orbit circles around the largest planets (Top N by size), so
+      // the view isn't cluttered with a ring around every single planet.
+      const topN = 8;
+      const sortedPlanets = this.planets
+        .filter((p) => p.scale != null)
+        .sort((a, b) => (b.scale || 0) - (a.scale || 0));
+      for (let i = 0; i < sortedPlanets.length; i++) {
+        sortedPlanets[i].showOrbit = i < topN;
+      }
 
       return this.galaxyObjects;
     }
@@ -287,12 +305,21 @@
             dirMap.set(dir, (dirMap.get(dir) || 0) + (file.size || 0));
           }
         }
+        // Reference for folder planets: the largest folder, so folders of very
+        // different sizes get clearly different radii (maxRefSize is the
+        // largest single file, too small a yardstick for folders).
+        let maxDirSize = 0;
+        for (const ds of dirMap.values()) { if (ds > maxDirSize) maxDirSize = ds; }
+        const dirRef = Math.max(maxDirSize, this.maxRefSize || 1);
         let idx = 0;
         for (const [dirPath, dirSize] of dirMap) {
           if (idx >= 15) break;
           const dirName = dirPath.split("/").pop() || dirPath;
           const angle = (idx / 15) * Math.PI * 2;
-          const orbitRadius = CFG.galaxy.orbitBaseRadius + dirSize * CFG.galaxy.orbitScale;
+          // Orbit radius must be kept in the scene's scale (10..400) — the raw
+          // dirSize is in bytes and would blow up the radius to millions.
+          const orbitRadius = CFG.galaxy.orbitBaseRadius +
+            (dirSize > 0 ? Math.log10(dirSize) : 0) * CFG.galaxy.orbitScale * 40;
           const isCode = [".js", ".ts", ".py", ".cpp", ".rs", ".go"].some(e => dirName.includes(e));
           this.planets.push({
             type: "planet",
@@ -304,7 +331,7 @@
               (Math.random() - 0.5) * 10,
               Math.sin(angle) * orbitRadius,
             ],
-            scale: sizeToRadius(dirSize, CFG.galaxy.planetMinRadius, CFG.galaxy.planetMaxRadius),
+            scale: sizeToRadius(dirSize, CFG.galaxy.planetMinRadius, CFG.galaxy.planetMaxRadius, dirRef),
             color: parseColor(getFileTypeColor(isCode ? "code" : getFileType(dirName), idx)),
             glow: 0.3 + Math.random() * 0.4,
             alpha: 1,
@@ -374,7 +401,7 @@
             (Math.random() - 0.5) * 10,
             Math.sin(angle) * radius,
           ],
-          scale: sizeToRadius(fileSize, 0.5, 8),
+          scale: sizeToRadius(fileSize, CFG.galaxy.moonMinRadius, CFG.galaxy.moonMaxRadius, this.maxRefSize),
           color: parseColor(getFileTypeColor(fileType, i)),
           glow: 0.3,
           alpha: 0.9,
@@ -418,7 +445,7 @@
               (Math.random() - 0.5) * 20,
               Math.sin(angle) * r,
             ],
-            scale: CFG.galaxy.blackHoleEventHorizon + sizeToRadius(size, 5, 20),
+            scale: CFG.galaxy.blackHoleEventHorizon + sizeToRadius(size, 5, 20, this.maxRefSize),
             color: [0, 0, 0],
             glow: 0.8,
             alpha: 0.9,
@@ -630,7 +657,7 @@
           parentPlanet.position[1] + (Math.random() - 0.5) * 2,
           parentPlanet.position[2] + Math.sin(angle) * r,
         ],
-        scale: sizeToRadius(fileSize, 0.1, 2),
+        scale: sizeToRadius(fileSize, CFG.galaxy.moonMinRadius, CFG.galaxy.moonMaxRadius, this.maxRefSize),
         color: parseColor(getMoonColor(fileType, Math.floor(Math.random() * 1000))),
         glow: 0.3,
         alpha: 0.9,
