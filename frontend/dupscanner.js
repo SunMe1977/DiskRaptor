@@ -1,5 +1,5 @@
 ﻿/**
- * Duplicate File Scanner â€” progress overlay + results UI
+ * Duplicate File Scanner — progress overlay + results UI
  * Same animated popup style as the main tree scanner.
  */
 class DupScanner {
@@ -10,13 +10,13 @@ class DupScanner {
   }
 
   _createUI() {
-    // â”€â”€ Progress Overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Progress Overlay ──────────────────────────────
     this.overlay = document.createElement("div");
     this.overlay.id = "dup-progress-overlay";
     this.overlay.style.cssText = "display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);align-items:center;justify-content:center;";
     this.overlay.innerHTML = `
       <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:32px 40px;max-width:480px;width:90%;text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.4);">
-        <div style="font-size:40px;margin-bottom:12px;">ðŸ”</div>
+        <div style="font-size:40px;margin-bottom:12px;">🔍</div>
         <h3 style="margin:0 0 6px 0;font-size:16px;color:var(--text-primary);">Scanning for Duplicates</h3>
         <p id="dup-progress-status" style="margin:0 0 20px 0;font-size:13px;color:var(--text-secondary);" data-i18n="dup.scanning">Scanning files...</p>
         <div style="display:flex;gap:20px;justify-content:center;margin-bottom:16px;">
@@ -27,21 +27,21 @@ class DupScanner {
         <div id="dup-progress-bar-wrap" style="width:100%;height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;margin-bottom:16px;">
           <div id="dup-progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--accent-green),var(--accent-green));border-radius:2px;transition:width 0.3s;"></div>
         </div>
-        <div id="dup-progress-file" style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:16px;">â€”</div>
+        <div id="dup-progress-file" style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:16px;">—</div>
         <div style="display:flex;gap:8px;justify-content:center;">
-          <button id="dup-cancel-btn" style="padding:8px 20px;font-size:13px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">âœ– Cancel</button>
+          <button id="dup-cancel-btn" style="padding:8px 20px;font-size:13px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">✖ Cancel</button>
         </div>
       </div>
     `;
     document.body.appendChild(this.overlay);
 
-    // â”€â”€ Results Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Results Panel ──────────────────────────────
     this.resultsPanel = document.createElement("div");
     this.resultsPanel.id = "dup-results-panel";
     this.resultsPanel.style.cssText = "display:none;margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);overflow:hidden;";
     this.resultsPanel.innerHTML = `
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="margin:0;font-size:14px;color:var(--text-primary);">ðŸ” Duplicate Files</h3>
+        <h3 style="margin:0;font-size:14px;color:var(--text-primary);">🔍 Duplicate Files</h3>
         <span id="dup-summary" style="font-size:12px;color:var(--text-muted);"></span>
       </div>
       <div id="dup-groups-list" style="max-height:400px;overflow-y:auto;padding:8px;"></div>
@@ -51,7 +51,7 @@ class DupScanner {
     `;
     document.body.appendChild(this.resultsPanel);
 
-    // â”€â”€ Event wiring â”€â”€
+    // ── Event wiring ──
     document.getElementById("dup-cancel-btn").onclick = () => this.cancel();
     document.getElementById("dup-close-results").onclick = () => {
       this.resultsPanel.style.display = "none";
@@ -168,7 +168,7 @@ class DupScanner {
     const t = window.__ || function(s){return s;};
     let headerText = groups.length + " groups \u00B7 " + this._fmtSize(data.wastedBytes || 0) + " reclaimable";
     if (cancelled && groups.length > 0) {
-      headerText = "âš  " + t("dup.cancelled") + " \u2014 " + headerText + " (partial)";
+      headerText = "⚠ " + t("dup.cancelled") + " \u2014 " + headerText + " (partial)";
     } else if (cancelled) {
       headerText = t("dup.cancelled") + " \u2014 " + t("dup.no_duplicates");
     }

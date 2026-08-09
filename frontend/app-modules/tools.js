@@ -553,7 +553,7 @@
     });
   };
 
-  // â”€â”€ Downloads Cleanup overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Downloads Cleanup overlay ────────────────────────────
   function openDownloadsCleanup(scanPath, btnScan) {
     const old = document.getElementById("downloads-cleanup-overlay");
     if (old) old.remove();
@@ -724,7 +724,7 @@
     load();
   }
 
-  // â”€â”€ Find Files dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Find Files dialog ────────────────────────────────────
   function findFilesDialog() {
     return new Promise(function (resolve) {
       const ov = document.createElement("div");
@@ -773,7 +773,7 @@
     });
   }
 
-  // â”€â”€ S.M.A.R.T. Tools overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── S.M.A.R.T. Tools overlay ─────────────────────────────
   function fmtBytes(b) {
     return window.fmtSize(b);
   }
@@ -785,7 +785,7 @@
       .replace(/>/g, "&gt;");
   }
   function fmtHours(h) {
-    if (!h) return "â€”";
+    if (!h) return "—";
     const y = Math.floor(h / 8760);
     const d = Math.floor((h % 8760) / 24);
     return y > 0 ? y + "y " + d + "d" : d > 0 ? d + "d " + (h % 24) + "h" : h + "h";
@@ -1149,7 +1149,7 @@
     }
   }
 
-  // â”€â”€ Clean Browser Tools overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Clean Browser Tools overlay ─────────────────────────────
   function fmtSize(b) {
     return window.fmtSize(b);
   }

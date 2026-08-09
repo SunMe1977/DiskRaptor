@@ -99,7 +99,7 @@
 
     console.debug("DiskRaptor initializing...");
 
-    // â”€â”€ Shared state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Shared state ────────────────────────────────────
     window.app = window.app || {};
     const state = window.app.state = {
       isScanning: false,
@@ -110,7 +110,7 @@
       lastDirsFound: 0,
     };
 
-    // â”€â”€ Settings helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Settings helpers ───────────────────────────────────
     window.app.getSetting = async function (key, fallback) {
       try {
         const r = await window.__TAURI__.invoke("load_settings");
@@ -132,10 +132,10 @@
     const getSetting = window.app.getSetting;
     const setSetting = window.app.setSetting;
 
-    // â”€â”€ Theme toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Theme toggle ───────────────────────────────────────
     await window.app.initTheme(getSetting, setSetting);
 
-    // â”€â”€ Sandbox notice (macOS App Store build) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Sandbox notice (macOS App Store build) ─────────────
     (async function () {
       try {
         const r = await window.__TAURI__.invoke("is_sandboxed");
@@ -163,7 +163,7 @@
     const treeView = new TreeView("tree-viewport", loader);
     window.__treeView = treeView;
 
-    // â”€â”€ Column resize â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Column resize ────────────────────────────────────
     (function () {
       let dragCol = null,
         startX = 0,
@@ -232,7 +232,7 @@
       });
     });
 
-    // â”€â”€ Welcome placeholder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Welcome placeholder ──────────────────────────────
     const welcomeEl = document.getElementById("welcome-placeholder");
     const welcomeClose = document.getElementById("welcome-close");
     const welcomeDont = document.getElementById("welcome-dont-show");
@@ -240,7 +240,7 @@
     const welcomeBrowseBtn = document.getElementById("welcome-browse-btn");
     const welcomeAboutBtn = document.getElementById("welcome-about-btn");
 
-    // â”€â”€ Exit button (toolbar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Exit button (toolbar) ────────────────────────────
     const btnExit = document.getElementById("btn-exit");
     if (btnExit) {
       btnExit.addEventListener("click", function () {
@@ -307,7 +307,7 @@
       });
     }
 
-    // â”€â”€ Focus trap for the about + settings modals â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Focus trap for the about + settings modals ─────────
     // Activates whenever the overlay becomes visible (class .active or display
     // flex), so Tab/Shift+Tab stays inside the modal.
     (function initModalFocusTraps() {
@@ -344,7 +344,7 @@
       check();
     })();
 
-    // â”€â”€ Collapsible detail cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Collapsible detail cards ─────────────────────────
     document.querySelectorAll(".collapsible .card-header").forEach(function (
       h,
     ) {
@@ -412,10 +412,10 @@
       console.warn("get_home_dir failed:", e && e.message ? e.message : e);
     }
 
-    // â”€â”€ Favorites/Bookmarked directories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Favorites/Bookmarked directories ─────────────────
     window.app.initFavorites(scanPath, btnFav);
 
-    // â”€â”€ Drive Selector â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Drive Selector ──────────────────────────────────
     window.app.initDrives(scanPath, btnScan);
 
     // Galaxy view state
@@ -550,7 +550,7 @@
       });
     });
 
-    // â”€â”€ Duplicate Scanner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Duplicate Scanner ───────────────────────────────
     const dupScanner = new DupScanner();
 
     const btnDup = document.createElement("button");
@@ -605,7 +605,7 @@
         if (wsub) {
           const sep = document.createElement("span");
           sep.style.cssText = "color:var(--text-muted);margin:0 6px;";
-          sep.textContent = "Â·";
+          sep.textContent = "·";
           const vspan = document.createElement("span");
           vspan.style.color = "var(--text-muted)";
           vspan.textContent = "v" + ver;
@@ -805,7 +805,7 @@
       }
     };
 
-    // â”€â”€ Language Switcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Language Switcher ──────────────────────────────────
     (function initLangSwitcher() {
       const btnLang = document.getElementById("btn-lang");
       const langMenu = document.getElementById("lang-menu");
@@ -948,7 +948,7 @@
       }
     });
 
-    // â”€â”€ Follow symlinks toggle â”€â”€
+    // ── Follow symlinks toggle ──
     let chkFollow = document.getElementById("chk-follow-symlinks");
     if (!chkFollow) {
       chkFollow = document.createElement("label");
@@ -959,7 +959,7 @@
       btnScan.parentNode.insertBefore(chkFollow, btnScan);
     }
 
-    // â”€â”€ Error display â”€â”€
+    // ── Error display ──
     let errDisplay = document.getElementById("scan-errors");
     if (!errDisplay) {
       errDisplay = document.createElement("div");
@@ -969,7 +969,7 @@
       document.getElementById("progress-overlay").appendChild(errDisplay);
     }
 
-    // â”€â”€ Scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Scan ────────────────────────────────────────────
     window.app.initScan({
       loader: loader,
       treeView: treeView,
@@ -991,14 +991,14 @@
       sleep: sleep,
     });
 
-    // â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Export ──────────────────────────────────────────
     window.app.initExport({
       scanPath: scanPath,
       btnExport: btnExport,
       loader: loader,
     });
 
-    // â”€â”€ Drag & drop from Finder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Drag & drop from Finder ─────────────────────────
     document.addEventListener("dragover", function (e) {
       e.preventDefault();
     });
@@ -1019,14 +1019,14 @@
       }
     });
 
-    // â”€â”€ Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Settings ────────────────────────────────────────
     window.app.initSettings({
       scanPath: scanPath,
       btnScan: btnScan,
       btnBrowse: btnBrowse,
     });
 
-    // â”€â”€ Tools dropdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Tools dropdown ──────────────────────────────────
     window.app.initTools({
       scanPath: scanPath,
       btnScan: btnScan,
