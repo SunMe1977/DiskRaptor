@@ -50,7 +50,10 @@ jobs:
         shell: pwsh
         run: |
           $ver = (Get-Content package.json | ConvertFrom-Json).version
+          # Portable executable (no installer UI) — direct-run "silent" EXE.
           Copy-Item "src-tauri\target\release\diskraptor.exe" "release-assets\DiskRaptor.exe" -Force
+          Copy-Item "src-tauri\target\release\diskraptor.exe" "release-assets\DiskRaptor-${ver}-windows-x64-silent.exe" -Force
+          # NSIS setup installer.
           Copy-Item "src-tauri\target\release\bundle\nsis\DiskRaptor_${ver}_x64-setup.exe" "release-assets\DiskRaptor-${ver}-windows-x64.exe" -Force
           # After the silent build, this MSI is the UI-less variant.
           Copy-Item "src-tauri\target\release\bundle\msi\DiskRaptor_${ver}_x64_en-US.msi" "release-assets\DiskRaptor-${ver}-windows-x64-silent.msi" -Force
@@ -58,6 +61,10 @@ jobs:
           Get-ChildItem release-assets | Select-Object Name, Length
           if (-not (Test-Path "release-assets\DiskRaptor-${ver}-windows-x64.exe")) {
             Write-Error "NSIS installer not found (DiskRaptor_${ver}_x64-setup.exe)"
+            exit 1
+          }
+          if (-not (Test-Path "release-assets\DiskRaptor-${ver}-windows-x64-silent.exe")) {
+            Write-Error "Silent EXE not found"
             exit 1
           }
           if (-not (Test-Path "release-assets\DiskRaptor-${ver}-windows-x64-silent.msi")) {
