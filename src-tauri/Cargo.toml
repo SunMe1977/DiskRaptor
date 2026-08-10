@@ -54,7 +54,7 @@ parking_lot = "0.12"
 anyhow = "1"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 dirs = "5"
-sysinfo = "0.33"
+sysinfo = "0.39"
 trash = "5"
 open = "5"
 ureq = "2"
