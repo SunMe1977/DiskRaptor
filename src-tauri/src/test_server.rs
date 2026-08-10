@@ -127,7 +127,7 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
         match msg {
             Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                 eprintln!("[CDP] WS text msg: {} bytes", text.len());
-                if let Ok(req) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Ok(req) = serde_json::from_str::<serde_json::Value>(text.as_str()) {
                     let id = req.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
                     let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let result = match method.as_str() {
@@ -168,7 +168,9 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
                     };
                     let resp = serde_json::json!({"id": id, "result": result});
                     let mut w = write.lock().await;
-                    let _ = w.send(tokio_tungstenite::tungstenite::Message::Text(
+                    // tungstenite 0.30: Message::Text takes Utf8Bytes; use the
+                    // Message::text() constructor which accepts &str/String.
+                    let _ = w.send(tokio_tungstenite::tungstenite::Message::text(
                         serde_json::to_string(&resp).unwrap()
                     )).await;
                 }
