@@ -566,24 +566,26 @@ pub(crate) async fn check_for_updates() -> JsonResult {
         }));
     }
     let result = tauri::async_runtime::spawn_blocking(|| {
-        let agent = ureq::AgentBuilder::new()
-            .timeout(std::time::Duration::from_secs(5))
+        // ureq 3.x API: Agent built from a Config (AgentBuilder was removed).
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(5)))
             .build();
+        let agent = ureq::Agent::new_with_config(config);
         // One retry for transient network failures.
         for attempt in 0..2 {
             let resp = agent
                 .get("https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest")
-                .set("User-Agent", "DiskRaptor")
+                .header("User-Agent", "DiskRaptor")
                 .call();
             if attempt > 0 {
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
-            let resp = match resp {
+            let mut resp = match resp {
                 Ok(r) => r,
                 Err(_) if attempt == 0 => continue,
                 Err(_) => return None,
             };
-            let body = resp.into_string().ok()?;
+            let body = resp.body_mut().read_to_string().ok()?;
             let v: serde_json::Value = serde_json::from_str(&body).ok()?;
             let tag = v.get("tag_name").and_then(|t| t.as_str())?;
             return Some(tag.trim_start_matches('v').to_string());
