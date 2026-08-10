@@ -78,7 +78,7 @@
     "test:about-update-check": "node tests/test_about_update_check_ui.mjs"
   },
   "dependencies": {
-    "ws": "^8.21.1"
+    "ws": "^8.21.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
