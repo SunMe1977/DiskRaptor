@@ -619,11 +619,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
-<<<<<<< HEAD
  "windows-sys 0.61.2",
-=======
- "windows-sys 0.60.2",
->>>>>>> e8102f4 (Bump dirs from 5.0.1 to 6.0.0 in /src-tauri)
 ]
 
 [[package]]
