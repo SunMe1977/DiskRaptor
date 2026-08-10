@@ -57,7 +57,7 @@ dirs = "5"
 sysinfo = "0.33"
 trash = "5"
 open = "5"
-ureq = "2"
+ureq = "3"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.24", optional = true }
 futures-util = { version = "0.3", optional = true }
