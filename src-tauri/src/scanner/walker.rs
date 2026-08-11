@@ -1,4 +1,4 @@
-use crate::scanner::tree::*;
+﻿use crate::scanner::tree::*;
 use anyhow::Result;
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ pub struct ScanConfig {
     pub top_files_count: usize,
     pub follow_symlinks: bool,
     pub scan_timeout_secs: u64,
-    /// Shared error list — scanner pushes inaccessible paths here
+    /// Shared error list â€” scanner pushes inaccessible paths here
     pub errors: std::sync::Arc<parking_lot::Mutex<Vec<String>>>,
     /// When set to true, scanner should stop as soon as possible
     pub cancelled: Option<std::sync::Arc<AtomicBool>>,
@@ -66,7 +66,7 @@ fn push_live(live: &std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque
     q.push_back(name.to_string());
 }
 
-struct TopFilesAccum {
+pub(crate) struct TopFilesAccum {
     files: Mutex<Vec<TopFileEntry>>,
     min_size: Mutex<u64>,
 }
@@ -79,7 +79,7 @@ impl Default for TopFilesAccum {
     }
 }
 impl TopFilesAccum {
-    fn insert(&self, path: String, size: u64, max_count: usize) {
+    pub(crate) fn insert(&self, path: String, size: u64, max_count: usize) {
         let mut files = self.files.lock();
         let min_size = *self.min_size.lock();
         if size <= min_size && files.len() >= max_count {
@@ -103,7 +103,7 @@ impl TopFilesAccum {
     }
 }
 
-struct FileTypeAccum {
+pub(crate) struct FileTypeAccum {
     map: Mutex<HashMap<String, (u64, u64)>>,
 }
 impl Default for FileTypeAccum {
@@ -114,7 +114,7 @@ impl Default for FileTypeAccum {
     }
 }
 impl FileTypeAccum {
-    fn add(&self, path: &str, size: u64) {
+    pub(crate) fn add(&self, path: &str, size: u64) {
         let ext = Path::new(path)
             .extension()
             .and_then(|e| e.to_str())
@@ -171,7 +171,7 @@ pub struct ScanResult {
     pub termination: ScanTermination,
 }
 
-// ── Shared tree-building helpers ──────────────────────────
+// â”€â”€ Shared tree-building helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Both the parallel (jwalk) and fallback (walkdir) walkers build the arena
 // with identical logic; these helpers keep the two loops from drifting apart.
 
@@ -257,7 +257,7 @@ fn link_child(arena: &mut TreeNodeArena, lc: &mut HashMap<u32, u32>, parent: u32
 }
 
 
-// ─── macOS scanner (jwalk parallel traversal) ────────────
+// â”€â”€â”€ macOS scanner (jwalk parallel traversal) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Uses jwalk for parallel directory walking, significantly faster
 // than the single-threaded read_dir approach on multi-core systems.
 mod platform {
@@ -393,7 +393,7 @@ mod platform {
     }
 }
 
-fn finish_scan(
+pub(crate) fn finish_scan(
     start: Instant,
     mut arena: TreeNodeArena,
     top_files: Arc<TopFilesAccum>,
@@ -501,7 +501,7 @@ pub fn scan_simple(
             Err(e) => {
                 // Collect errors like the jwalk path so the caller learns
                 // which folders were inaccessible. For a recycle bin most
-                // entries are SYSTEM-owned and unreadable — that's expected,
+                // entries are SYSTEM-owned and unreadable â€” that's expected,
                 // so don't flood the UI with hundreds of them.
                 if let Some(p) = e.path() {
                     let mut errs = config.errors.lock();
@@ -571,33 +571,86 @@ pub fn scan_directory_with_progress(
     if root_path.contains("$Recycle.Bin") {
         return empty_scan_result(&root_path);
     }
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        platform::scan(&config, &progress, &root_path)
-    }));
-    match result {
-        Ok(Ok(scan_result)) => Ok(scan_result),
-        Ok(Err(e)) => {
-            eprintln!("[walker] Win32 scan error: {}, falling back to walkdir", e);
-            scan_simple(&config, &progress, &root_path)
+
+    // Windows: prefer the fast FindFirstFileW scanner; fall back to the jwalk
+    // walker (then to the simple walkdir fallback) if it errors or panics.
+    #[cfg(target_os = "windows")]
+    {
+        let progress_arc: Arc<ScanProgressCallback> = Arc::new(progress);
+        let fast = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::scanner::ntfs_fast::scan(&config, progress_arc.clone(), &root_path)
+        }));
+        match fast {
+            Ok(Ok(scan_result)) => return Ok(scan_result),
+            Ok(Err(e)) => {
+                eprintln!("[walker] ntfs_fast scan error: {}, falling back to jwalk", e);
+            }
+            Err(panic) => {
+                let msg = panic
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown".to_string());
+                eprintln!(
+                    "[walker] ntfs_fast scanner panicked: {}, falling back to jwalk",
+                    msg
+                );
+            }
         }
-        Err(panic) => {
-            let msg = if let Some(s) = panic.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "unknown".to_string()
-            };
-            eprintln!(
-                "[walker] Win32 scanner panicked: {}, falling back to walkdir",
-                msg
-            );
-            scan_simple(&config, &progress, &root_path)
+        // Fallback: platform::scan takes &ScanProgressCallback. Deref the Arc.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::scan(&config, &*progress_arc, &root_path)
+        }));
+        return match result {
+            Ok(Ok(scan_result)) => Ok(scan_result),
+            Ok(Err(e)) => {
+                eprintln!("[walker] Win32 scan error: {}, falling back to walkdir", e);
+                scan_simple(&config, &*progress_arc, &root_path)
+            }
+            Err(panic) => {
+                let msg = if let Some(s) = panic.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown".to_string()
+                };
+                eprintln!(
+                    "[walker] Win32 scanner panicked: {}, falling back to walkdir",
+                    msg
+                );
+                scan_simple(&config, &*progress_arc, &root_path)
+            }
+        };
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::scan(&config, &progress, &root_path)
+        }));
+        match result {
+            Ok(Ok(scan_result)) => Ok(scan_result),
+            Ok(Err(e)) => {
+                eprintln!("[walker] scan error: {}, falling back to walkdir", e);
+                scan_simple(&config, &progress, &root_path)
+            }
+            Err(panic) => {
+                let msg = if let Some(s) = panic.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown".to_string()
+                };
+                eprintln!("[walker] scanner panicked: {}, falling back to walkdir", msg);
+                scan_simple(&config, &progress, &root_path)
+            }
         }
     }
 }
 
-/// Build a ScanResult containing only the root node (no files) — used for
+/// Build a ScanResult containing only the root node (no files) â€” used for
 /// paths that can't be meaningfully walked (e.g. the Windows recycle bin).
 #[cfg(target_os = "windows")]
 fn empty_scan_result(root_path: &str) -> Result<ScanResult> {
