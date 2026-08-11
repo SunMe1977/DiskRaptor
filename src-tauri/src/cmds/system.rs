@@ -495,9 +495,42 @@ pub(crate) fn get_app_info() -> JsonResult {
 }
 
 #[tauri::command]
-pub(crate) fn request_permissions() -> JsonResult {
-    let permissions = if cfg!(target_os = "macos") { "granted" } else { "not_needed" };
-    JsonResult::ok(serde_json::json!({"permissions": permissions}))
+pub(crate) fn request_permissions(path: Option<String>) -> JsonResult {
+    #[cfg(target_os = "macos")]
+    {
+        // macOS asks once per protected folder (Desktop/Documents/Downloads).
+        // Touching each folder now triggers any pending consent prompt up-front,
+        // so the scan itself doesn't stall mid-way on a dialog while its worker
+        // threads block. Only probe folders that actually lie under the scan
+        // root to avoid prompting for folders the user never asked to scan.
+        if let Some(root) = path {
+            let root_path = std::path::PathBuf::from(root);
+            let mut protected = Vec::new();
+            if let Some(home) = dirs::home_dir() {
+                for sub in ["Desktop", "Documents", "Downloads"] {
+                    let p = home.join(sub);
+                    if p.starts_with(&root_path) || root_path.starts_with(&p) {
+                        protected.push(p);
+                    }
+                }
+            }
+            if !protected.is_empty() {
+                // Spawn so the IPC call returns instantly; the prompts appear
+                // as soon as the system processes the accesses.
+                std::thread::spawn(move || {
+                    for d in protected {
+                        let _ = std::fs::read_dir(&d);
+                    }
+                });
+                return JsonResult::ok(serde_json::json!({"permissions": "requested"}));
+            }
+        }
+        JsonResult::ok(serde_json::json!({"permissions": "granted"}))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        JsonResult::ok(serde_json::json!({"permissions": "not_needed"}))
+    }
 }
 
 #[tauri::command]

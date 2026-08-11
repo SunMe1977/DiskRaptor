@@ -127,7 +127,13 @@
         ).replace("{threads}", tc);
       }
 
-      window.__TAURI__.invoke("request_permissions", {}).catch(function () {});
+      // Trigger any pending macOS permission prompts up-front (before the
+      // scanner actually touches protected folders mid-scan) and give the user
+      // plenty of time to answer them: while a TCC dialog is open the scanner
+      // threads block, so a short timeout would otherwise kill the scan.
+      window.__TAURI__
+        .invoke("request_permissions", { path: path })
+        .catch(function () {});
 
       const followLinks = chkFollow.querySelector("input").checked;
 
@@ -323,7 +329,7 @@
         const initScan = await window.__TAURI__.invoke("start_scan", {
           path: path,
           follow_symlinks: followLinks,
-          timeout_secs: 30,
+          timeout_secs: 120,
         });
         if (initScan && initScan.error) {
           throw new Error(initScan.error);

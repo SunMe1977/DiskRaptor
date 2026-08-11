@@ -1518,6 +1518,9 @@ body.light-theme .about-bg {
     padding: 2px 12px;
     border-radius: 6px;
     border: 1px solid rgba(35,134,54,0.15);
+    /* Override the 120px cap from .progress-stat .stat-val so the full
+       MM:SS timer (28px monospace) is never truncated to "00:...". */
+    max-width: none;
 }
 .stat-lbl {
     font-size: 10px;
@@ -2513,6 +2516,9 @@ body.light-theme .tree-row.selected {
   transition: opacity 0.3s ease;
 }
 .welcome-placeholder.hidden {
+  display: none;
+}
+#welcome-onboarding.hidden {
   display: none;
 }
 .welcome-content {

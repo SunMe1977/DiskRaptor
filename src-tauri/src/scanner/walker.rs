@@ -624,7 +624,56 @@ pub fn scan_directory_with_progress(
         };
     }
 
-    #[cfg(not(target_os = "windows"))]
+    // macOS: prefer the fast getattrlistbulk scanner; fall back to the jwalk
+    // walker (then to the simple walkdir fallback) if it errors or panics.
+    #[cfg(target_os = "macos")]
+    {
+        let progress_arc: Arc<ScanProgressCallback> = Arc::new(progress);
+        let fast = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::scanner::macos_fast::scan(&config, progress_arc.clone(), &root_path)
+        }));
+        match fast {
+            Ok(Ok(scan_result)) => return Ok(scan_result),
+            Ok(Err(e)) => {
+                eprintln!("[walker] macos_fast scan error: {}, falling back to jwalk", e);
+            }
+            Err(panic) => {
+                let msg = panic
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown".to_string());
+                eprintln!(
+                    "[walker] macos_fast scanner panicked: {}, falling back to jwalk",
+                    msg
+                );
+            }
+        }
+        // Fallback: platform::scan takes &ScanProgressCallback. Deref the Arc.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::scan(&config, progress_arc.as_ref(), &root_path)
+        }));
+        match result {
+            Ok(Ok(scan_result)) => Ok(scan_result),
+            Ok(Err(e)) => {
+                eprintln!("[walker] scan error: {}, falling back to walkdir", e);
+                scan_simple(&config, progress_arc.as_ref(), &root_path)
+            }
+            Err(panic) => {
+                let msg = if let Some(s) = panic.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown".to_string()
+                };
+                eprintln!("[walker] scanner panicked: {}, falling back to walkdir", msg);
+                scan_simple(&config, progress_arc.as_ref(), &root_path)
+            }
+        }
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             platform::scan(&config, &progress, &root_path)
@@ -818,5 +867,81 @@ mod tests {
             start.elapsed().as_millis()
         );
         assert!(start.elapsed().as_secs() < 5, "scan hung on nonexistent path");
+    }
+
+    /// Canonicalize an arena into a sortable, comparable form so parallel scans
+    /// with different node orders can be compared directly.
+    fn canonical(arena: &crate::scanner::tree::TreeNodeArena) -> Vec<(String, u8, u64, u64, u64, u64)> {
+        let mut paths: Vec<String> = vec![String::new(); arena.nodes.len()];
+        for i in 1..arena.nodes.len() {
+            let n = &arena.nodes[i];
+            if n.parent != u32::MAX {
+                paths[i] = format!("{}/{}", paths[n.parent as usize], n.name);
+            }
+        }
+        let mut out: Vec<(String, u8, u64, u64, u64, u64)> = arena
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                (
+                    paths[i].clone(),
+                    n.node_type as u8,
+                    n.size,
+                    n.file_count,
+                    n.dir_count,
+                    n.mtime,
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// The macOS fast scanner (getattrlistbulk) must produce a byte-identical
+    /// tree structure to the jwalk walker, including symlink handling.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_macos_fast_matches_jwalk() {
+        let dir = std::env::temp_dir().join(format!("diskraptor_fast_cmp_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("a/b/c")).unwrap();
+        std::fs::create_dir_all(dir.join("empty")).unwrap();
+        std::fs::write(dir.join("root.txt"), vec![1u8; 100]).unwrap();
+        std::fs::write(dir.join("a/a.txt"), vec![1u8; 200]).unwrap();
+        std::fs::write(dir.join("a/b/b.bin"), vec![1u8; 300]).unwrap();
+        std::fs::write(dir.join("a/b/c/c.md"), vec![1u8; 400]).unwrap();
+        std::os::unix::fs::symlink(dir.join("a"), dir.join("link_to_dir")).unwrap();
+        std::os::unix::fs::symlink(dir.join("root.txt"), dir.join("link_to_file")).unwrap();
+
+        let root = dir.to_string_lossy().to_string();
+        let cb: super::ScanProgressCallback = Box::new(|_, _, _, _| {});
+
+        let fast_cfg = super::ScanConfig {
+            root_path: root.clone(),
+            ..Default::default()
+        };
+        let fast = super::scan_directory_with_progress(fast_cfg, Box::new(|_, _, _, _| {}))
+            .expect("fast scan ok");
+        let jwalk_cfg = super::ScanConfig {
+            root_path: root.clone(),
+            ..Default::default()
+        };
+        let jwalk = crate::scanner::walker::platform::scan(&jwalk_cfg, &cb, &root)
+            .expect("jwalk scan ok");
+
+        let fast_nodes = canonical(&fast.arena);
+        let jwalk_nodes = canonical(&jwalk.arena);
+        assert_eq!(
+            fast_nodes, jwalk_nodes,
+            "macOS fast scanner tree differs from jwalk\nfast={fast_nodes:?}\njwalk={jwalk_nodes:?}"
+        );
+        assert_eq!(fast.stats.total_size, jwalk.stats.total_size);
+        assert_eq!(fast.stats.total_files, jwalk.stats.total_files);
+        assert_eq!(fast.stats.total_dirs, jwalk.stats.total_dirs);
+        assert_eq!(fast.termination, super::ScanTermination::Completed);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
