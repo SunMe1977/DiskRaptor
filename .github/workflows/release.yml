@@ -168,8 +168,14 @@ jobs:
           cp -R "$APP" "macos-app/DiskRaptor-${ver}-macos.app"
           cp -R "$APP" "dmg-staging/DiskRaptor.app"
           ln -s /Applications "dmg-staging/Applications"
-          hdiutil create -volname "DiskRaptor" -srcfolder dmg-staging -ov -format UDZO \
-            "release-assets/DiskRaptor-${ver}-macos-universal.dmg"
+          # hdiutil occasionally fails with "Resource busy" on shared runners - retry.
+          for i in $(seq 1 5); do
+            hdiutil create -volname "DiskRaptor" -srcfolder dmg-staging -ov -format UDZO \
+              "release-assets/DiskRaptor-${ver}-macos-universal.dmg" && break
+            echo "hdiutil create failed (attempt $i) - retrying..." >&2
+            sleep 10
+          done
+          test -f "release-assets/DiskRaptor-${ver}-macos-universal.dmg" || { echo "DMG creation failed" >&2; exit 1; }
           rm -rf dmg-staging
           # macOS .pkg installer (the .deb equivalent) for direct distribution.
           PKG="release-assets/DiskRaptor-${ver}-macos-universal.pkg"

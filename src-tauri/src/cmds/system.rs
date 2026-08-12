@@ -529,6 +529,7 @@ pub(crate) fn request_permissions(path: Option<String>) -> JsonResult {
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = path;
         JsonResult::ok(serde_json::json!({"permissions": "not_needed"}))
     }
 }
