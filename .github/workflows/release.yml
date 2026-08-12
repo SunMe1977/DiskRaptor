@@ -46,15 +46,22 @@ jobs:
           }
       - name: Build silent MSI (for Microsoft Store)
         run: npx tauri build --bundles msi --config src-tauri/tauri.silent.conf.json --ci
+      - name: Build silent installer EXE (for Microsoft Store)
+        shell: pwsh
+        run: |
+          # makensis comes from the NSIS that the Tauri bundler already downloaded.
+          # The WebView2 Evergreen Standalone is downloaded and embedded, so the
+          # install never needs network access.
+          powershell -ExecutionPolicy Bypass -File installer\nsis\build-silent.ps1
       - name: Stage release assets
         shell: pwsh
         run: |
           $ver = (Get-Content package.json | ConvertFrom-Json).version
-          # Portable executable (no installer UI) — direct-run "silent" EXE.
+          # Portable executable (no installer UI) — direct-run portable EXE.
           Copy-Item "src-tauri\target\release\diskraptor.exe" "release-assets\DiskRaptor.exe" -Force
-          Copy-Item "src-tauri\target\release\diskraptor.exe" "release-assets\DiskRaptor-${ver}-windows-x64-silent.exe" -Force
           # NSIS setup installer.
           Copy-Item "src-tauri\target\release\bundle\nsis\DiskRaptor_${ver}_x64-setup.exe" "release-assets\DiskRaptor-${ver}-windows-x64.exe" -Force
+          # Fully silent installer EXE for the Microsoft Store (built above).
           # After the silent build, this MSI is the UI-less variant.
           Copy-Item "src-tauri\target\release\bundle\msi\DiskRaptor_${ver}_x64_en-US.msi" "release-assets\DiskRaptor-${ver}-windows-x64-silent.msi" -Force
           Write-Host "=== Staged assets ==="
@@ -64,7 +71,7 @@ jobs:
             exit 1
           }
           if (-not (Test-Path "release-assets\DiskRaptor-${ver}-windows-x64-silent.exe")) {
-            Write-Error "Silent EXE not found"
+            Write-Error "Silent installer EXE not found"
             exit 1
           }
           if (-not (Test-Path "release-assets\DiskRaptor-${ver}-windows-x64-silent.msi")) {
