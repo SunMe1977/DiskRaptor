@@ -87,7 +87,15 @@ jobs:
           $tag = "${{ github.ref_name }}"
           if ($tag -notmatch '^v') { $tag = "v" + (Get-Content package.json | ConvertFrom-Json).version }
           Write-Host "Target release: $tag"
-          gh release create $tag --title "DiskRaptor $tag" --generate-notes 2>$null
+          # Parallel jobs race to create/upload the same release - retry until it exists.
+          for ($i = 0; $i -lt 12; $i++) {
+            gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { break }
+            gh release create $tag --title "DiskRaptor $tag" --generate-notes 2>$null | Out-Null
+            Start-Sleep -Seconds 5
+          }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) { Write-Error "Release $tag still not available"; exit 1 }
           gh release upload $tag "release-assets/*" --clobber
           gh release view $tag --json assets --jq '[.assets[] | {name, size}]'
 
@@ -202,9 +210,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
+          set -euo pipefail
           tag="${{ github.ref_name }}"
           if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
-          gh release create "$tag" --title "DiskRaptor $tag" --generate-notes 2>/dev/null || true
+          # Parallel jobs race to create/upload the same release - retry until it exists.
+          for i in $(seq 1 12); do
+            gh release view "$tag" >/dev/null 2>&1 && break
+            gh release create "$tag" --title "DiskRaptor $tag" --generate-notes >/dev/null 2>&1 || true
+            sleep 5
+          done
+          gh release view "$tag" >/dev/null 2>&1 || { echo "ERROR: release $tag still not available" >&2; exit 1; }
           gh release upload "$tag" "release-assets/*" --clobber
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
 
@@ -439,9 +454,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
+          set -euo pipefail
           tag="${{ github.ref_name }}"
           if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
-          gh release create "$tag" --title "DiskRaptor $tag" --generate-notes 2>/dev/null || true
+          # Parallel jobs race to create/upload the same release - retry until it exists.
+          for i in $(seq 1 12); do
+            gh release view "$tag" >/dev/null 2>&1 && break
+            gh release create "$tag" --title "DiskRaptor $tag" --generate-notes >/dev/null 2>&1 || true
+            sleep 5
+          done
+          gh release view "$tag" >/dev/null 2>&1 || { echo "ERROR: release $tag still not available" >&2; exit 1; }
           gh release upload "$tag" "release-assets/*" --clobber
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
 
