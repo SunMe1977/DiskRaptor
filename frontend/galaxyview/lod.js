@@ -168,7 +168,7 @@
       // If we have room and clusters were built, add cluster nodes
       // for far-away dense regions instead of individual objects
       if (result.length < maxVisible * 0.7) {
-        for (const [key, cluster] of clusters) {
+        for (const [, cluster] of clusters) {
           if (cluster.count > CFG.galaxy.clusterThreshold &&
               result.length < maxVisible) {
             const dist = Math.sqrt(
@@ -215,7 +215,7 @@
       if (merged.length > 1000) {
         // Create aggregate particle cloud
         const avgPos = [0, 0, 0];
-        let avgColor = [0.4, 0.4, 0.6];
+        const avgColor = [0.4, 0.4, 0.6];
         let count = 0;
         for (const m of merged) {
           if (m.position) {

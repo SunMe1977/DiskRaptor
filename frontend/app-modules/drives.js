@@ -89,7 +89,7 @@
     driveMenu.addEventListener("keydown", function (e) {
       const items = driveMenu.querySelectorAll(".drive-item");
       if (items.length === 0) return;
-      let idx = Array.prototype.indexOf.call(items, document.activeElement);
+      const idx = Array.prototype.indexOf.call(items, document.activeElement);
       if (e.key === "ArrowDown") {
         e.preventDefault();
         items[Math.min(idx + 1, items.length - 1)].focus();

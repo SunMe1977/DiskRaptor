@@ -11,7 +11,9 @@
     "TreeView": "readonly",
     "DiagramRenderer": "readonly",
     "StatsPanel": "readonly",
-    "TopFilesPanel": "readonly"
+    "TopFilesPanel": "readonly",
+    "DupScanner": "readonly",
+    "VirtualScroll": "readonly"
   },
   "rules": {
     "no-unused-vars": ["warn", { "args": "none", "vars": "local" }],

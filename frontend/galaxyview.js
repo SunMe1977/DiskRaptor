@@ -26,8 +26,6 @@
   const CFG = window.GalaxyViewConfig;
   const GV = window.GalaxyView || {};
 
-  function noop() {}
-
   class FallbackDataMapper {
     mapData(scanResult, stats, topFiles) {
       const totalSize = (stats && stats.total_size) || 0;
@@ -340,7 +338,7 @@
         const pp = this.objects[di].position;
         if (pp) {
           const dx = pp[0], dy = pp[1], dz = pp[2];
-          let d = Math.sqrt(dx*dx + dy*dy + dz*dz) + (this.objects[di].scale || 5);
+          const d = Math.sqrt(dx*dx + dy*dy + dz*dz) + (this.objects[di].scale || 5);
           if (d > maxDist) maxDist = d;
         }
       }
@@ -613,10 +611,10 @@
       if (!position) return null;
 
       // View transform
-      let x = viewMatrix[0] * position[0] + viewMatrix[4] * position[1] + viewMatrix[8] * position[2] + viewMatrix[12];
-      let y = viewMatrix[1] * position[0] + viewMatrix[5] * position[1] + viewMatrix[9] * position[2] + viewMatrix[13];
-      let z = viewMatrix[2] * position[0] + viewMatrix[6] * position[1] + viewMatrix[10] * position[2] + viewMatrix[14];
-      let w2 = viewMatrix[3] * position[0] + viewMatrix[7] * position[1] + viewMatrix[11] * position[2] + viewMatrix[15];
+      const x = viewMatrix[0] * position[0] + viewMatrix[4] * position[1] + viewMatrix[8] * position[2] + viewMatrix[12];
+      const y = viewMatrix[1] * position[0] + viewMatrix[5] * position[1] + viewMatrix[9] * position[2] + viewMatrix[13];
+      const z = viewMatrix[2] * position[0] + viewMatrix[6] * position[1] + viewMatrix[10] * position[2] + viewMatrix[14];
+      const w2 = viewMatrix[3] * position[0] + viewMatrix[7] * position[1] + viewMatrix[11] * position[2] + viewMatrix[15];
 
       if (w2 === 0) return null;
 

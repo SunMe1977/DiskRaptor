@@ -357,7 +357,6 @@ class DupScanner {
     updateSelectedCount();
 
     // Delete button handler
-    const self2 = this;
     document.getElementById("dup-delete-btn").onclick = async function() {
       const toDelete = [];
       groups.forEach(function(g, gi) {

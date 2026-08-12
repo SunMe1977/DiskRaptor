@@ -40,7 +40,6 @@
       chkFollow,
       errDisplay,
       hideWelcome,
-      showWelcome,
       sleep,
     } = refs;
 
@@ -337,14 +336,12 @@
         const scanId = (initScan && initScan.scan_id) || 1;
         state.currentScanId = scanId;
 
-        let prevFilesFound = 0;
         let lastFilesFound = 0;
         let lastDirsFound = 0;
         const pollStartTime = Date.now();
 
         let zeroCount = 0;
         let scanDone = false;
-        let scanError = null;
         let emaRate = 0;
         let uiRaf = null;
         let pendingUi = null;
@@ -406,7 +403,6 @@
           progressElapsedValEl.textContent = elapsedStr;
 
           if (elapsedSecs > 0 && filesFound > 0) {
-            const filesPerSec = filesFound / elapsedSecs;
             const bytesPerSec = bytesFound / elapsedSecs;
             const mbPerSec = bytesPerSec / (1024 * 1024);
             progressSpeedValEl.textContent =
@@ -514,8 +510,6 @@
             progressDirEl.textContent = "\uD83D\uDCC2 " + dirInfo;
           }
 
-          prevFilesFound = filesFound;
-
           const isRunning =
             p.is_running !== undefined ? p.is_running : true;
           const isDone = p.phase === 3 || !isRunning;
@@ -588,7 +582,6 @@
         // A partial scan must never be presented as complete.
         const term = result && result.stats ? result.stats.termination : "";
         if (term && term !== "completed") {
-          const t = window.__ || function (s) { return s; };
           const msg =
             term === "cancelled"
               ? "Scan was cancelled - results are partial"

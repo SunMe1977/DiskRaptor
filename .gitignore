@@ -1,6 +1,7 @@
 # ── Build artifacts ─────────────────
 target/
 dist/
+qt-app/build/
 dist-mas/
 release/
 *.msi

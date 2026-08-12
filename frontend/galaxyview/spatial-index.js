@@ -6,7 +6,6 @@
 (function () {
   "use strict";
 
-  const CFG = window.GalaxyViewConfig;
   const MAX_OBJECTS = 8;
   const MAX_DEPTH = 12;
 

@@ -470,7 +470,6 @@
     let galaxyView = null;
     const galaxyContainer = document.getElementById("galaxy-container");
     const diagramContainer = document.getElementById("diagram-container");
-    let isGalaxyMode = false;
 
     function loadGalaxyScripts(callback) {
       if (window.GalaxyView && window.GalaxyView.GalaxyView) {
@@ -550,7 +549,6 @@
 
         const mode = btn.dataset.mode;
         if (mode === "galaxy") {
-          isGalaxyMode = true;
           if (diagramContainer) diagramContainer.style.display = "none";
           if (galaxyContainer) {
             galaxyContainer.style.display = "block";
@@ -585,7 +583,6 @@
             }
           }
         } else {
-          isGalaxyMode = false;
           if (galaxyContainer) galaxyContainer.style.display = "none";
           if (galaxyView) {
             try { galaxyView.hide(); } catch (e) { console.debug("[DiskRaptor]", e); }
@@ -1068,7 +1065,7 @@
       langMenu.addEventListener("keydown", function (e) {
         const items = langMenu.querySelectorAll(".lang-item");
         if (items.length === 0) return;
-        let idx = Array.prototype.indexOf.call(items, document.activeElement);
+        const idx = Array.prototype.indexOf.call(items, document.activeElement);
         if (e.key === "ArrowDown") {
           e.preventDefault();
           items[Math.min(idx + 1, items.length - 1)].focus();

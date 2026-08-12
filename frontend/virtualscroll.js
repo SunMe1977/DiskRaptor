@@ -116,7 +116,7 @@ class VirtualScroll {
     );
 
     // Remove rows that are no longer visible
-    for (const [index, el] of this.rows) {
+    for (const [index] of this.rows) {
       if (index < this.firstVisible || index > this.lastVisible) {
         this._recycleRow(index);
       }

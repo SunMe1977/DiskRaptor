@@ -46,7 +46,6 @@ class ChunkLoader {
       return;
     }
 
-    const self = this;
     const chunk = await this._invoke("get_chunk", {
       scanId: this.scanId,
       chunkIndex: chunkIndex,

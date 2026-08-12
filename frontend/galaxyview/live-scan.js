@@ -10,8 +10,6 @@
 (function () {
   "use strict";
 
-  const CFG = window.GalaxyViewConfig;
-
   class LiveScanEngine {
     constructor(galaxyView, dataMapper) {
       this.gv = galaxyView;

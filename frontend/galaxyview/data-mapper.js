@@ -72,16 +72,6 @@
     return '#' + toHex(r) + toHex(g) + toHex(b);
   }
 
-  /** Generate a unique, saturated color per object index using golden ratio hue spread */
-  function getUniqueColor(index) {
-    // Golden ratio: 0.618... spreads hues evenly across the spectrum
-    const hue = ((index + 1) * 0.618033988749895) % 1.0;
-    // Vary saturation and lightness smoothly using sine waves
-    const sat = 0.55 + Math.sin(index * 0.7) * 0.3;
-    const lit = 0.45 + Math.sin(index * 1.3 + 1) * 0.2;
-    return hslToHex(hue, sat, lit);
-  }
-
   /** Planet color based on type and index — each planet gets a unique shade */
   function getFileTypeColor(type, index) {
     const hue = ((index + 1) * 0.618033988749895) % 1.0;
@@ -179,7 +169,6 @@
       const scanPath = (scanResult && scanResult.scanPath) || stats.scanPath || "";
       this.currentScanPath = scanPath;
       const totalFiles = (scanResult && scanResult.totalFiles) || stats.total_files || 0;
-      const totalDirs = (scanResult && scanResult.totalDirs) || stats.total_dirs || 0;
       const totalSize = (scanResult && scanResult.totalSize) || stats.total_size || 0;
 
       // Reference size for proportional planet scaling: the largest file of
@@ -281,19 +270,6 @@
 
     _createPlanets(scanResult, stats) {
       if (!scanResult && !stats) return;
-      // Use top-level directory information from scan
-      const dirs = (stats && stats.total_dirs) || 0;
-      const files = (stats && stats.total_files) || 0;
-      const size = (stats && stats.total_size) || 0;
-
-      // Create representative planets for common system directories
-      const commonDirs = [
-        { name: "System", path: "C:\\Windows", size: size * 0.15, files: files * 0.1, isCode: false },
-        { name: "Programs", path: "C:\\Program Files", size: size * 0.2, files: files * 0.05, isCode: false },
-        { name: "Users", path: "C:\\Users", size: size * 0.4, files: files * 0.5, isCode: false },
-        { name: "Data", path: "C:\\Data", size: size * 0.15, files: files * 0.2, isCode: false },
-        { name: "Temp", path: "C:\\Temp", size: size * 0.02, files: files * 0.05, isCode: false },
-      ];
 
       // If we have topFiles, derive more planets from directory structure
       if (scanResult && scanResult.topFiles) {

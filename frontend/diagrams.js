@@ -499,7 +499,6 @@ class DiagramRenderer {
 
       // Micro‑Scatter offset: each slice moves radially by a weighted amount
       const midAngle = startAngle + sliceAngle / 2;
-      const selOffset = isSel ? 8 : 0;
       // Scatter weight: hovered=1, adjacent=0.3, rest=0.05
       // Only the hovered slice pulls out radially, nothing else moves
       const scatterDist = isHov ? 14 * scatterStrength : 0;
@@ -552,17 +551,6 @@ class DiagramRenderer {
       }
 
       // Magnetic effect: adjacent slices shift slightly
-      if (this._mouseInside && this._hoveredIndex >= 0 && !isHov) {
-        const dist = Math.abs(i - this._hoveredIndex);
-        if (dist === 1) {
-          // Adjacent slices shift 0.5-1px away
-          const adjOffset = 0.8;
-          const adjCx = cx + Math.cos(midAngle) * adjOffset;
-          const adjCy = cy + Math.sin(midAngle) * adjOffset;
-          // Re-draw small background circle for magnetic feel (no real impact)
-        }
-      }
-
       this.hitRegions.push({
         index: i,
         path: file.path,
@@ -691,7 +679,6 @@ class DiagramRenderer {
       const horizontal = cell.w >= cell.h;
       const total = cell.items.reduce((s, it) => s + it.area, 0);
       let splitIdx = 1, bestScore = Infinity, cumSum = 0;
-      const halfTotal = total / 2;
       for (let i = 0; i < cell.items.length - 1; i++) {
         cumSum += cell.items[i].area;
         const ratio = cumSum / total;
@@ -731,7 +718,7 @@ class DiagramRenderer {
       const isHov = r.index === this._hoveredIndex;
       const color = colors[r.index % colors.length];
       let rx = r.x + gap, ry = r.y + gap;
-      let rw = Math.max(2, r.w - gap * 2), rh = Math.max(2, r.h - gap * 2);
+      const rw = Math.max(2, r.w - gap * 2), rh = Math.max(2, r.h - gap * 2);
 
       // Micro‑Scatter offset: hovered moves toward center, adjacent shift too
       const scatterStrength = this._scatterAmt || 0;
