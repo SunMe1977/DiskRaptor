@@ -29,7 +29,9 @@ SilentUnInstall silent
 Section "Install"
   SetOutPath "$INSTDIR"
   File "${PAYLOAD_DIR}\diskraptor.exe"
-  File "${PAYLOAD_DIR}\diskraptor_scanner.dll"
+  ; The scanner cdylib is only present when the legacy ffi feature was built
+  ; (the Tauri binary links the lib statically), so it must be optional.
+  File /nonfatal "${PAYLOAD_DIR}\diskraptor_scanner.dll"
   SetOutPath "$INSTDIR\_up_"
   File /r "${PAYLOAD_DIR}\_up_\*"
 
