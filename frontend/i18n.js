@@ -1571,6 +1571,10 @@
       ko: "초고속 디스크 공간 분석기",
       hi: "अल्ट्रा-फास्ट डिस्क स्पेस विश्लेषक",
     },
+    "welcome.start_scan": {
+      en: "Quick Scan",
+      de: "Schnellscan",
+    },
     "about.tech": {
       en: "Built with Rust + Tauri",
       de: "Entwickelt mit Rust + Tauri",

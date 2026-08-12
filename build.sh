@@ -85,12 +85,10 @@ build_mas_pkg() {
 
   # Build a dedicated store build: the `store` cargo feature disables
   # sandbox-unsafe code paths (smartctl/system_profiler/osascript subprocesses).
+  # `$TAURI_TARGET` already contains "--target universal-apple-darwin" (or is
+  # empty), so it must be expanded unquoted like the main build does.
   cd src-tauri
-  if [ -n "$TAURI_TARGET" ]; then
-    npx tauri build --bundles app --ci --features store --target "$TAURI_TARGET" 2>&1
-  else
-    npx tauri build --bundles app --ci --features store 2>&1
-  fi
+  npx tauri build --bundles app --ci --features store $TAURI_TARGET 2>&1
   cd ..
 
   local APP_SRC=""

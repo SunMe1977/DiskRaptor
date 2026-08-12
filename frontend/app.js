@@ -258,6 +258,13 @@
       if (welcomeEl) welcomeEl.classList.remove("hidden");
     }
 
+    // "Don't show again" only collapses the onboarding banner (🚀/title/star),
+    // keeping the start page (drives, scan history, quick scan) visible.
+    function hideOnboarding() {
+      const ob = document.getElementById("welcome-onboarding");
+      if (ob) ob.classList.add("hidden");
+    }
+
     if (welcomeClose) {
       welcomeClose.addEventListener("click", function () {
         if (welcomeDont && welcomeDont.checked) {
@@ -265,14 +272,14 @@
             .invoke("save_settings", { settings: { welcome_dismissed: true } })
             .catch(function () {});
         }
-        hideWelcome();
+        hideOnboarding();
       });
     }
 
     (async function () {
       try {
         const s = await window.__TAURI__.invoke("load_settings", {});
-        if (s && s.welcome_dismissed) hideWelcome();
+        if (s && s.welcome_dismissed) hideOnboarding();
       } catch (e) { console.debug("[DiskRaptor]", e); }
     })();
 
@@ -417,6 +424,47 @@
 
     // ── Drive Selector ──────────────────────────────────
     window.app.initDrives(scanPath, btnScan);
+
+    // ── Scan history on the start page ──────────────────
+    (async function renderStartHistory() {
+      const wrap = document.getElementById("start-history");
+      if (!wrap) return;
+      try {
+        const s = await window.__TAURI__.invoke("load_settings", {});
+        const hist = Array.isArray(s && s.scan_history) ? s.scan_history : [];
+        if (hist.length === 0) {
+          wrap.style.display = "none";
+          return;
+        }
+        let html =
+          '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">' +
+          "\uD83D\uDDD2 Scan History</div>";
+        for (let hi = 0; hi < Math.min(hist.length, 8); hi++) {
+          const p = String(hist[hi] || "");
+          if (!p) continue;
+          html +=
+            '<div class="history-item" data-path="' +
+            p.replace(/"/g, "&quot;") +
+            '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-primary);">' +
+            '<span style="font-size:13px;">\uD83D\uDCC1</span>' +
+            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+            p.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+            "</span>" +
+            "</div>";
+        }
+        wrap.innerHTML = html;
+        wrap.querySelectorAll(".history-item").forEach(function (el) {
+          el.addEventListener("click", function () {
+            const p = el.dataset.path;
+            if (!p) return;
+            scanPath.value = p;
+            if (btnScan) btnScan.click();
+          });
+        });
+      } catch (e) {
+        console.debug("[DiskRaptor]", e);
+      }
+    })();
 
     // Galaxy view state
     let galaxyView = null;
