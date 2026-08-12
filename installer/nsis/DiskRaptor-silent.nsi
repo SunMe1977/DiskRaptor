@@ -8,7 +8,9 @@ ManifestDPIAware true
 !define PRODUCT_PUBLISHER "Hansjoerg Hofer"
 !define PRODUCT_WEB_SITE "https://github.com/SunMe1977/DiskRaptor"
 !define PRODUCT_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
-!define RELEASE_DIR "..\..\src-tauri\target\release"
+!ifndef PAYLOAD_DIR
+  !define PAYLOAD_DIR "..\..\src-tauri\target\release"
+!endif
 !define WEBVIEW2_INSTALLER "..\webview2\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
 !define WEBVIEW2_CLIENT_GUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
@@ -26,10 +28,10 @@ SilentUnInstall silent
 
 Section "Install"
   SetOutPath "$INSTDIR"
-  File "${RELEASE_DIR}\diskraptor.exe"
-  File "${RELEASE_DIR}\diskraptor_scanner.dll"
+  File "${PAYLOAD_DIR}\diskraptor.exe"
+  File "${PAYLOAD_DIR}\diskraptor_scanner.dll"
   SetOutPath "$INSTDIR\_up_"
-  File /r "${RELEASE_DIR}\_up_\*"
+  File /r "${PAYLOAD_DIR}\_up_\*"
 
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
