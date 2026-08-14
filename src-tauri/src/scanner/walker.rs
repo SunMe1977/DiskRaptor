@@ -871,6 +871,7 @@ mod tests {
 
     /// Canonicalize an arena into a sortable, comparable form so parallel scans
     /// with different node orders can be compared directly.
+    #[cfg(target_os = "macos")]
     fn canonical(arena: &crate::scanner::tree::TreeNodeArena) -> Vec<(String, u8, u64, u64, u64, u64)> {
         let mut paths: Vec<String> = vec![String::new(); arena.nodes.len()];
         for i in 1..arena.nodes.len() {
