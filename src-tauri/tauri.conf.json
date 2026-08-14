@@ -15,9 +15,9 @@
       {
         "title": "DiskRaptor",
         "width": 1280,
-        "height": 860,
-        "minWidth": 1024,
-        "minHeight": 600,
+        "height": 780,
+        "minWidth": 900,
+        "minHeight": 500,
         "maximized": true
       }
     ],

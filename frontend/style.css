@@ -180,9 +180,11 @@ body::before {
     gap: var(--space-sm);
     flex: 1;
     justify-content: center;
+    min-width: 0;
 }
 #scan-path {
     width: 460px;
+    min-width: 0;
     padding: 8px 14px;
     background: var(--bg-primary);
     border: 1px solid var(--border);
@@ -660,7 +662,8 @@ button.icon-btn {
     height: 100%;
 }
 .diagram-controls {
-    flex-shrink: 0;
+    flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     gap: 4px;
     flex-wrap: wrap;

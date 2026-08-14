@@ -20,14 +20,14 @@
                     <button id="btn-drive" class="drive-trigger">💽 <span id="drive-selected">/</span> ▾</button>
                     <div id="drive-menu" class="drive-menu"></div>
                 </div>
-                <div style="position:relative;flex:1;display:flex;">
+                <div style="position:relative;flex:1 1 auto;display:flex;min-width:0;">
                     <input
                         type="text"
                         id="scan-path"
                         data-i18n-placeholder="scan.path.placeholder"
                         placeholder="Select or type a directory path..."
                         value=""
-                        style="flex:1;"
+                        style="flex:1;min-width:0;"
                     />
                     <button id="btn-fav" title="Bookmark this path" aria-label="Bookmark this path" style="padding:4px 8px;font-size:14px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">☆</button>
                     <div id="fav-menu" class="fav-dropdown"></div>
