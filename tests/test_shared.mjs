@@ -271,9 +271,11 @@ export async function startScan(cdp, scanPath) {
 }
 
 export async function waitForOverlay(cdp, timeoutMs = 30000) {
-  const limit = Math.ceil(timeoutMs / 100);
+  // Fast scans hide the overlay in well under 100 ms, so poll tightly at the
+  // start (20 ms) to avoid a flaky "overlay never appeared" on small dirs.
+  const limit = Math.ceil(timeoutMs / 20);
   for (let i = 0; i < limit; i++) {
-    await sleep(100);
+    await sleep(20);
     const o = await jsExpr(cdp, `document.getElementById('progress-overlay')?.classList.contains('active')`);
     if (o === true) return true;
   }

@@ -149,6 +149,9 @@ impl FileTypeAccum {
     }
     /// Merge a worker-local map into this accumulator (parallel walkers avoid
     /// taking the global lock once per file; they merge once per worker).
+    /// Only the platform-specific fast walkers use this, so it is gated to
+    /// those targets to avoid dead-code errors on other platforms.
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub(crate) fn merge(&self, other: HashMap<String, (u64, u64)>) {
         if other.is_empty() {
             return;
