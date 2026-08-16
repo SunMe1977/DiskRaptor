@@ -100,12 +100,12 @@ class TrashRecovery {
       const checked = this._selected[idx] || false;
       totalSize += item.size || 0;
       const origPath = item.original_path || "";
-      html += '<div class="trash-item" data-idx="' + idx + '" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);transition:background 0.15s;" title="' + (origPath ? "Original: " + escHtml(origPath) : "") + '">';
+      html += '<div class="trash-item" data-idx="' + idx + '" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);transition:background 0.15s;" title="' + (origPath ? "Original: " + trashEscHtml(origPath) : "") + '">';
       html += '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" data-idx="' + idx + '">';
       html += '<span>' + (item.is_dir ? "📁" : "📄") + '</span>';
-      html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + escHtml(item.name || "?") + '</span>';
+      html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + trashEscHtml(item.name || "?") + '</span>';
       if (origPath) {
-        html += '<span style="font-size:10px;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(origPath) + '</span>';
+        html += '<span style="font-size:10px;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + trashEscHtml(origPath) + '</span>';
       }
       html += '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);white-space:nowrap;">' + (item.size_human || fmtTrash(item.size)) + '</span>';
       html += '<span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">' + (item.deleted_at ? item.deleted_at.substring(0,10) : "") + '</span>';
@@ -232,7 +232,7 @@ class TrashRecovery {
   }
 }
 
-function escHtml(s) {
+function trashEscHtml(s) {
   return window.escHtml(s);
 }
 

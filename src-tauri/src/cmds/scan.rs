@@ -4,7 +4,7 @@
 //! from the rest of the command surface.
 use crate::{AppState, JsonResult, LiveEntries, ScanResultData};
 use diskraptor_scanner::scanner;
-use diskraptor_scanner::scanner::tree::{format_size, TreeChunk};
+use diskraptor_scanner::scanner::tree::format_size;
 use diskraptor_scanner::streaming::chunker::CHUNK_SIZE;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -204,8 +204,12 @@ pub(crate) fn get_scan_progress(state: State<AppState>, scan_id: Option<u64>) ->
     JsonResult::ok(scan_progress_data(&state))
 }
 
-/// Build a single chunk from the arena on demand (clones only that chunk's nodes).
-pub(crate) fn build_chunk(arena: &scanner::tree::TreeNodeArena, chunk_id: u32) -> Option<TreeChunk> {
+/// Build a single chunk from the arena on demand. Returns a clone-free borrow
+/// of the arena slice so a 10k-node chunk is never copied on the hot path.
+pub(crate) fn build_chunk(
+    arena: &scanner::tree::TreeNodeArena,
+    chunk_id: u32,
+) -> Option<scanner::tree::BorrowedChunk<'_>> {
     let total = arena.nodes.len() as u32;
     let total_chunks = total.div_ceil(CHUNK_SIZE);
     if chunk_id >= total_chunks {
@@ -213,19 +217,13 @@ pub(crate) fn build_chunk(arena: &scanner::tree::TreeNodeArena, chunk_id: u32) -
     }
     let start: usize = (chunk_id as u64 * CHUNK_SIZE as u64) as usize;
     let end: usize = (((chunk_id as u64 + 1) * CHUNK_SIZE as u64).min(total as u64)) as usize;
-    let mut nodes = Vec::with_capacity(end - start);
-    for idx in start..end {
-        let mut node = arena.nodes[idx].clone();
-        node.chunk_id = chunk_id;
-        nodes.push(node);
-    }
-    Some(TreeChunk {
+    Some(scanner::tree::BorrowedChunk::new(
         chunk_id,
         total_chunks,
-        total_nodes: total,
-        start_index: start as u32,
-        nodes,
-    })
+        total,
+        start as u32,
+        &arena.nodes[start..end],
+    ))
 }
 
 #[tauri::command]

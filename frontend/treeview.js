@@ -174,32 +174,23 @@ class TreeView {
           self.expanded.add(currentIdx);
         }
 
-        // First, scan all loaded nodes manually (more thorough than getChildrenIndices)
+        // Fast path: search only this node's children (parentMap is indexed by
+        // parent, so there is no need to scan allNodes for every segment).
         let match = -1;
-        for (let ni = 0; ni < self.loader.allNodes.length; ni++) {
-          const n = self.loader.allNodes[ni];
-          if (n && n.parent === currentIdx && n.name === seg) {
-            match = ni;
+        const children = self.loader.getChildrenIndices(currentIdx);
+        for (let ci = 0; ci < children.length; ci++) {
+          const n = self.loader.getNode(children[ci]);
+          if (n && n.name === seg) {
+            match = children[ci];
             break;
           }
         }
 
-        // If not found, try getChildrenIndices
-        if (match === -1) {
-          const children = self.loader.getChildrenIndices(currentIdx);
-          for (let ci = 0; ci < children.length; ci++) {
-            const n = self.loader.getNode(children[ci]);
-            if (n && n.name === seg) {
-              match = children[ci];
-              break;
-            }
-          }
-        }
-
-        // If still not found, fetch from backend
+        // If still not found, ask the backend for the authoritative child list
+        // (complete even when the chunk containing this dir was never loaded).
         if (match === -1) {
           try {
-            const rawKids = await self.loader.fetchChildren(currentIdx);
+            const rawKids = await self.loader.fetchChildrenBackend(currentIdx);
             if (rawKids && rawKids.length > 0) {
               for (let ri = 0; ri < rawKids.length; ri++) {
                 if (rawKids[ri].name === seg) {
@@ -760,7 +751,8 @@ class TreeView {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
 
-    const depth = this._computeDepth(arenaIdx);
+    const depth =
+      node.depth != null ? node.depth : this._computeDepth(arenaIdx);
     const isDir = node.node_type === "Directory" || node.node_type === 0;
     const isExpanded = this.expanded.has(arenaIdx);
 
@@ -793,99 +785,63 @@ class TreeView {
       this._placeContextMenu(e.clientX, e.clientY);
     };
 
-    const indent = document.createElement("span");
-    indent.className = "indent";
-    indent.style.width = depth * 18 + "px";
-    el.appendChild(indent);
+    // Build the row with a single innerHTML write (instead of ~11
+    // createElement+append calls per row per frame). The name/date strings are
+    // HTML-escaped so the previous textContent-level safety is preserved.
+    const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
+    let pctBg = "var(--accent-green)";
+    if (pct > 70) pctBg = "linear-gradient(90deg, var(--accent-red), var(--accent-red))";
+    else if (pct > 40) pctBg = "linear-gradient(90deg, var(--accent-orange), #bb8009)";
+    else if (pct > 10) pctBg = "linear-gradient(90deg, #3fb950, var(--accent-green))";
 
-    const toggle = document.createElement("span");
-    toggle.className = "toggle";
-    toggle.textContent = isDir ? (isExpanded ? "\u25BC" : "\u25B6") : "";
-    el.appendChild(toggle);
+    let dateTxt = "\u2014";
+    if (node.mtime && node.mtime > 0) {
+      const d = new Date(node.mtime * 1000);
+      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      dateTxt = d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
+    }
 
-    // Icon: fallback emoji, then replace with real Windows icon from IconCache
-    const iconEl = document.createElement("span");
-    iconEl.className = "icon";
-    iconEl.style.cssText =
-      "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;";
-    iconEl.textContent = isDir ? "📁" : this._fileIcon(node.name || "");
-    el.appendChild(iconEl);
+    el.innerHTML =
+      '<span class="indent" style="width:' + (depth * 18) + 'px"></span>' +
+      '<span class="toggle">' + (isDir ? (isExpanded ? "\u25BC" : "\u25B6") : "") + "</span>" +
+      '<span class="icon" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex-shrink:0;">' +
+      (isDir ? "\uD83D\uDCC1" : window.escHtml(this._fileIcon(node.name || ""))) +
+      "</span>" +
+      '<span class="tree-pct-bar"><span class="tree-pct-fill" style="width:' +
+      Math.max(1, pct) +
+      "%;background:" +
+      pctBg +
+      '"></span></span>' +
+      '<span class="node-name">' + window.escHtml(node.name || "(root)") + "</span>" +
+      '<span class="node-pct">' + pct.toFixed(1) + "%</span>" +
+      '<span class="node-size">' + window.escHtml(this._formatSize(node.size)) + "</span>" +
+      '<span class="node-files">' + (isDir ? (node.file_count || 0).toLocaleString() : "\u2014") + "</span>" +
+      '<span class="node-dirs">' + (isDir ? (node.dir_count || 0).toLocaleString() : "\u2014") + "</span>" +
+      '<span class="node-date">' + window.escHtml(dateTxt) + "</span>";
+
+    // Icon: the fallback emoji is already in the row; replace it with the real
+    // Windows icon from IconCache when it arrives.
     if (window.__ICON_CACHE__) {
       const iconKey = isDir ? "__folder__" : node.name || "file";
+      const iconEl = el.querySelector(".icon");
       window.__ICON_CACHE__
         .getIcon(iconKey, isDir)
         .then(function (iconResult) {
+          if (!iconEl || !iconEl.parentNode) return;
           if (
             typeof iconResult === "string" &&
             iconResult.indexOf("data:") === 0
           ) {
-            iconEl.innerHTML = "";
-            const img = document.createElement("img");
-            img.src = iconResult;
-            img.style.cssText = "width:16px;height:16px;display:block;";
-            iconEl.appendChild(img);
+            iconEl.innerHTML =
+              '<img src="' +
+              iconResult +
+              '" style="width:16px;height:16px;display:block;">';
           } else if (typeof iconResult === "string" && iconResult.length < 10) {
             iconEl.textContent = iconResult;
           }
         })
         .catch(function () {});
     }
-
-    // Gradient percentage bar (green → yellow → red, like RAM bar)
-    const pct = this.maxSize > 0 ? (node.size / this.maxSize) * 100 : 0;
-    const pctBar = document.createElement("span");
-    pctBar.className = "tree-pct-bar";
-    const pctFill = document.createElement("span");
-    pctFill.className = "tree-pct-fill";
-    pctFill.style.width = Math.max(1, pct) + "%";
-    // Gradient color based on usage: green < 40% < yellow < 70% < red
-    if (pct > 70) pctFill.style.background = "linear-gradient(90deg, var(--accent-red), var(--accent-red))";
-    else if (pct > 40) pctFill.style.background = "linear-gradient(90deg, var(--accent-orange), #bb8009)";
-    else if (pct > 10) pctFill.style.background = "linear-gradient(90deg, #3fb950, var(--accent-green))";
-    else pctFill.style.background = "var(--accent-green)";
-    pctBar.appendChild(pctFill);
-    el.appendChild(pctBar);
-
-    const name = document.createElement("span");
-    name.className = "node-name";
-    name.textContent = node.name || "(root)";
-    el.appendChild(name);
-
-    // Percentage column
-    const pctText = document.createElement("span");
-    pctText.className = "node-pct";
-    pctText.textContent = pct.toFixed(1) + "%";
-    el.appendChild(pctText);
-
-    const size = document.createElement("span");
-    size.className = "node-size";
-    size.textContent = this._formatSize(node.size);
-    el.appendChild(size);
-
-    // File count column
-    const fc = document.createElement("span");
-    fc.className = "node-files";
-    fc.textContent = isDir ? (node.file_count || 0).toLocaleString() : "—";
-    el.appendChild(fc);
-
-    // Directory count column
-    const dc = document.createElement("span");
-    dc.className = "node-dirs";
-    dc.textContent = isDir ? (node.dir_count || 0).toLocaleString() : "—";
-    el.appendChild(dc);
-
-    // Date column
-    const dateEl = document.createElement("span");
-    dateEl.className = "node-date";
-    if (node.mtime && node.mtime > 0) {
-      const d = new Date((node.mtime) * 1000);
-      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      dateEl.textContent = d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
-    } else {
-      dateEl.textContent = "—";
-    }
-    el.appendChild(dateEl);
-
   }
 
   _computeDepth(arenaIdx) {

@@ -439,7 +439,7 @@
         let html =
           '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">' +
           "\uD83D\uDDD2 Scan History</div>";
-        for (let hi = 0; hi < Math.min(hist.length, 8); hi++) {
+        for (let hi = 0; hi < Math.min(hist.length, 3); hi++) {
           const p = String(hist[hi] || "");
           if (!p) continue;
           html +=

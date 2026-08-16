@@ -836,13 +836,16 @@ class DiagramRenderer {
     const padding = 8;
     const barMaxW = w - padding * 2;
     const barArea = h - 24;
-    const barH = Math.max(6, Math.min(14, Math.floor(barArea / maxBars)));
-    const gap = Math.max(1, Math.floor(barH * 0.25));
-    const totalH = maxBars * (barH + gap);
+    // 3x thicker bars (old cap was 14px, now up to 42px). Draw fewer bars so
+    // the thicker bars + gaps still fit inside the drawing area.
+    const barH = Math.max(6, Math.min(14, Math.floor(barArea / maxBars))) * 3;
+    const gap = Math.max(2, Math.floor(barH * 0.25));
+    const shown = Math.max(1, Math.min(maxBars, Math.floor(barArea / (barH + gap))));
+    const totalH = shown * (barH + gap);
     const startY = Math.max(4, Math.floor((barArea - totalH) / 2));
     const hlColor = this._highlightColor();
 
-    for (let i = 0; i < maxBars; i++) {
+    for (let i = 0; i < shown; i++) {
       const file = this.files[i];
       const pct = file.size / totalSize;
       const barW = Math.max(2, Math.round(barMaxW * pct));
@@ -880,7 +883,7 @@ class DiagramRenderer {
       const label = this._ellipsize(shortName, 28) + "  " + pctStr;
       const labelX = padding + Math.min(barW + 6, barMaxW - ctx.measureText(label).width - 8);
       ctx.fillStyle = isHov ? "#ffd700" : "#e6edf3";
-      ctx.font = (barH > 10 ? "9px bold" : "7px bold") + " sans-serif";
+      ctx.font = (barH > 24 ? "12px bold" : barH > 10 ? "9px bold" : "7px bold") + " sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.shadowColor = "rgba(0,0,0,0.5)";

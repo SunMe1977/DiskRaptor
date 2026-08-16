@@ -59,7 +59,6 @@ class ChunkLoader {
       typeof chunk.start_index === "number"
         ? chunk.start_index
         : chunkIndex * 10000;
-    const touchedParents = new Set();
     for (let i = 0; i < chunk.nodes.length; i++) {
       const arenaIdx = baseIdx + i;
       if (arenaIdx >= this.totalNodes) {
@@ -68,8 +67,6 @@ class ChunkLoader {
       }
       const node = chunk.nodes[i];
       node._arenaIndex = arenaIdx;
-      node._children = [];
-      node._loadedChildren = false;
       this.allNodes[arenaIdx] = node;
 
       if (node.parent !== 4294967295) {
@@ -77,63 +74,14 @@ class ChunkLoader {
           this.parentMap.set(node.parent, []);
         }
         this.parentMap.get(node.parent).push(arenaIdx);
-        touchedParents.add(node.parent);
       }
     }
 
     this.loadedChunks.add(chunkIndex);
     this.loadedCount += chunk.nodes.length;
 
-    // Only re-sort the parent lists that actually gained children this round
-    // (avoids an O(all_nodes log n) sort on every chunk load).
-    const _self = this;
-    const entries = Array.from(touchedParents);
-    for (let ei = 0; ei < entries.length; ei++) {
-      const children = this.parentMap.get(entries[ei]) || [];
-      children.sort(function (a, b) {
-        const na = _self.allNodes[a];
-        const nb = _self.allNodes[b];
-        return (nb ? nb.size : 0) - (na ? na.size : 0);
-      });
-    }
-
     if (this.onProgress) {
       this.onProgress(this.loadedChunks.size, this.totalChunks);
-    }
-  }
-
-  /** Pre-load all remaining chunks in parallel batches of 20 */
-  _preloadRemainingChunks() {
-    const BATCH_SIZE = 20;
-    let start = 1; // chunk 0 already loaded
-    const self = this;
-
-    function loadBatch() {
-      const end = Math.min(start + BATCH_SIZE, self.totalChunks);
-      const promises = [];
-      for (let i = start; i < end; i++) {
-        if (!self.loadedChunks.has(i)) {
-          promises.push(self.loadChunk(i));
-        }
-      }
-      if (promises.length > 0) {
-        Promise.all(promises).then(function() {
-          start = end;
-          if (start < self.totalChunks) {
-            // Yield to event loop between batches
-            setTimeout(loadBatch, 5);
-          }
-        }).catch(function() {
-          start = end;
-          if (start < self.totalChunks) {
-            setTimeout(loadBatch, 5);
-          }
-        });
-      }
-    }
-    // Start loading batches asynchronously
-    if (start < this.totalChunks) {
-      setTimeout(loadBatch, 10);
     }
   }
 
@@ -153,6 +101,27 @@ class ChunkLoader {
       return cached;
     }
     // Fallback to backend (useful when chunks not yet loaded)
+    const result = await this._invoke("get_children", {
+      scanId: this.scanId,
+      nodeIndex: arenaIndex,
+    });
+    if (Array.isArray(result)) {
+      return result;
+    }
+    if (result && Array.isArray(result.children)) {
+      return result.children;
+    }
+    return [];
+  }
+
+  /**
+   * Always fetch a node's children straight from the backend and return them
+   * as full node objects. Unlike `fetchChildren` this never short-circuits on
+   * a partially-populated parentMap, so callers (e.g. "jump in tree") can
+   * resolve a deep path even when the relevant chunks were never loaded.
+   */
+  async fetchChildrenBackend(arenaIndex) {
+    if (arenaIndex === 4294967295) return [];
     const result = await this._invoke("get_children", {
       scanId: this.scanId,
       nodeIndex: arenaIndex,

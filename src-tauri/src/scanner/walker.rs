@@ -3,7 +3,7 @@ use anyhow::Result;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -57,7 +57,9 @@ fn path_has_component(path: &str, target: &str) -> bool {
 
 const LIVE_CAP: usize = 1000;
 
-/// Record a discovered entry into the live ring buffer (capped).
+/// Record a discovered entry into the live ring buffer (capped). Callers
+/// throttle to every Nth entry so huge scans don't allocate one String per
+/// file just for the live preview.
 fn push_live(live: &std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>, name: &str) {
     let mut q = live.lock();
     if q.len() >= LIVE_CAP {
@@ -66,22 +68,46 @@ fn push_live(live: &std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque
     q.push_back(name.to_string());
 }
 
+/// Lowercase extension key for the file-type breakdown, avoiding the Unicode
+/// `to_lowercase` path when the extension is already lowercase ASCII (the
+/// overwhelmingly common case).
+pub(crate) fn file_ext_lower(path: &str) -> String {
+    match Path::new(path).extension().and_then(|e| e.to_str()) {
+        Some(e) => {
+            if e.bytes().any(|b| b.is_ascii_uppercase()) {
+                e.to_lowercase()
+            } else {
+                e.to_string()
+            }
+        }
+        None => "(none)".into(),
+    }
+}
+
 pub(crate) struct TopFilesAccum {
     files: Mutex<Vec<TopFileEntry>>,
-    min_size: Mutex<u64>,
+    min_size: AtomicU64,
 }
 impl Default for TopFilesAccum {
     fn default() -> Self {
         Self {
             files: Mutex::new(Vec::new()),
-            min_size: Mutex::new(0),
+            min_size: AtomicU64::new(0),
         }
     }
 }
 impl TopFilesAccum {
     pub(crate) fn insert(&self, path: String, size: u64, max_count: usize) {
+        // Fast reject without taking the files lock: once the list is full,
+        // anything at or below the current minimum can never enter.
+        if size <= self.min_size.load(Ordering::Relaxed) {
+            let files = self.files.lock();
+            if files.len() >= max_count {
+                return;
+            }
+        }
         let mut files = self.files.lock();
-        let min_size = *self.min_size.lock();
+        let min_size = self.min_size.load(Ordering::Relaxed);
         if size <= min_size && files.len() >= max_count {
             return;
         }
@@ -96,7 +122,7 @@ impl TopFilesAccum {
         if files.len() > max_count {
             files.truncate(max_count);
         }
-        *self.min_size.lock() = files.last().map(|f| f.size).unwrap_or(0);
+        self.min_size.store(files.last().map(|f| f.size).unwrap_or(0), Ordering::Relaxed);
     }
     fn into_inner(self) -> Vec<TopFileEntry> {
         self.files.into_inner()
@@ -115,15 +141,24 @@ impl Default for FileTypeAccum {
 }
 impl FileTypeAccum {
     pub(crate) fn add(&self, path: &str, size: u64) {
-        let ext = Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase())
-            .unwrap_or_else(|| "(none)".into());
+        let ext = file_ext_lower(path);
         let mut map = self.map.lock();
         let entry = map.entry(ext).or_insert((0, 0));
         entry.0 += 1;
         entry.1 += size;
+    }
+    /// Merge a worker-local map into this accumulator (parallel walkers avoid
+    /// taking the global lock once per file; they merge once per worker).
+    pub(crate) fn merge(&self, other: HashMap<String, (u64, u64)>) {
+        if other.is_empty() {
+            return;
+        }
+        let mut map = self.map.lock();
+        for (ext, (c, s)) in other {
+            let e = map.entry(ext).or_insert((0, 0));
+            e.0 += c;
+            e.1 += s;
+        }
     }
     fn into_sorted(self) -> Vec<FileTypeCount> {
         let map = self.map.into_inner();
@@ -293,14 +328,12 @@ mod platform {
         // bounded between 500k and 20M. On low-memory machines we stop earlier
         // instead of risking OOM; on big machines we still cap runaway scans.
         let node_cap = {
-            let mut sys = sysinfo::System::new();
-            sys.refresh_memory();
-            let avail = sys.available_memory().max(256 * 1024 * 1024);
+            let avail = available_memory_bytes();
             (avail / 128).clamp(500_000, 20_000_000) as usize
         };
         let mut termination = ScanTermination::Completed;
 
-        for entry_result in WalkDir::new(root_path).follow_links(config.follow_symlinks).sort(false).parallelism(jwalk::Parallelism::RayonNewPool(4)) {
+        for entry_result in WalkDir::new(root_path).follow_links(config.follow_symlinks).sort(false).parallelism(jwalk::Parallelism::RayonNewPool(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8))) {
             if arena.nodes.len() > node_cap {
                 termination = ScanTermination::LimitReached;
                 break;
@@ -348,7 +381,9 @@ mod platform {
             }
 
             let file_name = entry.file_name().to_string_lossy();
-            push_live(&live_entries, &file_name);
+            if iter_count.is_multiple_of(100) {
+                push_live(&live_entries, &file_name);
+            }
 
             let is_dir = entry.file_type().is_dir();
             let parent = os_path
@@ -402,12 +437,19 @@ pub(crate) fn finish_scan(
     termination: ScanTermination,
 ) -> Result<ScanResult> {
     let n = arena.nodes.len();
+    let mut total_files: u64 = 0;
+    let mut total_dirs: u64 = 1; // root is a directory
     for i in (1..n).rev() {
         let node = &arena.nodes[i];
         let p = node.parent;
         let s = node.size;
         let fc = node.file_count;
         let dc = node.dir_count;
+        if node.is_file() {
+            total_files += 1;
+        } else {
+            total_dirs += 1;
+        }
         if p != u32::MAX {
             let parent = &mut arena.nodes[p as usize];
             parent.size += s;
@@ -416,8 +458,6 @@ pub(crate) fn finish_scan(
         }
     }
     let elapsed = start.elapsed().as_millis() as u64;
-    let total_files = arena.nodes.iter().filter(|n| n.is_file()).count() as u64;
-    let total_dirs = arena.nodes.iter().filter(|n| n.is_directory()).count() as u64;
     let total_size = arena.nodes[0].size;
     let stats = ScanStats {
         total_files,
@@ -467,9 +507,7 @@ pub fn scan_simple(
     // Cap the fallback scanner (used for $Recycle.Bin etc.): a recycle bin can
     // hold millions of deleted files; a tree that big is useless and heavy.
     let node_cap = {
-        let mut sys = sysinfo::System::new();
-        sys.refresh_memory();
-        let avail = sys.available_memory().max(256 * 1024 * 1024);
+        let avail = available_memory_bytes();
         (avail / 512).clamp(250_000, 1_000_000) as usize
     };
     // Iteration cap: access-denied entries don't add nodes, so a recycle bin
@@ -517,7 +555,9 @@ pub fn scan_simple(
         if full == root_path {
             continue;
         }
-        push_live(&config.live_entries, entry.file_name().to_string_lossy().as_ref());
+        if iter_count.is_multiple_of(100) {
+            push_live(&config.live_entries, entry.file_name().to_string_lossy().as_ref());
+        }
         let file_name = entry.file_name().to_string_lossy().to_string();
         let is_dir = entry.file_type().is_dir();
         let parent = entry
@@ -599,13 +639,13 @@ pub fn scan_directory_with_progress(
         }
         // Fallback: platform::scan takes &ScanProgressCallback. Deref the Arc.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            platform::scan(&config, &*progress_arc, &root_path)
+            platform::scan(&config, progress_arc.as_ref(), &root_path)
         }));
-        return match result {
+        match result {
             Ok(Ok(scan_result)) => Ok(scan_result),
             Ok(Err(e)) => {
                 eprintln!("[walker] Win32 scan error: {}, falling back to walkdir", e);
-                scan_simple(&config, &*progress_arc, &root_path)
+                scan_simple(&config, progress_arc.as_ref(), &root_path)
             }
             Err(panic) => {
                 let msg = if let Some(s) = panic.downcast_ref::<&str>() {
@@ -619,9 +659,9 @@ pub fn scan_directory_with_progress(
                     "[walker] Win32 scanner panicked: {}, falling back to walkdir",
                     msg
                 );
-                scan_simple(&config, &*progress_arc, &root_path)
+                scan_simple(&config, progress_arc.as_ref(), &root_path)
             }
-        };
+        }
     }
 
     // macOS: prefer the fast getattrlistbulk scanner; fall back to the jwalk

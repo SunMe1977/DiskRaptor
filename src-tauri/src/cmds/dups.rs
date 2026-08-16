@@ -4,6 +4,7 @@
 use crate::{AppState, JsonResult};
 use diskraptor_scanner::scanner;
 use diskraptor_scanner::scanner::tree::format_size;
+use rayon::prelude::*;
 use std::sync::atomic::Ordering;
 use tauri::{Manager, State};
 
@@ -29,6 +30,10 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
         let mut by_size: std::collections::HashMap<u64, Vec<std::path::PathBuf>> =
             std::collections::HashMap::new();
         let mut scanned: u64 = 0;
+        // Throttle the "currently examined file" progress string: a lock + String
+        // allocation per file is pure overhead for a value the UI polls at ~1 Hz.
+        let mut last_file_update = std::time::Instant::now();
+        let mut last_file_at: u64 = 0;
         for entry in walkdir::WalkDir::new(&path).follow_links(false) {
             let e = match entry {
                 Ok(e) => e,
@@ -46,34 +51,53 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
             };
             scanned += 1;
             st.dup.files_scanned.store(scanned, Ordering::Relaxed);
-            *st.dup.current_file.lock() = e.path().to_string_lossy().to_string();
+            if scanned - last_file_at >= 1000 || last_file_update.elapsed().as_millis() >= 100 {
+                *st.dup.current_file.lock() = e.path().to_string_lossy().to_string();
+                last_file_at = scanned;
+                last_file_update = std::time::Instant::now();
+            }
             by_size.entry(meta.len()).or_default().push(e.path().to_path_buf());
             if scanned >= FILE_CAP {
                 break;
             }
         }
 
-        // Phase 2: hash candidate groups (same size).
+        // Phase 2: head-hash candidate groups (same size) in parallel. Hashing
+        // is I/O-bound, so rayon workers saturate the disk better than one
+        // thread; hash_file_head reuses a thread-local read buffer.
         st.dup.phase.store(2, Ordering::Relaxed);
+        let cancelled = &st.dup.cancelled;
+        let files_scanned = &st.dup.files_scanned;
+        let current_file = &st.dup.current_file;
+        let pairs: Vec<((u64, u64), std::path::PathBuf)> = by_size
+            .into_values()
+            .filter(|g| g.len() >= 2)
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .flat_map_iter(|group| {
+                let mut out = Vec::with_capacity(group.len());
+                for p in group {
+                    if cancelled.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let n = files_scanned.fetch_add(1, Ordering::Relaxed) + 1;
+                    if n.is_multiple_of(500) {
+                        *current_file.lock() = p.to_string_lossy().to_string();
+                    }
+                    let h = scanner::duplicates::hash_file_head(&p, scanner::duplicates::HEAD_HASH_BYTES);
+                    out.push((h, p));
+                }
+                out
+            })
+            .collect();
         let mut by_hash: std::collections::HashMap<(u64, u64), Vec<std::path::PathBuf>> =
             std::collections::HashMap::new();
-        for group in by_size.into_values() {
-            if group.len() < 2 {
-                continue;
-            }
-            for p in group {
-                if st.dup.cancelled.load(Ordering::Relaxed) {
-                    break;
-                }
-                scanned += 1;
-                st.dup.files_scanned.store(scanned, Ordering::Relaxed);
-                *st.dup.current_file.lock() = p.to_string_lossy().to_string();
-                let h = scanner::duplicates::hash_file_head(&p, scanner::duplicates::HEAD_HASH_BYTES);
-                by_hash.entry(h).or_default().push(p);
-            }
+        for (h, p) in pairs {
+            by_hash.entry(h).or_default().push(p);
         }
 
-        // Phase 3: full verification of head-hash groups, then build result groups.
+        // Phase 3: full verification of head-hash groups (parallel per group),
+        // then build the result groups.
         st.dup.phase.store(3, Ordering::Relaxed);
         let mut groups = Vec::new();
         let mut wasted: u64 = 0;
@@ -81,20 +105,26 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
             if files.len() < 2 {
                 continue;
             }
-            // Full stream-hash each candidate: only files with identical full
-            // content are true duplicates. Files that changed while scanning
-            // are excluded so we never suggest deleting them.
+            // Full stream-hash each candidate in parallel: only files with
+            // identical full content are true duplicates. Files that changed
+            // while scanning are excluded so we never suggest deleting them.
+            let verified: Vec<(std::path::PathBuf, (u64, u64))> = files
+                .par_iter()
+                .filter_map(|p| {
+                    if cancelled.load(Ordering::Relaxed) {
+                        return None;
+                    }
+                    let (fsize, fhash, changed) = scanner::duplicates::hash_file_full(p);
+                    if changed || fsize != size {
+                        return None;
+                    }
+                    Some((p.clone(), (fsize, fhash)))
+                })
+                .collect();
             let mut by_full: std::collections::HashMap<(u64, u64), Vec<std::path::PathBuf>> =
                 std::collections::HashMap::new();
-            for p in &files {
-                if st.dup.cancelled.load(Ordering::Relaxed) {
-                    break;
-                }
-                let (fsize, fhash, changed) = scanner::duplicates::hash_file_full(p);
-                if changed || fsize != size {
-                    continue;
-                }
-                by_full.entry((fsize, fhash)).or_default().push(p.clone());
+            for (p, h) in verified {
+                by_full.entry(h).or_default().push(p);
             }
             for ((_s, _fh), dup_files) in by_full {
                 if dup_files.len() < 2 {

@@ -18,7 +18,7 @@
 use crate::scanner::tree::*;
 use crate::scanner::walker::{
     FileTypeAccum, ScanConfig, ScanProgressCallback, ScanResult, ScanTermination, TopFilesAccum,
-    finish_scan,
+    file_ext_lower, finish_scan,
 };
 use anyhow::Result;
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ use std::ffi::CString;
 use std::os::raw::c_int;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -225,7 +225,7 @@ pub fn scan(
     root_path: &str,
 ) -> Result<ScanResult> {
     use std::collections::VecDeque;
-    use std::sync::Mutex as StdMutex;
+    use parking_lot::Mutex;
 
     let start = Instant::now();
     let skip_dirs = Arc::new(config.skip_dirs.clone());
@@ -240,29 +240,27 @@ pub fn scan(
 
     let progress_arc = progress.clone();
 
-    let arena = Arc::new(StdMutex::new(TreeNodeArena::with_estimated_capacity(root_path)));
-    let root_idx = alloc_root(&mut arena.lock().unwrap(), root_path);
-    let ptix: Arc<StdMutex<HashMap<String, u32>>> = Arc::new(StdMutex::new(HashMap::new()));
-    ptix.lock().unwrap().insert(root_path.to_string(), root_idx);
-    let lc: Arc<StdMutex<HashMap<u32, u32>>> = Arc::new(StdMutex::new(HashMap::new()));
+    let arena = Arc::new(Mutex::new(TreeNodeArena::with_estimated_capacity(root_path)));
+    let root_idx = alloc_root(&mut arena.lock(), root_path);
+    let ptix: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
+    ptix.lock().insert(root_path.to_string(), root_idx);
+    let lc: Arc<Mutex<HashMap<u32, u32>>> = Arc::new(Mutex::new(HashMap::new()));
 
     let node_cap = {
-        let mut sys = sysinfo::System::new();
-        sys.refresh_memory();
-        let avail = sys.available_memory().max(256 * 1024 * 1024);
+        let avail = crate::scanner::tree::available_memory_bytes();
         (avail / 128).clamp(500_000, 20_000_000) as usize
     };
 
-    let files_found = Arc::new(StdMutex::new(0u64));
-    let dirs_found = Arc::new(StdMutex::new(0u64));
-    let bytes_found = Arc::new(StdMutex::new(0u64));
-    let termination: Arc<StdMutex<ScanTermination>> =
-        Arc::new(StdMutex::new(ScanTermination::Completed));
+    let files_found = Arc::new(AtomicU64::new(0));
+    let dirs_found = Arc::new(AtomicU64::new(0));
+    let bytes_found = Arc::new(AtomicU64::new(0));
+    let termination: Arc<Mutex<ScanTermination>> =
+        Arc::new(Mutex::new(ScanTermination::Completed));
     let stop_flag = Arc::new(AtomicBool::new(false));
 
     // Shared work queue. Initially the root directory.
-    let queue: Arc<StdMutex<VecDeque<(String, u32)>>> = Arc::new(StdMutex::new(VecDeque::new()));
-    queue.lock().unwrap().push_back((root_path.to_string(), root_idx));
+    let queue: Arc<Mutex<VecDeque<(String, u32)>>> = Arc::new(Mutex::new(VecDeque::new()));
+    queue.lock().push_back((root_path.to_string(), root_idx));
 
     let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8);
     let progress_start = Instant::now();
@@ -273,7 +271,6 @@ pub fn scan(
         let ptix = ptix.clone();
         let lc = lc.clone();
         let top_files = top_files.clone();
-        let file_types = file_types.clone();
         let live_entries = live_entries.clone();
         let skip_dirs = skip_dirs.clone();
         let cancel = cancel.clone();
@@ -292,25 +289,28 @@ pub fn scan(
             // so a slow-but-moving scan (e.g. a 1M-file home folder) never gets
             // cut off at `timeout` seconds.
             let mut last_progress = progress_start;
+            // Worker-local file-type map: avoids the global map lock per file.
+            let mut local_types: HashMap<String, (u64, u64)> = HashMap::new();
+            let mut live_count: u64 = 0;
             loop {
                 // Take a directory from the queue.
                 let (dir_path, parent_idx) = {
-                    let mut q = queue.lock().unwrap();
+                    let mut q = queue.lock();
                     match q.pop_front() {
                         Some(item) => item,
-                        None => return, // no more work
+                        None => return local_types, // no more work
                     }
                 };
 
                 if stop_flag.load(Ordering::Relaxed) {
-                    return;
+                    return local_types;
                 }
 
-                let node_count = arena.lock().unwrap().nodes.len();
+                let node_count = arena.lock().nodes.len();
                 if node_count > node_cap {
-                    *termination.lock().unwrap() = ScanTermination::LimitReached;
+                    *termination.lock() = ScanTermination::LimitReached;
                     stop_flag.store(true, Ordering::Relaxed);
-                    return;
+                    return local_types;
                 }
 
                 if dir_path != root_path
@@ -326,7 +326,10 @@ pub fn scan(
                     Vec::new(); // name, is_dir, size, mtime
 
                 let read_res = read_dir(&dir_path, |e| {
-                    push_live(&live_entries, &e.name);
+                    live_count += 1;
+                    if live_count.is_multiple_of(100) {
+                        push_live(&live_entries, &e.name);
+                    }
                     match e.objtype {
                         VDIR => {
                             local_entries.push((e.name.clone(), true, 0, e.mtime));
@@ -398,9 +401,9 @@ pub fn scan(
 
                 // Insert all entries of this directory with a single arena lock.
                 {
-                    let mut ar = arena.lock().unwrap();
-                    let mut ptx = ptix.lock().unwrap();
-                    let mut lc2 = lc.lock().unwrap();
+                    let mut ar = arena.lock();
+                    let mut ptx = ptix.lock();
+                    let mut lc2 = lc.lock();
                     let depth = child_depth(&ar, parent_idx, root_idx);
                     for (name, is_dir, size, mtime) in local_entries {
                         if is_dir {
@@ -415,28 +418,22 @@ pub fn scan(
                             if size > 0 {
                                 let full = format!("{}/{}", dir_path, name);
                                 top_files.insert(full, size, top_count);
-                                file_types.add(&name, size);
+                                let ext = file_ext_lower(&name);
+                                let entry = local_types.entry(ext).or_insert((0, 0));
+                                entry.0 += 1;
+                                entry.1 += size;
                             }
                         }
                     }
                 }
 
-                {
-                    let mut ff = files_found.lock().unwrap();
-                    *ff += local_files;
-                }
-                {
-                    let mut bb = bytes_found.lock().unwrap();
-                    *bb += local_bytes;
-                }
-                {
-                    let mut df = dirs_found.lock().unwrap();
-                    *df += new_dirs.len() as u64;
-                }
+                files_found.fetch_add(local_files, Ordering::Relaxed);
+                bytes_found.fetch_add(local_bytes, Ordering::Relaxed);
+                dirs_found.fetch_add(new_dirs.len() as u64, Ordering::Relaxed);
 
                 // Enqueue newly discovered subdirectories.
                 {
-                    let mut q = queue.lock().unwrap();
+                    let mut q = queue.lock();
                     for d in new_dirs {
                         q.push_back(d);
                     }
@@ -445,9 +442,9 @@ pub fn scan(
                 // Cancellation / timeout checks.
                 if let Some(ref cf) = cancel {
                     if cf.load(Ordering::Relaxed) {
-                        *termination.lock().unwrap() = ScanTermination::Cancelled;
+                        *termination.lock() = ScanTermination::Cancelled;
                         stop_flag.store(true, Ordering::Relaxed);
-                        return;
+                        return local_types;
                     }
                 }
                 if timeout > 0 && last_progress.elapsed().as_secs() > timeout {
@@ -455,15 +452,15 @@ pub fn scan(
                     if errs.len() < 100 {
                         errs.push(format!("TIMEOUT: No progress for {}s at {}", timeout, root_path));
                     }
-                    *termination.lock().unwrap() = ScanTermination::TimedOut;
+                    *termination.lock() = ScanTermination::TimedOut;
                     stop_flag.store(true, Ordering::Relaxed);
-                    return;
+                    return local_types;
                 }
 
                 if progress_start.elapsed().as_millis() >= 100 {
-                    let f = *files_found.lock().unwrap();
-                    let d = *dirs_found.lock().unwrap();
-                    let b = *bytes_found.lock().unwrap();
+                    let f = files_found.load(Ordering::Relaxed);
+                    let d = dirs_found.load(Ordering::Relaxed);
+                    let b = bytes_found.load(Ordering::Relaxed);
                     progress(f, d, b, &dir_path);
                     last_progress = Instant::now();
                 }
@@ -471,19 +468,20 @@ pub fn scan(
         }));
     }
     for h in handles {
-        let _ = h.join();
+        if let Ok(m) = h.join() {
+            file_types.merge(m);
+        }
     }
 
-    let f = *files_found.lock().unwrap();
-    let d = *dirs_found.lock().unwrap();
-    let b = *bytes_found.lock().unwrap();
+    let f = files_found.load(Ordering::Relaxed);
+    let d = dirs_found.load(Ordering::Relaxed);
+    let b = bytes_found.load(Ordering::Relaxed);
     progress_arc(f, d, b, "Finalizing tree...");
 
     let arena = Arc::try_unwrap(arena)
         .map_err(|_| anyhow::anyhow!("arena Arc leaked"))?
-        .into_inner()
-        .map_err(|e| anyhow::anyhow!("arena mutex poisoned: {e}"))?;
-    let term = *termination.lock().unwrap();
+        .into_inner();
+    let term = *termination.lock();
     let finish_progress: ScanProgressCallback = Box::new(move |f, d, b, p| progress_arc(f, d, b, p));
     finish_scan(start, arena, top_files, file_types, &finish_progress, term)
 }

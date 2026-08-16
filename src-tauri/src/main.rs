@@ -177,7 +177,7 @@ fn main() {
 var b=document.body||document.documentElement;
 if(!b)return setTimeout(_cdpI,50);
 if(document.getElementById('welcome-placeholder'))return;
-b.innerHTML='<div id="welcome-placeholder" class="welcome-placeholder"><h2 class="welcome-title">DiskRaptor</h2><p class="welcome-subtitle">Ultra-fast disk space analyzer</p><button id="welcome-scan-btn">Scan</button><button id="welcome-browse-btn">Browse</button><button id="welcome-about-btn">About</button><button id="welcome-close" class="welcome-close">Close</button></div><input id="scan-path" type="text" value="/tmp"><button id="btn-scan">Scan</button><div id="progress-overlay"><div id="progress-files">0</div><div id="progress-dirs">0</div><div id="progress-path"></div></div><div id="tree-container"><div id="tree-viewport"><div class="tree-row">root</div></div></div><span id="stat-files">100</span><span id="stat-dirs">50</span><span id="stat-size">1 GB</span><span id="stat-time">0.5s</span><div class="status-bar">Ready</div>';
+b.innerHTML='<div id="welcome-placeholder" class="welcome-placeholder"><h2 class="welcome-title">DiskRaptor</h2><p class="welcome-subtitle">Ultra-fast disk space analyzer</p><button id="welcome-scan-btn">Scan</button><button id="welcome-browse-btn">Browse</button><button id="welcome-about-btn">About</button><button id="welcome-close" class="welcome-close">Close</button></div><input id="scan-path" type="text" value="/tmp"><button id="btn-scan">Scan</button><div id="progress-overlay"><div id="progress-files">0</div><div id="progress-dirs">0</div><div id="progress-path"></div></div><div id="tree-container"><div id="tree-header" class="tree-header"><span class="tree-col-sort" data-col="name">Name</span><span class="tree-col-sort" data-col="size">Size</span></div><input id="tree-filter" type="text"><div id="tree-scroll"><div id="tree-viewport"><div class="tree-row">root</div></div></div></div><span id="stat-files">100</span><span id="stat-dirs">50</span><span id="stat-size">1 GB</span><span id="stat-time">0.5s</span><div class="status-bar">Ready</div>';
 var wc=document.getElementById('welcome-close');
 if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').classList.add('hidden');};
 }_cdpI();"#;
@@ -421,5 +421,46 @@ mod tests {
         assert_eq!(chunks[2].start_index, 20_000);
         assert_eq!(chunks[0].nodes.len(), 10_000);
         assert_eq!(chunks[2].nodes.len(), 5_000);
+    }
+
+    #[test]
+    fn borrowed_chunk_json_matches_tree_chunk() {
+        // The clone-free BorrowedChunk must serialize byte-identically to the
+        // owned TreeChunk (including the per-node chunk_id patch), so the UI
+        // contract never changes.
+        use diskraptor_scanner::scanner::tree::{
+            BorrowedChunk, NodeType, TreeNode, TreeNodeArena, TreeChunk,
+        };
+        let mut arena = TreeNodeArena::with_capacity(8);
+        let root = arena.alloc(TreeNode {
+            name: "root".into(), size: 3, file_count: 2, dir_count: 1,
+            node_type: NodeType::Directory, parent: u32::MAX,
+            first_child: u32::MAX, next_sibling: u32::MAX, depth: 0,
+            chunk_id: 0, mtime: 0,
+        });
+        for (i, (n, s, mt)) in [("a.txt", 1u64, 11u64), ("b.bin", 2, 22)].iter().enumerate() {
+            arena.alloc(TreeNode {
+                name: n.to_string(), size: *s, file_count: 1, dir_count: 0,
+                node_type: NodeType::File, parent: root,
+                first_child: u32::MAX, next_sibling: u32::MAX, depth: 1,
+                chunk_id: 0, mtime: *mt,
+            });
+            let _ = i;
+        }
+        let borrowed = BorrowedChunk::new(7, 1, 3, 0, &arena.nodes);
+        let mut owned_nodes = arena.nodes.clone();
+        for n in owned_nodes.iter_mut() {
+            n.chunk_id = 7;
+        }
+        let owned = TreeChunk {
+            chunk_id: 7, total_chunks: 1, total_nodes: 3, start_index: 0,
+            nodes: owned_nodes,
+        };
+        let a = serde_json::to_value(&borrowed).unwrap();
+        let b = serde_json::to_value(&owned).unwrap();
+        assert_eq!(a, b, "BorrowedChunk serialization diverged from TreeChunk");
+        let ca = serde_json::to_string(&borrowed).unwrap();
+        let cb = serde_json::to_string(&owned).unwrap();
+        assert_eq!(ca, cb);
     }
 }

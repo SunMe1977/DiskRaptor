@@ -141,13 +141,32 @@ impl TreeNodeArena {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/// Cached available-memory value (bytes). `sysinfo::System::new()` reads system
+/// files (e.g. /proc/meminfo) and is invoked several times per scan (arena
+/// estimate + node cap in every walker). Cache the result for a short TTL so
+/// a single scan never re-reads the system a dozen times.
+pub fn available_memory_bytes() -> u64 {
+    use std::sync::OnceLock;
+    use std::time::{Duration, Instant};
+    static CACHE: OnceLock<std::sync::Mutex<(Instant, u64)>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| {
+        std::sync::Mutex::new((Instant::now() - Duration::from_secs(11), 0))
+    });
+    let mut guard = cache.lock().unwrap();
+    if guard.0.elapsed() >= Duration::from_secs(10) {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_memory();
+        guard.1 = sys.available_memory().max(256 * 1024 * 1024);
+        guard.0 = Instant::now();
+    }
+    guard.1
+}
+
 /// Try to estimate number of files/dirs in a tree from available RAM.
 /// ~128 bytes per node → the arena should stay comfortably under available
 /// memory so huge scans don't OOM.
 fn estimate_node_capacity(root_path: &str) -> usize {
-    let mut sys = sysinfo::System::new();
-    sys.refresh_memory();
-    let avail = sys.available_memory().max(256 * 1024 * 1024);
+    let avail = available_memory_bytes();
     let by_ram = (avail / 128) as usize;
     // Filesystem-free-space proxy: a nearly full disk usually has more files.
     let mut fs_factor = 1usize;
@@ -191,6 +210,77 @@ pub struct TreeChunk {
     /// without assuming a fixed chunk size).
     pub start_index: u32,
     pub nodes: Vec<TreeNode>,
+}
+
+/// Clone-free chunk view. Serializes the same JSON shape as `TreeChunk`
+/// (including the per-node `chunk_id` patch) but borrows from the arena, so a
+/// 10k-node chunk no longer needs a full `Vec<TreeNode>` clone on every
+/// `get_chunk` call.
+pub struct BorrowedChunk<'a> {
+    pub chunk_id: u32,
+    pub total_chunks: u32,
+    pub total_nodes: u32,
+    pub start_index: u32,
+    pub nodes: &'a [TreeNode],
+}
+
+impl<'a> BorrowedChunk<'a> {
+    pub fn new(
+        chunk_id: u32,
+        total_chunks: u32,
+        total_nodes: u32,
+        start_index: u32,
+        nodes: &'a [TreeNode],
+    ) -> Self {
+        Self { chunk_id, total_chunks, total_nodes, start_index, nodes }
+    }
+}
+
+struct BorrowedNodes<'a>(u32, &'a [TreeNode]);
+
+struct BorrowedNode<'a>(u32, &'a TreeNode);
+
+impl serde::Serialize for BorrowedChunk<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = serializer.serialize_struct("TreeChunk", 5)?;
+        st.serialize_field("chunk_id", &self.chunk_id)?;
+        st.serialize_field("total_chunks", &self.total_chunks)?;
+        st.serialize_field("total_nodes", &self.total_nodes)?;
+        st.serialize_field("start_index", &self.start_index)?;
+        st.serialize_field("nodes", &BorrowedNodes(self.chunk_id, self.nodes))?;
+        st.end()
+    }
+}
+
+impl serde::Serialize for BorrowedNodes<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(self.1.len()))?;
+        for node in self.1 {
+            seq.serialize_element(&BorrowedNode(self.0, node))?;
+        }
+        seq.end()
+    }
+}
+
+impl serde::Serialize for BorrowedNode<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = serializer.serialize_struct("TreeNode", 11)?;
+        st.serialize_field("name", &self.1.name)?;
+        st.serialize_field("size", &self.1.size)?;
+        st.serialize_field("file_count", &self.1.file_count)?;
+        st.serialize_field("dir_count", &self.1.dir_count)?;
+        st.serialize_field("node_type", &self.1.node_type)?;
+        st.serialize_field("parent", &self.1.parent)?;
+        st.serialize_field("first_child", &self.1.first_child)?;
+        st.serialize_field("next_sibling", &self.1.next_sibling)?;
+        st.serialize_field("depth", &self.1.depth)?;
+        st.serialize_field("chunk_id", &self.0)?;
+        st.serialize_field("mtime", &self.1.mtime)?;
+        st.end()
+    }
 }
 
 /// Summary statistics for a scan.

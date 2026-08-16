@@ -518,27 +518,13 @@
           }
         }
 
-        unlisten = window.__TAURI__.event.listen(
-          "scan:progress",
-          function (ev) {
-            // Ignore progress belonging to a stale scan.
-            if (ev && ev.payload && ev.payload.scan_id != null && Number(ev.payload.scan_id) !== scanId) {
-              return;
-            }
-            // Event only signals "something changed"; fetch the full progress
-            // payload so all fields (phase, is_running, errors...) are present.
-            window.__TAURI__
-              .invoke("get_scan_progress", { scanId: scanId })
-              .then(function (p) {
-                if (p) onProgress(p);
-              })
-              .catch(function () {});
-          },
-        );
+        unlisten = null;
 
         let done = false;
-        // 10-minute safety cap; the scan:progress event drives live updates, so
-        // this loop only needs to detect completion (polled at 1s to halve IPC).
+        // The backend also emits scan:progress events, but they only carry raw
+        // counters — fetching the full payload per event doubles IPC traffic.
+        // Poll get_scan_progress at 1 Hz instead: one roundtrip, everything the
+        // progress UI needs (phase, is_running, live_entries, errors...).
         for (let i = 0; i < 600; i++) {
           await sleep(1000);
           if (scanDone) {
@@ -650,9 +636,6 @@
           topFiles.render([], true);
         }
 
-        const treeStatusBar = document.querySelector(
-          "#tree-panel .status-bar",
-        );
         let hadChunks = false;
         hideLiveTree();
 
@@ -678,39 +661,7 @@
           try {
             await treeView.rebuild();
           } catch (e) { console.debug("[DiskRaptor]", e); }
-
-          (async function () {
-            const BATCH = 20;
-            const total = loader.totalChunks;
-            for (let start = 1; start < total; start += BATCH) {
-              const end = Math.min(start + BATCH, total);
-              if (treeStatusBar)
-                treeStatusBar.textContent =
-                  "Loading tree... " +
-                  Math.round((end / total) * 100) +
-                  "%";
-              const promises = [];
-              for (let ci = start; ci < end; ci++) {
-                if (!loader.loadedChunks.has(ci)) {
-                  promises.push(
-                    loader.loadChunk(ci).catch(function () {}),
-                  );
-                }
-              }
-              if (promises.length > 0) {
-                await Promise.all(promises);
-                try {
-                  await treeView.rebuild();
-                } catch (e) { console.debug("[DiskRaptor]", e); }
-                await sleep(0);
-              }
-            }
-            try {
-              await treeView.rebuild();
-            } catch (e) { console.debug("[DiskRaptor]", e); }
-            if (treeStatusBar) treeStatusBar.textContent = "Ready";
-            showCleanupPanel();
-          })();
+          showCleanupPanel();
         }
 
         // If the scan reported errors (e.g. permission denied, or the scan
@@ -746,7 +697,6 @@
               depth: 0,
               chunk_id: 0,
               _arenaIndex: 0,
-              _children: [],
             };
             loader.prepare(1, 0, scanId);
             loader.allNodes = [rootNode];
