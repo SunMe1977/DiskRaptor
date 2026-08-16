@@ -512,6 +512,9 @@
         openSmartTools();
       } else if (action === "browser-tools") {
         openBrowserTools();
+      } else if (action === "apfs-snapshots") {
+        if (window.openApfsPanel) window.openApfsPanel();
+        else window.showToast("APFS & Purgeable is only available on macOS", "info");
       } else if (action === "trash") {
         const t = window.__ || function (s) { return s; };
         let trashInfo = "";

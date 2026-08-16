@@ -102,6 +102,8 @@ pub fn build_native_menu<R: tauri::Runtime>(
         MenuItem::with_id(app, "smart_tools", "S.M.A.R.T. Tools…", true, None::<&str>)?;
     let browser_tools =
         MenuItem::with_id(app, "browser_tools", "Clean Browser Tools…", true, None::<&str>)?;
+    let apfs_snapshots =
+        MenuItem::with_id(app, "apfs_snapshots", "APFS & Purgeable…", true, None::<&str>)?;
     let find_dupes =
         MenuItem::with_id(app, "find_duplicates", "Find Duplicate Files…", true, Some("CmdOrCtrl+D"))?;
     let export_html =
@@ -124,6 +126,7 @@ pub fn build_native_menu<R: tauri::Runtime>(
             &cleanup_dl,
             &smart_tools,
             &browser_tools,
+            &apfs_snapshots,
             &find_dupes,
             &PredefinedMenuItem::separator(app)?,
             &export_html,
@@ -194,6 +197,7 @@ pub fn handle_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str)
         "cleanup_downloads" => click(".tools-item[data-action='cleanup-downloads']"),
         "smart_tools" => click(".tools-item[data-action='smart-tools']"),
         "browser_tools" => click(".tools-item[data-action='browser-tools']"),
+        "apfs_snapshots" => click(".tools-item[data-action='apfs-snapshots']"),
         "find_duplicates" => click("#btn-duplicates"),
         "export_html" => click(".tools-item[data-action='export-html']"),
         "preferences" => click(".tools-item[data-action='settings']"),

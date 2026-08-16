@@ -2,6 +2,7 @@
 
 use diskraptor_scanner::scanner;
 
+mod apfs;
 mod browser;
 mod cmds;
 mod menu;
@@ -219,6 +220,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             cmds::system::list_disks, cmds::path_ops::exit_app,
             smart::get_smart_status,
             browser::list_browser_data, browser::clean_browser, browser::get_browser_icon,
+            apfs::list_apfs_volumes, apfs::delete_local_snapshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
