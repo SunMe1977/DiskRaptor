@@ -58,6 +58,9 @@ struct ScanState {
     /// only valid while they match this id.
     active_scan_id: AtomicU64,
     live_entries: Mutex<Option<LiveEntries>>,
+    /// Serialized `get_scan_result` payload cached once per scan (keyed by scan
+    /// id) so repeated IPC calls don't rebuild the whole JSON every time.
+    cached_result: Mutex<Option<(u64, serde_json::Value)>>,
 }
 
 type LiveEntries = std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>;
@@ -158,6 +161,7 @@ fn main() {
                 cancel_flag: Mutex::new(None),
                 errors: Mutex::new(Vec::new()),
                 live_entries: Mutex::new(None),
+                cached_result: Mutex::new(None),
                 active_scan_id: AtomicU64::new(0),
             },
             dup: DupState::default(),

@@ -197,9 +197,45 @@
         });
       });
       document.addEventListener("mouseup", function () {
+        saveColWidths();
         dragCol = null;
       });
     })();
+
+    // Persist tree column widths across sessions.
+    function saveColWidths() {
+      const widths = {};
+      document.querySelectorAll("#tree-header .tree-col-sort").forEach(function (c) {
+        const w = c.style.width;
+        if (w) widths[c.dataset.col] = w;
+      });
+      if (Object.keys(widths).length === 0) return;
+      window.__TAURI__
+        .invoke("load_settings", {})
+        .then(function (s) {
+          const layout = (s && s.layout) || {};
+          layout.col_widths = widths;
+          return window.__TAURI__.invoke("save_settings", {
+            settings: { layout: layout },
+          });
+        })
+        .catch(function () {});
+    }
+    window.__TAURI__
+      .invoke("load_settings", {})
+      .then(function (s) {
+        const cw = (s && s.layout && s.layout.col_widths) || {};
+        Object.keys(cw).forEach(function (col) {
+          const th = document.querySelector(
+            '#tree-header .tree-col-sort[data-col="' + col + '"]',
+          );
+          if (th) {
+            th.style.width = cw[col];
+            th.style.flex = "none";
+          }
+        });
+      })
+      .catch(function () {});
 
     const topFiles = new TopFilesPanel();
     window.__topFiles = topFiles;
@@ -429,41 +465,116 @@
     (async function renderStartHistory() {
       const wrap = document.getElementById("start-history");
       if (!wrap) return;
-      try {
-        const s = await window.__TAURI__.invoke("load_settings", {});
-        const hist = Array.isArray(s && s.scan_history) ? s.scan_history : [];
-        if (hist.length === 0) {
-          wrap.style.display = "none";
-          return;
-        }
-        let html =
-          '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">' +
-          "\uD83D\uDDD2 Scan History</div>";
-        for (let hi = 0; hi < Math.min(hist.length, 3); hi++) {
-          const p = String(hist[hi] || "");
-          if (!p) continue;
-          html +=
-            '<div class="history-item" data-path="' +
-            p.replace(/"/g, "&quot;") +
-            '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-primary);">' +
-            '<span style="font-size:13px;">\uD83D\uDCC1</span>' +
-            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-            p.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
-            "</span>" +
+
+      async function load() {
+        try {
+          const s = await window.__TAURI__.invoke("load_settings", {});
+          const hist = Array.isArray(s && s.scan_history) ? s.scan_history : [];
+          const pinned = Array.isArray(s && s.scan_history_pinned)
+            ? s.scan_history_pinned
+            : [];
+          if (hist.length === 0 && pinned.length === 0) {
+            wrap.style.display = "none";
+            return;
+          }
+          wrap.style.display = "";
+          const order = pinned.concat(
+            hist.filter(function (p) {
+              return pinned.indexOf(p) === -1;
+            }),
+          );
+          const esc = window.escHtml || function (x) { return String(x); };
+          let html =
+            '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">' +
+            "\uD83D\uDDD2 Scan History" +
+            '<button id="history-clear" title="Clear history" style="margin-left:auto;padding:2px 8px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">Clear</button>' +
             "</div>";
-        }
-        wrap.innerHTML = html;
-        wrap.querySelectorAll(".history-item").forEach(function (el) {
-          el.addEventListener("click", function () {
-            const p = el.dataset.path;
-            if (!p) return;
-            scanPath.value = p;
-            if (btnScan) btnScan.click();
+          for (let hi = 0; hi < Math.min(order.length, 6); hi++) {
+            const p = String(order[hi] || "");
+            if (!p) continue;
+            const isPinned = pinned.indexOf(p) !== -1;
+            html +=
+              '<div class="history-item" data-path="' + esc(p).replace(/"/g, "&quot;") +
+              '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-primary);">' +
+              '<span class="history-pin" title="' + (isPinned ? "Unpin" : "Pin") + '" style="font-size:12px;cursor:pointer;color:' + (isPinned ? "var(--accent-orange)" : "var(--text-muted)") + ';">' + (isPinned ? "\u2605" : "\u2606") + "</span>" +
+              '<span style="font-size:13px;">\uD83D\uDCC1</span>' +
+              '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(p) + "</span>" +
+              '<span class="history-del" title="Remove" style="font-size:12px;color:var(--text-muted);cursor:pointer;padding:0 2px;">\u2715</span>' +
+              "</div>";
+          }
+          wrap.innerHTML = html;
+          wrap.querySelectorAll(".history-item").forEach(function (el) {
+            el.addEventListener("click", function (e) {
+              if (e.target.closest(".history-del") || e.target.closest(".history-pin")) return;
+              const p = el.dataset.path;
+              if (!p) return;
+              scanPath.value = p;
+              if (btnScan) btnScan.click();
+            });
           });
-        });
-      } catch (e) {
-        console.debug("[DiskRaptor]", e);
+          wrap.querySelectorAll(".history-pin").forEach(function (el2) {
+            el2.addEventListener("click", function (e) {
+              e.stopPropagation();
+              togglePin(el2.parentElement.dataset.path);
+            });
+          });
+          wrap.querySelectorAll(".history-del").forEach(function (el3) {
+            el3.addEventListener("click", function (e) {
+              e.stopPropagation();
+              removeHistory(el3.parentElement.dataset.path);
+            });
+          });
+          const clearBtn = document.getElementById("history-clear");
+          if (clearBtn)
+            clearBtn.addEventListener("click", function () {
+              clearHistory();
+            });
+        } catch (e) {
+          console.debug("[DiskRaptor]", e);
+        }
       }
+
+      async function saveUpdate(mutator) {
+        try {
+          const s = await window.__TAURI__.invoke("load_settings", {});
+          const hist = Array.isArray(s && s.scan_history) ? s.scan_history : [];
+          const pinned = Array.isArray(s && s.scan_history_pinned)
+            ? s.scan_history_pinned
+            : [];
+          await window.__TAURI__.invoke("save_settings", {
+            settings: mutator(hist, pinned),
+          });
+          load();
+        } catch (e) {
+          console.debug("[DiskRaptor]", e);
+        }
+      }
+
+      function removeHistory(path) {
+        saveUpdate(function (hist, pinned) {
+          return {
+            scan_history: hist.filter(function (h) { return h !== path; }),
+            scan_history_pinned: pinned.filter(function (h) { return h !== path; }),
+          };
+        });
+      }
+
+      function togglePin(path) {
+        saveUpdate(function (hist, pinned) {
+          const i = pinned.indexOf(path);
+          if (i >= 0) pinned.splice(i, 1);
+          else pinned.unshift(path);
+          return { scan_history: hist, scan_history_pinned: pinned };
+        });
+      }
+
+      function clearHistory() {
+        saveUpdate(function () {
+          return { scan_history: [], scan_history_pinned: [] };
+        });
+      }
+
+      load();
     })();
 
     // Galaxy view state
@@ -476,45 +587,61 @@
         callback();
         return;
       }
-      const scripts = [
-        "galaxyview/config.js",
-        "galaxyview/spatial-index.js",
-        "galaxyview/data-mapper.js",
-        "galaxyview/animation.js",
-        "galaxyview/effects.js",
-        "galaxyview/interaction.js",
-        "galaxyview/lod.js",
-        "galaxyview/timeline.js",
-        "galaxyview/live-scan.js",
-        "galaxyview/insights.js",
-        "galaxyview/plugin-api.js",
-        "galaxyview.js",
-      ];
-      let loaded = 0;
-      let failedAny = false;
-      scripts.forEach(function (src) {
-        var s = document.createElement("script");
-        s.src = src;
-        s.onload = function () {
-          loaded++;
-          if (loaded === scripts.length) check();
-        };
-        s.onerror = function () {
-          failedAny = true;
-          console.error("Failed to load galaxy script:", src);
-          loaded++;
-          if (loaded === scripts.length) check();
-        };
-        document.head.appendChild(s);
-      });
-      function check() {
-        if (window.GalaxyView && window.GalaxyView.GalaxyView) {
-          callback();
-        } else if (failedAny) {
-          console.error("GalaxyView: some scripts failed to load");
-          callback();
-        } else {
-          setTimeout(check, 50);
+      // Release builds ship a single minified bundle; dev serves the individual
+      // modules. Try the bundle first and fall back if it's not present.
+      const bundle = document.createElement("script");
+      bundle.src = "galaxyview/bundle.js";
+      bundle.onload = function () {
+        if (window.GalaxyView && window.GalaxyView.GalaxyView) callback();
+        else loadIndividual();
+      };
+      bundle.onerror = function () {
+        console.debug("[DiskRaptor] galaxy bundle not found, loading modules");
+        loadIndividual();
+      };
+      document.head.appendChild(bundle);
+
+      function loadIndividual() {
+        const scripts = [
+          "galaxyview/config.js",
+          "galaxyview/spatial-index.js",
+          "galaxyview/data-mapper.js",
+          "galaxyview/animation.js",
+          "galaxyview/effects.js",
+          "galaxyview/interaction.js",
+          "galaxyview/lod.js",
+          "galaxyview/timeline.js",
+          "galaxyview/live-scan.js",
+          "galaxyview/insights.js",
+          "galaxyview/plugin-api.js",
+          "galaxyview.js",
+        ];
+        let loaded = 0;
+        let failedAny = false;
+        scripts.forEach(function (src) {
+          var s = document.createElement("script");
+          s.src = src;
+          s.onload = function () {
+            loaded++;
+            if (loaded === scripts.length) check();
+          };
+          s.onerror = function () {
+            failedAny = true;
+            console.error("Failed to load galaxy script:", src);
+            loaded++;
+            if (loaded === scripts.length) check();
+          };
+          document.head.appendChild(s);
+        });
+        function check() {
+          if (window.GalaxyView && window.GalaxyView.GalaxyView) {
+            callback();
+          } else if (failedAny) {
+            console.error("GalaxyView: some scripts failed to load");
+            callback();
+          } else {
+            setTimeout(check, 50);
+          }
         }
       }
       // Global timeout: never spin forever waiting for scripts.

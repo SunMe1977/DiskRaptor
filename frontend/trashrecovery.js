@@ -183,8 +183,8 @@ class TrashRecovery {
       const results = await Promise.allSettled(batch.map(function (i) {
         const item = self._items[i];
         return window.__TAURI__.invoke("restore_trash", {
-          path: item.path,
-          originalPath: item.original_path || "",
+          trash_path: item.path,
+          original_path: item.original_path || "",
         });
       }));
       results.forEach(function (r, ri) {

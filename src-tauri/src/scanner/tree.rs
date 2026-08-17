@@ -238,7 +238,15 @@ impl<'a> BorrowedChunk<'a> {
 
 struct BorrowedNodes<'a>(u32, &'a [TreeNode]);
 
-struct BorrowedNode<'a>(u32, &'a TreeNode);
+/// A borrowed view of a single `TreeNode` that serializes like a `TreeNode`
+/// but with `chunk_id` patched to the provided value — no clone required.
+pub struct BorrowedNode<'a>(u32, &'a TreeNode);
+
+impl<'a> BorrowedNode<'a> {
+    pub fn new(chunk_id: u32, node: &'a TreeNode) -> Self {
+        Self(chunk_id, node)
+    }
+}
 
 impl serde::Serialize for BorrowedChunk<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

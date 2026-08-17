@@ -13,12 +13,14 @@ class TreeView {
     this.visibleNodes = [];
     this.expanded = new Set();
     this.selectedIndex = null;
+    this.selectedIndices = [];
     this.onSelect = null;
     this.maxSize = 0;
     this.maxFileCount = 0;
     this.maxDirCount = 0;
     this.sortBy = "size";
     this.sortDesc = true;
+    this._pathCache = new Map();
     this._isLinux =
       /linux/i.test(navigator.platform || "") ||
       /linux/i.test(navigator.userAgent || "");
@@ -57,8 +59,36 @@ class TreeView {
         });
         this.classList.add(self.sortDesc ? "sort-desc" : "sort-asc");
         self.rebuild();
+        self._saveSortPref();
       });
     });
+    // Restore persisted sort preference.
+    window.__TAURI__
+      .invoke("load_settings", {})
+      .then(function (s) {
+        const tr = (s && s.tree) || {};
+        if (tr.sort_by) {
+          self.sortBy = tr.sort_by;
+          if (typeof tr.sort_desc === "boolean") self.sortDesc = tr.sort_desc;
+          document.querySelectorAll(".tree-col-sort").forEach(function (b) {
+            b.classList.remove("sort-asc", "sort-desc");
+            if (b.dataset.col === self.sortBy)
+              b.classList.add(self.sortDesc ? "sort-desc" : "sort-asc");
+          });
+          self.rebuild();
+        }
+      })
+      .catch(function () {});
+  }
+
+  _saveSortPref() {
+    window.__TAURI__
+      .invoke("save_settings", {
+        settings: {
+          tree: { sort_by: this.sortBy, sort_desc: this.sortDesc },
+        },
+      })
+      .catch(function () {});
   }
 
   _initFilter() {
@@ -133,7 +163,19 @@ class TreeView {
         }
       } else if (e.key === "Enter") {
         e.preventDefault();
-        self._handleOpenFile(cur);
+        const node = self.loader.getNode(cur);
+        const isDir = node && (node.node_type === "Directory" || node.node_type === 0);
+        if (isDir) {
+          self.toggleExpand(cur);
+        } else {
+          self._handleOpenFile(cur);
+        }
+      } else if (e.key === "Delete") {
+        e.preventDefault();
+        self._handleDelete(cur);
+      } else if (e.key === "F2") {
+        e.preventDefault();
+        self._handleCopyPath(cur);
       }
     });
   }
@@ -327,7 +369,13 @@ class TreeView {
     const name = node.name || "?";
     const isDir = node.node_type === "Directory" || node.node_type === 0;
     const t = window.__ || function(s){return s;};
-    if (!(await window.confirmDialog((isDir ? t("confirm.move_trash_folder") : t("confirm.move_trash_file")) + path))) return;
+    const sizeTxt = this._formatSize(node.size);
+    if (!(await window.confirmDialog(
+      (isDir ? t("confirm.move_trash_folder") : t("confirm.move_trash_file")) +
+        path +
+        "\n\nSize: " + sizeTxt +
+        "\n\n" + (t("confirm.not_undone") || "This cannot be undone."),
+    ))) return;
     try {
       const res = await window.__TAURI__.invoke("delete_path", { path: path });
       if (res && res.success === false) {
@@ -337,6 +385,7 @@ class TreeView {
       document.querySelector(".status-bar").textContent = t("status.moved_to_trash").replace("{name}", name);
       this._removeNodeFromTree(arenaIdx);
       await this.rebuild();
+      this._offerUndoTrash(path);
     } catch (e) {
       window.alertDialog("Failed: " + e);
     }
@@ -479,6 +528,15 @@ class TreeView {
     return parts.join(this._pathSep(""));
   }
 
+  // Full path with per-node caching — used for row tooltips so the parent
+  // chain isn't climbed on every scroll-frame re-render.
+  _buildPathCached(arenaIdx) {
+    if (this._pathCache.has(arenaIdx)) return this._pathCache.get(arenaIdx);
+    const p = this._buildPath(arenaIdx);
+    if (p) this._pathCache.set(arenaIdx, p);
+    return p;
+  }
+
   _buildParentPath(arenaIdx) {
     const path = this._buildPath(arenaIdx);
     if (!path) return null;
@@ -514,6 +572,7 @@ class TreeView {
     const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
 
     this.visibleNodes = [];
+    this._pathCache.clear();
     try {
       await this._buildList(0, 0);
     } catch (e) {
@@ -529,16 +588,6 @@ class TreeView {
       } catch (e) {
         console.warn("Root chunk fallback failed:", e);
       }
-    }
-
-    this.maxSize = 0;
-    this.maxFileCount = 0;
-    this.maxDirCount = 0;
-    for (const idx of this.visibleNodes) {
-      const node = this.loader.getNode(idx);
-      if (node && node.size > this.maxSize) this.maxSize = node.size;
-      if (node && (node.file_count || 0) > this.maxFileCount) this.maxFileCount = node.file_count || 0;
-      if (node && (node.dir_count || 0) > this.maxDirCount) this.maxDirCount = node.dir_count || 0;
     }
 
     const totalItems = this.visibleNodes.length;
@@ -575,6 +624,11 @@ class TreeView {
     for (let tries = 0; tries < 50 && !this.loader.getNode(rootIdx); tries++) {
       await new Promise(function (r) { setTimeout(r, 100); });
     }
+    // Maxima are computed during the same traversal (avoids a second pass over
+    // the whole visible list on every rebuild).
+    this.maxSize = 0;
+    this.maxFileCount = 0;
+    this.maxDirCount = 0;
     // Iterative traversal with an explicit stack to avoid JS call-stack
     // overflow on deeply nested directory trees.
     const stack = [{ idx: rootIdx, depth: rootDepth }];
@@ -607,6 +661,11 @@ class TreeView {
       }
 
       this.visibleNodes.push(arenaIdx);
+      if (node.size > this.maxSize) this.maxSize = node.size;
+      const nfc = node.file_count || 0;
+      if (nfc > this.maxFileCount) this.maxFileCount = nfc;
+      const ndc = node.dir_count || 0;
+      if (ndc > this.maxDirCount) this.maxDirCount = ndc;
 
       if (isDir && this.expanded.has(arenaIdx)) {
         let children = this.loader.getChildrenIndices(arenaIdx);
@@ -691,6 +750,15 @@ class TreeView {
         if (n && n.name === name && n.size === size) return idx;
       }
     }
+    // Fallback via the name index (only matches for the given name, no full
+    // allNodes scan), then a final safety-net linear pass.
+    const byName = this.loader.getNodesByName
+      ? this.loader.getNodesByName(name)
+      : [];
+    for (const idx of byName) {
+      const n = this.loader.getNode(idx);
+      if (n && n.parent === parentIdx && n.size === size) return idx;
+    }
     for (let i = 0; i < this.loader.allNodes.length; i++) {
       const n = this.loader.allNodes[i];
       if (n && n.parent === parentIdx && n.name === name && n.size === size)
@@ -736,6 +804,8 @@ class TreeView {
    */
   select(arenaIdx) {
     this.selectedIndex = arenaIdx;
+    this.selectedIndices = [arenaIdx];
+    this._updateBatchBar();
     const pos = this.visibleNodes.indexOf(arenaIdx);
     if (pos >= 0) {
       this.vs.scrollToIndex(pos);
@@ -743,6 +813,180 @@ class TreeView {
     }
     this._updateSelection();
     if (this.onSelect) this.onSelect(arenaIdx);
+  }
+
+  // Shift-click: toggle a node in the multi-selection set.
+  _toggleMulti(arenaIdx) {
+    const i = this.selectedIndices.indexOf(arenaIdx);
+    if (i >= 0) {
+      this.selectedIndices.splice(i, 1);
+    } else {
+      this.selectedIndices.push(arenaIdx);
+    }
+    this.selectedIndex = arenaIdx;
+    this._updateBatchBar();
+    this.vs.refresh();
+    this._updateSelection();
+  }
+
+  // Floating action bar shown while multiple rows are selected.
+  _updateBatchBar() {
+    let bar = document.getElementById("tree-batch-bar");
+    const n = this.selectedIndices.length;
+    if (n < 2) {
+      if (bar) bar.remove();
+      return;
+    }
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "tree-batch-bar";
+      bar.style.cssText =
+        "position:fixed;bottom:36px;left:50%;transform:translateX(-50%);z-index:1001;" +
+        "display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:12px;" +
+        "background:var(--bg-secondary);border:1px solid var(--border);box-shadow:0 8px 28px rgba(0,0,0,0.5);font-size:12px;";
+      bar.innerHTML =
+        '<span class="tbb-count" style="color:var(--text-primary);font-weight:600;"></span>' +
+        '<button class="tbb-copy" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\uD83D\uDCCB Copy paths</button>' +
+        '<button class="tbb-export" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\uD83D\uDCC4 Export CSV</button>' +
+        '<button class="tbb-trash" style="padding:5px 12px;font-size:12px;border:1px solid var(--accent-red);border-radius:6px;background:transparent;color:var(--accent-red);cursor:pointer;">\uD83D\uDDD1 Move to Trash</button>';
+      document.body.appendChild(bar);
+      bar.querySelector(".tbb-copy").onclick = () => this._handleCopyMany();
+      bar.querySelector(".tbb-export").onclick = () => this._handleExportSelection();
+      bar.querySelector(".tbb-trash").onclick = () => this._handleDeleteMany();
+    }
+    bar.querySelector(".tbb-count").textContent =
+      n + " selected";
+  }
+
+  async _handleDeleteMany() {
+    const idxs = this.selectedIndices.slice();
+    if (idxs.length < 2) return;
+    const paths = [];
+    for (const idx of idxs) {
+      const p = this._buildPath(idx);
+      if (p) paths.push(p);
+    }
+    const t = window.__ || function (s) { return s; };
+    let totalSize = 0;
+    for (const idx of idxs) {
+      const n = this.loader.getNode(idx);
+      if (n) totalSize += n.size || 0;
+    }
+    if (!(await window.confirmDialog(
+      t("confirm.move_trash_multi") || "Move " + paths.length + " item(s) to Trash?\n\n" + paths.slice(0, 5).join("\n") + (paths.length > 5 ? "\n…" : "") + "\n\nTotal: " + this._formatSize(totalSize) + "\n\nThis cannot be undone.",
+    ))) return;
+    let ok = 0;
+    for (const p of paths) {
+      try {
+        const res = await window.__TAURI__.invoke("delete_path", { path: p });
+        if (res && res.success === false) continue;
+        ok++;
+      } catch (e) { /* keep going */ }
+    }
+    document.querySelector(".status-bar").textContent =
+      t("status.moved_to_trash").replace("{name}", ok + " item(s)");
+    this.selectedIndices = [];
+    this._updateBatchBar();
+    await this.rebuild();
+    this._offerUndoTrash(paths);
+  }
+
+  // After a move-to-trash, offer a short "Undo" that restores the file from
+  // the trash (best-effort; if the item can't be matched it just won't show).
+  async _offerUndoTrash(paths) {
+    const target = Array.isArray(paths) ? paths : [paths];
+    if (target.length === 0) return;
+    try {
+      const items = await window.__TAURI__.invoke("list_trash", {});
+      const arr = Array.isArray(items) ? items : [];
+      const toRestore = [];
+      for (const it of arr) {
+        const orig = it && it.original_path;
+        if (!orig) continue;
+        const norm = String(orig).toLowerCase();
+        for (const p of target) {
+          if (norm === String(p).toLowerCase()) {
+            toRestore.push({ trashPath: it.path, original: orig });
+            break;
+          }
+        }
+      }
+      if (toRestore.length === 0) return;
+      const t = window.__ || function (s) { return s; };
+      window.showToast(
+        t("toast.undo_trash") || "Moved to Trash — undo?",
+        "info",
+        {
+          label: "Undo",
+          onClick: async function () {
+            let ok = 0;
+            for (const r of toRestore) {
+              try {
+                const res = await window.__TAURI__.invoke("restore_trash", {
+                  trash_path: r.trashPath,
+                  original_path: r.original,
+                });
+                if (res && res.success === false) continue;
+                ok++;
+              } catch (e) { /* ignore */ }
+            }
+            if (ok > 0 && window.showToast) {
+              window.showToast("Restored " + ok + " item(s)", "success");
+            }
+            if (typeof window.__trashRefresh === "function") window.__trashRefresh();
+          },
+        },
+      );
+    } catch (e) {
+      console.debug("[DiskRaptor]", e);
+    }
+  }
+
+  async _handleCopyMany() {
+    const paths = [];
+    for (const idx of this.selectedIndices) {
+      const p = this._buildPath(idx);
+      if (p) paths.push(p);
+    }
+    if (paths.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(paths.join("\n"));
+      if (window.showToast) window.showToast("Copied " + paths.length + " paths", "success");
+    } catch (e) {
+      if (window.alertDialog) window.alertDialog("Could not copy: " + e);
+    }
+  }
+
+  // Export the current selection (single or multi) as a CSV file.
+  _handleExportSelection() {
+    const idxs =
+      this.selectedIndices.length > 1
+        ? this.selectedIndices
+        : this.selectedIndex != null
+          ? [this.selectedIndex]
+          : [];
+    if (idxs.length === 0) return;
+    const escCsv = function (v) {
+      const s = String(v);
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    let csv = "Path,Size,File Count,Dir Count,Type\n";
+    for (const idx of idxs) {
+      const n = this.loader.getNode(idx);
+      if (!n) continue;
+      const path = this._buildPath(idx);
+      if (!path) continue;
+      csv +=
+        escCsv(path) + "," + (n.size || 0) + "," + (n.file_count || 0) + "," +
+        (n.dir_count || 0) + "," + (n.node_type === 1 ? "File" : "Directory") + "\n";
+    }
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "diskraptor-selection-" + Date.now() + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   _renderRow(index, el) {
@@ -759,7 +1003,12 @@ class TreeView {
     el.innerHTML = "";
     el.className = "tree-row";
     el.dataset.index = arenaIdx;
-    if (arenaIdx === this.selectedIndex) el.classList.add("selected");
+    el.title = this._buildPathCached(arenaIdx) || "";
+    if (
+      arenaIdx === this.selectedIndex ||
+      this.selectedIndices.indexOf(arenaIdx) !== -1
+    )
+      el.classList.add("selected");
 
     el.onclick = (e) => {
       const toggle = e.target.closest(".toggle");
@@ -767,7 +1016,12 @@ class TreeView {
         this.toggleExpand(arenaIdx);
         return;
       }
-      this.select(arenaIdx);
+      if (e.shiftKey) {
+        // Toggle multi-selection without collapsing single selection.
+        this._toggleMulti(arenaIdx);
+      } else {
+        this.select(arenaIdx);
+      }
     };
     el.ondblclick = (e) => {
       if (isDir) {

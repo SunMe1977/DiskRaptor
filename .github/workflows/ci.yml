@@ -17,6 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node scripts/build-frontend.mjs
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -75,6 +81,8 @@ jobs:
           workspaces: src-tauri
       - name: Install JS dependencies
         run: npm ci --no-audit --no-fund
+      - name: Build minified frontend (frontend-dist)
+        run: node scripts/build-frontend.mjs
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |

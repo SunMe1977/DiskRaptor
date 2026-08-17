@@ -135,10 +135,15 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
                 // NOTE: chunks are built on demand in get_chunk (avoids cloning the
                 // whole arena and doubling peak memory for huge scans).
                 let termination = sr.termination;
-                *s.scan.result.lock() = Some(ScanResultData {
+                let active_id = s.scan.active_scan_id.load(Ordering::Acquire);
+                let data = ScanResultData {
                     arena: sr.arena, stats: sr.stats, scan_time_ms: elapsed,
                     errors: Vec::new(), termination,
-                });
+                };
+                // Cache the serialized result once per scan (see get_scan_result).
+                let json = build_result_json(&data, active_id);
+                *s.scan.result.lock() = Some(data);
+                *s.scan.cached_result.lock() = Some((active_id, json));
             }
             Some(Err(e)) => {
                 eprintln!("[scan] error: {}", e);
@@ -186,7 +191,13 @@ pub(crate) fn scan_progress_data(state: &AppState) -> serde_json::Value {
         .live_entries
         .lock()
         .as_ref()
-        .map(|q| q.lock().iter().cloned().collect())
+        .map(|q| {
+            // Only the most recent entries are shown in the live view; cap the
+            // per-poll clone so a 1 Hz poll doesn't copy the whole ring buffer.
+            let q = q.lock();
+            let skip = q.len().saturating_sub(50);
+            q.iter().skip(skip).cloned().collect()
+        })
         .unwrap_or_default();
     serde_json::json!({
         "files_found": files, "dirs_found": dirs, "bytes_found": bytes,
@@ -226,26 +237,41 @@ pub(crate) fn build_chunk(
     ))
 }
 
+/// Build the serialized `get_scan_result` payload from a finished scan.
+fn build_result_json(d: &ScanResultData, active_id: u64) -> serde_json::Value {
+    let sj = serde_json::json!({
+        "total_files": d.stats.total_files, "total_dirs": d.stats.total_dirs,
+        "total_size": d.stats.total_size, "scan_time_ms": d.scan_time_ms,
+        "top_files": d.stats.top_files, "file_type_breakdown": d.stats.file_type_breakdown,
+        "size_human": format_size(d.stats.total_size),
+        "time_human": format!("{:.2}s", d.scan_time_ms as f64 / 1000.0),
+        "termination": d.termination,
+    });
+    let total_chunks = (d.arena.len() as u32).div_ceil(CHUNK_SIZE);
+    let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": total_chunks});
+    serde_json::json!({"stats": sj, "root_info": ri, "scan_id": active_id, "errors": []})
+}
+
 #[tauri::command]
 pub(crate) fn get_scan_result(state: State<AppState>, scan_id: Option<u64>) -> JsonResult {
     if !scan_id_matches(&state, scan_id) {
         return JsonResult::err("Scan id is stale");
     }
+    let active_id = state.scan.active_scan_id.load(Ordering::Acquire);
+    // Fast path: the scan thread already serialized the result once per scan.
+    let cached = state.scan.cached_result.lock();
+    if let Some((id, json)) = cached.as_ref() {
+        if *id == active_id {
+            return JsonResult::ok(json.clone());
+        }
+    }
+    drop(cached);
+    // Fallback: build on demand (e.g. cache not yet filled for this scan id).
     let g = state.scan.result.lock();
     if let Some(ref d) = *g {
-        let sj = serde_json::json!({
-            "total_files": d.stats.total_files, "total_dirs": d.stats.total_dirs,
-            "total_size": d.stats.total_size, "scan_time_ms": d.scan_time_ms,
-            "top_files": d.stats.top_files, "file_type_breakdown": d.stats.file_type_breakdown,
-            "size_human": format_size(d.stats.total_size),
-            "time_human": format!("{:.2}s", d.scan_time_ms as f64 / 1000.0),
-            "termination": d.termination,
-        });
-        let total_chunks = (d.arena.len() as u32).div_ceil(CHUNK_SIZE);
-        let active_id = state.scan.active_scan_id.load(Ordering::Acquire);
-        let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": total_chunks});
+        let json = build_result_json(d, active_id);
         drop(g);
-        JsonResult::ok(serde_json::json!({"stats": sj, "root_info": ri, "scan_id": active_id, "errors": []}))
+        JsonResult::ok(json)
     } else {
         drop(g);
         JsonResult::err("No scan result")
@@ -284,21 +310,22 @@ pub(crate) fn get_children(state: State<AppState>, node_index: u32, scan_id: Opt
         if (node_index as usize) >= arena.nodes.len() {
             return JsonResult::ok(serde_json::json!([]));
         }
-        let mut children: Vec<scanner::tree::TreeNode> = Vec::new();
+        // Borrow the children instead of cloning every node (serialized via
+        // BorrowedNode, which also patches chunk_id like loadChunk expects).
+        let mut children: Vec<scanner::tree::BorrowedNode> = Vec::new();
         let mut cur = arena.nodes[node_index as usize].first_child;
         while cur != u32::MAX {
             match arena.nodes.get(cur as usize) {
                 Some(n) => {
                     let next = n.next_sibling;
-                    let mut node = n.clone();
-                    node.chunk_id = cur / CHUNK_SIZE;
-                    children.push(node);
+                    children.push(scanner::tree::BorrowedNode::new(cur / CHUNK_SIZE, n));
                     cur = next;
                 }
                 None => break,
             }
         }
-        drop(g);
+        // `children` borrows the arena, so `g` must stay alive through the
+        // serialization (the lock is released when the function returns).
         match serde_json::to_value(&children) {
             Ok(v) => JsonResult::ok(v),
             Err(_) => JsonResult::err("Failed to serialize children"),

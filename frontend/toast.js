@@ -23,10 +23,12 @@
    * Show a toast notification.
    * @param {string} message - The message to display
    * @param {'error'|'success'|'info'|'warning'} [type='info'] - Toast type
+   * @param {{label?: string, onClick?: Function}} [action] - Optional action
+   *        button (e.g. an "Undo" for destructive operations).
    */
-  function showToast(message, type) {
+  function showToast(message, type, action) {
     type = type || "info";
-    const duration = DURATIONS[type] || 4000;
+    const duration = (action && action.label) ? 10000 : (DURATIONS[type] || 4000);
     const c = getContainer();
 
     // Cap visible toasts so a burst of notifications doesn't stack forever.
@@ -54,6 +56,19 @@
     msgSpan.className = "toast-message";
     msgSpan.textContent = message;
     toast.appendChild(msgSpan);
+
+    if (action && action.label && typeof action.onClick === "function") {
+      const btn = document.createElement("button");
+      btn.textContent = action.label;
+      btn.style.cssText =
+        "flex-shrink:0;padding:4px 12px;font-size:12px;font-weight:600;border:1px solid var(--accent);" +
+        "border-radius:6px;background:var(--accent);color:#fff;cursor:pointer;";
+      btn.addEventListener("click", function () {
+        dismiss(toast);
+        action.onClick();
+      });
+      toast.appendChild(btn);
+    }
 
     const closeBtn = document.createElement("button");
     closeBtn.className = "toast-close";

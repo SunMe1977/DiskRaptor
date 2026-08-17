@@ -19,6 +19,7 @@ release/
 # ── Node ────────────────────────────
 node_modules/
 frontend/lib/
+frontend-dist/
 
 # ── IDE ─────────────────────────────
 .vscode/

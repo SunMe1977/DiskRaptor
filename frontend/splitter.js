@@ -11,6 +11,56 @@
   "use strict";
 
   document.addEventListener("DOMContentLoaded", function () {
+    // ── Layout persistence ─────────────────────────────────
+    const layoutEls = {
+      left: document.getElementById("left-column"),
+      diag: document.getElementById("diagram-panel"),
+      topfiles: document.getElementById("topfiles-card"),
+    };
+
+    function saveSplitLayout() {
+      const layout = {};
+      const l = layoutEls.left;
+      if (l && l.style.width) layout.left_width = parseInt(l.style.width) || 0;
+      const d = layoutEls.diag;
+      if (d && d.style.height) layout.diag_height = parseInt(d.style.height) || 0;
+      const t = layoutEls.topfiles;
+      if (t && t.style.height) layout.topfiles_height = parseInt(t.style.height) || 0;
+      if (Object.keys(layout).length === 0) return;
+      window.__TAURI__
+        .invoke("load_settings", {})
+        .then(function (s) {
+          const cur = (s && s.layout) || {};
+          const merged = Object.assign({}, cur, layout);
+          return window.__TAURI__.invoke("save_settings", {
+            settings: { layout: merged },
+          });
+        })
+        .catch(function () {});
+    }
+
+    window.__TAURI__
+      .invoke("load_settings", {})
+      .then(function (s) {
+        const layout = (s && s.layout) || {};
+        const l = layoutEls.left;
+        if (layout.left_width && l) {
+          l.style.flex = "none";
+          l.style.width = layout.left_width + "px";
+        }
+        const d = layoutEls.diag;
+        if (layout.diag_height && d) {
+          d.style.flex = "none";
+          d.style.height = layout.diag_height + "px";
+        }
+        const t = layoutEls.topfiles;
+        if (layout.topfiles_height && t) {
+          t.style.flex = "none";
+          t.style.height = layout.topfiles_height + "px";
+        }
+      })
+      .catch(function () {});
+
     // ── Vertical Splitter ────────────────────────────────────
     const vSplit = document.getElementById("v-splitter");
     const leftCol = document.getElementById("left-column");
@@ -48,6 +98,7 @@
           vSplit.classList.remove("active");
           document.body.style.cursor = "";
           document.body.style.userSelect = "";
+          saveSplitLayout();
         }
       });
 
@@ -99,6 +150,7 @@
           hSplit.classList.remove("active");
           document.body.style.cursor = "";
           document.body.style.userSelect = "";
+          saveSplitLayout();
         }
       });
 
@@ -152,6 +204,7 @@
           tfSplit.classList.remove("active");
           document.body.style.cursor = "";
           document.body.style.userSelect = "";
+          saveSplitLayout();
         }
       });
 

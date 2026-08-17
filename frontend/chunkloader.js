@@ -13,6 +13,7 @@ class ChunkLoader {
     this.totalChunks = 0;
     this.allNodes = [];
     this.parentMap = new Map();
+    this.nameIndex = new Map();
     this.loadedChunks = new Set();
     this.loadedCount = 0;
     this.onProgress = null;
@@ -32,6 +33,7 @@ class ChunkLoader {
     this.allNodes = [];
     this.loadedChunks = new Set();
     this.parentMap = new Map();
+    this.nameIndex = new Map();
     this.loadedCount = 0;
   }
 
@@ -69,6 +71,16 @@ class ChunkLoader {
       node._arenaIndex = arenaIdx;
       this.allNodes[arenaIdx] = node;
 
+      // Name index (lowercase name -> arena indices) so node lookups by name
+      // never need a linear scan over allNodes.
+      const key = (node.name || "").toLowerCase();
+      let idxs = this.nameIndex.get(key);
+      if (!idxs) {
+        idxs = [];
+        this.nameIndex.set(key, idxs);
+      }
+      idxs.push(arenaIdx);
+
       if (node.parent !== 4294967295) {
         if (!this.parentMap.has(node.parent)) {
           this.parentMap.set(node.parent, []);
@@ -87,6 +99,13 @@ class ChunkLoader {
 
   getNode(arenaIndex) {
     return this.allNodes[arenaIndex] || null;
+  }
+
+  /**
+   * Arena indices of all loaded nodes with the given (case-insensitive) name.
+   */
+  getNodesByName(name) {
+    return this.nameIndex.get(String(name || "").toLowerCase()) || [];
   }
 
   getChildrenIndices(arenaIndex) {
@@ -174,6 +193,7 @@ class ChunkLoader {
     this.totalChunks = 0;
     this.allNodes = [];
     this.parentMap = new Map();
+    this.nameIndex = new Map();
     this.loadedChunks = new Set();
     this.loadedCount = 0;
   }

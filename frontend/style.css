@@ -3232,3 +3232,18 @@ body.light-theme .tree-row.selected {
 .attr-dot.ok { background: #3fb950; color: #3fb950; }
 .attr-dot.warn { background: #d29922; color: #d29922; }
 .attr-dot.fail { background: #f85149; color: #f85149; }
+
+/* ═══════════════════════════════════════════════════════════════
+   REDUCED MOTION — respect the OS "reduce motion" accessibility
+   setting (disables decorative animations/transitions).
+   ═══════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

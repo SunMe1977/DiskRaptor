@@ -4,9 +4,9 @@
   "version": "1.0.19",
   "identifier": "diskraptor",
   "build": {
-    "frontendDist": "../frontend",
+    "frontendDist": "../frontend-dist",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "npm run build:frontend",
     "beforeDevCommand": ""
   },
   "app": {

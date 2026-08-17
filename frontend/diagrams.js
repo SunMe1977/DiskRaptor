@@ -34,6 +34,10 @@ class DiagramRenderer {
     this._isMac =
       /mac/i.test(navigator.platform || "") ||
       /mac/i.test(navigator.userAgent || "");
+    // Users who prefer reduced motion skip the decorative canvas animations.
+    this._reducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     // Zoom state
     this._zoom = 1;
@@ -423,9 +427,11 @@ class DiagramRenderer {
       this._resize();
       requestAnimationFrame(() => this._resize());
     });
-    // Play entrance and bloom for new data
-    setTimeout(() => this._playEntrance(), 100);
-    setTimeout(() => this._playBloom(), 600);
+    // Play entrance and bloom for new data (skipped for reduced motion)
+    if (!this._reducedMotion) {
+      setTimeout(() => this._playEntrance(), 100);
+      setTimeout(() => this._playBloom(), 600);
+    }
   }
 
   _draw() {

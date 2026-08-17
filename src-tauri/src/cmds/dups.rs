@@ -26,7 +26,8 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
         let st = handle.state::<AppState>();
         const FILE_CAP: u64 = 200_000;
 
-        // Phase 1: collect files grouped by size.
+        // Phase 1: collect files grouped by size. jwalk parallelizes the
+        // directory I/O underneath (walkdir was fully sequential).
         let mut by_size: std::collections::HashMap<u64, Vec<std::path::PathBuf>> =
             std::collections::HashMap::new();
         let mut scanned: u64 = 0;
@@ -34,7 +35,7 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
         // allocation per file is pure overhead for a value the UI polls at ~1 Hz.
         let mut last_file_update = std::time::Instant::now();
         let mut last_file_at: u64 = 0;
-        for entry in walkdir::WalkDir::new(&path).follow_links(false) {
+        for entry in jwalk::WalkDir::new(&path).into_iter() {
             let e = match entry {
                 Ok(e) => e,
                 Err(_) => continue,
@@ -45,7 +46,7 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
             if !e.file_type().is_file() {
                 continue;
             }
-            let meta = match std::fs::metadata(e.path()) {
+            let meta = match e.metadata() {
                 Ok(m) => m,
                 Err(_) => continue,
             };
