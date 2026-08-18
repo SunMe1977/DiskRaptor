@@ -22,19 +22,31 @@ pub(crate) fn list_apfs_volumes() -> JsonResult {
                 continue; // only APFS volumes carry snapshots / purgeable space
             }
             let name = plist_key(&info, "VolumeName").unwrap_or_else(|| mount.clone());
-            let total = plist_key(&info, "TotalSpace")
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(0);
+            // diskutil key is TotalSize (not TotalSpace). Some localized/older
+            // builds omit it, so fall back to statvfs.
+            let total = plist_key(&info, "TotalSize")
+                .or_else(|| plist_key(&info, "VolumeSize"))
+                .or_else(|| plist_key(&info, "APFSContainerSize"))
+                .and_then(|v| v.parse::<u64>().ok());
             let free = plist_key(&info, "FreeSpace")
                 .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(0);
+                // Sealed system volumes report FreeSpace as 0; the container
+                // free space is the real answer there.
+                .or_else(|| {
+                    plist_key(&info, "APFSContainerFree")
+                        .and_then(|v| v.parse::<u64>().ok())
+                });
+            // PurgeableSpace was removed from diskutil on modern macOS; derive
+            // it from statvfs (f_bfree - f_bavail = space reserved for macOS).
             let purgeable = plist_key(&info, "PurgeableSpace")
-                .and_then(|v| v.parse::<u64>().ok());
+                .and_then(|v| v.parse::<u64>().ok())
+                .or_else(|| purgeable_from_statvfs(&mount));
+            let stat = statvfs_bytes(&mount);
             volumes.push(serde_json::json!({
                 "name": name,
                 "mount": mount,
-                "total_bytes": total,
-                "free_bytes": free,
+                "total_bytes": total.or(stat.map(|s| s.0)).unwrap_or(0),
+                "free_bytes": free.or(stat.map(|s| s.1)).unwrap_or(0),
                 "purgeable_bytes": purgeable,
                 "local_tm_snapshots": list_local_tm_snapshots(&mount),
                 "snapshots": list_snapshots(&mount),
@@ -91,6 +103,35 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
         s = String::from_utf8_lossy(&out.stderr).into_owned();
     }
     Some(s)
+}
+
+/// Total and free bytes of a mount via `statvfs`.
+#[cfg(target_os = "macos")]
+fn statvfs_bytes(mount: &str) -> Option<(u64, u64)> {
+    use std::ffi::CString;
+    let c = CString::new(mount).ok()?;
+    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
+        return None;
+    }
+    let bsize = if s.f_frsize > 0 { s.f_frsize } else { s.f_bsize } as u64;
+    Some((s.f_blocks as u64 * bsize, s.f_bfree as u64 * bsize))
+}
+
+/// Purgeable space = space macOS reserves that a normal user cannot touch
+/// (f_bfree - f_bavail), derived from `statvfs`.
+#[cfg(target_os = "macos")]
+fn purgeable_from_statvfs(mount: &str) -> Option<u64> {
+    use std::ffi::CString;
+    let c = CString::new(mount).ok()?;
+    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
+        return None;
+    }
+    let bsize = if s.f_frsize > 0 { s.f_frsize } else { s.f_bsize } as u64;
+    let free = s.f_bfree as u64;
+    let avail = s.f_bavail as u64;
+    if free > avail { Some((free - avail) * bsize) } else { None }
 }
 
 /// Extract the XML element value that follows `<key>KEY</key>` in a plist,

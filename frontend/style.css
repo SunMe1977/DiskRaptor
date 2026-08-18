@@ -3234,6 +3234,164 @@ body.light-theme .tree-row.selected {
 .attr-dot.fail { background: #f85149; color: #f85149; }
 
 /* ═══════════════════════════════════════════════════════════════
+   APFS SNAPSHOTS & PURGEABLE — smart-tools-style volume cards
+   ═══════════════════════════════════════════════════════════════ */
+.apfs-card { width: 720px; }
+.apfs-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.smart-refresh-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #c9d1d9;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s, transform 0.15s;
+}
+.smart-refresh-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: rotate(90deg);
+}
+.apfs-vol {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.apfs-vol-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.apfs-vol-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #eef2fa;
+}
+.apfs-vol-mount {
+  font-size: 11px;
+  color: #8b93a7;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.apfs-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 260px;
+  flex: 1;
+}
+@media (max-width: 520px) {
+  .apfs-tiles { grid-template-columns: repeat(2, 1fr); }
+}
+.apfs-tile {
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 0;
+}
+.apfs-tile .tile-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #8b949e;
+  margin-bottom: 3px;
+}
+.apfs-tile .tile-value {
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apfs-tile.total .tile-value { color: #58a6ff; }
+.apfs-tile.used .tile-value { color: #d29922; }
+.apfs-tile.free .tile-value { color: #3fb950; }
+.apfs-tile.purge .tile-value { color: #39d2c0; }
+.apfs-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  margin-bottom: 6px;
+}
+.apfs-bar-used {
+  height: 100%;
+  border-radius: 6px 0 0 6px;
+  transition: width 0.3s ease;
+}
+.apfs-bar-free {
+  flex: 1;
+  background: linear-gradient(90deg, rgba(63, 185, 80, 0.55), rgba(57, 210, 192, 0.45));
+}
+.apfs-bar-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #8b93a7;
+  margin-bottom: 4px;
+}
+.apfs-purge-tag {
+  color: #39d2c0;
+  font-weight: 600;
+}
+.apfs-purge-tag.none { color: #8b93a7; font-weight: 400; }
+.apfs-snapblock {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+.apfs-snaphead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #8b949e;
+}
+.apfs-del-btn {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 11px;
+  border: 1px solid rgba(248, 81, 73, 0.6);
+  border-radius: 8px;
+  background: transparent;
+  color: #f85149;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.apfs-del-btn:hover {
+  background: rgba(248, 81, 73, 0.15);
+}
+.apfs-snap-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
    REDUCED MOTION — respect the OS "reduce motion" accessibility
    setting (disables decorative animations/transitions).
    ═══════════════════════════════════════════════════════════════ */
