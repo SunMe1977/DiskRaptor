@@ -833,10 +833,12 @@ class DiagramRenderer {
   // ── Bar Chart: Top 100 Files as % Bars ──────────────────
   _drawBars(w, h) {
     const ctx = this.ctx;
-    const colors = this._colors();
-    const totalSize = this.files.reduce((s, f) => s + f.size, 1);
     const maxBars = Math.min(this.files.length, 100);
     if (maxBars === 0) return;
+    // The biggest file defines "full size" (100%): every bar's width is
+    // proportional to its own size vs. the largest file, so the #1 entry spans
+    // the full width and all the rest scale according to their full size.
+    const maxSize = this.files[0] ? this.files[0].size : 0;
 
     // Use full width — labels overlaid on bars
     const padding = 8;
@@ -849,14 +851,15 @@ class DiagramRenderer {
     const shown = Math.max(1, Math.min(maxBars, Math.floor(barArea / (barH + gap))));
     const totalH = shown * (barH + gap);
     const startY = Math.max(4, Math.floor((barArea - totalH) / 2));
-    const hlColor = this._highlightColor();
 
     for (let i = 0; i < shown; i++) {
       const file = this.files[i];
-      const pct = file.size / totalSize;
-      const barW = Math.max(2, Math.round(barMaxW * pct));
+      const pct = maxSize > 0 ? (file.size / maxSize) * 100 : 0;
+      const barW = Math.max(2, Math.round(barMaxW * (pct / 100)));
       const y = startY + i * (barH + gap);
-      const color = colors[i % colors.length];
+      // Entry #1 (largest) gets a strong accent color; the rest are muted so
+      // the biggest file stands out at "full size".
+      const color = i === 0 ? this._highlightColor() : "rgba(139,148,158,0.55)";
       const isHov = i === this._hoveredIndex;
       const isSel = i === this._selectedIndex;
 
@@ -867,7 +870,7 @@ class DiagramRenderer {
       ctx.fill();
 
       // Bar fill
-      const fillColor = (isHov || isSel) ? hlColor : color;
+      const fillColor = (isHov || isSel) ? this._highlightColor() : color;
       ctx.fillStyle = fillColor;
       ctx.beginPath();
       this._roundRect(ctx, padding, y, barW, barH, 2);
@@ -885,10 +888,10 @@ class DiagramRenderer {
 
       // Label — overlay on bar or to the right if bar is short
       const shortName = this._shortName(file.path);
-      const pctStr = (pct * 100).toFixed(1) + "%";
+      const pctStr = pct.toFixed(1) + "%";
       const label = this._ellipsize(shortName, 28) + "  " + pctStr;
       const labelX = padding + Math.min(barW + 6, barMaxW - ctx.measureText(label).width - 8);
-      ctx.fillStyle = isHov ? "#ffd700" : "#e6edf3";
+      ctx.fillStyle = isHov ? "#ffd700" : i === 0 ? "#f8c87a" : "#e6edf3";
       ctx.font = (barH > 24 ? "12px bold" : barH > 10 ? "9px bold" : "7px bold") + " sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";

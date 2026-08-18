@@ -97,6 +97,8 @@ The UI is **pure JavaScript** rendered in the system webview (no bundled Chromiu
 
 Pre-built binaries are available on the [Releases](https://github.com/SunMe1977/DiskRaptor/releases) page, or grab the latest version directly from the official website: **[https://www.diskraptor.com](https://www.diskraptor.com)**.
 
+**Microsoft Store:** [Install DiskRaptor from the Microsoft Store](https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr&hl=de-DE&gl=IT)
+
 | Platform | Format |
 |----------|--------|
 | **macOS** | `.dmg` (signed + notarized) or `.pkg` |
