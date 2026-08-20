@@ -84,7 +84,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
     "esbuild": "^0.28.2",
-    "eslint": "^8.0.0",
+    "eslint": "^10.8.1",
     "playwright": "^1.62.0"
   }
 }
