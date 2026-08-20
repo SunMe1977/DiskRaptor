@@ -2506,14 +2506,92 @@ body.light-theme .tree-row.selected {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   Scan History (start page)
+   ═══════════════════════════════════════════════════════════════ */
+.history-header {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.history-clear-btn {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.history-clear-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.history-item:hover {
+  background: var(--bg-hover);
+}
+.history-pin {
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.history-pin.pinned {
+  color: var(--accent-orange);
+}
+.history-folder {
+  font-size: 13px;
+}
+.history-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-del {
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 2px;
+}
+.history-del:hover {
+  color: var(--accent-red);
+}
+.history-toggle {
+  text-align: center;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+}
+.history-toggle:hover {
+  text-decoration: underline;
+}
+
+/* ═══════════════════════════════════════════════════════════════
    Welcome Placeholder
    ═══════════════════════════════════════════════════════════════ */
 .welcome-placeholder {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding-top: 48px;
   background: var(--bg-primary);
   z-index: 10;
   transition: opacity 0.3s ease;

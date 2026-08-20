@@ -62,8 +62,17 @@ REM -- Step 3: Create dist package ----------
 echo.
 echo [3/3] Packaging dist...
 cd /d "%~dp0"
-if exist dist rmdir /s /q dist
-mkdir dist
+if exist dist (
+    echo Removing old dist...
+    rmdir /s /q dist 2>nul
+    if exist dist (
+        echo WARNING: dist is in use - is the app still running? Retrying...
+        ping 127.0.0.1 -n 3 >nul
+        rmdir /s /q dist 2>nul
+        if exist dist echo WARNING: Could not fully remove dist - stale files may remain.
+    )
+)
+if not exist dist mkdir dist
 
 if exist "src-tauri\target\release\diskraptor.exe" (
     copy "src-tauri\target\release\diskraptor.exe" dist\DiskRaptor.exe >nul

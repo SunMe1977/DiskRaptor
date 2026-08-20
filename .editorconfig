@@ -1,0 +1,19 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{js,mjs,css,html,json,md,yml,yaml,toml,sh,ps1,bat}]
+indent_style = space
+indent_size = 2
+
+[*.{nsi,py}]
+indent_style = space
+indent_size = 4
+
+[Cargo.lock]
+indent_style = space
+indent_size = 4

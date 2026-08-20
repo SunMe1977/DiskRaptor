@@ -42,6 +42,7 @@ crash*.txt
 *.ps1
 *.bat
 !build.cmd
+!build-local.ps1
 test-results/
 
 # ── Secrets (NEVER commit) ──────────

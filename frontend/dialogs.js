@@ -122,6 +122,17 @@
   }
 
   /**
+   * Yes/No dialog. Resolves true/false.
+   */
+  function yesNoDialog(message, yesText, noText) {
+    return dialog({
+      message,
+      confirmText: yesText || "Yes",
+      cancelText: noText || "No",
+    });
+  }
+
+  /**
    * Alert dialog. Resolves undefined when dismissed.
    */
   function alertDialog(message) {
@@ -136,6 +147,7 @@
   }
 
   window.confirmDialog = confirmDialog;
+  window.yesNoDialog = yesNoDialog;
   window.alertDialog = alertDialog;
   window.promptDialog = promptDialog;
   window.trapFocus = trapFocus;

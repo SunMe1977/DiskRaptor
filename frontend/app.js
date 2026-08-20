@@ -319,6 +319,71 @@
       } catch (e) { console.debug("[DiskRaptor]", e); }
     })();
 
+    // ── Rating prompt: ask for a store rating after the 5th and 10th launch.
+    //    "No" permanently dismisses it; "Yes" opens the platform's store page.
+    (async function maybeShowRatingPrompt() {
+      try {
+        const s = await window.__TAURI__.invoke("load_settings", {});
+        if (s && s.rating_dismissed) return;
+        const count = (s && typeof s.rating_launch_count === "number")
+          ? s.rating_launch_count
+          : 0;
+        const next = count + 1;
+        window.__TAURI__
+          .invoke("save_settings", { settings: { rating_launch_count: next } })
+          .catch(function () {});
+        if (next !== 5 && next !== 10) return;
+        if (!window.yesNoDialog) return;
+        const platform = (navigator.platform || "").toLowerCase();
+        const isMac = platform.indexOf("mac") === 0;
+        const storeUrl = isMac
+          ? "https://apps.apple.com/us/app/diskraptor/id6793462969"
+          : "https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr";
+        const storeName = isMac ? "Mac App Store" : "Microsoft Store";
+        const ok = await window.yesNoDialog(
+          "Love DiskRaptor? Please rate it in the " + storeName +
+            " to support the project. It takes less than a minute.\n\n" +
+            "Rate in the " + storeName + "?",
+          "Yes, I'll rate it",
+          "No, thanks",
+        );
+        if (ok) {
+          window.__TAURI__.invoke("open_url", { url: storeUrl }).catch(function () {});
+        } else {
+          window.__TAURI__
+            .invoke("save_settings", { settings: { rating_dismissed: true } })
+            .catch(function () {});
+        }
+      } catch (e) { console.debug("[DiskRaptor]", e); }
+    })();
+
+    // ── Accessibility: keep aria-expanded in sync with each dropdown's
+    //    .active class (menus are shown/hidden purely via that class). ──
+    (function syncDropdownAria() {
+      const triggers = {
+        "drive-menu": "btn-drive",
+        "fav-menu": "btn-fav",
+        "tools-menu": "btn-tools",
+        "lang-menu": "btn-lang",
+      };
+      Object.keys(triggers).forEach(function (menuId) {
+        const menu = document.getElementById(menuId);
+        const btn = document.getElementById(triggers[menuId]);
+        if (!menu || !btn) return;
+        const sync = function () {
+          btn.setAttribute(
+            "aria-expanded",
+            String(menu.classList.contains("active")),
+          );
+        };
+        new MutationObserver(sync).observe(menu, {
+          attributes: true,
+          attributeFilter: ["class"],
+        });
+        sync();
+      });
+    })();
+
     if (welcomeScanBtn) {
       welcomeScanBtn.addEventListener("click", function () {
         window.__TAURI__
@@ -465,6 +530,8 @@
     (async function renderStartHistory() {
       const wrap = document.getElementById("start-history");
       if (!wrap) return;
+      const t = window.__ || function (k) { return k; };
+      let showAll = false;
 
       async function load() {
         try {
@@ -484,22 +551,28 @@
             }),
           );
           const esc = window.escHtml || function (x) { return String(x); };
+          const limit = showAll ? order.length : 3;
           let html =
-            '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">' +
-            "\uD83D\uDDD2 Scan History" +
-            '<button id="history-clear" title="Clear history" style="margin-left:auto;padding:2px 8px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">Clear</button>' +
+            '<div class="history-header">' +
+            "\uD83D\uDDD2 " + esc(t("history.title")) +
+            '<button id="history-clear" class="history-clear-btn" title="' + esc(t("history.clear")) + '">' + esc(t("history.clear")) + "</button>" +
             "</div>";
-          for (let hi = 0; hi < Math.min(order.length, 6); hi++) {
+          for (let hi = 0; hi < Math.min(order.length, limit); hi++) {
             const p = String(order[hi] || "");
             if (!p) continue;
             const isPinned = pinned.indexOf(p) !== -1;
             html +=
-              '<div class="history-item" data-path="' + esc(p).replace(/"/g, "&quot;") +
-              '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-primary);">' +
-              '<span class="history-pin" title="' + (isPinned ? "Unpin" : "Pin") + '" style="font-size:12px;cursor:pointer;color:' + (isPinned ? "var(--accent-orange)" : "var(--text-muted)") + ';">' + (isPinned ? "\u2605" : "\u2606") + "</span>" +
-              '<span style="font-size:13px;">\uD83D\uDCC1</span>' +
-              '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(p) + "</span>" +
-              '<span class="history-del" title="Remove" style="font-size:12px;color:var(--text-muted);cursor:pointer;padding:0 2px;">\u2715</span>' +
+              '<div class="history-item" data-path="' + esc(p).replace(/"/g, "&quot;") + '">' +
+              '<span class="history-pin' + (isPinned ? " pinned" : "") + '" title="' + esc(t(isPinned ? "history.unpin" : "history.pin")) + '">' + (isPinned ? "\u2605" : "\u2606") + "</span>" +
+              '<span class="history-folder">\uD83D\uDCC1</span>' +
+              '<span class="history-path">' + esc(p) + "</span>" +
+              '<span class="history-del" title="' + esc(t("history.remove")) + '">\u2715</span>' +
+              "</div>";
+          }
+          if (order.length > 3) {
+            html +=
+              '<div id="history-toggle" class="history-toggle" title="' + esc(t(showAll ? "history.show_less" : "history.show_more")) + '">' +
+              esc(t(showAll ? "history.show_less" : "history.show_more")) + " (" + order.length + ")" +
               "</div>";
           }
           wrap.innerHTML = html;
@@ -528,6 +601,12 @@
           if (clearBtn)
             clearBtn.addEventListener("click", function () {
               clearHistory();
+            });
+          const toggleEl = document.getElementById("history-toggle");
+          if (toggleEl)
+            toggleEl.addEventListener("click", function () {
+              showAll = !showAll;
+              load();
             });
         } catch (e) {
           console.debug("[DiskRaptor]", e);
@@ -886,6 +965,22 @@
       ev.preventDefault();
       window.__TAURI__.invoke("open_url", { url: url }).catch(function () {});
     });
+    // 5-star rating opens the platform's app store page:
+    // Microsoft Store on Windows, Mac App Store on macOS.
+    const starRating = document.getElementById("welcome-star-rating");
+    if (starRating) {
+      const platform = (navigator.platform || "").toLowerCase();
+      const isMac = platform.indexOf("mac") === 0;
+      starRating.title = isMac
+        ? "Rate on the Mac App Store"
+        : "Rate on the Microsoft Store";
+      starRating.addEventListener("click", function () {
+        const url = isMac
+          ? "https://apps.apple.com/us/app/diskraptor/id6793462969"
+          : "https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr";
+        window.__TAURI__.invoke("open_url", { url: url }).catch(function () {});
+      });
+    }
     const aboutLogo = document.getElementById("about-logo-img");
     if (aboutLogo) {
       aboutLogo.addEventListener("error", function () {

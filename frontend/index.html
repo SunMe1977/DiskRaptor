@@ -17,8 +17,8 @@
             </div>
             <div class="toolbar-center">
                 <div id="drive-selector" class="drive-dropdown-wrap">
-                    <button id="btn-drive" class="drive-trigger">💽 <span id="drive-selected">/</span> ▾</button>
-                    <div id="drive-menu" class="drive-menu"></div>
+                    <button id="btn-drive" class="drive-trigger" aria-haspopup="menu" aria-expanded="false">💽 <span id="drive-selected">/</span> ▾</button>
+                    <div id="drive-menu" class="drive-menu" role="menu"></div>
                 </div>
                 <div style="position:relative;flex:1 1 auto;display:flex;min-width:0;">
                     <input
@@ -29,8 +29,8 @@
                         value=""
                         style="flex:1;min-width:0;"
                     />
-                    <button id="btn-fav" title="Bookmark this path" aria-label="Bookmark this path" style="padding:4px 8px;font-size:14px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">☆</button>
-                    <div id="fav-menu" class="fav-dropdown"></div>
+                    <button id="btn-fav" title="Bookmark this path" aria-label="Bookmark this path" aria-haspopup="menu" aria-expanded="false" style="padding:4px 8px;font-size:14px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">☆</button>
+                    <div id="fav-menu" class="fav-dropdown" role="menu"></div>
                 </div>
                 <button id="btn-browse" data-i18n="btn.browse">📁 Browse</button>
                 <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
@@ -39,8 +39,8 @@
             </div>
             <div class="toolbar-right">
                 <div class="tools-dropdown-wrap">
-                    <button id="btn-tools" class="icon-btn" title="Tools">🔧 <span class="btn-label">Tools</span></button>
-                    <div id="tools-menu" class="tools-dropdown">
+                    <button id="btn-tools" class="icon-btn" title="Tools" aria-haspopup="menu" aria-expanded="false">🔧 <span class="btn-label">Tools</span></button>
+                    <div id="tools-menu" class="tools-dropdown" role="menu">
                         <div class="tools-item" tabindex="0" data-action="exit" title="Close DiskRaptor">⏻ Exit</div>
                         <div class="tools-sep"></div>
                         <div class="tools-item" tabindex="0" data-action="open-current">📍 Open Current Folder</div>
@@ -63,8 +63,8 @@
                 </div>
                 <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
                 <div class="lang-dropdown-wrap">
-                    <button id="btn-lang" class="icon-btn" title="Language" aria-label="Language">🌐</button>
-                    <div id="lang-menu" class="lang-dropdown">
+                    <button id="btn-lang" class="icon-btn" title="Language" aria-label="Language" aria-haspopup="menu" aria-expanded="false">🌐</button>
+                    <div id="lang-menu" class="lang-dropdown" role="menu">
                         <div class="lang-search">
                             <input type="text" id="lang-filter" placeholder="🔍 Search language..." />
                         </div>
@@ -98,7 +98,7 @@
                                 Ultra-fast disk space analyzer
                             </p>
                             <div style="font-size:13px;color:var(--text-secondary);text-align:center;">
-                                <div style="font-size:22px;letter-spacing:2px;margin-bottom:4px;cursor:pointer;" data-open-url="https://github.com/SunMe1977/DiskRaptor">
+                                <div id="welcome-star-rating" style="font-size:22px;letter-spacing:2px;margin-bottom:4px;cursor:pointer;" title="Rate DiskRaptor">
                                     ⭐⭐⭐⭐⭐
                                 </div>
                                 <div>
@@ -125,17 +125,17 @@
 
                         <!-- Start page: drives, scan history, quick scan (always shown) -->
                         <div id="start-page">
-                            <div id="welcome-volumes" style="width:100%;max-width:420px;margin:0 auto 16px;text-align:left;"></div>
-                            <div id="start-history" style="width:100%;max-width:420px;margin:0 auto 16px;text-align:left;"></div>
+                            <div id="welcome-volumes" style="width:100%;max-width:420px;margin:0 auto 10px;text-align:left;"></div>
+                            <div id="start-history" style="width:100%;max-width:420px;margin:0 auto 10px;text-align:left;"></div>
                             <button id="welcome-scan-btn" class="welcome-scan-btn" style="padding:12px 28px;font-size:15px;font-weight:600;color:#fff;background:linear-gradient(135deg,#238636,#2ea043);border:none;border-radius:8px;cursor:pointer;box-shadow:0 4px 16px rgba(35,134,54,0.3);transition:transform 0.15s;">
                                 <span style="font-size:18px;">⚡</span>
                                 <span data-i18n="welcome.start_scan">Quick Scan</span>
                             </button>
-                            <div style="margin-top:20px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-                                <button id="welcome-browse-btn" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+                            <div style="margin-top:12px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+                                <button id="welcome-browse-btn" data-i18n="welcome.browse_folder" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
                                     📂 Browse Folder
                                 </button>
-                                <button id="welcome-about-btn" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+                                <button id="welcome-about-btn" data-i18n="welcome.about" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
                                     ℹ️ About DiskRaptor
                                 </button>
                             </div>

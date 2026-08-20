@@ -47,6 +47,11 @@ jobs:
       - run: for f in frontend/*.js; do node --check "$f"; done
       - run: for f in frontend/app-modules/*.js; do node --check "$f"; done
       - run: for f in frontend/galaxyview/*.js; do node --check "$f"; done
+      - run: for f in frontend/i18n/*.js; do node --check "$f"; done
+      - run: for f in tests/*.mjs; do node --check "$f"; done
+      - run: for f in scripts/*.mjs; do node --check "$f"; done
+      - name: Version consistency
+        run: node scripts/check-version.mjs
       - name: IPC contract self-test
         run: node tests/contract_self_test.mjs
 
