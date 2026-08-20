@@ -425,6 +425,39 @@ class TreeView {
     }
   }
 
+  /**
+   * Remove tree nodes whose full path matches any of `paths` (used after a
+   * move-to-trash so the tree reflects the deletion without a full rescan).
+   * Names are pre-filtered so full paths are only built for candidates.
+   */
+  removePaths(paths) {
+    if (!paths || paths.length === 0) return;
+    const norm = function (s) {
+      return String(s).replace(/[\\/]+$/, "").toLowerCase();
+    };
+    const wanted = new Set(paths.map(norm));
+    const wantedNames = new Set();
+    paths.forEach(function (p) {
+      const base = String(p).split(/[\\/]/).filter(Boolean).pop() || "";
+      if (base) wantedNames.add(base.toLowerCase());
+    });
+    const all = this.loader.allNodes || [];
+    const toRemove = [];
+    for (let i = 0; i < all.length; i++) {
+      const n = all[i];
+      if (!n) continue;
+      if (!wantedNames.has((n.name || "").toLowerCase())) continue;
+      const p = this._buildPathCached(i);
+      if (p && wanted.has(norm(p))) toRemove.push(i);
+    }
+    if (toRemove.length === 0) return;
+    for (let ri = 0; ri < toRemove.length; ri++) {
+      this._removeNodeFromTree(toRemove[ri]);
+    }
+    this._pathCache.clear();
+    this.rebuild();
+  }
+
   async _handleTerminal(arenaIdx) {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;

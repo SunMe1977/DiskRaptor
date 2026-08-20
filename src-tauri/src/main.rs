@@ -1,4 +1,4 @@
-﻿#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use diskraptor_scanner::scanner;
 
@@ -36,11 +36,17 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 use parking_lot::Mutex;
 use std::time::Instant;
-#[cfg(any(target_os = "windows", feature = "test-server"))]
 use tauri::Manager;
+use tauri::tray::TrayIconBuilder;
+use tauri_plugin_autostart::MacosLauncher;
 use serde::Serialize;
 
-// ── Scanner state ──────────────────────────────────────────────────────────
+/// Keeps the system-tray icon alive for the app's lifetime.
+struct Tray {
+    _tray: tauri::tray::TrayIcon,
+}
+
+// -- Scanner state ----------------------------------------------------------
 
 #[allow(dead_code)]
 struct ScanState {
@@ -74,7 +80,7 @@ struct ScanResultData {
     termination: scanner::walker::ScanTermination,
 }
 
-// ── Duplicate scanner state ────────────────────────────────────────────────
+// -- Duplicate scanner state ------------------------------------------------
 
 struct DupState {
     running: AtomicBool,
@@ -100,7 +106,7 @@ impl Default for DupState {
     }
 }
 
-// ── App managed state ──────────────────────────────────────────────────────
+// -- App managed state ------------------------------------------------------
 
 pub(crate) struct AppState {
     scan: ScanState,
@@ -112,7 +118,7 @@ pub(crate) struct AppState {
     pub(crate) smart_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, JsonResult)>>,
 }
 
-// ── Helper types ───────────────────────────────────────────────────────────
+// -- Helper types -----------------------------------------------------------
 
 #[derive(Serialize, Clone, Debug)]
 #[must_use]
@@ -136,7 +142,7 @@ impl JsonResult {
     }
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
+// -- Main -------------------------------------------------------------------
 
 fn main() {
     let settings_path = dirs::config_dir()
@@ -148,6 +154,15 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .on_window_event(|window, event| {
+            // Keep DiskRaptor in the system tray: closing the window hides it
+            // instead of quitting (exit via tray/menu still terminates).
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .manage(AppState {
             scan: ScanState {
                 result: Mutex::new(None),
@@ -169,7 +184,66 @@ fn main() {
             scan_counter: AtomicU64::new(0),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
         })
-        .setup(|_app| {
+        .setup(|app| {
+            // -- System tray (Open / Exit) --------------------------
+            {
+                use tauri::menu::{Menu, MenuItem};
+                let open = MenuItem::with_id(app, "tray_open", "Open DiskRaptor", true, None::<&str>)?;
+                let tray_exit = MenuItem::with_id(app, "tray_exit", "Exit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&open, &tray_exit])?;
+                let mut tray_builder = TrayIconBuilder::new();
+                if let Some(icon) = app.default_window_icon() {
+                    tray_builder = tray_builder.icon(icon.clone());
+                }
+                let tray = tray_builder
+                    .menu(&menu)
+                    .show_menu_on_left_click(true)
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "tray_open" => {
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
+                                let _ = win.unminimize();
+                                let _ = win.set_focus();
+                            }
+                        }
+                        "tray_exit" => app.exit(0),
+                        _ => {}
+                    })
+                    .build(app)?;
+                app.manage(Tray { _tray: tray });
+            }
+
+            // -- Autostart: enabled by default on the first run ------
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let st = app.state::<AppState>();
+                let path = st.settings_path.lock().clone();
+                let already_set = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+                    .map(|v| v.get("autostart").is_some())
+                    .unwrap_or(false);
+                if !already_set {
+                    let _ = app.autolaunch().enable();
+                    // Persist the default so a later manual disable sticks.
+                    let mut merged = std::fs::read_to_string(&path)
+                        .ok()
+                        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    if let Some(obj) = merged.as_object_mut() {
+                        obj.insert("autostart".into(), serde_json::json!(true));
+                        if let Some(parent) = path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let tmp = path.with_extension("json.tmp");
+                        if let Ok(json) = serde_json::to_string_pretty(&merged) {
+                            let _ = std::fs::write(&tmp, &json);
+                            let _ = std::fs::rename(&tmp, &path);
+                        }
+                    }
+                }
+            }
+
             #[cfg(feature = "test-server")]
             {
                 let port: u16 = std::env::var("DISKraptor_CDP_PORT")
@@ -177,7 +251,7 @@ fn main() {
                 if port > 0 {
                     // Inject test DOM structure into main window for tests.
                     // Only active when DISKraptor_CDP_PORT is explicitly set.
-                    if let Some(w) = _app.get_webview_window("main") {
+                    if let Some(w) = app.get_webview_window("main") {
                         let inject_dom = r#"function _cdpI(){
 var b=document.body||document.documentElement;
 if(!b)return setTimeout(_cdpI,50);
@@ -189,7 +263,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
                         let _ = w.eval(inject_dom);
                     }
 
-                    let handle = _app.handle().clone();
+                    let handle = app.handle().clone();
                     std::thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(test_server::cdp_server(port, handle));
@@ -198,8 +272,8 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             }
             #[cfg(target_os = "windows")]
             {
-                if let Some(win) = _app.get_webview_window("main") {
-                    if let Ok(menu) = menu::build_native_menu(_app.handle()) {
+                if let Some(win) = app.get_webview_window("main") {
+                    if let Ok(menu) = menu::build_native_menu(app.handle()) {
                         let _ = win.set_menu(menu);
                     }
                 }
@@ -225,6 +299,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             smart::get_smart_status,
             browser::list_browser_data, browser::clean_browser, browser::get_browser_icon,
             apfs::list_apfs_volumes, apfs::delete_local_snapshot,
+            cmds::autostart::set_autostart, cmds::autostart::get_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

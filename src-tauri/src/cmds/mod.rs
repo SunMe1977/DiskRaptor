@@ -8,6 +8,7 @@ pub(crate) mod path_ops;
 pub(crate) mod scan;
 pub(crate) mod settings;
 pub(crate) mod system;
+pub(crate) mod autostart;
 
 // Re-exports keep the crate-root API (invoke_handler, integration tests,
 // sibling modules such as smart/trash/browser) source-compatible after the

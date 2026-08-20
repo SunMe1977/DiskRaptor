@@ -83,7 +83,7 @@
       document.addEventListener("mousemove", function (e) {
         if (!vDragging) return;
         const dx = e.clientX - vStartX;
-        const newWidth = vStartWidth + dx;
+        let newWidth = vStartWidth + dx;
         newWidth = Math.max(
           200,
           Math.min(newWidth, mainLayout.offsetWidth - 300),
@@ -131,7 +131,7 @@
       document.addEventListener("mousemove", function (e) {
         if (!hDragging) return;
         const dy = e.clientY - hStartY;
-        const newHeight = hStartHeight + dy;
+        let newHeight = hStartHeight + dy;
         newHeight = Math.max(
           80,
           Math.min(newHeight, leftCol.offsetHeight - 80),
@@ -190,7 +190,7 @@
         if (!tfDragging) return;
         // Invert: drag down = topfiles larger, drag up = smaller
         const dy = tfStartY - e.clientY;
-        const newHeight = tfStartHeight + dy;
+        let newHeight = tfStartHeight + dy;
         // Clamp between 60px and available space minus 200px for stats
         const maxH = Math.max(60, detailPanel.offsetHeight - 220);
         newHeight = Math.max(60, Math.min(newHeight, maxH));

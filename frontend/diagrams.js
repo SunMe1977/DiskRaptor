@@ -38,6 +38,8 @@ class DiagramRenderer {
     this._reducedMotion =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Default diagram style on fresh install.
+    this._theme = "fairy";
 
     // Zoom state
     this._zoom = 1;

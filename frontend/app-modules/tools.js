@@ -722,6 +722,13 @@
       cleanBtn.textContent = "\uD83D\uDDD1 Move Selected to Trash";
       cleanBtn.disabled = false;
       load();
+      // Remove the trashed files from the tree so it reflects the deletion
+      // without a full re-scan.
+      if (window.__treeView && typeof window.__treeView.removePaths === "function") {
+        window.__treeView.removePaths(
+          sel.map(function (f) { return f.path; }),
+        );
+      }
     };
 
     load();

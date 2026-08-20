@@ -80,6 +80,15 @@
         });
       }
 
+      // Load current autostart state into the "Launch at login" checkbox.
+      const autoStartEl = document.getElementById("settings-autostart");
+      if (autoStartEl) {
+        window.__TAURI__
+          .invoke("get_autostart", {})
+          .then(function (v) { autoStartEl.checked = v !== false; })
+          .catch(function () {});
+      }
+
       document
         .getElementById("settings-close")
         ?.addEventListener("click", function () { so.style.display = "none"; });
@@ -89,8 +98,16 @@
           const defPath = document.getElementById("settings-default-path")?.value || "";
           const selTheme = document.getElementById("settings-theme")?.value || "auto";
           const selLang = (document.getElementById("settings-language")?.value || "auto");
+          const autoStart = autoStartEl ? autoStartEl.checked : true;
+          if (autoStartEl) {
+            window.__TAURI__
+              .invoke("set_autostart", { enabled: autoStart })
+              .catch(function (e) {
+                window.showToast("Autostart failed: " + (e && e.message ? e.message : e), "error");
+              });
+          }
           await window.__TAURI__
-            .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme, language: selLang } })
+            .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme, language: selLang, autostart: autoStart } })
             .catch(function (e) {
               window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
             });
