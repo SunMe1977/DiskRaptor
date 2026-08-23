@@ -38,14 +38,18 @@ if (-not $SkipFrontend) {
     Write-Host "[1/3] Skipping frontend build (-SkipFrontend)" -ForegroundColor DarkGray
 }
 
-# 2) Rust binary
+# 2) Rust binary. Use `tauri build --no-bundle` (not a bare `cargo build`) so
+#    the frontend assets are embedded via the tauri/custom-protocol feature —
+#    a plain `cargo build` produces a slim exe that is missing the UI.
 $profile = if ($DebugBuild) { "debug" } else { "release" }
 Write-Host "[2/3] Building Rust binary ($profile)..." -ForegroundColor Yellow
 Set-Location "$root\src-tauri"
-$cargoArgs = @()
-if (-not $DebugBuild) { $cargoArgs += "--release" }
-cargo build @cargoArgs
-if ($LASTEXITCODE -ne 0) { throw "Rust build failed" }
+if ($DebugBuild) {
+    npx tauri build --no-bundle --debug --ci
+} else {
+    npx tauri build --no-bundle --ci
+}
+if ($LASTEXITCODE -ne 0) { throw "Rust/Tauri build failed" }
 Set-Location $root
 
 # 3) Package into dist\

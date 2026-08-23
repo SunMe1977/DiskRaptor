@@ -44,6 +44,8 @@ crash*.txt
 !build.cmd
 !build-local.ps1
 test-results/
+.tmp.driveupload/
+.tmp.drivedownload/
 
 # ── Secrets (NEVER commit) ──────────
 .env

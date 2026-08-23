@@ -226,10 +226,10 @@ fn native_smart_report(device_id: &str) -> Option<serde_json::Value> {
     let mut bus_type: u32 = 0;
     if ioctl(handle, &prop_in, &mut desc) {
         let le_u32 = |o: usize| u32::from_le_bytes([desc[o], desc[o + 1], desc[o + 2], desc[o + 3]]);
-        bus_type = le_u32(24);
+        bus_type = le_u32(28);
         let vendor_off = le_u32(12) as usize;
         let product_off = le_u32(16) as usize;
-        let serial_off = le_u32(20) as usize;
+        let serial_off = le_u32(24) as usize;
         let cstr = |off: usize| {
             let mut s = String::new();
             let mut i = off;
@@ -259,20 +259,19 @@ fn native_smart_report(device_id: &str) -> Option<serde_json::Value> {
     }
 
     // ── Temperature (works on every bus type) ──
+    // StorageDeviceTemperatureProperty returns STORAGE_TEMPERATURE_DATA:
+    //   ULONG Version (0), ULONG Size (4), then STORAGE_TEMPERATURE_INFO[1]
+    //   (Index USHORT at 8, Temperature USHORT in Kelvin at 10, ...).
+    // Values below 273 K are invalid (0 = not supported), so ignore garbage.
     let mut temp_in = [0u8; 8];
     temp_in[0..4].copy_from_slice(&STORAGE_DEVICE_TEMP_PROPERTY.to_le_bytes());
     temp_in[4..8].copy_from_slice(&PROPERTY_STANDARD_QUERY.to_le_bytes());
     let mut temp_out = [0u8; 64];
     let mut temp_c: Option<f64> = None;
     if ioctl(handle, &temp_in, &mut temp_out) {
-        // STORAGE_TEMPERATURE_DATA: Version/Size/Count u32s, then INFO entries
-        // (Index u16, Temperature u16 in Kelvin, ...).
-        let count = u32::from_le_bytes([temp_out[8], temp_out[9], temp_out[10], temp_out[11]]) as usize;
-        if count > 0 {
-            let kelvin = u16::from_le_bytes([temp_out[16], temp_out[17]]);
-            if kelvin > 0 {
-                temp_c = Some(kelvin as f64 - 273.0);
-            }
+        let kelvin = u16::from_le_bytes([temp_out[10], temp_out[11]]);
+        if (273..=450).contains(&kelvin) {
+            temp_c = Some(kelvin as f64 - 273.0);
         }
     }
 
