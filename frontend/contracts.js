@@ -148,7 +148,6 @@ window.__contract = (function () {
       }
     }
     if (problems.length) {
-      // eslint-disable-next-line no-console
       console.warn("[contract] " + name + " violated: " + problems.join(", "), data);
       return false;
     }
