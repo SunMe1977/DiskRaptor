@@ -547,7 +547,7 @@ pub(crate) fn check_admin_needed(_path: String) -> JsonResult {
 
 #[tauri::command]
 #[cfg(not(feature = "store"))]
-pub(crate) fn restart_as_admin() -> JsonResult {
+pub(crate) fn restart_as_admin(device_id: String) -> JsonResult {
     #[cfg(target_os = "windows")]
     {
         use windows::core::{PCWSTR, w};
@@ -556,12 +556,16 @@ pub(crate) fn restart_as_admin() -> JsonResult {
         if let Ok(exe) = std::env::current_exe() {
             let exe_str = exe.to_string_lossy().to_string();
             let wide: Vec<u16> = exe_str.encode_utf16().chain(std::iter::once(0)).collect();
+            // Pass the drive so the relaunched (elevated) instance re-opens the
+            // S.M.A.R.T. tool and scans the same disk automatically.
+            let params = format!("--smart-scan {}", device_id.trim());
+            let wide_params: Vec<u16> = params.encode_utf16().chain(std::iter::once(0)).collect();
             unsafe {
                 ShellExecuteW(
                     None,
                     w!("runas"),
                     PCWSTR(wide.as_ptr()),
-                    None,
+                    PCWSTR(wide_params.as_ptr()),
                     None,
                     SW_SHOWNORMAL.0 as i32,
                 );
@@ -580,7 +584,7 @@ pub(crate) fn check_admin_needed(_path: String) -> JsonResult {
 
 #[tauri::command]
 #[cfg(feature = "store")]
-pub(crate) fn restart_as_admin() -> JsonResult {
+pub(crate) fn restart_as_admin(_device_id: String) -> JsonResult {
     JsonResult::err("Admin elevation is not available in the Store build")
 }
 

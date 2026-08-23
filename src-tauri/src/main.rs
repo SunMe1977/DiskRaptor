@@ -278,6 +278,30 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
                     }
                 }
             }
+
+            // -- Resume a S.M.A.R.T. scan after an admin restart -------------
+            // The elevated relaunch passes `--smart-scan <device>`; once the
+            // webview is up, tell the UI to re-open the S.M.A.R.T. tool and
+            // auto-scan that drive.
+            {
+                let args: Vec<String> = std::env::args().collect();
+                if let Some(pos) = args.iter().position(|a| a == "--smart-scan") {
+                    if let Some(id) = args.get(pos + 1) {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let id = id.clone();
+                            let w = win.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(1500));
+                                let js = format!(
+                                    "window.__smartAutoScan && window.__smartAutoScan({:?});",
+                                    id
+                                );
+                                let _ = w.eval(&js);
+                            });
+                        }
+                    }
+                }
+            }
             Ok(())
         })
         .menu(menu::build_native_menu)

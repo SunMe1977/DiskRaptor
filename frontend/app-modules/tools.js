@@ -806,7 +806,7 @@
     return "Unknown";
   }
 
-  function openSmartTools() {
+  function openSmartTools(autoScanId) {
     const old = document.getElementById("smart-overlay");
     if (old) old.remove();
 
@@ -877,6 +877,11 @@
         select.disabled = false;
         scanBtn.disabled = false;
         statusEl.textContent = "Select a drive and press Scan Health.";
+        if (autoScanId) {
+          select.value = String(autoScanId);
+          if (select.value) { scanBtn.click(); }
+          autoScanId = null;
+        }
       })
       .catch(function (e) {
         select.innerHTML = '<option value="">Error</option>';
@@ -1142,7 +1147,7 @@
               ab.disabled = true;
               ab.textContent = "Restarting\u2026";
               window.__TAURI__
-                .invoke("restart_as_admin", {})
+                .invoke("restart_as_admin", { deviceId: String(select.value || "") })
                 .catch(function () {
                   ab.disabled = false;
                   ab.textContent = "Run as Administrator";
@@ -1158,6 +1163,15 @@
       }
     }
   }
+
+  // Expose so an elevated relaunch (`--smart-scan <device>`) can re-open the
+  // S.M.A.R.T. tool and auto-scan the same drive.
+  window.app.openSmartTools = openSmartTools;
+  window.__smartAutoScan = function (id) {
+    if (window.app && window.app.openSmartTools) {
+      window.app.openSmartTools(String(id));
+    }
+  };
 
   // ── Clean Browser Tools overlay ─────────────────────────────
   function fmtSize(b) {
