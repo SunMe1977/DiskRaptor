@@ -142,9 +142,71 @@ impl JsonResult {
     }
 }
 
+// -- Single instance ---------------------------------------------------------
+// DiskRaptor is a tray app: only one instance should run. A second launch
+// focuses the already-running window and exits.
+//
+// Bypassed in two deliberate cases:
+//   * DISKraptor_CDP_PORT is set  -> the UI test harness runs several
+//     instances in parallel (one per test) and each needs its own CDP port.
+//   * --smart-scan is present     -> the elevated S.M.A.R.T. relaunch starts a
+//     new process on purpose (restart_as_admin exits the current instance).
+#[cfg(target_os = "windows")]
+fn is_second_instance() -> bool {
+    let testing = std::env::var("DISKraptor_CDP_PORT").is_ok();
+    let elevated_relaunch = std::env::args().any(|a| a == "--smart-scan");
+    if testing || elevated_relaunch {
+        return false;
+    }
+    use windows::core::w;
+    use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows::Win32::System::Threading::CreateMutexW;
+    unsafe {
+        // bInitialOwner = true so a *new* mutex is owned by this process and
+        // stays acquired until exit (we never release it). A second instance
+        // finds ERROR_ALREADY_EXISTS and is the one that must quit.
+        let handle = CreateMutexW(std::ptr::null(), true, w!("Local\\DiskRaptor-SingleInstance"));
+        let already_running = GetLastError().0 == ERROR_ALREADY_EXISTS.0;
+        // Keep the acquired handle for the process lifetime (never CloseHandle),
+        // so the named mutex stays held until this instance exits.
+        let _ = handle;
+        already_running
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_second_instance() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn focus_existing_and_exit() -> ! {
+    use windows::core::w;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    };
+    unsafe {
+        let hwnd = FindWindowW(None, w!("DiskRaptor"));
+        if hwnd.0 != 0 {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
+    std::process::exit(0)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn focus_existing_and_exit() -> ! {
+    std::process::exit(0)
+}
+
 // -- Main -------------------------------------------------------------------
 
 fn main() {
+    if is_second_instance() {
+        focus_existing_and_exit();
+    }
+
     let settings_path = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("diskraptor").join("settings.json");
