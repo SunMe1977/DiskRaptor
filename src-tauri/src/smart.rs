@@ -417,6 +417,54 @@ pub(crate) fn native_list_disks() -> Vec<serde_json::Value> {
     out
 }
 
+/// Minimal S.M.A.R.T. report from WMI (MSFT_PhysicalDisk) — works as a normal
+/// user. Used as a fallback when the physical drive can't be opened without
+/// admin rights. `source` is "wmi" so the UI can offer a privileged restart.
+#[cfg(target_os = "windows")]
+fn smart_from_wmi(device_id: &str) -> Option<serde_json::Value> {
+    let script = format!(
+        "try {{ $d = Get-CimInstance -ClassName MSFT_PhysicalDisk -Namespace 'root\\Microsoft\\Windows\\Storage' -Filter \"DeviceId = {id}\"; if (-not $d) {{ '{{}}'; exit 0 }}; $d | Select-Object DeviceId, FriendlyName, MediaType, HealthStatus, OperationalStatus, Size, Model, SerialNumber, BusType, FirmwareVersion | ConvertTo-Json -Compress }} catch {{ '{{}}' }}",
+        id = device_id
+    );
+    let s = crate::cmds::system::win_powershell(&script)?;
+    let v: serde_json::Value = serde_json::from_str(&s).ok()?;
+    if !v.is_object() || v.as_object().map(|o| o.is_empty()).unwrap_or(false) {
+        return None;
+    }
+    let health_status = v["HealthStatus"].as_i64().unwrap_or(5);
+    let health_ok = health_status == 0; // 0 = Healthy
+    let bus: i64 = v["BusType"].as_i64().unwrap_or(0);
+    let interface = match bus {
+        17 => "NVMe", 11 => "SATA", 10 => "SAS", 7 => "USB", 3 => "ATA",
+        8 => "RAID", 9 => "iSCSI", 12 => "SD", 13 => "MMC", 18 => "SCM",
+        _ => "Unknown",
+    };
+    Some(serde_json::json!({
+        "device_id": device_id,
+        "friendly_name": v["FriendlyName"],
+        "model": v["Model"],
+        "serial": v["SerialNumber"],
+        "firmware": v["FirmwareVersion"],
+        "interface": interface,
+        "media_type": v["MediaType"],
+        "capacity": v["Size"],
+        "health": 0,
+        "score": if health_ok { 100 } else { 55 },
+        "status": if health_ok { "Healthy" } else { "Warning" },
+        "temperature_c": null,
+        "wear": null,
+        "power_on_hours": 0,
+        "power_cycles": null,
+        "percentage_used": null,
+        "available_spare": null,
+        "media_errors": null,
+        "read_errors_uncorrected": 0,
+        "write_errors_uncorrected": 0,
+        "attributes": [],
+        "source": "wmi",
+    }))
+}
+
 #[tauri::command]
 pub fn get_smart_status(state: State<AppState>, device_id: String) -> JsonResult {
     #[cfg(target_os = "windows")]
@@ -425,9 +473,16 @@ pub fn get_smart_status(state: State<AppState>, device_id: String) -> JsonResult
         // 100% native via DeviceIoControl — no smartctl / PowerShell subprocess.
         match native_smart_report(&device_id) {
             Some(r) => JsonResult::ok(r),
-            None => JsonResult::err(
-                "S.M.A.R.T. data not available (need admin rights to open the physical drive)",
-            ),
+            // Without admin rights the physical drive can't be opened. Fall back
+            // to a silent WMI query (works as a normal user) so the tool still
+            // shows basic identification/health, and the UI offers a "Run as
+            // Administrator" restart for the full S.M.A.R.T. attribute table.
+            None => match smart_from_wmi(&device_id) {
+                Some(r) => JsonResult::ok(r),
+                None => JsonResult::err(
+                    "S.M.A.R.T. data not available (need admin rights to open the physical drive)",
+                ),
+            },
         }
     }
     #[cfg(target_os = "linux")]

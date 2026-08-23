@@ -30,7 +30,7 @@ pub(crate) fn run_output(cmd: &str, args: &[&str]) -> Option<String> {
 /// Run a PowerShell command hidden (CREATE_NO_WINDOW) â€” used only as a no-admin
 /// fallback for disk enumeration. Never shows a console/DOS window.
 #[cfg(target_os = "windows")]
-fn win_powershell(script: &str) -> Option<String> {
+pub(crate) fn win_powershell(script: &str) -> Option<String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let out = std::process::Command::new("powershell.exe")
