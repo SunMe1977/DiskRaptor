@@ -172,6 +172,7 @@ async function main() {
       "test_theme_ui.mjs",
       "test_tree_ui.mjs",
       "test_galaxy_ui.mjs",
+      "test_smart_ui.mjs",
     ]);
     testList = ALL_TESTS.filter(t => quickFiles.has(t.file));
     console.log(`Quick mode: running ${testList.length} smoke tests\n`);
