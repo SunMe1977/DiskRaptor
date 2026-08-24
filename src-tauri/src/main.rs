@@ -313,7 +313,13 @@ fn main() {
                 if port > 0 {
                     // Inject test DOM structure into main window for tests.
                     // Only active when DISKraptor_CDP_PORT is explicitly set.
+                    // DISKraptor_NO_INJECT keeps the real frontend (used by tests
+                    // that exercise the actual UI, e.g. the S.M.A.R.T. tools).
+                    let no_inject = std::env::var("DISKraptor_NO_INJECT").is_ok();
                     if let Some(w) = app.get_webview_window("main") {
+                        if no_inject {
+                            let _ = w.eval("if(!window.__realFrontendReady)window.__realFrontendReady=true;");
+                        } else {
                         let inject_dom = r#"function _cdpI(){
 var b=document.body||document.documentElement;
 if(!b)return setTimeout(_cdpI,50);
@@ -323,6 +329,7 @@ var wc=document.getElementById('welcome-close');
 if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').classList.add('hidden');};
 }_cdpI();"#;
                         let _ = w.eval(inject_dom);
+                        }
                     }
 
                     let handle = app.handle().clone();

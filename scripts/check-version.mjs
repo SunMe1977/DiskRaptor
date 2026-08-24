@@ -40,7 +40,7 @@ expect("src-tauri/Cargo.toml", cargoVer);
 
 // Cargo.lock — only the diskraptor crate entry.
 const cargoLock = fs.readFileSync(path.join(ROOT, "src-tauri", "Cargo.lock"), "utf8");
-const m = /name = "diskraptor"\nversion = "([^"]+)"/.exec(cargoLock);
+const m = /name = "diskraptor"\r?\nversion = "([^"]+)"/.exec(cargoLock);
 expect("src-tauri/Cargo.lock (diskraptor)", m?.[1]);
 
 // tauri.conf.json

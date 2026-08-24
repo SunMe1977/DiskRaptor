@@ -141,7 +141,7 @@ export async function jsInvoke(cdp, expr) {
     returnByValue: false,
     awaitPromise: false,
   });
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 400; i++) { // up to ~20s: WMI/powershell fallbacks are slow
     await sleep(50);
     const r = await cdp.send("Runtime.evaluate", {
       expression: `window['${id}']`,
