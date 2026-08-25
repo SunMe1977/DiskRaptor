@@ -340,12 +340,18 @@
           ? "https://apps.apple.com/us/app/diskraptor/id6793462969"
           : "https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr";
         const storeName = isMac ? "Mac App Store" : "Microsoft Store";
+        const tr = function (key, vars) {
+          let s = (window.__ || function (k) { return k; })(key);
+          Object.keys(vars || {}).forEach(function (k) {
+            s = s.replace("{" + k + "}", vars[k]);
+          });
+          return s;
+        };
         const ok = await window.yesNoDialog(
-          "Love DiskRaptor? Please rate it in the " + storeName +
-            " to support the project. It takes less than a minute.\n\n" +
-            "Rate in the " + storeName + "?",
-          "Yes, I'll rate it",
-          "No, thanks",
+          tr("rating.message", { store: storeName }) + "\n\n" +
+            tr("rating.question", { store: storeName }),
+          tr("rating.yes", {}),
+          tr("rating.no", {}),
         );
         if (ok) {
           window.__TAURI__.invoke("open_url", { url: storeUrl }).catch(function () {});
@@ -481,6 +487,31 @@
     const aboutOverlay = document.getElementById("about-overlay");
     const aboutClose = document.getElementById("btn-about-close");
     const btnFav = document.getElementById("btn-fav");
+
+    // ── Global keyboard shortcuts ─────────────────────────────
+    document.addEventListener("keydown", function (e) {
+      if (!e.ctrlKey && !e.metaKey || e.altKey) return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const k = e.key.toLowerCase();
+      if (k === "l") {
+        e.preventDefault();
+        if (scanPath) scanPath.focus();
+      } else if (k === "s") {
+        e.preventDefault();
+        if (btnScan && !btnScan.disabled) btnScan.click();
+      } else if (k === "e") {
+        e.preventDefault();
+        if (btnExport && !btnExport.disabled) btnExport.click();
+      } else if (k === "r") {
+        e.preventDefault();
+        if (btnRescan && !btnRescan.disabled) btnRescan.click();
+      } else if (k === "f") {
+        e.preventDefault();
+        const tf = document.getElementById("tree-filter");
+        if (tf) tf.focus();
+      }
+    });
 
     // Set default scan path to user home after init and DOM binding.
     // Apply saved default scan path first, falling back to home dir.
@@ -971,9 +1002,16 @@
     if (starRating) {
       const platform = (navigator.platform || "").toLowerCase();
       const isMac = platform.indexOf("mac") === 0;
-      starRating.title = isMac
-        ? "Rate on the Mac App Store"
-        : "Rate on the Microsoft Store";
+      const storeName = isMac ? "Mac App Store" : "Microsoft Store";
+      const tr = function (key, vars) {
+        let s = (window.__ || function (k) { return k; })(key);
+        Object.keys(vars || {}).forEach(function (k) {
+          s = s.replace("{" + k + "}", vars[k]);
+        });
+        return s;
+      };
+      starRating.title = tr("rating.star_title", { store: storeName });
+      starRating.setAttribute("aria-label", tr("rating.star_title", { store: storeName }));
       starRating.addEventListener("click", function () {
         const url = isMac
           ? "https://apps.apple.com/us/app/diskraptor/id6793462969"

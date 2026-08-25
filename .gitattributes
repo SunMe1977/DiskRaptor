@@ -1,20 +1,31 @@
-# Windows batch/command scripts must be checked out with CRLF (cmd.exe requirement)
-*.bat text eol=crlf
-*.cmd text eol=crlf
+# Normalize line endings to LF for all text files (keeps scripts/Cargo.lock
+# consistent across OS and avoids CRLF breaks, e.g. version checks).
+* text=auto
 
-# Shell scripts stay LF
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.nsi text eol=lf
 *.sh text eol=lf
+*.ps1 text eol=lf
+*.bat text eol=lf
+*.cmd text eol=lf
+*.rs text eol=lf
+*.py text eol=lf
+*.lock text eol=lf
 
-# Text defaults
-*.rs text
-*.js text
-*.json text
-*.html text
-*.css text
-*.yml text
-*.yaml text
-*.md text
-*.nsi text
-*.c text
-*.h text
-*.cpp text
+# Binary files must never be normalized.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.mp4 binary
+*.exe binary

@@ -34,7 +34,7 @@
                 </div>
                 <button id="btn-browse" data-i18n="btn.browse">📁 Browse</button>
                 <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
-                <button id="btn-rescan" disabled title="Rescan same directory">🔄</button>
+                <button id="btn-rescan" disabled title="Rescan same directory" aria-label="Rescan same directory">🔄</button>
                 <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
@@ -102,16 +102,16 @@
                                     ⭐⭐⭐⭐⭐
                                 </div>
                                 <div>
-                                    <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" data-open-url="https://github.com/SunMe1977/DiskRaptor">
+                                    <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" data-i18n="welcome.star" data-open-url="https://github.com/SunMe1977/DiskRaptor">
                                         Please star ✨
                                     </span>
                                     <span style="margin:0 6px;color:var(--text-muted);">·</span>
-                                    <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" data-open-url="https://github.com/SunMe1977/DiskRaptor/fork">
+                                    <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" data-i18n="welcome.fork" data-open-url="https://github.com/SunMe1977/DiskRaptor/fork">
                                         🍴 Fork
                                     </span>
                                 </div>
                                 <div style="margin-top:6px;">
-                                    <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" data-open-url="https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr&amp;hl=de-DE&amp;gl=IT">
+                                    <span style="color:#58a6ff;text-decoration:none;font-weight:500;cursor:pointer;" data-i18n="welcome.store" data-open-url="https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr&amp;hl=de-DE&amp;gl=IT">
                                         🛒 Microsoft Store
                                     </span>
                                 </div>
@@ -339,7 +339,7 @@
             <div class="progress-card">
                 <div class="progress-header">
                     <div class="spinner"></div>
-                    <p id="progress-status" data-i18n="progress.scanning">Scanning directory...</p>
+                    <p id="progress-status" data-i18n="progress.scanning" aria-live="polite">Scanning directory...</p>
                     <p id="progress-path"></p>
                 </div>
                 <div class="progress-metrics">

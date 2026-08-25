@@ -2626,6 +2626,18 @@ body.light-theme .tree-row.selected {
   color: var(--text-secondary);
   margin: 0 0 14px 0;
 }
+#welcome-star-rating {
+  transition: transform 0.15s ease, text-shadow 0.15s ease;
+}
+#welcome-star-rating:hover {
+  transform: scale(1.15);
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
+}
+#welcome-star-rating:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 .welcome-scan-btn {
   display: inline-flex;
   align-items: center;

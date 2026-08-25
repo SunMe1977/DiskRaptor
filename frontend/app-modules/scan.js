@@ -20,6 +20,35 @@
       .replace(/>/g, "&gt;");
   }
 
+  // After a scan, append the scanned drive's free space to the status bar.
+  function updateFreeSpaceStatus(path) {
+    window.__TAURI__
+      .invoke("list_drives", {})
+      .then(function (res) {
+        const drives = Array.isArray(res) ? res : (res && res.data ? res.data : []);
+        const p = String(path || "").replace(/\\/g, "/").toLowerCase();
+        let best = null;
+        drives.forEach(function (d) {
+          const root = String(d.path || d.id || "").replace(/\\/g, "/").toLowerCase();
+          if (!root) return;
+          if (p.indexOf(root) === 0) {
+            if (!best || root.length > best.root.length) best = { root: root, d: d };
+          }
+        });
+        if (!best || best.d.free_bytes == null) return;
+        const fmt = window.fmtSize || function (b) { return b; };
+        const free = best.d.free_bytes;
+        const total = best.d.total_bytes || 0;
+        const stb = document.querySelector(".status-bar");
+        if (!stb) return;
+        const extra = total > 0
+          ? "Free: " + fmt(free) + " / " + fmt(total)
+          : "Free: " + fmt(free);
+        stb.textContent = stb.textContent + " \u00b7 " + extra;
+      })
+      .catch(function () {});
+  }
+
   window.app.initScan = function (refs) {
     const state = window.app.state;
 
@@ -687,6 +716,8 @@
 
         let hadChunks = false;
         hideLiveTree();
+
+        updateFreeSpaceStatus(path);
 
         if (
           result &&

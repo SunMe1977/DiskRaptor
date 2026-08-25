@@ -12,6 +12,18 @@ setlocal
 for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "try { (Get-Content package.json | ConvertFrom-Json).version } catch { '' }" 2^>nul`) do set VERSION=%%v
 if "%VERSION%"=="" set VERSION=0.0.2
 
+REM -- Pre-flight: version consistency + frontend sanity ----------
+node scripts\check-version.mjs
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Version consistency check failed - fix version files first
+    pause
+    exit /b 1
+)
+node --check scripts\check-version.mjs 2>nul
+if %ERRORLEVEL% equ 0 (
+    echo OK - version consistent
+)
+
 REM -- Override paths via env vars: DISKRAptor_MSVC_ROOT, DISKRAptor_WIN10_KIT, DISKRAptor_WIN10_KIT_VER
 
 REM -- Find tool paths (override via environment variables) ------

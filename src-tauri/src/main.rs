@@ -200,6 +200,54 @@ fn focus_existing_and_exit() -> ! {
     std::process::exit(0)
 }
 
+/// Persist the window size/position into settings.json so the next launch
+/// restores it. Best-effort; failures are ignored.
+fn save_window_bounds(window: &tauri::Window) {
+    let st = match window.app_handle().try_state::<AppState>() {
+        Some(s) => s,
+        None => return,
+    };
+    let Ok(size) = window.outer_size() else { return };
+    let Ok(pos) = window.outer_position() else { return };
+    let path = st.settings_path.lock().clone();
+    let mut merged = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(obj) = merged.as_object_mut() {
+        obj.insert(
+            "window_bounds".into(),
+            serde_json::json!({ "x": pos.x, "y": pos.y, "w": size.width, "h": size.height }),
+        );
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, serde_json::to_string_pretty(&merged).unwrap_or_default());
+}
+
+/// Restore a saved window size/position at startup (best-effort).
+fn restore_window_bounds(app: &tauri::App) {
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    struct Bounds { x: i32, y: i32, w: u32, h: u32 }
+    let st = app.state::<AppState>();
+    let path = st.settings_path.lock().clone();
+    let b: Option<Bounds> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .and_then(|v| v.get("window_bounds").cloned())
+        .and_then(|v| serde_json::from_value(v).ok());
+    if let Some(b) = b {
+        if b.w >= 800 && b.h >= 500 {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.set_position(tauri::LogicalPosition::new(b.x, b.y));
+                let _ = win.set_size(tauri::LogicalSize::new(b.w, b.h));
+            }
+        }
+    }
+}
+
 // -- Main -------------------------------------------------------------------
 
 fn main() {
@@ -222,6 +270,7 @@ fn main() {
             // instead of quitting (exit via tray/menu still terminates).
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+                save_window_bounds(window);
                 let _ = window.hide();
             }
         })
@@ -257,6 +306,10 @@ fn main() {
                 if let Some(icon) = app.default_window_icon() {
                     tray_builder = tray_builder.icon(icon.clone());
                 }
+                tray_builder = tray_builder.tooltip(format!(
+                    "DiskRaptor {}",
+                    env!("CARGO_PKG_VERSION")
+                ));
                 let tray = tray_builder
                     .menu(&menu)
                     .show_menu_on_left_click(true)
@@ -317,9 +370,7 @@ fn main() {
                     // that exercise the actual UI, e.g. the S.M.A.R.T. tools).
                     let no_inject = std::env::var("DISKraptor_NO_INJECT").is_ok();
                     if let Some(w) = app.get_webview_window("main") {
-                        if no_inject {
-                            let _ = w.eval("if(!window.__realFrontendReady)window.__realFrontendReady=true;");
-                        } else {
+                        if !no_inject {
                         let inject_dom = r#"function _cdpI(){
 var b=document.body||document.documentElement;
 if(!b)return setTimeout(_cdpI,50);
@@ -347,6 +398,9 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
                     }
                 }
             }
+
+            // Restore the saved window size/position (best-effort).
+            restore_window_bounds(app);
 
             // -- Resume a S.M.A.R.T. scan after an admin restart -------------
             // The elevated relaunch passes `--smart-scan <device>`; once the

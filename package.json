@@ -1,8 +1,11 @@
 {
   "name": "diskraptor",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "private": true,
   "description": "Ultra-fast disk space analyzer",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",

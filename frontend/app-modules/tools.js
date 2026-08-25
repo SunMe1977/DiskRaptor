@@ -807,6 +807,7 @@
   }
 
   function openSmartTools(autoScanId) {
+    const t = window.__ || function (s) { return s; };
     const old = document.getElementById("smart-overlay");
     if (old) old.remove();
 
@@ -816,16 +817,16 @@
     overlay.innerHTML =
       '<div class="smart-card">' +
       '<div class="smart-header">' +
-      '<span class="smart-title">\uD83D\uDEE1\uFE0F S.M.A.R.T. Tools</span>' +
+      '<span class="smart-title">\uD83D\uDEE1\uFE0F ' + t("smart.title") + "</span>" +
       '<button class="smart-refresh-btn" id="smart-refresh" title="Refresh drive list">\u27F3</button>' +
       '<button class="smart-close" id="smart-close" title="Close" aria-label="Close">\u2715</button>' +
       "</div>" +
       '<div class="smart-body">' +
       '<div class="smart-drive-row">' +
-      '<select class="smart-select" id="smart-drive"><option value="">Loading drives\u2026</option></select>' +
-      '<button class="smart-scan-btn" id="smart-scan" disabled>Scan Health</button>' +
+      '<select class="smart-select" id="smart-drive"><option value="">' + t("smart.loading_drives") + "\u2026</option></select>" +
+      '<button class="smart-scan-btn" id="smart-scan" disabled>' + t("smart.scan_health") + "</button>" +
       "</div>" +
-      '<div class="smart-status" id="smart-status"></div>' +
+      '<div class="smart-status" id="smart-status" aria-live="polite"></div>' +
       '<div class="smart-result" id="smart-result"></div>' +
       "</div>" +
       "</div>";
@@ -846,12 +847,31 @@
     });
     function onKey(e) {
       if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); }
+      // Keep Tab inside the overlay (focus trap) so keyboard / screen-reader
+      // users can't tab into the app behind the modal.
+      if (e.key === "Tab") {
+        const focusables = overlay.querySelectorAll(
+          'button, [href], select, textarea, input, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusables.length === 0) { e.preventDefault(); return; }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && (document.activeElement === first || document.activeElement === overlay)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
     document.addEventListener("keydown", onKey);
+    // Move focus into the overlay when it opens.
+    if (closeBtn) closeBtn.focus();
 
     function loadDrives() {
       statusEl.className = "smart-status";
-      statusEl.innerHTML = '<span class="smart-spinner"></span>Loading drives\u2026';
+      statusEl.innerHTML = '<span class="smart-spinner"></span>' + t("smart.loading_drives");
       select.disabled = true;
       scanBtn.disabled = true;
       window.__TAURI__
@@ -859,8 +879,8 @@
       .then(function (res) {
         const disks = Array.isArray(res) ? res : (res && res.data ? res.data : []);
         if (!disks || disks.length === 0) {
-          select.innerHTML = '<option value="">No disks found</option>';
-          statusEl.textContent = "No physical disks detected.";
+          select.innerHTML = '<option value="">' + t("smart.no_drives") + "</option>";
+          statusEl.textContent = t("smart.no_physical");
           return;
         }
         select.innerHTML = "";
@@ -876,7 +896,7 @@
         select.value = String(disks[0].id);
         select.disabled = false;
         scanBtn.disabled = false;
-        statusEl.textContent = "Select a drive and press Scan Health.";
+        statusEl.textContent = t("smart.select_drive");
         if (autoScanId) {
           select.value = String(autoScanId);
           if (select.value) { scanBtn.click(); }
@@ -886,7 +906,7 @@
       .catch(function (e) {
         select.innerHTML = '<option value="">Error</option>';
         const msg = e && e.message ? e.message : String(e);
-        statusEl.textContent = "Could not list drives: " + msg;
+        statusEl.textContent = t("smart.error_list") + msg;
         if (/sandbox|sandboxed/i.test(msg)) {
           statusEl.innerHTML =
             "S.M.A.R.T. is limited in the App Store build.<br>" +
@@ -906,9 +926,9 @@
       const id = select.value;
       if (!id) return;
       scanBtn.disabled = true;
-      scanBtn.textContent = "Scanning\u2026";
+      scanBtn.textContent = t("smart.scanning");
       statusEl.className = "smart-status";
-      statusEl.innerHTML = '<span class="smart-spinner"></span>Querying S.M.A.R.T. attributes\u2026';
+      statusEl.innerHTML = '<span class="smart-spinner"></span>' + t("smart.querying");
       resultEl.innerHTML = "";
       window.__TAURI__
         .invoke("get_smart_status", { deviceId: id })
@@ -929,7 +949,7 @@
         })
         .finally(function () {
           scanBtn.disabled = false;
-          scanBtn.textContent = "Scan Health";
+          scanBtn.textContent = t("smart.scan_health");
         });
     });
 
@@ -1131,26 +1151,24 @@
 
       statusEl.className = "smart-status";
       if (unsupported) {
-        statusEl.innerHTML =
-          "This drive does not expose S.M.A.R.T. data (common for virtualized/SCSI disks). " +
-          "Basic identification shown below.";
+        statusEl.innerHTML = t("smart.not_supported");
       } else {
         const missingAttrs =
           r.temperature_c == null && (r.wear == null || r.percentage_used == null);
         if (r.source === "wmi" && missingAttrs) {
           statusEl.innerHTML =
-            "Basic health report only. Run as administrator for the full S.M.A.R.T. attribute table (temperature, power cycles, percentage used). " +
-            '<button class="smart-admin-btn" id="smart-admin-btn">Run as Administrator</button>';
+            t("smart.basic_health") + " " +
+            '<button class="smart-admin-btn" id="smart-admin-btn">' + t("smart.run_admin") + "</button>";
           const ab = document.getElementById("smart-admin-btn");
           if (ab) {
             ab.onclick = function () {
               ab.disabled = true;
-              ab.textContent = "Restarting\u2026";
+              ab.textContent = t("smart.restarting");
               window.__TAURI__
                 .invoke("restart_as_admin", { deviceId: String(select.value || "") })
                 .catch(function () {
                   ab.disabled = false;
-                  ab.textContent = "Run as Administrator";
+                  ab.textContent = t("smart.run_admin");
                 });
             };
           }
@@ -1158,7 +1176,7 @@
           statusEl.textContent =
             "Health status retrieved from WMI. Install smartmontools for the full CrystalDiskInfo-style table.";
         } else {
-          statusEl.textContent = "Scan complete.";
+          statusEl.textContent = t("smart.scan_complete");
         }
       }
     }
