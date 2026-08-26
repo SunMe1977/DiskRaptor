@@ -2,13 +2,13 @@ Unicode true
 ManifestDPIAware true
 
 !define PRODUCT_NAME "DiskRaptor"
-!define PRODUCT_VERSION "1.0.24"
+!define PRODUCT_VERSION "1.0.25"
 !define PRODUCT_PUBLISHER "DiskRaptor"
 !define PRODUCT_COMPANY "Hansjoerg Hofer"
 !define PRODUCT_WEB_SITE "https://github.com/SunMe1977/DiskRaptor"
 
 ; ── EXE file properties (right-click → Properties → Details) ──
-VIProductVersion "1.0.24.0"
+VIProductVersion "1.0.25.0"
 VIAddVersionKey "CompanyName" "${PRODUCT_COMPANY}"
 VIAddVersionKey "LegalCopyright" "© 2025-2026 ${PRODUCT_COMPANY}"
 VIAddVersionKey "FileDescription" "${PRODUCT_NAME} Installer"

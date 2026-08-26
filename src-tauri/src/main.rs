@@ -402,7 +402,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             // Restore the saved window size/position (best-effort).
             restore_window_bounds(app);
 
-            // Show the version in the window title (e.g. "DiskRaptor 1.0.24").
+            // Show the version in the window title (e.g. "DiskRaptor 1.0.25").
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.set_title(&format!("DiskRaptor {}", env!("CARGO_PKG_VERSION")));
             }
