@@ -1,28 +1,41 @@
 Unicode true
 ManifestDPIAware true
 
-!define PRODUCT_NAME "DiskRaptor"
-!define PRODUCT_VERSION "1.0.25"
-!define PRODUCT_PUBLISHER "DiskRaptor"
-!define PRODUCT_COMPANY "Hansjoerg Hofer"
-!define PRODUCT_WEB_SITE "https://github.com/SunMe1977/DiskRaptor"
+!define PRODUCT_NAME      "DiskRaptor"
+!ifndef PRODUCT_VERSION
+   !define PRODUCT_VERSION "1.0.25"
+!endif
+!define PRODUCT_PUBLISHER "Hansjoerg Hofer"
+!define PRODUCT_WEB_SITE  "https://github.com/SunMe1977/DiskRaptor"
 
-; ── EXE file properties (right-click → Properties → Details) ──
-VIProductVersion "1.0.25.0"
-VIAddVersionKey "CompanyName" "${PRODUCT_COMPANY}"
-VIAddVersionKey "LegalCopyright" "© 2025-2026 ${PRODUCT_COMPANY}"
-VIAddVersionKey "FileDescription" "${PRODUCT_NAME} Installer"
-VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
-VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
-VIAddVersionKey "FileVersion" "${PRODUCT_VERSION}.0"
+!define /date CURRENT_YEAR "%Y"
+
+!define COPYRIGHT_TEXT   "(c) 2025-${CURRENT_YEAR} ${PRODUCT_PUBLISHER}"
+
 
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
+!include "LogicLib.nsh"
 
-Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-OutFile "DiskRaptor-${PRODUCT_VERSION}-windows-x64.exe"
-InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
-InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "InstallLocation"
+Name "${PRODUCT_NAME}"
+Caption               "$(^CaptionText)"
+BrandingText          "$(^CreatedBy)"
+OutFile               "DiskRaptor-${PRODUCT_VERSION}-windows-x64.exe"
+InstallDir            "$PROGRAMFILES64\${PRODUCT_NAME}"
+InstallDirRegKey      HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "InstallLocation"
 RequestExecutionLevel admin
+
+; ── EXE file properties (right-click → Properties → Details) ──
+VIAddVersionKey "ProductName"        "${PRODUCT_NAME}"
+VIAddVersionKey "ProductVersion"     "${PRODUCT_VERSION}"
+VIAddVersionKey "Comments"           "${PRODUCT_NAME} Installer"
+VIAddVersionKey "CompanyName"        "${PRODUCT_PUBLISHER}"
+VIAddVersionKey "LegalCopyright"     "${COPYRIGHT_TEXT}"
+VIAddVersionKey "FileDescription"    "${PRODUCT_NAME} Installer"
+VIAddVersionKey "FileVersion"        "${PRODUCT_VERSION}"
+VIAddVersionKey "InternalName"       "${PRODUCT_NAME}"
+
+VIProductVersion "${PRODUCT_VERSION}.0"
 
 Var StartMenuFolder
 
@@ -37,28 +50,21 @@ Var StartMenuFolder
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_STARTMENU Application $StartMenuFolder
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_RUN "$INSTDIR\DiskRaptor.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "$(^RunText)"
-!define MUI_FINISHPAGE_RUN_NOTCHECKED
+!define      MUI_FINISHPAGE_RUN "$INSTDIR\DiskRaptor.exe"
+!define      MUI_FINISHPAGE_RUN_TEXT "$(^RunText)"
+!define      MUI_FINISHPAGE_RUN_NOTCHECKED
 
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
-!insertmacro MUI_LANGUAGE "English"
-!insertmacro MUI_LANGUAGE "German"
-!insertmacro MUI_LANGUAGE "French"
-!insertmacro MUI_LANGUAGE "Italian"
-
-LangString ^RunText ${LANG_ENGLISH} "Run DiskRaptor"
-LangString ^RunText ${LANG_GERMAN} "DiskRaptor starten"
-LangString ^RunText ${LANG_FRENCH} "Lancer DiskRaptor"
-LangString ^RunText ${LANG_ITALIAN} "Avvia DiskRaptor"
+; Include file with language list and Custom messages
+!include "DiskRaptor_languages.nsi"
 
 Section "Install"
   SetOutPath "$INSTDIR"
-  File /r "..\..\dist\DiskRaptor.exe"
+    File /r "..\..\dist\DiskRaptor.exe"
 
   CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\DiskRaptor.exe"
 
@@ -69,13 +75,19 @@ Section "Install"
   !insertmacro MUI_STARTMENU_WRITE_END
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "DisplayName" "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "UninstallString" "$INSTDIR\Uninstall.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "DisplayIcon" "$INSTDIR\DiskRaptor.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "DisplayVersion" "${PRODUCT_VERSION}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "Publisher" "${PRODUCT_PUBLISHER}"
+  WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "DisplayName"     "${PRODUCT_NAME}"
+  WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "UninstallString" "$INSTDIR\Uninstall.exe"
+  WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "DisplayIcon"     "$INSTDIR\DiskRaptor.exe"
+  WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "DisplayVersion"  "${PRODUCT_VERSION}"
+  WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "Publisher"       "${PRODUCT_PUBLISHER}"
   WriteRegDWord HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "NoModify" 1
   WriteRegDWord HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "NoRepair" 1
+  
+  ; Calculate program size
+  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+  IntFmt $0 "0x%08X" $0
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "EstimatedSize" "$0"
+  
 SectionEnd
 
 Section "Uninstall"
@@ -85,3 +97,10 @@ Section "Uninstall"
   RMDir /r "$SMPROGRAMS\$StartMenuFolder"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 SectionEnd
+
+Function .onInit
+    !define      MUI_LANGDLL_WINDOWTITLE $(^LangTitle)
+    !define      MUI_LANGDLL_INFO        $(^LangText)
+    !insertmacro MUI_LANGDLL_DISPLAY
+FunctionEnd
+
