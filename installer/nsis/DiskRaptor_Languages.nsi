@@ -1,0 +1,28 @@
+!insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "German"
+!insertmacro MUI_LANGUAGE "French"
+!insertmacro MUI_LANGUAGE "Italian"
+
+LangString ^RunText     ${LANG_ENGLISH} "Run DiskRaptor"
+LangString ^CaptionText ${LANG_ENGLISH} "Installation of ${PRODUCT_NAME} ${PRODUCT_VERSION}"
+LangString ^CreatedBy   ${LANG_ENGLISH} "Created by ${PRODUCT_PUBLISHER}"
+LangString ^LangTitle   ${LANG_ENGLISH} "Select Installer Language"
+LangString ^LangText    ${LANG_ENGLISH} "Please select language for the installer"
+
+LangString ^RunText     ${LANG_GERMAN}  "DiskRaptor starten"
+LangString ^CaptionText ${LANG_GERMAN}  "Installation von ${PRODUCT_NAME} ${PRODUCT_VERSION}"
+LangString ^CreatedBy   ${LANG_GERMAN}  "Erstellt von ${PRODUCT_PUBLISHER}"
+LangString ^LangTitle   ${LANG_GERMAN}  "nstallationssprache auswählen"
+LangString ^LangText    ${LANG_GERMAN}  "Bitte wählen Sie die Sprache für das Installationsprogramm aus."
+
+LangString ^RunText     ${LANG_FRENCH}  "Lancer DiskRaptor"
+LangString ^CaptionText ${LANG_FRENCH}  "Installation de ${PRODUCT_NAME} ${PRODUCT_VERSION}"
+LangString ^CreatedBy   ${LANG_FRENCH}  "Créé par ${PRODUCT_PUBLISHER}"
+LangString ^LangTitle   ${LANG_FRENCH}  "Sélectionnez la langue du programme d'installation"
+LangString ^LangText    ${LANG_FRENCH}  "Veuillez sélectionner la langue du programme d'installation."
+
+LangString ^RunText     ${LANG_ITALIAN} "Esegui DiskRaptor"
+LangString ^CaptionText ${LANG_ITALIAN} "Installazione di ${PRODUCT_NAME} ${PRODUCT_VERSION}"
+LangString ^CreatedBy   ${LANG_ITALIAN} "Creato da ${PRODUCT_PUBLISHER}"
+LangString ^LangTitle   ${LANG_ITALIAN} "Seleziona lingua instalalzione"
+LangString ^LangText    ${LANG_ITALIAN} "Seleziona la lingua per l'installazione"
