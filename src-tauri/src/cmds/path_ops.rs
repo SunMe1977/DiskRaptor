@@ -237,7 +237,7 @@ pub(crate) fn open_terminal(path: String, state: tauri::State<crate::AppState>) 
     };
     let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
     let dir_str = dir.to_string_lossy().to_string();
-    let terminal_choice = {
+    let _terminal_choice = {
         let p = state.settings_path.lock().clone();
         std::fs::read_to_string(&p)
             .ok()
@@ -262,7 +262,7 @@ pub(crate) fn open_terminal(path: String, state: tauri::State<crate::AppState>) 
     }
     #[cfg(target_os = "windows")]
     {
-        if terminal_choice == "powershell" {
+        if _terminal_choice == "powershell" {
             let script = format!("Set-Location -LiteralPath '{}'", dir_str.replace('\'', "''"));
             let _ = std::process::Command::new("powershell.exe")
                 .args(["-NoExit", "-Command", &script])
