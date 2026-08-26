@@ -48,7 +48,7 @@
         "language": "en-US"
       },
       "nsis": {
-        "languages": ["English"]
+        "languages": ["English", "German", "French", "Italian", "Spanish"]
       }
     }
   }

@@ -350,14 +350,14 @@ button.icon-btn {
     overflow-x: auto;
     position: relative;
     scrollbar-width: thin;
+    scrollbar-gutter: stable;
     min-height: 0;
 }
 #tree-viewport {
     position: relative;
     min-width: 100%;
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     min-height: 0;
 }
 

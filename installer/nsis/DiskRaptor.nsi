@@ -39,10 +39,12 @@ Var StartMenuFolder
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "German"
 !insertmacro MUI_LANGUAGE "French"
+!insertmacro MUI_LANGUAGE "Italian"
 
 LangString ^RunText ${LANG_ENGLISH} "Run DiskRaptor"
 LangString ^RunText ${LANG_GERMAN} "DiskRaptor starten"
 LangString ^RunText ${LANG_FRENCH} "Lancer DiskRaptor"
+LangString ^RunText ${LANG_ITALIAN} "Avvia DiskRaptor"
 
 Section "Install"
   SetOutPath "$INSTDIR"
