@@ -89,6 +89,34 @@
           .catch(function () {});
       }
 
+      // Load terminal preference.
+      const termEl = document.getElementById("settings-terminal");
+      if (termEl) {
+        window.__TAURI__
+          .invoke("load_settings", {})
+          .then(function (s) {
+            if (s && s.terminal_choice) termEl.value = s.terminal_choice;
+          })
+          .catch(function () {});
+      }
+
+      // Accent color: load saved value, apply live on change.
+      const accentEl = document.getElementById("settings-accent");
+      if (accentEl) {
+        window.__TAURI__
+          .invoke("load_settings", {})
+          .then(function (s) {
+            if (s && s.accent_color) {
+              accentEl.value = s.accent_color;
+              document.documentElement.style.setProperty("--accent", s.accent_color);
+            }
+          })
+          .catch(function () {});
+        accentEl.addEventListener("input", function () {
+          document.documentElement.style.setProperty("--accent", accentEl.value);
+        });
+      }
+
       document
         .getElementById("settings-close")
         ?.addEventListener("click", function () { so.style.display = "none"; });
@@ -98,6 +126,8 @@
           const defPath = document.getElementById("settings-default-path")?.value || "";
           const selTheme = document.getElementById("settings-theme")?.value || "auto";
           const selLang = (document.getElementById("settings-language")?.value || "auto");
+          const termChoice = termEl ? termEl.value : "cmd";
+          const accentColor = accentEl ? accentEl.value : "";
           const autoStart = autoStartEl ? autoStartEl.checked : true;
           if (autoStartEl) {
             window.__TAURI__
@@ -107,7 +137,7 @@
               });
           }
           await window.__TAURI__
-            .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme, language: selLang, autostart: autoStart } })
+            .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor } })
             .catch(function (e) {
               window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
             });

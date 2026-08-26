@@ -229,7 +229,7 @@ pub(crate) fn open_explorer(path: String) -> JsonResult {
 }
 
 #[tauri::command]
-pub(crate) fn open_terminal(path: String) -> JsonResult {
+pub(crate) fn open_terminal(path: String, state: tauri::State<crate::AppState>) -> JsonResult {
     let dir = match validate_system_path(&path) {
         Ok(p) if p.is_dir() => p,
         Ok(p) => p.parent().map(|x| x.to_path_buf()).unwrap_or(p),
@@ -237,6 +237,14 @@ pub(crate) fn open_terminal(path: String) -> JsonResult {
     };
     let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
     let dir_str = dir.to_string_lossy().to_string();
+    let terminal_choice = {
+        let p = state.settings_path.lock().clone();
+        std::fs::read_to_string(&p)
+            .ok()
+            .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+            .and_then(|v| v.get("terminal_choice").and_then(|x| x.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| "cmd".to_string())
+    };
     #[cfg(target_os = "windows")]
     {
         // cmd.exe interprets the whole command line, so reject paths carrying
@@ -253,7 +261,16 @@ pub(crate) fn open_terminal(path: String) -> JsonResult {
         let _ = std::process::Command::new("open").args(["-a", "Terminal", &dir_str]).status();
     }
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("cmd").args(["/k", "cd", "/d", &dir_str]).status(); }
+    {
+        if terminal_choice == "powershell" {
+            let script = format!("Set-Location -LiteralPath '{}'", dir_str.replace('\'', "''"));
+            let _ = std::process::Command::new("powershell.exe")
+                .args(["-NoExit", "-Command", &script])
+                .spawn();
+        } else {
+            let _ = std::process::Command::new("cmd").args(["/k", "cd", "/d", &dir_str]).status();
+        }
+    }
     #[cfg(target_os = "linux")]
     {
         for term in &["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "mate-terminal", "alacritty", "kitty"] {

@@ -488,6 +488,14 @@
     const aboutClose = document.getElementById("btn-about-close");
     const btnFav = document.getElementById("btn-fav");
 
+    // CLI: `diskraptor.exe <path>` scans that path on startup.
+    window.__scanPathArg = function (path) {
+      if (path && scanPath) {
+        scanPath.value = path;
+        if (btnScan) btnScan.click();
+      }
+    };
+
     // ── Global keyboard shortcuts ─────────────────────────────
     document.addEventListener("keydown", function (e) {
       if (!e.ctrlKey && !e.metaKey || e.altKey) return;
@@ -591,6 +599,9 @@
     // Apply saved default scan path first, falling back to home dir.
     try {
       const saved = await window.__TAURI__.invoke("load_settings");
+      if (saved && saved.accent_color) {
+        document.documentElement.style.setProperty("--accent", saved.accent_color);
+      }
       const savedPath =
         saved && saved.default_scan_path
           ? String(saved.default_scan_path)
@@ -870,7 +881,9 @@
         });
         btn.classList.add("active");
 
-        const mode = btn.dataset.mode;        if (mode === "galaxy") {
+        const mode = btn.dataset.mode;
+        window.__TAURI__.invoke("save_settings", { settings: { diagram_mode: mode } }).catch(function () {});
+        if (mode === "galaxy") {
           if (diagramContainer) diagramContainer.style.display = "none";
           if (galaxyContainer) {
             galaxyContainer.style.display = "block";
@@ -916,6 +929,17 @@
         }
       });
     });
+
+    // Restore the saved diagram mode on startup.
+    window.__TAURI__.invoke("load_settings", {}).then(function (s) {
+      const saved = s && s.diagram_mode;
+      if (saved) {
+        const target = Array.prototype.find.call(diagramModes, function (b) {
+          return b.dataset.mode === saved;
+        });
+        if (target) target.click();
+      }
+    }).catch(function () {});
 
     // ── Duplicate Scanner ───────────────────────────────
     const dupScanner = new DupScanner();

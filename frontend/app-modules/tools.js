@@ -159,28 +159,28 @@
       } else if (action === "empty-folders") {
         const loader = window.__loader;
         if (!loader || !loader.allNodes) return;
+        // Ask whether folders containing only 0-byte files should count as empty.
+        const includeZero = await emptyFoldersOptionDialog();
+        if (includeZero === null) return;
         const nodes = loader.allNodes;
         const emptyDirs = [];
         for (let ni = 0; ni < nodes.length; ni++) {
           const n = nodes[ni];
-          if (
-            n &&
-            (n.node_type === 0 || n.node_type === "Directory") &&
-            n.file_count === 0 &&
-            n.dir_count === 0 &&
-            n.parent !== 4294967295
-          ) {
-            const parts = [n.name];
-            let p = n.parent;
-            let safety = 0;
-            while (p !== 4294967295 && p !== undefined && safety < 1000) {
-              const parent = nodes[p];
-              if (parent && parent.name) parts.unshift(parent.name);
-              p = parent ? parent.parent : 4294967295;
-              safety++;
-            }
-            emptyDirs.push({ name: n.name, path: parts.join("/"), arenaIdx: ni });
+          const isDir = n && (n.node_type === 0 || n.node_type === "Directory");
+          if (!isDir || n.parent === 4294967295) continue;
+          if (n.dir_count !== 0) continue;
+          const empty = includeZero ? (n.size || 0) === 0 : (n.file_count || 0) === 0;
+          if (!empty) continue;
+          const parts = [n.name];
+          let p = n.parent;
+          let safety = 0;
+          while (p !== 4294967295 && p !== undefined && safety < 1000) {
+            const parent = nodes[p];
+            if (parent && parent.name) parts.unshift(parent.name);
+            p = parent ? parent.parent : 4294967295;
+            safety++;
           }
+          emptyDirs.push({ name: n.name, path: parts.join("/"), arenaIdx: ni });
         }
         if (emptyDirs.length === 0) {
           const t0 = window.__ || function (s) { return s; };
@@ -741,8 +741,37 @@
   }
 
   // ── Find Files dialog ────────────────────────────────────
-  function findFilesDialog() {
+  // Ask whether folders containing only 0-byte files should be treated as
+  // empty. Resolves true/false, or null when cancelled.
+  function emptyFoldersOptionDialog() {
     return new Promise(function (resolve) {
+      const ov = document.createElement("div");
+      ov.style.cssText =
+        "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+      const card = document.createElement("div");
+      card.style.cssText =
+        "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:360px;width:90%;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+      card.innerHTML =
+        '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDCC2 Empty Folders</div>' +
+        '<div style="padding:14px 16px;font-size:13px;color:var(--text-primary);">' +
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input id="ef-zero" type="checkbox" style="width:14px;height:14px;cursor:pointer;"> Also include folders that only contain 0-byte files</label>' +
+        "</div>" +
+        '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">' +
+        '<button id="ef-cancel" style="padding:6px 14px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Cancel</button>' +
+        '<button id="ef-ok" style="padding:6px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,var(--accent-green));color:#fff;cursor:pointer;font-weight:600;">Scan</button>' +
+        "</div>";
+      ov.appendChild(card);
+      document.body.appendChild(ov);
+      function close(v) { if (ov.parentNode) ov.parentNode.removeChild(ov); resolve(v); }
+      card.querySelector("#ef-cancel").onclick = function () { close(null); };
+      card.querySelector("#ef-ok").onclick = function () {
+        close(card.querySelector("#ef-zero").checked);
+      };
+      ov.onclick = function (e) { if (e.target === ov) close(null); };
+    });
+  }
+
+  function findFilesDialog() {    return new Promise(function (resolve) {
       const ov = document.createElement("div");
       ov.style.cssText =
         "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";

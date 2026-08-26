@@ -498,6 +498,40 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
                         }
                     }
                 }
+                // CLI usage: `diskraptor.exe <path>` scans that path on startup.
+                // Skips flags and the value of --smart-scan.
+                else {
+                    let iter = args.iter().skip(1).peekable();
+                    let mut skip_next = false;
+                    let path_arg: Option<String> = iter
+                        .filter_map(|a| {                            if skip_next {
+                                skip_next = false;
+                                return None;
+                            }
+                            if a == "--smart-scan" {
+                                skip_next = true;
+                                return None;
+                            }
+                            if a.starts_with('-') {
+                                return None;
+                            }
+                            Some(a.clone())
+                        })
+                        .next();
+                    if let Some(path) = path_arg {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let w = win.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(1500));
+                                let js = format!(
+                                    "window.__scanPathArg && window.__scanPathArg({:?});",
+                                    path
+                                );
+                                let _ = w.eval(&js);
+                            });
+                        }
+                    }
+                }
             }
             Ok(())
         })
