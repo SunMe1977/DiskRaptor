@@ -845,7 +845,55 @@ class TreeView {
       this.vs.refresh();
     }
     this._updateSelection();
+    this._updateBreadcrumb(arenaIdx);
     if (this.onSelect) this.onSelect(arenaIdx);
+  }
+
+  _esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  // Clickable path breadcrumb above the tree for the selected node.
+  _updateBreadcrumb(arenaIdx) {
+    const bar = document.getElementById("tree-breadcrumb");
+    if (!bar || !this.loader || !this.loader.allNodes) return;
+    const nodes = this.loader.allNodes;
+    if (arenaIdx == null || !nodes[arenaIdx]) {
+      bar.hidden = true;
+      bar.innerHTML = "";
+      return;
+    }
+    const self = this;
+    const chain = [];
+    let p = arenaIdx;
+    let safety = 0;
+    while (p !== 4294967295 && p !== undefined && safety < 1000 && nodes[p]) {
+      chain.unshift({ idx: p, name: nodes[p].name || "" });
+      p = nodes[p].parent;
+      safety++;
+    }
+    if (chain.length === 0) {
+      bar.hidden = true;
+      bar.innerHTML = "";
+      return;
+    }
+    bar.hidden = false;
+    let html = "";
+    chain.forEach(function (seg, i) {
+      if (i > 0) html += '<span class="crumb-sep">/</span>';
+      const last = i === chain.length - 1;
+      html +=
+        '<button class="crumb-seg' + (last ? " last" : "") + '" data-idx="' + seg.idx + '">' +
+        self._esc(seg.name) +
+        "</button>";
+    });
+    bar.innerHTML = html;
+    bar.querySelectorAll(".crumb-seg:not(.last)").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const idx = parseInt(btn.dataset.idx, 10);
+        if (!isNaN(idx)) self.select(idx);
+      });
+    });
   }
 
   // Shift-click: toggle a node in the multi-selection set.

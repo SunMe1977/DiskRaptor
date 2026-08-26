@@ -371,6 +371,7 @@
         }
         const minSize = params.minBytes || 0;
         const maxSize = params.maxBytes || 0;
+        const maxAgeDays = params.days || 0;
         const ext = params.ext ? params.ext.toLowerCase() : "";
         const results = [];
         const st0 = document.querySelector(".status-bar");
@@ -469,6 +470,11 @@
             if (ext && !n.name.toLowerCase().endsWith("." + ext)) continue;
             if (minSize && (n.size || 0) < minSize) continue;
             if (maxSize && (n.size || 0) > maxSize) continue;
+            if (maxAgeDays > 0) {
+              const mt = n.mtime || 0;
+              const ageSecs = Date.now() / 1000 - mt;
+              if (!(mt > 0 && ageSecs >= 0 && ageSecs <= maxAgeDays * 86400)) continue;
+            }
             if (re.test(n.name)) {
               const fullPath = scanPath.value.replace(/[\\/]+$/, "");
               const parts = [n.name];
@@ -754,6 +760,8 @@
         '<input id="ff-min" type="number" min="0" value="" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
         '<label style="font-size:12px;color:var(--text-secondary);">Max size (MB, optional)</label>' +
         '<input id="ff-max" type="number" min="0" value="" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
+        '<label style="font-size:12px;color:var(--text-secondary);">Modified within last (days, optional)</label>' +
+        '<input id="ff-days" type="number" min="0" value="" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
         "</div>" +
         '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">' +
         '<button id="ff-cancel" style="padding:6px 14px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Cancel</button>' +
@@ -767,12 +775,14 @@
         const ext = (card.querySelector("#ff-ext").value || "").replace(/^\./, "").trim();
         const minMB = parseFloat(card.querySelector("#ff-min").value);
         const maxMB = parseFloat(card.querySelector("#ff-max").value);
+        const days = parseInt(card.querySelector("#ff-days").value, 10);
         close();
         resolve({
           name: name,
           ext: ext,
           minBytes: minMB > 0 ? minMB * 1024 * 1024 : 0,
           maxBytes: maxMB > 0 ? maxMB * 1024 * 1024 : 0,
+          days: days > 0 ? days : 0,
         });
       }
       card.querySelector("#ff-cancel").onclick = function () { close(); resolve(null); };

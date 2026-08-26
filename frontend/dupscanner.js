@@ -190,6 +190,7 @@ class DupScanner {
       <span style="display:flex;gap:6px;align-items:center;">
         <button id="dup-select-none" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select None</button>
         <button id="dup-select-all" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select All</button>
+        <button id="dup-keep-largest" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;" title="Keep the largest copy in each group">Keep Largest</button>
         <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,var(--accent-red));border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 <span data-i18n="action.move_selected_to_trash">Move Selected to Trash</span></button>
       </span>
       <div id="dup-delete-progress" style="display:none;flex-basis:100%;height:6px;border-radius:4px;background:var(--bg-tertiary);overflow:hidden;margin-top:6px;"><div id="dup-delete-progress-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#da3633,#f85149);transition:width 0.2s;"></div></div>
@@ -233,6 +234,32 @@ class DupScanner {
             const cbs = card.querySelectorAll('input[type="checkbox"]');
             for (let fi = 0; fi < g.files.length; fi++) {
               if (cbs[fi]) cbs[fi].checked = fi > 0;
+            }
+          }
+        });
+        updateSelectedCount();
+      };
+    }
+
+    // Keep Largest: keep the biggest copy per group, select the rest
+    const keepLargest = document.getElementById("dup-keep-largest");
+    if (keepLargest) {
+      keepLargest.onclick = function () {
+        totalChecked = 0;
+        groups.forEach(function (g, gi) {
+          checkStates[gi] = new Set();
+          let maxIdx = 0;
+          for (let fi = 1; fi < g.files.length; fi++) {
+            if ((g.files[fi].size || 0) > (g.files[maxIdx].size || 0)) maxIdx = fi;
+          }
+          for (let fi = 0; fi < g.files.length; fi++) {
+            if (fi !== maxIdx) { checkStates[gi].add(fi); totalChecked++; }
+          }
+          const card = list.querySelectorAll(".dup-group-card")[gi];
+          if (card) {
+            const cbs = card.querySelectorAll('input[type="checkbox"]');
+            for (let fi = 0; fi < g.files.length; fi++) {
+              if (cbs[fi]) cbs[fi].checked = fi !== maxIdx;
             }
           }
         });

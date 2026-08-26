@@ -510,8 +510,82 @@
         e.preventDefault();
         const tf = document.getElementById("tree-filter");
         if (tf) tf.focus();
+      } else if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        showShortcutHelp();
       }
     });
+
+    // ── Keyboard shortcut help dialog ("?") ────────────────────
+    function showShortcutHelp() {
+      if (document.getElementById("shortcut-help-overlay")) return;
+      const overlay = document.createElement("div");
+      overlay.id = "shortcut-help-overlay";
+      overlay.style.cssText =
+        "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.55);" +
+        "display:flex;align-items:center;justify-content:center;";
+      const card = document.createElement("div");
+      card.style.cssText =
+        "background:var(--bg-secondary,#1c2128);border:1px solid var(--border,#30363d);" +
+        "border-radius:12px;max-width:380px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);" +
+        "overflow:hidden;";
+      const head = document.createElement("div");
+      head.style.cssText =
+        "padding:12px 18px;font-size:14px;font-weight:600;color:var(--text-primary);" +
+        "border-bottom:1px solid var(--border,#30363d);";
+      head.textContent = "⌨ Keyboard Shortcuts";
+      const body = document.createElement("div");
+      body.style.cssText = "padding:14px 18px;font-size:13px;line-height:2;color:var(--text-primary);";
+      const rows = [
+        ["Ctrl+L", "Focus scan path"],
+        ["Ctrl+S", "Start scan"],
+        ["Ctrl+R", "Rescan same directory"],
+        ["Ctrl+E", "Export results"],
+        ["Ctrl+F", "Filter tree"],
+        ["Ctrl+Enter", "Start scan"],
+        ["Esc", "Close dialogs / menus"],
+        ["?", "Show this help"],
+      ];
+      rows.forEach(function (r) {
+        const line = document.createElement("div");
+        line.style.cssText = "display:flex;justify-content:space-between;gap:16px;";
+        const k = document.createElement("kbd");
+        k.textContent = r[0];
+        k.style.cssText =
+          "font-family:var(--font-mono);font-size:12px;background:var(--bg-tertiary);" +
+          "border:1px solid var(--border);border-radius:4px;padding:1px 6px;white-space:nowrap;";
+        const d = document.createElement("span");
+        d.textContent = r[1];
+        line.appendChild(k);
+        line.appendChild(d);
+        body.appendChild(line);
+      });
+      card.appendChild(head);
+      card.appendChild(body);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      function close() {
+        document.removeEventListener("keydown", onKey);
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }
+      function onKey(e) { if (e.key === "Escape") close(); }
+      document.addEventListener("keydown", onKey);
+      overlay.addEventListener("click", function (e) {
+        if (e.target === overlay) close();
+      });
+    }
+
+    // ── Low disk space warning (emitted by the backend) ─────────
+    if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
+      window.__TAURI__.event
+        .listen("low-disk-space", function (ev) {
+          const msg = (ev && ev.payload) || "";
+          if (msg && window.showToast) {
+            window.showToast("⚠ Low disk space: " + msg, "warning");
+          }
+        })
+        .catch(function () {});
+    }
 
     // Set default scan path to user home after init and DOM binding.
     // Apply saved default scan path first, falling back to home dir.
@@ -776,6 +850,18 @@
     }
 
     // Diagram mode switcher (in detail panel)
+    // ── Diagram labels toggle ─────────────────────────────
+    const labelsBtn = document.getElementById("diagram-labels");
+    if (labelsBtn && window.__diagram) {
+      labelsBtn.addEventListener("click", function () {
+        window.__diagram._showLabels = !window.__diagram._showLabels;
+        labelsBtn.classList.toggle("active", window.__diagram._showLabels);
+        if (window.__diagram.data) {
+          window.__diagram.setData(window.__diagram.data);
+        }
+      });
+    }
+
     const diagramModes = document.querySelectorAll(".diagram-mode");
     diagramModes.forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -784,8 +870,7 @@
         });
         btn.classList.add("active");
 
-        const mode = btn.dataset.mode;
-        if (mode === "galaxy") {
+        const mode = btn.dataset.mode;        if (mode === "galaxy") {
           if (diagramContainer) diagramContainer.style.display = "none";
           if (galaxyContainer) {
             galaxyContainer.style.display = "block";

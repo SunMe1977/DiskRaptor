@@ -361,6 +361,49 @@ button.icon-btn {
     min-height: 0;
 }
 
+.tree-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-light);
+    overflow-x: auto;
+    white-space: nowrap;
+    min-height: 22px;
+}
+.tree-breadcrumb[hidden] {
+    display: none;
+}
+.crumb-sep {
+    color: var(--text-muted);
+    padding: 0 2px;
+    user-select: none;
+}
+.crumb-seg {
+    border: none;
+    background: none;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: var(--font-sans);
+}
+.crumb-seg:hover {
+    background: var(--bg-hover);
+    text-decoration: underline;
+}
+.crumb-seg.last {
+    color: var(--text-primary);
+    cursor: default;
+}
+.crumb-seg.last:hover {
+    background: none;
+    text-decoration: none;
+}
 .tree-row {
     display: flex;
     align-items: center;

@@ -59,6 +59,7 @@ class DiagramRenderer {
     this._bloomActive = false;
     this._rippleTime = 0;
     this._mouseInside = false;
+    this._showLabels = true;
 
     // Micro‑Scatter → Reassemble animation
     this._scatterAmt = 0; // 0..1, 0=assembled, 1=fully scattered
@@ -573,7 +574,7 @@ class DiagramRenderer {
       });
 
       // Labels with smooth fade-style rendering
-      if (sliceAngle > 0.2 && i < maxLabels) {
+      if (this._showLabels && sliceAngle > 0.2 && i < maxLabels) {
         const mid = startAngle + sliceAngle / 2;
         const lx = sliceCx + Math.cos(mid) * (r * 0.65);
         const ly = sliceCy + Math.sin(mid) * (r * 0.65);
@@ -633,14 +634,16 @@ class DiagramRenderer {
     }
 
     // Center label
-    ctx.fillStyle = "#8b949e";
-    ctx.font = "12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("Top " + this.files.length, cx, cy - 8);
-    ctx.fillStyle = "#e6edf3";
-    ctx.font = "bold 13px sans-serif";
-    ctx.fillText(this._formatSize(totalSize), cx, cy + 10);
+    if (this._showLabels) {
+      ctx.fillStyle = "#8b949e";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Top " + this.files.length, cx, cy - 8);
+      ctx.fillStyle = "#e6edf3";
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText(this._formatSize(totalSize), cx, cy + 10);
+    }
   }
 
   // ── Treemap: Squarified Algorithm ───────────────────
@@ -799,9 +802,9 @@ class DiagramRenderer {
         ctx.textBaseline = "top";
         const maxNameChars = Math.max(6, Math.floor((rw - 8) / 5.5));
         const name = this._ellipsize(this._shortName(r.path), maxNameChars);
-        ctx.fillText(name, rx + 3, ry + 3);
+        if (this._showLabels) ctx.fillText(name, rx + 3, ry + 3);
 
-        if (rh > 28 && rw > 70) {
+        if (rh > 28 && rw > 70 && this._showLabels) {
           ctx.fillStyle = "rgba(255,255,255,0.7)";
           ctx.font = "8px sans-serif";
           ctx.fillText(r.size_human, rx + 3, ry + 14);

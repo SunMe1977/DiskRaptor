@@ -314,6 +314,8 @@
       progressDirsEl.textContent = "0";
       progressSpeedValEl.textContent = "";
       progressElapsedValEl.textContent = "0s";
+      const etaReset = document.getElementById("progress-eta-val");
+      if (etaReset) etaReset.textContent = "\u2014";
       progressDirEl.textContent = "";
       speedSamples.length = 0;
       let unlisten = null;

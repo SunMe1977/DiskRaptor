@@ -42,6 +42,7 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
     scan.scan.dirs_found.store(0, Ordering::Relaxed);
     scan.scan.bytes_found.store(0, Ordering::Relaxed);
     *scan.scan.current_dir.lock() = path.clone();
+    *scan.last_scan_path.lock() = Some(path.clone());
     *scan.scan.start_time.lock() = Instant::now();
     *scan.scan.result.lock() = None;
     *scan.scan.errors.lock() = Vec::new();

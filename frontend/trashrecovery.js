@@ -3,6 +3,7 @@ class TrashRecovery {
     this._items = [];
     this._selected = {};
     this._filter = "";
+    this._type = "all";
     this._sort = "name";
     this._shownCount = 200;
     this._createUI();
@@ -21,6 +22,11 @@ class TrashRecovery {
       </div>
       <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         <input id="trash-search" placeholder="🔍 Filter by name..." style="flex:1;min-width:120px;padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />
+        <select id="trash-type" style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);">
+          <option value="all">All items</option>
+          <option value="file">Files</option>
+          <option value="dir">Folders</option>
+        </select>
         <select id="trash-sort" style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);">
           <option value="name">Sort: Name</option>
           <option value="size">Sort: Size</option>
@@ -46,6 +52,10 @@ class TrashRecovery {
       this._filter = e.target.value.toLowerCase();
       this._render();
     }, 150);
+    document.getElementById("trash-type").onchange = (e) => {
+      this._type = e.target.value;
+      this._render();
+    };
     document.getElementById("trash-sort").onchange = (e) => {
       this._sort = e.target.value;
       this._render();
@@ -71,6 +81,11 @@ class TrashRecovery {
       items = items.filter(function (x) {
         return (x.item.name || "").toLowerCase().indexOf(this._filter) !== -1;
       }.bind(this));
+    }
+    if (this._type === "file") {
+      items = items.filter(function (x) { return !x.item.is_dir; });
+    } else if (this._type === "dir") {
+      items = items.filter(function (x) { return !!x.item.is_dir; });
     }
     const sort = this._sort;
     items.sort(function (a, b) {

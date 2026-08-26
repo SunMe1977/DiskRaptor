@@ -160,6 +160,7 @@
                         <input id="tree-filter" type="text" placeholder="🔍 Filter..." style="margin-left:auto;width:120px;padding:3px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);outline:none;">
                     </div>
                     <div id="tree-container">
+                        <div id="tree-breadcrumb" class="tree-breadcrumb" hidden></div>
                         <div id="tree-header" class="tree-header">
                             <span class="tree-col-sort" data-col="name" style="flex:1;min-width:100px;padding-left:48px;">Name<span class="sort-arrow"></span><span class="col-resize" data-col="name"></span></span>
                             <span class="tree-col-sort" data-col="pct" style="width:60px;text-align:right;">%<span class="sort-arrow"></span><span class="col-resize" data-col="pct"></span></span>
@@ -202,6 +203,7 @@
                             <span class="theme-btn" data-theme="desert" title="Desert" style="background:#d4a373;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
                             <span class="theme-btn" data-theme="ice" title="Ice" style="background:#a8d8ea;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
                             <span class="theme-btn" data-theme="fairy" title="Fairy" style="background:#f8bbd0;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
+                            <button class="zoom-btn active" id="diagram-labels" title="Toggle labels" aria-label="Toggle labels">🏷️</button>
                             <button class="zoom-btn" data-zoom="0.2" title="20%">20%</button>
                             <button class="zoom-btn" data-zoom="0.5" title="50%">50%</button>
                             <button class="zoom-btn active" data-zoom="1" title="100% (Actual Size)">100%</button>
@@ -362,6 +364,11 @@
                         <span class="stat-icon">⏱</span>
                         <span class="stat-val timer-val" id="progress-elapsed-val">00:00</span>
                         <span class="stat-lbl">elapsed</span>
+                    </div>
+                    <div class="progress-stat timer-stat">
+                        <span class="stat-icon">⏳</span>
+                        <span class="stat-val timer-val" id="progress-eta-val">—</span>
+                        <span class="stat-lbl">ETA</span>
                     </div>
                     <div class="progress-stat eta-stat">
                         <span class="stat-icon">⏳</span>

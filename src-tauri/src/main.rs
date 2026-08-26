@@ -37,6 +37,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use std::time::Instant;
 use tauri::Manager;
+use tauri::Emitter;
 use tauri::tray::TrayIconBuilder;
 use tauri_plugin_autostart::MacosLauncher;
 use serde::Serialize;
@@ -116,6 +117,8 @@ pub(crate) struct AppState {
     scan_counter: AtomicU64,
     #[allow(dead_code)] // used on Linux for pkexec caching
     pub(crate) smart_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, JsonResult)>>,
+    /// Last scanned path (used by the tray "Open last scan" item).
+    pub(crate) last_scan_path: Mutex<Option<String>>,
 }
 
 // -- Helper types -----------------------------------------------------------
@@ -198,6 +201,28 @@ fn focus_existing_and_exit() -> ! {
 #[cfg(not(target_os = "windows"))]
 fn focus_existing_and_exit() -> ! {
     std::process::exit(0)
+}
+
+/// Open a path in the platform file manager/Explorer (best-effort).
+fn open_in_explorer(path: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer")
+            .args(["/select,", path])
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").args(["-R", path]).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let parent = std::path::Path::new(path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string());
+        let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+    }
 }
 
 /// Persist the window size/position into settings.json so the next launch
@@ -294,14 +319,16 @@ fn main() {
             settings_path: Mutex::new(settings_path),
             scan_counter: AtomicU64::new(0),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
+            last_scan_path: Mutex::new(None),
         })
         .setup(|app| {
             // -- System tray (Open / Exit) --------------------------
             {
                 use tauri::menu::{Menu, MenuItem};
                 let open = MenuItem::with_id(app, "tray_open", "Open DiskRaptor", true, None::<&str>)?;
+                let last_scan = MenuItem::with_id(app, "tray_lastscan", "Open Last Scan", true, None::<&str>)?;
                 let tray_exit = MenuItem::with_id(app, "tray_exit", "Exit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&open, &tray_exit])?;
+                let menu = Menu::with_items(app, &[&open, &last_scan, &tray_exit])?;
                 let mut tray_builder = TrayIconBuilder::new();
                 if let Some(icon) = app.default_window_icon() {
                     tray_builder = tray_builder.icon(icon.clone());
@@ -318,6 +345,16 @@ fn main() {
                             if let Some(win) = app.get_webview_window("main") {
                                 let _ = win.show();
                                 let _ = win.unminimize();
+                                let _ = win.set_focus();
+                            }
+                        }
+                        "tray_lastscan" => {
+                            let st = app.state::<AppState>();
+                            let path = st.last_scan_path.lock().clone();
+                            if let Some(p) = path {
+                                open_in_explorer(&p);
+                            } else if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
                                 let _ = win.set_focus();
                             }
                         }
@@ -405,6 +442,38 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             // Show the version in the window title (e.g. "DiskRaptor 1.0.25").
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.set_title(&format!("DiskRaptor {}", env!("CARGO_PKG_VERSION")));
+            }
+
+            // Low-disk-space warning: check shortly after startup, then every
+            // 30 minutes, and notify the UI when a drive is below 10% free.
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(
+                        if std::env::var("DISKraptor_CDP_PORT").is_ok() { 3600 } else { 10 },
+                    ));
+                    let disks = sysinfo::Disks::new_with_refreshed_list();
+                    let low: Vec<String> = disks
+                        .list()
+                        .iter()
+                        .filter_map(|d| {
+                            let total = d.total_space();
+                            let free = d.available_space();
+                            if total == 0 { return None; }
+                            let pct = (free as f64 / total as f64) * 100.0;
+                            if pct < 10.0 {
+                                let mount = d.mount_point().to_string_lossy().to_string();
+                                Some(format!("{} ({:.1}% free)", mount, pct))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !low.is_empty() {
+                        let _ = handle.emit("low-disk-space", low.join(", "));
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(30 * 60));
+                });
             }
 
             // -- Resume a S.M.A.R.T. scan after an admin restart -------------
