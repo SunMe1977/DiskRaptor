@@ -46,6 +46,7 @@ Var StartMenuFolder
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_BITMAP "${NSISDIR}\Contrib\Graphics\Header\win.bmp"
 !define MUI_HEADERIMAGE_RIGHT
+!define MUI_ICON "..\..\images\icon.ico"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "..\..\license.txt"
