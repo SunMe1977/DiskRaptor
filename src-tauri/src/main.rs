@@ -184,15 +184,31 @@ fn is_second_instance() -> bool {
 
 #[cfg(target_os = "windows")]
 fn focus_existing_and_exit() -> ! {
-    use windows::core::w;
+    // The window title includes the version ("DiskRaptor 1.0.x"), so enumerate
+    // top-level windows and match the title prefix instead of an exact name.
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
+        EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, SW_RESTORE,
     };
+    unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let target = lparam.0 as *mut HWND;
+        let mut buf = [0u16; 256];
+        let len = GetWindowTextW(hwnd, &mut buf);
+        if len > 0 {
+            let title = String::from_utf16_lossy(&buf[..len as usize]);
+            if title.starts_with("DiskRaptor") {
+                *target = hwnd;
+                return BOOL(0); // stop enumerating
+            }
+        }
+        BOOL(1)
+    }
     unsafe {
-        let hwnd = FindWindowW(None, w!("DiskRaptor"));
-        if hwnd.0 != 0 {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
-            let _ = SetForegroundWindow(hwnd);
+        let mut found: HWND = HWND::default();
+        let _ = EnumWindows(Some(enum_cb), LPARAM(&mut found as *mut HWND as isize));
+        if found.0 != 0 {
+            let _ = ShowWindow(found, SW_RESTORE);
+            let _ = SetForegroundWindow(found);
         }
     }
     std::process::exit(0)
