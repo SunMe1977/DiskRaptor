@@ -2,6 +2,7 @@
 !insertmacro MUI_LANGUAGE "German"
 !insertmacro MUI_LANGUAGE "French"
 !insertmacro MUI_LANGUAGE "Italian"
+!insertmacro MUI_LANGUAGE "Spanish"
 
 LangString ^RunText     ${LANG_ENGLISH} "Run DiskRaptor"
 LangString ^CaptionText ${LANG_ENGLISH} "Installation of ${PRODUCT_NAME} ${PRODUCT_VERSION}"
@@ -30,3 +31,10 @@ LangString ^CreatedBy   ${LANG_ITALIAN} "Creato da ${PRODUCT_PUBLISHER}"
 LangString ^LangTitle   ${LANG_ITALIAN} "Seleziona lingua installazione"
 LangString ^LangText    ${LANG_ITALIAN} "Seleziona la lingua per l'installazione"
 LangString ^UninstPrg   ${LANG_ITALIAN} "Disinstalla ${PRODUCT_NAME}"
+
+LangString ^RunText     ${LANG_SPANISH} "Ejecutar DiskRaptor"
+LangString ^CaptionText ${LANG_SPANISH} "Instalación de ${PRODUCT_NAME} ${PRODUCT_VERSION}"
+LangString ^CreatedBy   ${LANG_SPANISH} "Creado por ${PRODUCT_PUBLISHER}"
+LangString ^LangTitle   ${LANG_SPANISH} "Seleccionar idioma del instalador"
+LangString ^LangText    ${LANG_SPANISH} "Seleccione el idioma del instalador"
+LangString ^UninstPrg   ${LANG_SPANISH} "Desinstalar ${PRODUCT_NAME}"

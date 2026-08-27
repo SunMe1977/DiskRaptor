@@ -24,6 +24,8 @@ OutFile               "DiskRaptor-${PRODUCT_VERSION}-windows-x64.exe"
 InstallDir            "$PROGRAMFILES64\${PRODUCT_NAME}"
 InstallDirRegKey      HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "InstallLocation"
 RequestExecutionLevel admin
+SetCompressor /SOLID lzma
+XPStyle on
 
 ; ── EXE file properties (right-click → Properties → Details) ──
 VIAddVersionKey "ProductName"        "${PRODUCT_NAME}"
