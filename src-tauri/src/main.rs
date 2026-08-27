@@ -282,8 +282,25 @@ fn restore_window_bounds(app: &tauri::App) {
     if let Some(b) = b {
         if b.w >= 800 && b.h >= 500 {
             if let Some(win) = app.get_webview_window("main") {
-                let _ = win.set_position(tauri::LogicalPosition::new(b.x, b.y));
-                let _ = win.set_size(tauri::LogicalSize::new(b.w, b.h));
+                // Clamp the restored size/position to the primary monitor so a
+                // stale or off-screen saved state can never exceed the screen.
+                let (sw, sh, sf) = win
+                    .primary_monitor()
+                    .ok()
+                    .flatten()
+                    .map(|m| {
+                        let s = m.size();
+                        (s.width as f64, s.height as f64, m.scale_factor())
+                    })
+                    .unwrap_or((1920.0, 1080.0, 1.0));
+                let lw = (sw / sf) as i32;
+                let lh = (sh / sf) as i32;
+                let w = (b.w as i32).clamp(800, lw);
+                let h = (b.h as i32).clamp(500, lh);
+                let x = b.x.clamp(0, (lw - w).max(0));
+                let y = b.y.clamp(0, (lh - h).max(0));
+                let _ = win.set_position(tauri::LogicalPosition::new(x, y));
+                let _ = win.set_size(tauri::LogicalSize::new(w as u32, h as u32));
             }
         }
     }
