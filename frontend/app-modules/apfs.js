@@ -49,10 +49,10 @@
     card.className = "smart-card apfs-card";
     card.innerHTML =
       '<div class="smart-header">' +
-      '<span class="smart-title apfs-title">\uD83D\uDCBE APFS &amp; Purgeable</span>' +
+      '<span class="smart-title apfs-title">\uD83D\uDCBE <span data-i18n="menu.apfs_snapshots">APFS &amp; Purgeable</span></span>' +
       '<span style="display:flex;gap:8px;align-items:center;">' +
-      '<button class="apfs-refresh smart-refresh-btn" title="Refresh">\u27F3</button>' +
-      '<button class="apfs-close smart-close" aria-label="Close" title="Close">\u2715</button>' +
+      '<button class="apfs-refresh smart-refresh-btn" title="Refresh" data-i18n-title="action.refresh">\u27F3</button>' +
+      '<button class="apfs-close smart-close" aria-label="Close" title="Close" data-i18n-title="welcome.close" data-i18n-aria-label="welcome.close">\u2715</button>' +
       "</span></div>" +
       '<div class="smart-body apfs-body"></div>' +
       '<div style="padding:12px 22px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:#9aa4b2;line-height:1.6;">' +

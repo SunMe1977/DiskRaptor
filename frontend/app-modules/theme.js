@@ -40,7 +40,7 @@
     // ── Diagram theme buttons ─────────────────────────────
     const themeHint = document.getElementById("theme-hint");
     if (themeHint) {
-      themeHint.textContent = "Choose a diagram style to preview the layout instantly";
+      themeHint.textContent = (window.__ || function (s) { return s; })("diagram.theme_hint");
     }
     function applyDiagramTheme(theme) {
       document.querySelectorAll(".theme-btn").forEach(function (b) {

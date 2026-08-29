@@ -29,44 +29,44 @@
                         value=""
                         style="flex:1;min-width:0;"
                     />
-                    <button id="btn-fav" title="Bookmark this path" aria-label="Bookmark this path" aria-haspopup="menu" aria-expanded="false" style="padding:4px 8px;font-size:14px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">☆</button>
+                    <button id="btn-fav" title="Bookmark this path" aria-label="Bookmark this path" data-i18n-title="action.bookmark" data-i18n-aria-label="action.bookmark" aria-haspopup="menu" aria-expanded="false" style="padding:4px 8px;font-size:14px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:var(--bg-tertiary);color:var(--text-muted);cursor:pointer;">☆</button>
                     <div id="fav-menu" class="fav-dropdown" role="menu"></div>
                 </div>
                 <button id="btn-browse" data-i18n="btn.browse">📁 Browse</button>
                 <button id="btn-scan" class="primary" data-i18n="btn.scan">🔍 Scan</button>
-                <button id="btn-rescan" disabled title="Rescan same directory" aria-label="Rescan same directory">🔄</button>
+                <button id="btn-rescan" disabled title="Rescan same directory" aria-label="Rescan same directory" data-i18n-title="action.rescan" data-i18n-aria-label="action.rescan">🔄</button>
                 <button id="btn-cancel" disabled data-i18n="btn.cancel">✖ Cancel</button>
             </div>
             <div class="toolbar-right">
                 <div class="tools-dropdown-wrap">
-                    <button id="btn-tools" class="icon-btn" title="Tools" aria-haspopup="menu" aria-expanded="false">🔧 <span class="btn-label">Tools</span></button>
+                    <button id="btn-tools" class="icon-btn" title="Tools" data-i18n-title="menu.tools" aria-haspopup="menu" aria-expanded="false">🔧 <span class="btn-label" data-i18n="menu.tools">Tools</span></button>
                     <div id="tools-menu" class="tools-dropdown" role="menu">
-                        <div class="tools-item" tabindex="0" data-action="exit" title="Close DiskRaptor">⏻ Exit</div>
+                        <div class="tools-item" tabindex="0" data-action="exit" title="Close DiskRaptor" data-i18n-title="tools.close_app">⏻ <span data-i18n="menu.exit">Exit</span></div>
                         <div class="tools-sep"></div>
-                        <div class="tools-item" tabindex="0" data-action="open-current">📍 Open Current Folder</div>
-                        <div class="tools-item" tabindex="0" data-action="scan-downloads" data-i18n="tools.scan_downloads">📥 Scan Downloads</div>
-                        <div class="tools-item" tabindex="0" data-action="scan-trash" data-i18n="tools.scan_trash">🗑️ Scan Trash</div>
-                        <div class="tools-item" tabindex="0" data-action="find-files">🔎 Find Files</div>
-                        <div class="tools-item" tabindex="0" data-action="empty-folders">📂 Empty Folders</div>
-                        <div class="tools-item" tabindex="0" data-action="cleanup-downloads">🧹 Downloads Cleanup</div>
-                        <div class="tools-item" tabindex="0" data-action="smart-tools">🛡️ S.M.A.R.T. Tools</div>
-                        <div class="tools-item" tabindex="0" data-action="browser-tools">🧹 Clean Browser Tools</div>
-                        <div class="tools-item" tabindex="0" data-action="apfs-snapshots">💾 APFS &amp; Purgeable</div>
-                        <div class="tools-item" tabindex="0" data-action="duplicates" data-i18n="tools.find_duplicates">🔍 Find Duplicates</div>
+                        <div class="tools-item" tabindex="0" data-action="open-current">📍 <span data-i18n="tools.open_current">Open Current Folder</span></div>
+                        <div class="tools-item" tabindex="0" data-action="scan-downloads">📥 <span data-i18n="tools.scan_downloads">Scan Downloads</span></div>
+                        <div class="tools-item" tabindex="0" data-action="scan-trash">🗑️ <span data-i18n="tools.scan_trash">Scan Trash</span></div>
+                        <div class="tools-item" tabindex="0" data-action="find-files">🔎 <span data-i18n="menu.find_files">Find Files</span></div>
+                        <div class="tools-item" tabindex="0" data-action="empty-folders">📂 <span data-i18n="menu.empty_folders">Empty Folders</span></div>
+                        <div class="tools-item" tabindex="0" data-action="cleanup-downloads">🧹 <span data-i18n="menu.cleanup_downloads">Downloads Cleanup</span></div>
+                        <div class="tools-item" tabindex="0" data-action="smart-tools">🛡️ <span data-i18n="smart.title">S.M.A.R.T. Tools</span></div>
+                        <div class="tools-item" tabindex="0" data-action="browser-tools">🧹 <span data-i18n="menu.browser_tools">Clean Browser Tools</span></div>
+                        <div class="tools-item" tabindex="0" data-action="apfs-snapshots">💾 <span data-i18n="menu.apfs_snapshots">APFS &amp; Purgeable</span></div>
+                        <div class="tools-item" tabindex="0" data-action="duplicates">🔍 <span data-i18n="tools.find_duplicates">Find Duplicates</span></div>
                         <div class="tools-sep"></div>
-                        <div class="tools-item" tabindex="0" data-action="export-html">📄 Export HTML Report</div>
-                        <div class="tools-item" tabindex="0" data-action="settings">⚙️ Preferences</div>
-                        <div class="tools-item" tabindex="0" data-action="reset-view">🔄 Reset View</div>
-                        <div class="tools-item" tabindex="0" data-action="clear-scan">🗑️ Clear Scan</div>
-                        <div class="tools-item" tabindex="0" data-action="trash" data-i18n="tools.empty_trash">🗑️ Empty Trash</div>
+                        <div class="tools-item" tabindex="0" data-action="export-html">📄 <span data-i18n="menu.export_html">Export HTML Report</span></div>
+                        <div class="tools-item" tabindex="0" data-action="settings">⚙️ <span data-i18n="settings.title">Preferences</span></div>
+                        <div class="tools-item" tabindex="0" data-action="reset-view">🔄 <span data-i18n="tools.reset_view">Reset View</span></div>
+                        <div class="tools-item" tabindex="0" data-action="clear-scan">🗑️ <span data-i18n="menu.clear_scan">Clear Scan</span></div>
+                        <div class="tools-item" tabindex="0" data-action="trash">🗑️ <span data-i18n="tools.empty_trash">Empty Trash</span></div>
                     </div>
                 </div>
                 <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
                 <div class="lang-dropdown-wrap">
-                    <button id="btn-lang" class="icon-btn" title="Language" aria-label="Language" aria-haspopup="menu" aria-expanded="false">🌐</button>
+                    <button id="btn-lang" class="icon-btn" title="Language" aria-label="Language" data-i18n-title="lang.label" data-i18n-aria-label="lang.label" aria-haspopup="menu" aria-expanded="false">🌐</button>
                     <div id="lang-menu" class="lang-dropdown" role="menu">
                         <div class="lang-search">
-                            <input type="text" id="lang-filter" placeholder="🔍 Search language..." />
+                            <input type="text" id="lang-filter" placeholder="🔍 Search language..." data-i18n-placeholder="lang.search" />
                         </div>
                         <div id="lang-list" class="lang-list"></div>
                     </div>
@@ -77,6 +77,7 @@
                     data-i18n-title="theme.toggle.dark"
                     title="Switch to dark mode"
                     aria-label="Toggle theme"
+                    data-i18n-aria-label="theme.toggle_label"
                 >
                     ☾
                 </button>
@@ -98,7 +99,7 @@
                                 Ultra-fast disk space analyzer
                             </p>
                             <div style="font-size:13px;color:var(--text-secondary);text-align:center;">
-                                <div id="welcome-star-rating" style="font-size:22px;letter-spacing:2px;margin-bottom:4px;cursor:pointer;" title="Rate DiskRaptor">
+                                <div id="welcome-star-rating" style="font-size:22px;letter-spacing:2px;margin-bottom:4px;cursor:pointer;" title="Rate DiskRaptor" data-i18n-title="welcome.rate">
                                     ⭐⭐⭐⭐⭐
                                 </div>
                                 <div>
@@ -117,9 +118,9 @@
                                 </div>
                                 <div style="margin-top:2px;font-size:11px;color:var(--text-muted);">:==)</div>
                             </div>
-                            <button class="welcome-close" id="welcome-close" title="Close" aria-label="Close welcome" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:16px;cursor:pointer;padding:4px 8px;">✖</button>
+                            <button class="welcome-close" id="welcome-close" title="Close" aria-label="Close welcome" data-i18n-title="welcome.close" data-i18n-aria-label="welcome.close_aria" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:16px;cursor:pointer;padding:4px 8px;">✖</button>
                             <label style="display:block;margin-top:16px;font-size:12px;color:var(--text-muted);cursor:pointer;user-select:none;">
-                                <input type="checkbox" id="welcome-dont-show" style="vertical-align:middle;margin-right:4px;" /> Don't show again
+                                <input type="checkbox" id="welcome-dont-show" style="vertical-align:middle;margin-right:4px;" /> <span data-i18n="welcome.dont_show">Don't show again</span>
                             </label>
                         </div>
 
@@ -149,25 +150,25 @@
                         <h2 data-i18n="tree.title">Directory Tree</h2>
                         <span id="node-count" class="badge">0 <span data-i18n="tree.nodes">nodes</span></span>
                         <div id="type-filters" style="display:flex;gap:2px;margin-left:8px;flex-shrink:0;">
-                            <button class="type-filter active" data-ext="all" title="All">📁</button>
-                            <button class="type-filter" data-ext="jpg|jpeg|png|gif|webp|svg" title="Images">🖼️</button>
-                            <button class="type-filter" data-ext="mp4|mov|avi|mkv|wmv" title="Videos">🎬</button>
-                            <button class="type-filter" data-ext="mp3|wav|flac|aac|ogg" title="Audio">🎵</button>
-                            <button class="type-filter" data-ext="zip|tar|gz|bz2|7z|rar|dmg|iso" title="Archives">🗜️</button>
-                            <button class="type-filter" data-ext="pdf" title="PDF">📕</button>
-                            <button class="type-filter" data-ext="custom" title="Custom extensions...">➕</button>
+                            <button class="type-filter active" data-ext="all" title="All" data-i18n-title="tree.type_all">📁</button>
+                            <button class="type-filter" data-ext="jpg|jpeg|png|gif|webp|svg" title="Images" data-i18n-title="tree.type_images">🖼️</button>
+                            <button class="type-filter" data-ext="mp4|mov|avi|mkv|wmv" title="Videos" data-i18n-title="tree.type_videos">🎬</button>
+                            <button class="type-filter" data-ext="mp3|wav|flac|aac|ogg" title="Audio" data-i18n-title="tree.type_audio">🎵</button>
+                            <button class="type-filter" data-ext="zip|tar|gz|bz2|7z|rar|dmg|iso" title="Archives" data-i18n-title="tree.type_archives">🗜️</button>
+                            <button class="type-filter" data-ext="pdf" title="PDF" data-i18n-title="tree.type_pdf">📕</button>
+                            <button class="type-filter" data-ext="custom" title="Custom extensions..." data-i18n-title="tree.type_custom">➕</button>
                         </div>
-                        <input id="tree-filter" type="text" placeholder="🔍 Filter..." style="margin-left:auto;width:120px;padding:3px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);outline:none;">
+                        <input id="tree-filter" type="text" placeholder="🔍 Filter..." data-i18n-placeholder="tree.filter_placeholder" style="margin-left:auto;width:120px;padding:3px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);outline:none;">
                     </div>
                     <div id="tree-container">
                         <div id="tree-breadcrumb" class="tree-breadcrumb" hidden></div>
                         <div id="tree-header" class="tree-header">
-                            <span class="tree-col-sort" data-col="name" style="flex:1;min-width:100px;padding-left:48px;">Name<span class="sort-arrow"></span><span class="col-resize" data-col="name"></span></span>
+                            <span class="tree-col-sort" data-col="name" style="flex:1;min-width:100px;padding-left:48px;"><span data-i18n="tree.col_name">Name</span><span class="sort-arrow"></span><span class="col-resize" data-col="name"></span></span>
                             <span class="tree-col-sort" data-col="pct" style="width:60px;text-align:right;">%<span class="sort-arrow"></span><span class="col-resize" data-col="pct"></span></span>
-                            <span class="tree-col-sort" data-col="size" style="width:80px;text-align:right;">Size<span class="sort-arrow"></span><span class="col-resize" data-col="size"></span></span>
-                            <span class="tree-col-sort" data-col="files" style="width:70px;text-align:right;">Files<span class="sort-arrow"></span><span class="col-resize" data-col="files"></span></span>
-                            <span class="tree-col-sort" data-col="dirs" style="width:70px;text-align:right;">Dirs<span class="sort-arrow"></span></span>
-                            <span class="tree-col-sort" data-col="date" style="width:80px;text-align:right;">Date<span class="sort-arrow"></span></span>
+                            <span class="tree-col-sort" data-col="size" style="width:80px;text-align:right;"><span data-i18n="tree.col_size">Size</span><span class="sort-arrow"></span><span class="col-resize" data-col="size"></span></span>
+                            <span class="tree-col-sort" data-col="files" style="width:70px;text-align:right;"><span data-i18n="tree.col_files">Files</span><span class="sort-arrow"></span><span class="col-resize" data-col="files"></span></span>
+                            <span class="tree-col-sort" data-col="dirs" style="width:70px;text-align:right;"><span data-i18n="tree.col_dirs">Dirs</span><span class="sort-arrow"></span></span>
+                            <span class="tree-col-sort" data-col="date" style="width:80px;text-align:right;"><span data-i18n="tree.col_date">Date</span><span class="sort-arrow"></span></span>
                         </div>
                         <div id="tree-scroll">
                             <div id="tree-viewport"></div>
@@ -184,7 +185,7 @@
                     <div class="panel-header" id="diagram-header">
                         <h3 id="diagram-title" data-i18n="diagram.top50">Top 50 Files</h3>
                         <div class="diagram-controls">
-                            <span id="theme-hint" style="font-size:10px;color:var(--text-muted);margin-right:6px;">Theme preview</span>
+                            <span id="theme-hint" style="font-size:10px;color:var(--text-muted);margin-right:6px;" data-i18n="diagram.theme_preview">Theme preview</span>
                             <button class="diagram-mode active" data-mode="pie" data-i18n="diagram.pie">
                                 Pie
                             </button>
@@ -203,11 +204,11 @@
                             <span class="theme-btn" data-theme="desert" title="Desert" style="background:#d4a373;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
                             <span class="theme-btn" data-theme="ice" title="Ice" style="background:#a8d8ea;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
                             <span class="theme-btn" data-theme="fairy" title="Fairy" style="background:#f8bbd0;width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent;vertical-align:middle"></span>
-                            <button class="zoom-btn active" id="diagram-labels" title="Toggle labels" aria-label="Toggle labels">🏷️</button>
+                            <button class="zoom-btn active" id="diagram-labels" title="Toggle labels" aria-label="Toggle labels" data-i18n-title="diagram.toggle_labels" data-i18n-aria-label="diagram.toggle_labels">🏷️</button>
                             <button class="zoom-btn" data-zoom="0.2" title="20%">20%</button>
                             <button class="zoom-btn" data-zoom="0.5" title="50%">50%</button>
                             <button class="zoom-btn active" data-zoom="1" title="100% (Actual Size)">100%</button>
-                            <button class="zoom-btn" data-zoom="fit" title="Fit to View">Fit</button>
+                            <button class="zoom-btn" data-zoom="fit" title="Fit to View" data-i18n="diagram.fit" data-i18n-title="diagram.fit_title">Fit</button>
                             <span id="zoom-label" class="zoom-label">100%</span>
                         </div>
                     </div>
@@ -308,6 +309,7 @@
                                 class="sel-action"
                                 data-action="trash"
                                 title="Move to Trash"
+                                data-i18n-title="action.move_to_trash_title"
                                 disabled
                                 style="color: var(--accent-red)"
                             >
@@ -348,32 +350,32 @@
                     <div class="progress-stat">
                         <span class="stat-icon">📄</span>
                         <span class="stat-val" id="progress-files">0</span>
-                        <span class="stat-lbl">Files</span>
+                        <span class="stat-lbl" data-i18n="progress.files">Files</span>
                     </div>
                     <div class="progress-stat">
                         <span class="stat-icon">📁</span>
                         <span class="stat-val" id="progress-dirs">0</span>
-                        <span class="stat-lbl">Directories</span>
+                        <span class="stat-lbl" data-i18n="progress.directories">Directories</span>
                     </div>
                     <div class="progress-stat">
                         <span class="stat-icon">⚡</span>
                         <span class="stat-val" id="progress-speed-val">—</span>
-                        <span class="stat-lbl">files/sec</span>
+                        <span class="stat-lbl" data-i18n="progress.files_per_sec">files/sec</span>
                     </div>
                     <div class="progress-stat timer-stat">
                         <span class="stat-icon">⏱</span>
                         <span class="stat-val timer-val" id="progress-elapsed-val">00:00</span>
-                        <span class="stat-lbl">elapsed</span>
+                        <span class="stat-lbl" data-i18n="progress.elapsed_label">elapsed</span>
                     </div>
                     <div class="progress-stat timer-stat">
                         <span class="stat-icon">⏳</span>
                         <span class="stat-val timer-val" id="progress-eta-val">—</span>
-                        <span class="stat-lbl">ETA</span>
+                        <span class="stat-lbl" data-i18n="progress.eta">ETA</span>
                     </div>
                     <div class="progress-stat eta-stat">
                         <span class="stat-icon">⏳</span>
                         <span class="stat-val eta-val" id="progress-eta-val">--:--</span>
-                        <span class="stat-lbl">ETA</span>
+                        <span class="stat-lbl" data-i18n="progress.eta">ETA</span>
                     </div>
                 </div>
                 <div id="progress-dir" class="progress-dir"></div>
@@ -393,7 +395,7 @@
                     ⚡ Scanning...
                 </p>
                 <div class="progress-actions">
-                    <button id="progress-cancel" class="progress-btn">✖ Cancel Scan</button>
+                    <button id="progress-cancel" class="progress-btn">✖ <span data-i18n="progress.cancel_scan">Cancel Scan</span></button>
                 </div>
             </div>
         </div>
@@ -401,19 +403,19 @@
         <div id="tip-overlay" class="overlay-base" style="display:none;">
             <div class="overlay-card" style="text-align:center;">
                 <div style="font-size:40px;margin-bottom:12px;">🦖</div>
-                <h3 style="margin:0 0 8px 0;font-size:16px;color:var(--text-primary);">Welcome to DiskRaptor!</h3>
+                <h3 style="margin:0 0 8px 0;font-size:16px;color:var(--text-primary);" data-i18n="tip.title">Welcome to DiskRaptor!</h3>
                 <div style="font-size:12px;color:var(--text-secondary);text-align:left;line-height:1.8;">
-                    <p>🚀 <b>Quick start:</b> Click <b>Start Scan</b> or type a path and press <b>Enter</b></p>
-                    <p>⌨️ <b>Shortcuts:</b> <kbd>Ctrl+Enter</kbd> Scan · <kbd>Ctrl+O</kbd> Browse · <kbd>Ctrl+F</kbd> Filter tree</p>
-                    <p>🔧 <b>Tools:</b> Find duplicates, recover trash, search files — check the 🔧 menu</p>
-                    <p>🌐 <b>Language:</b> Click the 🌐 button to switch languages</p>
+                    <p>🚀 <b data-i18n="tip.quick_start">Quick start:</b> <span data-i18n="tip.quick_start_desc">Click Start Scan or type a path and press Enter</span></p>
+                    <p>⌨️ <b data-i18n="tip.shortcuts">Shortcuts:</b> <span data-i18n="tip.shortcuts_desc">Ctrl+Enter Scan · Ctrl+O Browse · Ctrl+F Filter tree</span></p>
+                    <p>🔧 <b data-i18n="tip.tools">Tools:</b> <span data-i18n="tip.tools_desc">Find duplicates, recover trash, search files — check the 🔧 menu</span></p>
+                    <p>🌐 <b data-i18n="tip.language">Language:</b> <span data-i18n="tip.language_desc">Click the 🌐 button to switch languages</span></p>
                 </div>
                 <div style="margin-top:12px;">
                     <label style="font-size:11px;color:var(--text-muted);cursor:pointer;">
-                        <input type="checkbox" id="tip-dont-show"> Don't show again
+                        <input type="checkbox" id="tip-dont-show"> <span data-i18n="tip.dont_show">Don't show again</span>
                     </label>
                 </div>
-                <button id="tip-close" style="margin-top:12px;padding:8px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Got it!</button>
+                <button id="tip-close" style="margin-top:12px;padding:8px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;font-size:14px;font-weight:600;cursor:pointer;" data-i18n="tip.got_it">Got it!</button>
             </div>
         </div>
 
@@ -433,7 +435,7 @@
                     </select>
                 </div>
                 <div style="margin-bottom:16px;">
-                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Quick presets</label>
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.quick_presets">Quick presets</label>
                     <div id="settings-presets" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
                 </div>
                 <div style="margin-bottom:16px;">
@@ -443,11 +445,11 @@
                     </select>
                 </div>
                 <div style="margin-bottom:16px;">
-                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">App data location</label>
+                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.appdata_location">App data location</label>
                     <code id="settings-appdata" style="display:block;font-size:11px;color:var(--text-muted);word-break:break-all;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;border:1px solid var(--border);">…</code>
                 </div>
                 <div style="margin-bottom:16px;">
-                    <label for="settings-accent" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Accent color</label>
+                    <label for="settings-accent" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.accent_color">Accent color</label>
                     <input id="settings-accent" type="color" value="#58a6ff" style="width:48px;height:28px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);cursor:pointer;padding:2px;" />
                 </div>
                 <div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;">
@@ -479,14 +481,14 @@
                     <p class="about-version"><span data-i18n="about.version">Version</span> <span class="about-version-num">–</span></p>
                     <p class="about-desc" data-i18n="about.desc">Ultra-fast disk space analyzer</p>
                     <div class="about-tabs flex-row" style="gap:0;margin:12px 0 8px;border-bottom:2px solid var(--border);width:100%;">
-                        <button class="about-tab active" data-tab="about">📋 About</button>
-                        <button class="about-tab" data-tab="changelog">📜 Changelog</button>
-                        <button class="about-tab" data-tab="credits">🙏 Credits</button>
+                        <button class="about-tab active" data-tab="about">📋 <span data-i18n="about.tab_about">About</span></button>
+                        <button class="about-tab" data-tab="changelog">📜 <span data-i18n="about.tab_changelog">Changelog</span></button>
+                        <button class="about-tab" data-tab="credits">🙏 <span data-i18n="about.tab_credits">Credits</span></button>
                     </div>
                     <div id="about-tab-about" class="about-tab-content">
                         <p class="about-tech">⚡ Rust + Tauri 2 · jwalk · sysinfo</p>
                         <div class="about-divider"></div>
-                        <p class="about-author">created by</p>
+                        <p class="about-author" data-i18n="about.created_by">created by</p>
                         <p class="about-name">Hansjoerg Hofer</p>
                         <div class="about-divider"></div>
                         <p class="about-links">
@@ -494,7 +496,7 @@
                             <a data-open-url="https://diskraptor.com" class="about-link">🌐 diskraptor.com</a>
                             <a data-open-url="https://github.com/SunMe1977/DiskRaptor" class="about-link">🐙 GitHub</a>
                         </p>
-                        <p id="about-update-check" style="font-size:11px;color:var(--text-muted);cursor:pointer;margin:8px 0 0;">🔍 Check for Updates</p>
+                        <p id="about-update-check" style="font-size:11px;color:var(--text-muted);cursor:pointer;margin:8px 0 0;">🔍 <span data-i18n="menu.check_updates">Check for Updates</span></p>
                     </div>
                     <div id="about-tab-changelog" class="about-tab-content" style="display:none;">
                         <div style="font-size:11px;text-align:left;padding:4px 8px;color:var(--text-secondary);line-height:1.6;">
@@ -521,7 +523,7 @@
                             <p>🔍 <b>serde / serde_json</b> — Serialization</p>
                             <p>🗺️ <b>sysinfo</b> — System information</p>
                             <div class="about-divider" style="margin:10px 0 6px;"></div>
-                            <p style="font-weight:600;color:var(--text-primary);font-size:12px;margin:0;">🙏 Thanks to our contributors</p>
+                            <p style="font-weight:600;color:var(--text-primary);font-size:12px;margin:0;" data-i18n="about.thanks_contributors">🙏 Thanks to our contributors</p>
                             <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-top:6px;">
                                 <a data-open-url="https://github.com/bovirus" class="about-link" style="display:flex;align-items:center;gap:8px;font-size:12px;">
                                     <img src="images/contributors/bovirus.png" width="36" height="36" alt="bovirus" style="border-radius:50%;border:1px solid var(--border);" />
@@ -540,14 +542,14 @@
         <!-- RAM status bar at the bottom of the page -->
         <div id="ram-bar" class="ram-bar-bottom">
             <div class="ram-section">
-                <span class="ram-label">📊 App</span>
+                <span class="ram-label">📊 <span data-i18n="ram.app">App</span></span>
                 <div class="ram-bar-track">
                     <div id="ram-app-fill" class="ram-bar-fill-app" style="width:0%"></div>
                 </div>
                 <span id="ram-app-text" class="ram-value">—</span>
             </div>
             <div class="ram-section">
-                <span class="ram-label">💻 System</span>
+                <span class="ram-label">💻 <span data-i18n="ram.system">System</span></span>
                 <div class="ram-bar-track">
                     <div id="ram-sys-fill" class="ram-bar-fill-sys" style="width:0%"></div>
                 </div>

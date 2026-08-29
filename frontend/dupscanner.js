@@ -17,19 +17,19 @@ class DupScanner {
     this.overlay.innerHTML = `
       <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:32px 40px;max-width:480px;width:90%;text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.4);">
         <div style="font-size:40px;margin-bottom:12px;">🔍</div>
-        <h3 style="margin:0 0 6px 0;font-size:16px;color:var(--text-primary);">Scanning for Duplicates</h3>
+        <h3 style="margin:0 0 6px 0;font-size:16px;color:var(--text-primary);" data-i18n="dup.title">Scanning for Duplicates</h3>
         <p id="dup-progress-status" style="margin:0 0 20px 0;font-size:13px;color:var(--text-secondary);" data-i18n="dup.scanning">Scanning files...</p>
         <div style="display:flex;gap:20px;justify-content:center;margin-bottom:16px;">
-          <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-files">0</div><div style="font-size:11px;color:var(--text-muted);">Files</div></div>
-          <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-groups">0</div><div style="font-size:11px;color:var(--text-muted);">Groups</div></div>
-          <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-wasted">0 B</div><div style="font-size:11px;color:var(--text-muted);">Wasted</div></div>
+          <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-files">0</div><div style="font-size:11px;color:var(--text-muted);" data-i18n="progress.files">Files</div></div>
+          <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-groups">0</div><div style="font-size:11px;color:var(--text-muted);" data-i18n="dup.groups">Groups</div></div>
+          <div><div style="font-size:18px;font-weight:600;color:var(--text-primary);" id="dup-progress-wasted">0 B</div><div style="font-size:11px;color:var(--text-muted);" data-i18n="dup.wasted">Wasted</div></div>
         </div>
         <div id="dup-progress-bar-wrap" style="width:100%;height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;margin-bottom:16px;">
           <div id="dup-progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--accent-green),var(--accent-green));border-radius:2px;transition:width 0.3s;"></div>
         </div>
         <div id="dup-progress-file" style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:16px;">—</div>
         <div style="display:flex;gap:8px;justify-content:center;">
-          <button id="dup-cancel-btn" style="padding:8px 20px;font-size:13px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">✖ Cancel</button>
+          <button id="dup-cancel-btn" style="padding:8px 20px;font-size:13px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">✖ <span data-i18n="btn.cancel">Cancel</span></button>
         </div>
       </div>
     `;
@@ -41,12 +41,12 @@ class DupScanner {
     this.resultsPanel.style.cssText = "display:none;margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);overflow:hidden;";
     this.resultsPanel.innerHTML = `
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="margin:0;font-size:14px;color:var(--text-primary);">🔍 Duplicate Files</h3>
+        <h3 style="margin:0;font-size:14px;color:var(--text-primary);" data-i18n="dup.results_title">🔍 Duplicate Files</h3>
         <span id="dup-summary" style="font-size:12px;color:var(--text-muted);"></span>
       </div>
       <div id="dup-groups-list" style="max-height:400px;overflow-y:auto;padding:8px;"></div>
       <div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;">
-        <button id="dup-close-results" style="padding:6px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:4px;cursor:pointer;">Close</button>
+        <button id="dup-close-results" style="padding:6px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:4px;cursor:pointer;" data-i18n="trash.close">Close</button>
       </div>
     `;
     document.body.appendChild(this.resultsPanel);
@@ -186,11 +186,11 @@ class DupScanner {
     const toolbar = document.createElement("div");
     toolbar.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);flex-wrap:wrap;gap:6px;";
     toolbar.innerHTML = `
-      <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> files selected to delete \u00B7 <span style="color:var(--accent-red);">${this._fmtSize(data.wastedBytes || 0)} reclaimable</span></span>
+      <span style="font-size:13px;color:var(--text-primary);font-weight:500;">\uD83D\uDD0D <span id="dup-selected-count">0</span> <span data-i18n="dup.files_selected">files selected to delete</span> \u00B7 <span style="color:var(--accent-red);">${this._fmtSize(data.wastedBytes || 0)} <span data-i18n="dup.reclaimable">reclaimable</span></span></span>
       <span style="display:flex;gap:6px;align-items:center;">
-        <button id="dup-select-none" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select None</button>
-        <button id="dup-select-all" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;">Select All</button>
-        <button id="dup-keep-largest" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;" title="Keep the largest copy in each group">Keep Largest</button>
+        <button id="dup-select-none" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;"><span data-i18n="dup.select_none">Select None</span></button>
+        <button id="dup-select-all" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;"><span data-i18n="trash.select_all">Select All</span></button>
+        <button id="dup-keep-largest" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;" title="Keep the largest copy in each group" data-i18n-title="dup.keep_largest_title"><span data-i18n="dup.keep_largest">Keep Largest</span></button>
         <button id="dup-delete-btn" style="padding:8px 20px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#da3633,var(--accent-red));border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(248,81,73,0.3);">\uD83D\uDDD1 <span data-i18n="action.move_selected_to_trash">Move Selected to Trash</span></button>
       </span>
       <div id="dup-delete-progress" style="display:none;flex-basis:100%;height:6px;border-radius:4px;background:var(--bg-tertiary);overflow:hidden;margin-top:6px;"><div id="dup-delete-progress-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#da3633,#f85149);transition:width 0.2s;"></div></div>
@@ -407,7 +407,8 @@ class DupScanner {
       // Move in parallel batches with status updates
       const delBtn = document.getElementById("dup-delete-btn");
       delBtn.disabled = true;
-      delBtn.textContent = "Moving to Trash...";
+      const _t = window.__ || function (s) { return s; };
+      delBtn.textContent = _t("status.moving_to_trash");
       const progWrap = document.getElementById("dup-delete-progress");
       const progFill = document.getElementById("dup-delete-progress-fill");
       if (progWrap) progWrap.style.display = "block";
@@ -428,7 +429,9 @@ class DupScanner {
           else if (r.status === "rejected") failed++;
         });
         done += batch.length;
-        delBtn.textContent = "Moving " + Math.min(done, toDelete.length) + "/" + toDelete.length + "...";
+        delBtn.textContent = _t("status.moving_progress")
+          .replace("{done}", Math.min(done, toDelete.length))
+          .replace("{total}", toDelete.length);
         if (progFill) progFill.style.width = Math.round((done / toDelete.length) * 100) + "%";
         await deleteBatch(start + BATCH);
       }

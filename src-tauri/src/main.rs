@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+﻿#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use diskraptor_scanner::scanner;
 
@@ -6,6 +6,7 @@ mod apfs;
 mod browser;
 mod cmds;
 mod menu;
+mod menu_i18n;
 mod smart;
 #[cfg(feature = "test-server")]
 mod test_server;
@@ -119,6 +120,10 @@ pub(crate) struct AppState {
     pub(crate) smart_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, JsonResult)>>,
     /// Last scanned path (used by the tray "Open last scan" item).
     pub(crate) last_scan_path: Mutex<Option<String>>,
+    /// Resolved UI locale code ("en", "de", â€¦) used to localize native menus.
+    pub(crate) locale: Mutex<String>,
+    /// Translated labels for native (tray / window) menus, sent from the webview.
+    pub(crate) menu_strings: Mutex<std::collections::HashMap<String, String>>,
 }
 
 // -- Helper types -----------------------------------------------------------
@@ -306,6 +311,56 @@ fn restore_window_bounds(app: &tauri::App) {
     }
 }
 
+// -- Native menu localization ----------------------------------------------
+
+/// Report the operating system's UI locale (e.g. "de-DE"). The frontend uses
+/// this as the authoritative source for the "auto" language setting, since
+/// WebView2's `navigator.language` does not always follow the OS language.
+#[tauri::command]
+fn get_system_locale() -> String {
+    sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string())
+}
+
+/// Store the active UI locale + translated menu labels (pushed by the webview
+/// once it resolves the language) and rebuild the native window + tray menus.
+#[tauri::command]
+fn set_locale(
+    app: tauri::AppHandle,
+    locale: String,
+    strings: std::collections::HashMap<String, String>,
+    raw: String,
+) {
+    // The webview's first resolution on "auto" is often English (WebView2's
+    // navigator.language), before it syncs with the OS locale. Ignore that
+    // auto-detected English push so it doesn't overwrite the correctly
+    // localized native menu (which follows the OS locale). An explicit manual
+    // English choice (raw == "en") is still respected.
+    let os_base = sys_locale::get_locale()
+        .map(|l| l.split('-').next().unwrap_or("en").to_lowercase())
+        .unwrap_or_else(|| "en".to_string());
+    let push_base = locale.split('-').next().unwrap_or("en").to_lowercase();
+    if raw.trim().eq_ignore_ascii_case("auto") && push_base == "en" && os_base != "en" {
+        return;
+    }
+    {
+        let st = app.state::<AppState>();
+        *st.locale.lock() = locale;
+        *st.menu_strings.lock() = strings;
+    }
+    // Rebuild the native window menu (Windows menu bar / macOS app menu).
+    if let Some(win) = app.get_webview_window("main") {
+        if let Ok(m) = menu::build_native_menu(&app) {
+            let _ = win.set_menu(m);
+        }
+    }
+    // Rebuild the system-tray context menu.
+    if let Some(tray) = app.tray_by_id("main") {
+        if let Ok(m) = menu::build_tray_menu(&app) {
+            let _ = tray.set_menu(Some(m));
+        }
+    }
+}
+
 // -- Main -------------------------------------------------------------------
 
 fn main() {
@@ -353,15 +408,13 @@ fn main() {
             scan_counter: AtomicU64::new(0),
             smart_cache: Mutex::new(std::collections::HashMap::new()),
             last_scan_path: Mutex::new(None),
+            locale: Mutex::new("en".to_string()),
+            menu_strings: Mutex::new(std::collections::HashMap::new()),
         })
         .setup(|app| {
             // -- System tray (Open / Exit) --------------------------
             {
-                use tauri::menu::{Menu, MenuItem};
-                let open = MenuItem::with_id(app, "tray_open", "Open DiskRaptor", true, None::<&str>)?;
-                let last_scan = MenuItem::with_id(app, "tray_lastscan", "Open Last Scan", true, None::<&str>)?;
-                let tray_exit = MenuItem::with_id(app, "tray_exit", "Exit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&open, &last_scan, &tray_exit])?;
+                let menu = menu::build_tray_menu(app.handle())?;
                 let mut tray_builder = TrayIconBuilder::new();
                 if let Some(icon) = app.default_window_icon() {
                     tray_builder = tray_builder.icon(icon.clone());
@@ -472,7 +525,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             // Restore the saved window size/position (best-effort).
             restore_window_bounds(app);
 
-            // Show the version in the window title (e.g. "DiskRaptor 1.0.25").
+            // Show the version in the window title (e.g. "DiskRaptor 1.0.26").
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.set_title(&format!("DiskRaptor {}", env!("CARGO_PKG_VERSION")));
             }
@@ -588,6 +641,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             browser::list_browser_data, browser::clean_browser, browser::get_browser_icon,
             apfs::list_apfs_volumes, apfs::delete_local_snapshot,
             cmds::autostart::set_autostart, cmds::autostart::get_autostart,
+            set_locale, get_system_locale,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

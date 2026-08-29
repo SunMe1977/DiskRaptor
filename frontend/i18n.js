@@ -107,6 +107,7 @@
     localStorage.setItem("diskraptor-lang", locale);
     resolvedLocale = resolveLocale(locale);
     applyTranslations();
+    syncNativeMenus();
     window.dispatchEvent(
       new CustomEvent("locale-changed", {
         detail: { locale: resolvedLocale, raw: locale },
@@ -117,6 +118,8 @@
     ensureLoaded(resolvedLocale).then(function () {
       resolvedLocale = resolveLocale(currentLocale);
       applyTranslations();
+      syncNativeMenus();
+      syncWithOsLocale();
       window.dispatchEvent(
         new CustomEvent("locale-changed", {
           detail: { locale: resolvedLocale, raw: currentLocale },
@@ -163,6 +166,66 @@
       const key = el.getAttribute("data-i18n-html");
       el.innerHTML = t(key);
     });
+    // Elements with data-i18n-aria-label get their aria-label replaced
+    document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
+      const key = el.getAttribute("data-i18n-aria-label");
+      el.setAttribute("aria-label", t(key));
+    });
+  }
+
+  // ── Native menu sync (Windows tray / app menu) ──────────
+  // Keys the Rust-side native menu reads from the active locale.
+  const MENU_KEYS = [
+    "menu.tray_open", "menu.tray_last_scan", "menu.exit",
+    "about.title", "menu.settings",
+    "diagram.pie", "menu.galaxy", "diagram.treemap",
+    "lang.auto", "lang.label",
+    "menu.view", "menu.tools", "menu.window", "menu.help",
+    "tools.scan_downloads", "tools.scan_trash", "trash.title", "menu.find_files",
+    "menu.empty_folders", "menu.cleanup_downloads", "smart.title", "menu.browser_tools",
+    "menu.apfs_snapshots", "tools.find_duplicates", "menu.export_html",
+    "menu.preferences", "menu.clear_scan", "tools.empty_trash", "menu.check_updates",
+  ];
+
+  function syncNativeMenus() {
+    if (!window.__TAURI__ || typeof window.__TAURI__.invoke !== "function") return;
+    // Wait until the active locale (or at least the English fallback) is loaded,
+    // otherwise we would push raw key names to the native menus.
+    if (!hasData(resolvedLocale) && !hasData("en")) return;
+    const table = DATA[resolvedLocale] || {};
+    const enTable = DATA["en"] || {};
+    const strings = {};
+    for (const k of MENU_KEYS) {
+      strings[k] =
+        table[k] !== undefined ? table[k] :
+        enTable[k] !== undefined ? enTable[k] :
+        k;
+    }
+    window.__TAURI__.invoke("set_locale", { locale: resolvedLocale, raw: currentLocale, strings: strings })
+      .catch(function () {});
+  }
+
+  // When the language is "auto", make the app follow the operating system's
+  // UI language. WebView2's navigator.language does not always match the OS,
+  // so the authoritative source is the Rust-reported system locale.
+  function syncWithOsLocale() {
+    if (currentLocale !== "auto") return Promise.resolve();
+    if (!window.__TAURI__ || typeof window.__TAURI__.invoke !== "function") return Promise.resolve();
+    return window.__TAURI__.invoke("get_system_locale").then(function (osLocale) {
+      if (!osLocale) return;
+      const base = String(osLocale).split("-")[0].toLowerCase();
+      if (!LANGUAGES.some(function (l) { return l.code === base; })) return;
+      if (base === resolvedLocale) return;
+      resolvedLocale = base;
+      applyTranslations();
+      syncNativeMenus();
+      document.documentElement.lang = base;
+      window.dispatchEvent(
+        new CustomEvent("locale-changed", {
+          detail: { locale: base, raw: currentLocale },
+        }),
+      );
+    }).catch(function () {});
   }
 
   // ── Exports ──────────────────────────────────────────
@@ -172,6 +235,7 @@
     getLocale,
     t,
     detectLocale,
+    ready: null, // resolved once the initial locale data is loaded (set below)
   };
   window.__ = t; // shorthand
 
@@ -179,9 +243,13 @@
   // UI shows English (or the last selected language) until it arrives.
   resolvedLocale = resolveLocale(currentLocale);
   applyTranslations();
-  ensureLoaded(resolvedLocale).then(function () {
+  syncNativeMenus();
+  window.I18N.ready = ensureLoaded(resolvedLocale).then(function () {
     resolvedLocale = resolveLocale(currentLocale);
     applyTranslations();
+    syncNativeMenus();
+    return syncWithOsLocale();
+  }).then(function () {
     window.dispatchEvent(
       new CustomEvent("locale-changed", {
         detail: { locale: resolvedLocale, raw: currentLocale },

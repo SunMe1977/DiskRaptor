@@ -227,12 +227,12 @@
       const toolbar = document.createElement("div");
       toolbar.className = "galaxy-toolbar";
       toolbar.innerHTML = `
-        <button class="gbtn" id="g-close" title="Close Galaxy (Esc)">✖</button>
+        <button class="gbtn" id="g-close" title="Close Galaxy (Esc)" data-i18n-title="galaxy.close">✖</button>
         <div class="g-separator"></div>
-        <button class="gbtn" id="g-reset" title="Reset Camera (R)">⟲</button>
-        <button class="gbtn" id="g-timeline-toggle" title="Time Travel">⏱</button>
-        <button class="gbtn" id="g-insights-toggle" title="Toggle AI Insights">💡</button>
-        <button class="gbtn" id="g-fullscreen" title="Fullscreen">⛶</button>
+        <button class="gbtn" id="g-reset" title="Reset Camera (R)" data-i18n-title="galaxy.reset_camera">⟲</button>
+        <button class="gbtn" id="g-timeline-toggle" title="Time Travel" data-i18n-title="galaxy.timeline">⏱</button>
+        <button class="gbtn" id="g-insights-toggle" title="Toggle AI Insights" data-i18n-title="galaxy.toggle_insights">💡</button>
+        <button class="gbtn" id="g-fullscreen" title="Fullscreen" data-i18n-title="galaxy.fullscreen">⛶</button>
         <div class="g-separator"></div>
         <span class="g-fps" id="g-fps-display">60 FPS</span>
       `;

@@ -6,6 +6,11 @@
     // ── First-run tips ────────────────────────────────
     (async function () {
       try {
+        // Wait for translations to be ready (OS language resolved) so the tip
+        // overlay never flashes in English.
+        if (window.I18N && window.I18N.ready) await window.I18N.ready;
+      } catch (_) {}
+      try {
         const s = await window.__TAURI__.invoke("load_settings", {});
         if (s && s.tips_dismissed) return;
       } catch (e) { console.debug("[DiskRaptor]", e); }

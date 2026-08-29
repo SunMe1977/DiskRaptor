@@ -307,7 +307,7 @@
       progressPath.textContent = "Scanning: " + path;
       const scanHint = document.getElementById("scan-hint");
       if (scanHint) {
-        scanHint.textContent = "Tip: press Ctrl/Cmd+Enter to start a scan quickly";
+        scanHint.textContent = (window.__ || function (s) { return s; })("scan.hint");
       }
 
       progressFilesEl.textContent = "0";
@@ -879,7 +879,7 @@
           }
           if (cleanable.length === 0) {
             const stb = document.querySelector(".status-bar");
-            if (stb) stb.textContent = "No cleanable files found in Downloads";
+            if (stb) stb.textContent = (window.__ || function (s) { return s; })("tools.no_cleanable");
             return;
           }
           cleanable.sort(function (a, b) { return b.size - a.size; });
@@ -913,9 +913,9 @@
           }
           listHtml += '</div>';
           var footerHtml = '<div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:6px;justify-content:flex-end;flex-shrink:0;">' +
-            '<button id="cleanup-select-all" style="padding:5px 14px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg-tertiary);cursor:pointer;color:var(--text-primary);">Select All</button>' +
-            '<button id="cleanup-move-trash" style="padding:5px 14px;font-size:12px;border:none;border-radius:5px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">\uD83D\uDDD1\uFE0F Move to Trash</button>' +
-            '<button id="cleanup-close-btn" style="padding:5px 14px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg-tertiary);cursor:pointer;color:var(--text-primary);">Close</button></div>';
+            '<button id="cleanup-select-all" style="padding:5px 14px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg-tertiary);cursor:pointer;color:var(--text-primary);"><span data-i18n="trash.select_all">Select All</span></button>' +
+            '<button id="cleanup-move-trash" style="padding:5px 14px;font-size:12px;border:none;border-radius:5px;background:linear-gradient(135deg,#da3633,#f85149);color:#fff;cursor:pointer;">\uD83D\uDDD1\uFE0F <span data-i18n="action.move_to_trash">Move to Trash</span></button>' +
+            '<button id="cleanup-close-btn" style="padding:5px 14px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg-tertiary);cursor:pointer;color:var(--text-primary);"><span data-i18n="trash.close">Close</span></button></div>';
           card.innerHTML = headerHtml + listHtml + footerHtml;
           overlay.appendChild(card);
           document.body.appendChild(overlay);

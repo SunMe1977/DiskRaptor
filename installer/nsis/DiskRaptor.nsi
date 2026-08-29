@@ -1,9 +1,9 @@
-Unicode true
+﻿Unicode true
 ManifestDPIAware true
 
 !define PRODUCT_NAME      "DiskRaptor"
 !ifndef PRODUCT_VERSION
-   !define PRODUCT_VERSION "1.0.25"
+   !define PRODUCT_VERSION "1.0.26"
 !endif
 !define PRODUCT_PUBLISHER "Hansjoerg Hofer"
 !define PRODUCT_WEB_SITE  "https://github.com/SunMe1977/DiskRaptor"
@@ -26,7 +26,7 @@ InstallDirRegKey      HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\
 RequestExecutionLevel admin
 XPStyle on
 
-; ── EXE file properties (right-click → Properties → Details) ──
+; â”€â”€ EXE file properties (right-click â†’ Properties â†’ Details) â”€â”€
 VIAddVersionKey "ProductName"        "${PRODUCT_NAME}"
 VIAddVersionKey "ProductVersion"     "${PRODUCT_VERSION}"
 VIAddVersionKey "Comments"           "${PRODUCT_NAME} Installer"

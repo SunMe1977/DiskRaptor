@@ -95,13 +95,13 @@
         '<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">' +
         '<label style="font-size:12px;color:var(--text-secondary);">Name</label>' +
         '<input id="fav-label" value="' + escapeHtml(existing ? existing.label : deriveLabel(path)) + '" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
-        '<label style="font-size:12px;color:var(--text-secondary);">Note</label>' +
+        '<label style="font-size:12px;color:var(--text-secondary);"><span data-i18n="fav.note">Note</span></label>' +
         '<textarea id="fav-note" rows="3" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);resize:vertical;">' + escapeHtml(existing ? existing.note : "") + '</textarea>' +
-        '<div style="font-size:11px;color:var(--text-muted);">Saved folders are available from the bookmark menu for quick reuse.</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);" data-i18n="fav.saved_hint">Saved folders are available from the bookmark menu for quick reuse.</div>' +
         '</div>' +
         '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">' +
-        '<button id="fav-cancel" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Cancel</button>' +
-        '<button id="fav-save" style="padding:6px 12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;font-weight:600;">Save</button>' +
+        '<button id="fav-cancel" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;"><span data-i18n="btn.cancel">Cancel</span></button>' +
+        '<button id="fav-save" style="padding:6px 12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;font-weight:600;"><span data-i18n="settings.save">Save</span></button>' +
         '</div>';
       ov.appendChild(card);
       document.body.appendChild(ov);

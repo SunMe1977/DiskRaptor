@@ -1,6 +1,6 @@
-[package]
+﻿[package]
 name = "diskraptor"
-version = "1.0.25"
+version = "1.0.26"
 description = "Ultra-fast disk space analyzer"
 authors = ["DiskRaptor Team"]
 license = "MIT"
@@ -47,6 +47,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "webview-data-url"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
+sys-locale = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 walkdir = "2"

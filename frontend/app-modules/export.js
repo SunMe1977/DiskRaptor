@@ -153,13 +153,13 @@
           '</select>' +
           '<label style="font-size:12px;color:var(--text-secondary);">Rows (0 = all)</label>' +
           '<input id="exp-rows" type="number" min="0" value="0" style="padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);" />' +
-          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"><input id="exp-summary" type="checkbox" checked /> Include summary block</label>' +
-          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"><input id="exp-chart" type="checkbox" checked /> Include chart snapshot</label>' +
-          '<div style="font-size:11px;color:var(--text-muted);">Your last export format is remembered for next time.</div>' +
+          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"><input id="exp-summary" type="checkbox" checked /> <span data-i18n="export.include_summary">Include summary block</span></label>' +
+          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"><input id="exp-chart" type="checkbox" checked /> <span data-i18n="export.include_chart">Include chart snapshot</span></label>' +
+          '<div style="font-size:11px;color:var(--text-muted);" data-i18n="export.remembered">Your last export format is remembered for next time.</div>' +
           '</div>' +
           '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">' +
-          '<button id="exp-cancel" style="padding:6px 14px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Cancel</button>' +
-          '<button id="exp-ok" style="padding:6px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;font-weight:600;">Export</button>' +
+          '<button id="exp-cancel" style="padding:6px 14px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;"><span data-i18n="btn.cancel">Cancel</span></button>' +
+          '<button id="exp-ok" style="padding:6px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#238636,#2ea043);color:#fff;cursor:pointer;font-weight:600;"><span data-i18n="btn.export">Export</span></button>' +
           '</div>';
         ov.appendChild(card);
         document.body.appendChild(ov);

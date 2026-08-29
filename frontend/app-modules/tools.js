@@ -190,7 +190,7 @@
         const base = scanPath.value.replace(/[\\/]+$/, "");
         let html2 =
           '<div style="padding:12px 16px;max-height:300px;overflow-y:auto;">' +
-          '<label style="display:flex;align-items:center;gap:6px;padding:2px 6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-bottom:4px;"><input type="checkbox" id="ef-select-all" checked style="width:14px;height:14px;cursor:pointer;"> Select all</label>';
+          '<label style="display:flex;align-items:center;gap:6px;padding:2px 6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-bottom:4px;"><input type="checkbox" id="ef-select-all" checked style="width:14px;height:14px;cursor:pointer;"> <span data-i18n="trash.select_all">Select all</span></label>';
         for (let ei = 0; ei < Math.min(emptyDirs.length, 500); ei++) {
           const full = base + "/" + emptyDirs[ei].path;
           html2 +=
@@ -217,8 +217,8 @@
           ")</div>" +
           html2 +
           '<div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
-          '<button class="ef-delete-btn" style="padding:6px 14px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;">\uD83D\uDDD1 Delete selected</button>' +
-          '<button class="ef-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button>' +
+          '<button class="ef-delete-btn" style="padding:6px 14px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;">\uD83D\uDDD1 <span data-i18n="tools.delete_selected">Delete selected</span></button>' +
+          '<button class="ef-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;"><span data-i18n="trash.close">Close</span></button>' +
           "</div>";
         ov2.appendChild(card2);
         document.body.appendChild(ov2);
@@ -240,18 +240,19 @@
             paths.push(cb.dataset.path);
           });
           if (paths.length === 0) {
-            window.showToast("Nothing selected", "info");
+            window.showToast((window.__ || function (s) { return s; })("toast.nothing_selected"), "info");
             return;
           }
+          const _t = window.__ || function (s) { return s; };
           btn.disabled = true;
-          btn.textContent = "Checking\u2026";
+          btn.textContent = _t("status.checking");
           const ok = await window.confirmDialog(
             window.__ ? window.__("tools.empty_folders_delete_confirm").replace("{n}", paths.length) : "Move " + paths.length + " empty folder(s) to Trash?",
           );
-          if (!ok) { btn.disabled = false; btn.textContent = "\uD83D\uDDD1 Delete selected"; return; }
+          if (!ok) { btn.disabled = false; btn.textContent = "\uD83D\uDDD1 " + _t("tools.delete_selected"); return; }
           let done = 0, failed = 0, skipped = 0;
           for (let ei = 0; ei < paths.length; ei++) {
-            btn.textContent = "Deleting " + (ei + 1) + "/" + paths.length + "\u2026";
+            btn.textContent = _t("status.deleting_progress").replace("{n}", ei + 1).replace("{total}", paths.length);
             try {
               const st = await window.__TAURI__.invoke("get_dir_stats", { path: paths[ei] });
               const d = st && st.data ? st.data : (st || {});
@@ -403,7 +404,7 @@
               (r.size ? fmtBytes(r.size) : "") +
               "</span>";
             html +=
-              '<button class="ff-open" title="Open containing folder" aria-label="Open containing folder" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:2px 4px;">\uD83D\uDCC2</button>' +
+              '<button class="ff-open" title="Open containing folder" aria-label="Open containing folder" data-i18n-title="action.open_containing" data-i18n-aria-label="action.open_containing" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:2px 4px;">\uD83D\uDCC2</button>' +
               "</div>";
           }
           if (results.length > 500)
@@ -423,7 +424,7 @@
             results.length +
             " matches)</div>" +
             html +
-            '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;"><button class="find-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;">Close</button></div>';
+            '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;"><button class="find-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;"><span data-i18n="trash.close">Close</span></button></div>';
           ov.appendChild(card);
           document.body.appendChild(ov);
           ov.querySelector(".find-close-btn").onclick = function () {
@@ -635,7 +636,7 @@
           '<input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" />' +
           '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + esc(f.name) + tags.join("") + "</span>" +
           '<span style="font-family:monospace;font-size:11px;color:var(--text-muted);white-space:nowrap;">' + (f.size_human || fmtBytes(f.size)) + "</span>" +
-          '<button class="dlc-open" title="Open containing folder" aria-label="Open containing folder" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:2px 4px;">\uD83D\uDCC2</button>' +
+          '<button class="dlc-open" title="Open containing folder" aria-label="Open containing folder" data-i18n-title="action.open_containing" data-i18n-aria-label="action.open_containing" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;padding:2px 4px;">\uD83D\uDCC2</button>' +
           "</div>";
       }
       listEl.innerHTML = html;
@@ -683,7 +684,7 @@
         .catch(function (e) {
           files = [];
           listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">Error: ' + esc(e && e.message ? e.message : e) + "</div>";
-          statusEl.textContent = "Error";
+          statusEl.textContent = (window.__ || function (s) { return s; })("status.error");
         });
     }
 
@@ -857,8 +858,8 @@
       '<div class="smart-card">' +
       '<div class="smart-header">' +
       '<span class="smart-title">\uD83D\uDEE1\uFE0F ' + t("smart.title") + "</span>" +
-      '<button class="smart-refresh-btn" id="smart-refresh" title="Refresh drive list">\u27F3</button>' +
-      '<button class="smart-close" id="smart-close" title="Close" aria-label="Close">\u2715</button>' +
+      '<button class="smart-refresh-btn" id="smart-refresh" title="Refresh drive list" data-i18n-title="smart.refresh">\u27F3</button>' +
+      '<button class="smart-close" id="smart-close" title="Close" aria-label="Close" data-i18n-title="welcome.close" data-i18n-aria-label="welcome.close">\u2715</button>' +
       "</div>" +
       '<div class="smart-body">' +
       '<div class="smart-drive-row">' +
@@ -983,7 +984,7 @@
               '<span style="font-size:12px;color:var(--text-secondary);">Install it via Homebrew, then relaunch:</span>' +
               '<div style="margin-top:8px;font-family:monospace;font-size:12px;background:rgba(0,0,0,0.4);padding:8px 10px;border-radius:6px;border:1px solid var(--border);">brew install smartmontools</div>';
           } else {
-            statusEl.textContent = "Error: " + msg;
+            statusEl.textContent = (window.__ || function (s) { return s; })("status.error") + ": " + msg;
           }
         })
         .finally(function () {
@@ -995,7 +996,7 @@
     function renderSmartResult(r) {
       if (!r) {
         statusEl.className = "smart-status err";
-        statusEl.textContent = "No data returned.";
+        statusEl.textContent = (window.__ || function (s) { return s; })("status.no_data");
         return;
       }
       const attrs = Array.isArray(r.attributes) ? r.attributes : [];
@@ -1245,16 +1246,16 @@
     overlay.innerHTML =
       '<div class="smart-card browser-card">' +
       '<div class="smart-header">' +
-      '<span class="smart-title">\uD83E\uDDF9 Clean Browser Tools</span>' +
-      '<button class="smart-close" id="browser-close" title="Close" aria-label="Close">\u2715</button>' +
+      '<span class="smart-title">\uD83E\uDDF9 <span data-i18n="menu.browser_tools">Clean Browser Tools</span></span>' +
+      '<button class="smart-close" id="browser-close" title="Close" aria-label="Close" data-i18n-title="welcome.close" data-i18n-aria-label="welcome.close">\u2715</button>' +
       "</div>" +
       '<div class="smart-body">' +
       '<div class="browser-toolbar">' +
-      '<button class="browser-btn ghost" id="browser-refresh">\u27F3 Refresh</button>' +
-      '<button class="browser-btn ghost" id="browser-select-all">Select All</button>' +
-      '<button class="browser-btn ghost" id="browser-select-none">Select None</button>' +
-      '<button class="browser-btn ghost" id="browser-select-cookies">Select All Cookies</button>' +
-      '<button class="browser-btn ghost" id="browser-select-caches">Select All Caches</button>' +
+      '<button class="browser-btn ghost" id="browser-refresh">\u27F3 <span data-i18n="action.refresh">Refresh</span></button>' +
+      '<button class="browser-btn ghost" id="browser-select-all"><span data-i18n="trash.select_all">Select All</span></button>' +
+      '<button class="browser-btn ghost" id="browser-select-none"><span data-i18n="dup.select_none">Select None</span></button>' +
+      '<button class="browser-btn ghost" id="browser-select-cookies"><span data-i18n="browser.select_cookies">Select All Cookies</span></button>' +
+      '<button class="browser-btn ghost" id="browser-select-caches"><span data-i18n="browser.select_caches">Select All Caches</span></button>' +
       '<button class="browser-btn danger" id="browser-clean">\uD83D\uDDD1\uFE0F Clean Selected</button>' +
       "</div>" +
       '<div class="smart-status" id="browser-status"></div>' +
@@ -1394,7 +1395,7 @@
 
     function load() {
       statusEl.className = "smart-status";
-      statusEl.innerHTML = '<span class="smart-spinner"></span>Scanning browsers\u2026';
+      statusEl.innerHTML = '<span class="smart-spinner"></span>' + (window.__ || function (s) { return s; })("browser.scanning");
       cleanBtn.disabled = true;
       window.__TAURI__
         .invoke("list_browser_data")
@@ -1444,7 +1445,7 @@
       const names = Object.keys(byName);
       if (names.length === 0) {
         statusEl.className = "smart-status";
-        statusEl.textContent = "Nothing selected. Tick the cookies/cache boxes you want to clean.";
+        statusEl.textContent = (window.__ || function (s) { return s; })("browser.nothing_selected");
         return;
       }
       const selCount = names.reduce(function (s, n) {

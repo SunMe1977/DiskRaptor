@@ -154,7 +154,7 @@
       if (this.statsOverlay) {
         const completeMsg = document.createElement("div");
         completeMsg.className = "galaxy-scan-complete";
-        completeMsg.textContent = "✓ Scan Complete";
+        completeMsg.textContent = "✓ " + (window.__ || function (s) { return s; })("galaxy.scan_complete");
         this.statsOverlay.appendChild(completeMsg);
         setTimeout(() => {
           if (this.statsOverlay) this.statsOverlay.remove();

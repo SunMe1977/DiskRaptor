@@ -4,6 +4,81 @@
 (function () {
   "use strict";
 
+  // ── Welcome buttons + deferred external links ───────────
+  // Wired at the top level (not inside the async init) so the welcome screen
+  // stays interactive even if the backend bridge is slow or init() is cut
+  // short. Handlers look elements up lazily on each click.
+  (function wireWelcome() {
+    function hideOnboarding() {
+      const ob = document.getElementById("welcome-onboarding");
+      if (ob) ob.classList.add("hidden");
+    }
+    const closeBtn = document.getElementById("welcome-close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function () {
+        const dont = document.getElementById("welcome-dont-show");
+        if (dont && dont.checked && window.__TAURI__ && window.__TAURI__.invoke) {
+          window.__TAURI__
+            .invoke("save_settings", { settings: { welcome_dismissed: true } })
+            .catch(function () {});
+        }
+        hideOnboarding();
+      });
+    }
+    const scanBtn = document.getElementById("welcome-scan-btn");
+    if (scanBtn) {
+      scanBtn.addEventListener("click", function () {
+        if (!window.__TAURI__ || !window.__TAURI__.invoke) return;
+        window.__TAURI__
+          .invoke("get_home_dir")
+          .then(function (home) {
+            const path = typeof home === "string" ? home : (home && home.data) || "";
+            const sp = document.getElementById("scan-path");
+            if (path && sp) sp.value = path;
+            const btn = document.getElementById("btn-scan");
+            if (btn) btn.click();
+          })
+          .catch(function () {
+            const btn = document.getElementById("btn-scan");
+            if (btn) btn.click();
+          });
+      });
+    }
+    const browseBtn = document.getElementById("welcome-browse-btn");
+    if (browseBtn) {
+      browseBtn.addEventListener("click", function () {
+        const btn = document.getElementById("btn-browse");
+        if (btn) btn.click();
+      });
+    }
+    const aboutBtn = document.getElementById("welcome-about-btn");
+    if (aboutBtn) {
+      aboutBtn.addEventListener("click", function () {
+        const ov = document.getElementById("about-overlay");
+        if (ov) ov.classList.add("active");
+      });
+    }
+    // Auto-hide the onboarding banner when the user dismissed it before —
+    // done here (not only inside async init) so it never comes back.
+    if (window.__TAURI__ && window.__TAURI__.invoke) {
+      window.__TAURI__.invoke("load_settings", {}).then(function (s) {
+        if (s && s.welcome_dismissed) hideOnboarding();
+      }).catch(function () {});
+    }
+    // Deferred external links ([data-open-url]) — welcome star/fork/store,
+    // About-screen links, etc.
+    document.addEventListener("click", function (ev) {
+      const t = ev.target && ev.target.closest ? ev.target.closest("[data-open-url]") : null;
+      if (!t) return;
+      const url = t.getAttribute("data-open-url");
+      if (!url) return;
+      ev.preventDefault();
+      if (window.__TAURI__ && window.__TAURI__.invoke) {
+        window.__TAURI__.invoke("open_url", { url: url }).catch(function () {});
+      }
+    });
+  })();
+
   async function init() {
     console.debug("DiskRaptor booting...");
     const statusBar = document.querySelector(".status-bar");
@@ -270,11 +345,6 @@
 
     // ── Welcome placeholder ──────────────────────────────
     const welcomeEl = document.getElementById("welcome-placeholder");
-    const welcomeClose = document.getElementById("welcome-close");
-    const welcomeDont = document.getElementById("welcome-dont-show");
-    const welcomeScanBtn = document.getElementById("welcome-scan-btn");
-    const welcomeBrowseBtn = document.getElementById("welcome-browse-btn");
-    const welcomeAboutBtn = document.getElementById("welcome-about-btn");
 
     // ── Exit button (toolbar) ────────────────────────────
     const btnExit = document.getElementById("btn-exit");
@@ -301,17 +371,6 @@
       if (ob) ob.classList.add("hidden");
     }
 
-    if (welcomeClose) {
-      welcomeClose.addEventListener("click", function () {
-        if (welcomeDont && welcomeDont.checked) {
-          window.__TAURI__
-            .invoke("save_settings", { settings: { welcome_dismissed: true } })
-            .catch(function () {});
-        }
-        hideOnboarding();
-      });
-    }
-
     (async function () {
       try {
         const s = await window.__TAURI__.invoke("load_settings", {});
@@ -334,24 +393,31 @@
           .catch(function () {});
         if (next !== 5 && next !== 10) return;
         if (!window.yesNoDialog) return;
+        // Make sure the translation tables are loaded before building the
+        // dialog (they load asynchronously at startup) — otherwise t() would
+        // return raw key names.
+        try {
+          if (window.I18N && window.I18N.ready) await window.I18N.ready;
+        } catch (_) {}
         const platform = (navigator.platform || "").toLowerCase();
         const isMac = platform.indexOf("mac") === 0;
         const storeUrl = isMac
           ? "https://apps.apple.com/us/app/diskraptor/id6793462969"
           : "https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr";
         const storeName = isMac ? "Mac App Store" : "Microsoft Store";
-        const tr = function (key, vars) {
-          let s = (window.__ || function (k) { return k; })(key);
+        const tr = function (key, vars, fallback) {
+          let s = (window.__ || function () { return fallback || key; })(key);
+          if (s === key && fallback) s = fallback; // not translated yet → inline text
           Object.keys(vars || {}).forEach(function (k) {
             s = s.replace("{" + k + "}", vars[k]);
           });
           return s;
         };
         const ok = await window.yesNoDialog(
-          tr("rating.message", { store: storeName }) + "\n\n" +
-            tr("rating.question", { store: storeName }),
-          tr("rating.yes", {}),
-          tr("rating.no", {}),
+          tr("rating.message", { store: storeName }, "Love DiskRaptor? Please rate it in the {store} to support the project. It takes less than a minute.") + "\n\n" +
+            tr("rating.question", { store: storeName }, "Rate in the {store}?"),
+          tr("rating.yes", {}, "Yes, I'll rate it"),
+          tr("rating.no", {}, "No, thanks"),
         );
         if (ok) {
           window.__TAURI__.invoke("open_url", { url: storeUrl }).catch(function () {});
@@ -389,37 +455,6 @@
         sync();
       });
     })();
-
-    if (welcomeScanBtn) {
-      welcomeScanBtn.addEventListener("click", function () {
-        window.__TAURI__
-          .invoke("get_home_dir")
-          .then(function (home) {
-            const path =
-              typeof home === "string" ? home : (home?.data || "");
-            if (path && scanPath) {
-              scanPath.value = path;
-            }
-            if (btnScan) btnScan.click();
-          })
-          .catch(function () {
-            if (btnScan) btnScan.click();
-          });
-      });
-    }
-
-    if (welcomeBrowseBtn) {
-      welcomeBrowseBtn.addEventListener("click", function () {
-        if (btnBrowse) btnBrowse.click();
-      });
-    }
-
-    if (welcomeAboutBtn) {
-      welcomeAboutBtn.addEventListener("click", function () {
-        const ov = document.getElementById("about-overlay");
-        if (ov) ov.classList.add("active");
-      });
-    }
 
     // ── Focus trap for the about + settings modals ─────────
     // Activates whenever the overlay becomes visible (class .active or display
@@ -1093,18 +1128,6 @@
       const vv = await window.__TAURI__.invoke("get_app_info");
       _currentVersion = vv && vv.version ? (vv.version || "") : (vv && vv.data ? (vv.data.version || "") : "");
     } catch (e) { console.debug("[DiskRaptor]", e); }
-    // Deferred external links (replaces inline onclick handlers so script CSP
-    // does not need 'unsafe-inline').
-    document.addEventListener("click", function (ev) {
-      const target = ev.target && ev.target.closest
-        ? ev.target.closest("[data-open-url]")
-        : null;
-      if (!target) return;
-      const url = target.getAttribute("data-open-url");
-      if (!url) return;
-      ev.preventDefault();
-      window.__TAURI__.invoke("open_url", { url: url }).catch(function () {});
-    });
     // 5-star rating opens the platform's app store page:
     // Microsoft Store on Windows, Mac App Store on macOS.
     const starRating = document.getElementById("welcome-star-rating");
@@ -1112,15 +1135,16 @@
       const platform = (navigator.platform || "").toLowerCase();
       const isMac = platform.indexOf("mac") === 0;
       const storeName = isMac ? "Mac App Store" : "Microsoft Store";
-      const tr = function (key, vars) {
-        let s = (window.__ || function (k) { return k; })(key);
+      const tr = function (key, vars, fallback) {
+        let s = (window.__ || function () { return fallback || key; })(key);
+        if (s === key && fallback) s = fallback;
         Object.keys(vars || {}).forEach(function (k) {
           s = s.replace("{" + k + "}", vars[k]);
         });
         return s;
       };
-      starRating.title = tr("rating.star_title", { store: storeName });
-      starRating.setAttribute("aria-label", tr("rating.star_title", { store: storeName }));
+      starRating.title = tr("rating.star_title", { store: storeName }, "Rate on the {store}");
+      starRating.setAttribute("aria-label", tr("rating.star_title", { store: storeName }, "Rate on the {store}"));
       starRating.addEventListener("click", function () {
         const url = isMac
           ? "https://apps.apple.com/us/app/diskraptor/id6793462969"

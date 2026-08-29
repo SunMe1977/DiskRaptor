@@ -30,9 +30,9 @@
           <div class="insight-icon">💡</div>
           <div class="insight-content">
             <div class="insight-title" data-i18n="galaxy.insight.title">AI Insight</div>
-            <div class="insight-text">Loading insights...</div>
+            <div class="insight-text" data-i18n="galaxy.insight.loading">Loading insights...</div>
           </div>
-          <button class="insight-close" title="Close">✕</button>
+          <button class="insight-close" title="Close" data-i18n-title="welcome.close">✕</button>
         </div>
       `;
       this.overlayEl.style.display = "none";
@@ -174,7 +174,9 @@
         textEl.textContent = insight.text;
         textEl.title = insight.detail || "";
       }
-      if (titleEl) titleEl.textContent = "Insight " + (index + 1);
+      if (titleEl) {
+        titleEl.textContent = (window.__ || function (s) { return s; })("galaxy.insight.label").replace("{n}", index + 1);
+      }
 
       // Fade in
       this.overlayEl.style.display = "block";
