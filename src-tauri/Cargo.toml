@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "diskraptor"
 version = "1.0.26"
 description = "Ultra-fast disk space analyzer"

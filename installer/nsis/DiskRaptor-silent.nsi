@@ -1,4 +1,4 @@
-﻿Unicode true
+Unicode true
 ManifestDPIAware true
 
 !define PRODUCT_NAME "DiskRaptor"
