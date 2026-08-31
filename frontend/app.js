@@ -16,8 +16,9 @@
     const closeBtn = document.getElementById("welcome-close");
     if (closeBtn) {
       closeBtn.addEventListener("click", function () {
-        const dont = document.getElementById("welcome-dont-show");
-        if (dont && dont.checked && window.__TAURI__ && window.__TAURI__.invoke) {
+        // Closing the onboarding always dismisses it permanently — no need for
+        // a separate "Don't show again" checkbox on the main screen.
+        if (window.__TAURI__ && window.__TAURI__.invoke) {
           window.__TAURI__
             .invoke("save_settings", { settings: { welcome_dismissed: true } })
             .catch(function () {});
