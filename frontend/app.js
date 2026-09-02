@@ -68,14 +68,33 @@
     }
     // Deferred external links ([data-open-url]) — welcome star/fork/store,
     // About-screen links, etc.
+    function openDataUrl(t) {
+      const url = t && t.getAttribute ? t.getAttribute("data-open-url") : "";
+      if (!url) return;
+      if (window.__TAURI__ && window.__TAURI__.invoke) {
+        window.__TAURI__.invoke("open_url", { url: url }).catch(function () {});
+      }
+    }
     document.addEventListener("click", function (ev) {
       const t = ev.target && ev.target.closest ? ev.target.closest("[data-open-url]") : null;
       if (!t) return;
-      const url = t.getAttribute("data-open-url");
-      if (!url) return;
       ev.preventDefault();
-      if (window.__TAURI__ && window.__TAURI__.invoke) {
-        window.__TAURI__.invoke("open_url", { url: url }).catch(function () {});
+      openDataUrl(t);
+    });
+    // Keyboard: Enter/Space activates a [data-open-url] element like a link.
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const t = ev.target && ev.target.closest ? ev.target.closest("[data-open-url]") : null;
+      if (!t) return;
+      ev.preventDefault();
+      openDataUrl(t);
+    });
+    // Non-anchor [data-open-url] elements (welcome star/fork/store) become
+    // focusable so they are reachable and usable by keyboard.
+    document.querySelectorAll("[data-open-url]").forEach(function (el) {
+      if (el.tagName && el.tagName.toLowerCase() !== "a") {
+        el.setAttribute("role", "link");
+        el.setAttribute("tabindex", "0");
       }
     });
   })();
@@ -379,12 +398,12 @@
       } catch (e) { console.debug("[DiskRaptor]", e); }
     })();
 
-    // ── Rating prompt: ask for a store rating after the 5th and 10th launch.
-    //    "No" permanently dismisses it; "Yes" opens the platform's store page.
+    // ── Rating prompt: ask for a store rating on the 5th, 10th, 50th and
+    //    100th launch. "No" only closes the dialog — it reappears at the next
+    //    milestone; "Yes" opens the store page. After launch #100 it stops.
     (async function maybeShowRatingPrompt() {
       try {
         const s = await window.__TAURI__.invoke("load_settings", {});
-        if (s && s.rating_dismissed) return;
         const count = (s && typeof s.rating_launch_count === "number")
           ? s.rating_launch_count
           : 0;
@@ -392,7 +411,7 @@
         window.__TAURI__
           .invoke("save_settings", { settings: { rating_launch_count: next } })
           .catch(function () {});
-        if (next !== 5 && next !== 10) return;
+        if (next !== 5 && next !== 10 && next !== 50 && next !== 100) return;
         if (!window.yesNoDialog) return;
         // Make sure the translation tables are loaded before building the
         // dialog (they load asynchronously at startup) — otherwise t() would
@@ -415,17 +434,14 @@
           return s;
         };
         const ok = await window.yesNoDialog(
-          tr("rating.message", { store: storeName }, "Love DiskRaptor? Please rate it in the {store} to support the project. It takes less than a minute.") + "\n\n" +
+          tr("rating.message", { store: storeName, times: next },
+            "You've started DiskRaptor {times} times. I'm a solo developer — a 5-star rating would help me a lot ⭐⭐⭐⭐⭐. Thank you!") + "\n\n" +
             tr("rating.question", { store: storeName }, "Rate in the {store}?"),
           tr("rating.yes", {}, "Yes, I'll rate it"),
           tr("rating.no", {}, "No, thanks"),
         );
         if (ok) {
           window.__TAURI__.invoke("open_url", { url: storeUrl }).catch(function () {});
-        } else {
-          window.__TAURI__
-            .invoke("save_settings", { settings: { rating_dismissed: true } })
-            .catch(function () {});
         }
       } catch (e) { console.debug("[DiskRaptor]", e); }
     })();
@@ -1025,8 +1041,10 @@
       if (ver) {
         const el = document.querySelector(".about-version");
         if (el) {
-          el.innerHTML =
-            '<span data-i18n="about.version">Version</span> ' + ver;
+          // Only fill the version placeholder — keeps the already-localized
+          // "Version" label from the HTML intact.
+          const num = el.querySelector(".about-version-num");
+          if (num) num.textContent = ver;
         }
         const wsub = document.querySelector(".welcome-subtitle");
         if (wsub) {
@@ -1146,6 +1164,14 @@
       };
       starRating.title = tr("rating.star_title", { store: storeName }, "Rate on the {store}");
       starRating.setAttribute("aria-label", tr("rating.star_title", { store: storeName }, "Rate on the {store}"));
+      starRating.setAttribute("role", "button");
+      starRating.setAttribute("tabindex", "0");
+      starRating.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          starRating.click();
+        }
+      });
       starRating.addEventListener("click", function () {
         const url = isMac
           ? "https://apps.apple.com/us/app/diskraptor/id6793462969"

@@ -11,6 +11,12 @@
         "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.55);" +
         "display:flex;align-items:center;justify-content:center;";
       overlay.className = "dlg-overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        String(message || "").split("\n")[0].slice(0, 120) || "Dialog",
+      );
 
       const card = document.createElement("div");
       card.style.cssText =

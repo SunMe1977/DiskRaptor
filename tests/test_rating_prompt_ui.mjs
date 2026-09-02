@@ -41,7 +41,6 @@ function writeSettings(s) {
 function setRatingState(count) {
   const s = readSettings();
   s.rating_launch_count = count;
-  delete s.rating_dismissed;
   writeSettings(s);
 }
 
@@ -113,7 +112,8 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
     JSON.stringify(btns),
   );
 
-  // ── Scenario B: "No, thanks" closes the dialog and dismisses forever ──
+  // ── Scenario B: "No, thanks" closes the dialog but only until the next
+  //    milestone — rating_dismissed is no longer persisted ──
   const noClicked = await clickRatingButton(cdp, "No");
   assert("No button clickable", noClicked === "clicked", String(noClicked));
   await sleep(700);
@@ -122,17 +122,18 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
   assert("Dialog closes after No", closedAfterNo === 0, "count=" + closedAfterNo);
 
   const s1 = readSettings();
-  assert("rating_dismissed persisted", s1.rating_dismissed === true, JSON.stringify(s1));
+  assert("rating_dismissed not persisted after No", s1.rating_dismissed !== true, JSON.stringify(s1));
   assert("launch count advanced to 5", s1.rating_launch_count === 5, "count=" + s1.rating_launch_count);
 
-  // ── Scenario C: relaunching after "No" never asks again ──
+  // ── Scenario C: an immediate relaunch (count 6, not a milestone) asks again
+  //    neither on launch 5's dialog nor on the next start ──
   try { await cdp.send("Close"); } catch {}
   await sleep(500);
   const second = await launchAndConnect(9271);
-  await sleep(4000); // startup prompt logic would have fired by now if not dismissed
+  await sleep(4000); // startup prompt logic would have fired by now if not suppressed
   const dismissedProbe = await ratingDialogText(second.cdp);
   assert(
-    "No prompt after dismissal",
+    "No prompt on non-milestone relaunch",
     dismissedProbe === "none" || !/rate it/i.test(String(dismissedProbe)),
     String(dismissedProbe),
   );
@@ -199,4 +200,61 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
   assert("launch count advanced to 10", s2.rating_launch_count === 10, "count=" + s2.rating_launch_count);
 
   try { await third.cdp.send("Close"); } catch {}
+  await sleep(500);
+
+  // ── Scenario E: the 50th launch asks again after repeated "No" ──
+  setRatingState(49);
+  const fourth = await launchAndConnect(9273);
+
+  const shown50 = await waitFor(async () => {
+    const t = await ratingDialogText(fourth.cdp);
+    return typeof t === "string" && /rate it/i.test(t);
+  }, { timeout: 20000, label: "50th-launch prompt" });
+  assert("Rating prompt shown on 50th launch", shown50 === true, shown50 ? "" : "dialog never appeared");
+
+  const no50 = await clickRatingButton(fourth.cdp, "No");
+  assert("No button clickable at 50", no50 === "clicked", String(no50));
+  await sleep(700);
+
+  const s50 = readSettings();
+  assert("rating_dismissed not persisted at 50", s50.rating_dismissed !== true, JSON.stringify(s50));
+  assert("launch count advanced to 50", s50.rating_launch_count === 50, "count=" + s50.rating_launch_count);
+
+  try { await fourth.cdp.send("Close"); } catch {}
+  await sleep(500);
+
+  // ── Scenario F: the 100th launch asks one last time ──
+  setRatingState(99);
+  const fifth = await launchAndConnect(9274);
+
+  const shown100 = await waitFor(async () => {
+    const t = await ratingDialogText(fifth.cdp);
+    return typeof t === "string" && /rate it/i.test(t);
+  }, { timeout: 20000, label: "100th-launch prompt" });
+  assert("Rating prompt shown on 100th launch", shown100 === true, shown100 ? "" : "dialog never appeared");
+
+  const no100 = await clickRatingButton(fifth.cdp, "No");
+  assert("No button clickable at 100", no100 === "clicked", String(no100));
+  await sleep(700);
+
+  const s100 = readSettings();
+  assert("rating_dismissed not persisted at 100", s100.rating_dismissed !== true, JSON.stringify(s100));
+  assert("launch count advanced to 100", s100.rating_launch_count === 100, "count=" + s100.rating_launch_count);
+
+  try { await fifth.cdp.send("Close"); } catch {}
+  await sleep(500);
+
+  // ── Scenario G: past launch #100 the milestone series is exhausted and the
+  //    prompt no longer appears on relaunch ──
+  setRatingState(100);
+  const sixth = await launchAndConnect(9275);
+  await sleep(4000);
+  const exhaustedProbe = await ratingDialogText(sixth.cdp);
+  assert(
+    "No prompt after 100th launch",
+    exhaustedProbe === "none" || !/rate it/i.test(String(exhaustedProbe)),
+    String(exhaustedProbe),
+  );
+
+  try { await sixth.cdp.send("Close"); } catch {}
 });

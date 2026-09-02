@@ -90,17 +90,24 @@ class TopFilesPanel {
       minWidth: "200px",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    const isMac = /mac/i.test(navigator.platform || "");
-    const isLinux = /linux/i.test(navigator.platform || "");
-    const explorerLabel = isMac ? "Open in Finder" : isLinux ? "Open in File Manager" : "Open in Explorer";
+    const tf = function (key, fb) {
+      const f = window.__ || function (k) { return k; };
+      const s = f(key);
+      return s === key ? fb : s;
+    };
+    const explorerFallback = /mac/i.test(navigator.platform || "")
+      ? "Open in Finder"
+      : /linux/i.test(navigator.platform || "")
+        ? "Open in File Manager"
+        : "Open in Explorer";
     this._ctxMenu.innerHTML =
-      '<div class="tfctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
-      '<div class="tfctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
+      '<div class="tfctx-item" data-action="explorer">\u{1F4C2} ' + tf("action.explorer", explorerFallback) + '</div>' +
+      '<div class="tfctx-item" data-action="terminal">\u{1F4BB} ' + tf("action.terminal", "Open Terminal") + '</div>' +
       '<div class="tfctx-sep"></div>' +
-      '<div class="tfctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
-      '<div class="tfctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
+      '<div class="tfctx-item" data-action="properties">\u2699\uFE0F ' + tf("action.properties", "Properties") + '</div>' +
+      '<div class="tfctx-item" data-action="copy">\u{1F4CB} ' + tf("action.copy_path", "Copy Path") + '</div>' +
       '<div class="tfctx-sep"></div>' +
-      '<div class="tfctx-item tfctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (window.__ ? window.__("action.move_to_trash") : "Move to Trash") + '</div>';
+      '<div class="tfctx-item tfctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + tf("action.move_to_trash", "Move to Trash") + '</div>';
     document.body.appendChild(this._ctxMenu);
 
     const style = document.createElement("style");

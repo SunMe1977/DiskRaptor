@@ -12,9 +12,9 @@ class StatsPanel {
   /** Live update during scan (partial data, no total_size yet). */
   updateLive(files, dirs, elapsedSecs) {
     if (this.filesEl)
-      this.filesEl.textContent = (files || 0).toLocaleString("en-US");
+      this.filesEl.textContent = this._fmtCount(files || 0);
     if (this.dirsEl)
-      this.dirsEl.textContent = (dirs || 0).toLocaleString("en-US");
+      this.dirsEl.textContent = this._fmtCount(dirs || 0);
     if (elapsedSecs !== undefined && this.timeEl)
       this.timeEl.textContent = this._formatDuration(
         (elapsedSecs || 0) * 1000,
@@ -29,13 +29,9 @@ class StatsPanel {
     }
 
     if (this.filesEl)
-      this.filesEl.textContent = Number(stats.total_files || 0).toLocaleString(
-        "en-US",
-      );
+      this.filesEl.textContent = this._fmtCount(Number(stats.total_files || 0));
     if (this.dirsEl)
-      this.dirsEl.textContent = Number(stats.total_dirs || 0).toLocaleString(
-        "en-US",
-      );
+      this.dirsEl.textContent = this._fmtCount(Number(stats.total_dirs || 0));
     if (this.sizeEl)
       this.sizeEl.textContent = this._formatSize(stats.total_size || 0);
     if (this.timeEl)
@@ -51,6 +47,18 @@ class StatsPanel {
 
   _formatSize(bytes) {
     return window.fmtSize(bytes);
+  }
+
+  _fmtCount(n) {
+    // Use the language the UI is currently displayed in (set by i18n.js) so
+    // thousands separators match the selected locale instead of hard-coded
+    // en-US ("1,234" vs. "1.234").
+    const locale = (document.documentElement && document.documentElement.lang) || "en-US";
+    try {
+      return Number(n || 0).toLocaleString(locale);
+    } catch (e) {
+      return String(n || 0);
+    }
   }
 
   _formatDuration(ms) {

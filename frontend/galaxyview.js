@@ -1062,11 +1062,16 @@
         minWidth: "180px",
         boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
       });
+      const gxt = function (key, fb) {
+        const f = window.__ || function (k) { return k; };
+        const s = f(key);
+        return s === key ? fb : s;
+      };
       menu.innerHTML =
-        '<div class="gx-ctx-item" data-action="info">\u2139\uFE0F Info</div>' +
-        '<div class="gx-ctx-item" data-action="open">\u{1F4C2} Open in Explorer</div>' +
+        '<div class="gx-ctx-item" data-action="info">\u2139\uFE0F ' + gxt("galaxy.info", "Info") + '</div>' +
+        '<div class="gx-ctx-item" data-action="open">\u{1F4C2} ' + gxt("action.explorer", "Open in Explorer") + '</div>' +
         '<div class="gx-ctx-sep"></div>' +
-        '<div class="gx-ctx-item gx-ctx-del" data-action="delete">\u{1F5D1}\uFE0F Move to Trash</div>';
+        '<div class="gx-ctx-item gx-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + gxt("action.move_to_trash", "Move to Trash") + '</div>';
       document.body.appendChild(menu);
 
       const style = document.createElement("style");

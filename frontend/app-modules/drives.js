@@ -30,7 +30,7 @@
           html += '<span style="font-size:14px;">\uD83D\uDCBD</span>';
           html +=
             '<span style="flex:1;font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-            (v.name || v.path || "Drive") +
+            (window.escHtml ? window.escHtml(v.name || v.path || "Drive") : (v.name || v.path || "Drive")) +
             "</span>";
           html +=
             '<div style="width:80px;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;"><div style="width:' +
@@ -170,11 +170,14 @@
           const isActive = isWin
             ? curPath.toUpperCase().startsWith(label.toUpperCase())
             : curPath === path || curPath.startsWith(path + "/");
+          const escPath = window.escHtml ? window.escHtml(path) : path;
+          const escLabel = window.escHtml ? window.escHtml(label) : label;
+          const escName = window.escHtml ? window.escHtml(name) : name;
           html +=
             '<div class="drive-item' +
             (isActive ? " active" : "") +
             '" tabindex="0" data-path="' +
-            path +
+            escPath +
             '">' +
             '<span class="drive-icon">' +
             icon +
@@ -182,10 +185,10 @@
             '<div class="drive-info">' +
             '<div class="drive-info-top">' +
             '<span class="drive-label">' +
-            label +
+            escLabel +
             "</span>" +
             '<span class="drive-name">' +
-            name +
+            escName +
             "</span>" +
             "</div>" +
             '<div class="drive-bar-row">' +

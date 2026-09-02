@@ -7,6 +7,9 @@
     if (!container) {
       container = document.createElement("div");
       container.id = "toast-container";
+      // Announce new toasts to screen readers without stealing focus.
+      container.setAttribute("aria-live", "polite");
+      container.setAttribute("aria-atomic", "false");
       document.body.appendChild(container);
     }
     return container;
@@ -71,7 +74,10 @@
     }
 
     const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
     closeBtn.className = "toast-close";
+    closeBtn.title = "Close";
+    closeBtn.setAttribute("aria-label", "Close");
     closeBtn.innerHTML = "&times;";
     closeBtn.addEventListener("click", function () {
       dismiss(toast);
