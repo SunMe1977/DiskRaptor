@@ -191,6 +191,18 @@ class DiagramRenderer {
       "resize",
       window.debounce(() => this._resize(), 100),
     );
+    // Repaint when the app theme changes (light ⇄ dark) — canvas colors are
+    // theme-aware, but the canvas is only redrawn when we tell it to.
+    const body = document.body;
+    if (body && typeof MutationObserver === "function") {
+      this._themeObserver = new MutationObserver(() => {
+        if (this.data) this._draw();
+      });
+      this._themeObserver.observe(body, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+    }
   }
 
   // ── Premium overlay layers (GPU-accelerated, no canvas repaints) ──
@@ -218,9 +230,17 @@ class DiagramRenderer {
     // Apply GPU-accelerated entrance animation to canvas
     this.canvas.style.transition =
       "transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), filter 0.12s ease-out, box-shadow 0.2s ease";
-    this.canvas.style.transform = "scale(0.95) rotate(-3deg)";
-    this.canvas.style.opacity = "0";
-    this.canvas.style.willChange = "transform, opacity, filter";
+    // Start hidden only when the entrance animation will actually play. For
+    // reduced-motion users the canvas must never be stuck at opacity 0.
+    if (this._reducedMotion) {
+      this.canvas.style.transform = "scale(1)";
+      this.canvas.style.opacity = "1";
+      this.canvas.style.filter = "brightness(1)";
+    } else {
+      this.canvas.style.transform = "scale(0.95) rotate(-3deg)";
+      this.canvas.style.opacity = "0";
+      this.canvas.style.willChange = "transform, opacity, filter";
+    }
   }
 
   _updateOverlays(cx, cy) {
@@ -246,6 +266,13 @@ class DiagramRenderer {
   _playEntrance() {
     if (this._entered) return;
     this._entered = true;
+    if (this._reducedMotion) {
+      // No animation — but make sure the canvas is fully visible either way.
+      this.canvas.style.transform = "scale(1)";
+      this.canvas.style.opacity = "1";
+      this.canvas.style.filter = "brightness(1)";
+      return;
+    }
     // Start from micro-rotated, slightly scaled down state
     this.canvas.style.transform = "scale(0.95) rotate(-3deg)";
     this.canvas.style.opacity = "0";
@@ -425,14 +452,17 @@ class DiagramRenderer {
     this.files.sort((a, b) => b.size - a.size);
     this._entered = false;
     this._userZoom = false;
-    // Delay resize+fit so container has final layout dimensions
+    // Delay resize+fit so container has final layout dimensions, then reveal
+    // the canvas (entrance is skipped/instant for reduced-motion users).
     requestAnimationFrame(() => {
       this._resize();
-      requestAnimationFrame(() => this._resize());
+      requestAnimationFrame(() => {
+        this._resize();
+        this._playEntrance();
+      });
     });
     // Play entrance and bloom for new data (skipped for reduced motion)
     if (!this._reducedMotion) {
-      setTimeout(() => this._playEntrance(), 100);
       setTimeout(() => this._playBloom(), 600);
     }
   }
@@ -447,7 +477,7 @@ class DiagramRenderer {
     this.hitRegions = [];
 
     if (this.files.length === 0) {
-      this.ctx.fillStyle = "#484f58";
+      this.ctx.fillStyle = this._muted();
       this.ctx.font = "14px sans-serif";
       this.ctx.textAlign = "center";
       this.ctx.fillText("No file data. Run a scan first.", w / 2, h / 2);
@@ -588,7 +618,7 @@ class DiagramRenderer {
         );
         if (!overlaps) {
           usedLabelBoxes.push(box);
-          ctx.fillStyle = "rgba(255,255,255,0.9)";
+          ctx.fillStyle = this._labelColor();
           ctx.font = "bold 10px sans-serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
@@ -622,25 +652,25 @@ class DiagramRenderer {
       const pct = ((f.size / totalSize) * 100).toFixed(1);
       ctx.fillStyle = colors[i % colors.length];
       ctx.fillRect(lx, ly, 8, 8);
-      ctx.fillStyle = "#e6edf3";
+      ctx.fillStyle = this._fg();
       ctx.textAlign = "left";
       ctx.fillText(name + " " + pct + "%", lx + 12, ly);
       ly += 15;
     }
     if (this.files.length > 18) {
-      ctx.fillStyle = "#8b949e";
+      ctx.fillStyle = this._muted();
       ctx.textAlign = "left";
       ctx.fillText("+" + (this.files.length - 18) + " more", lx + 12, ly);
     }
 
     // Center label
     if (this._showLabels) {
-      ctx.fillStyle = "#8b949e";
+      ctx.fillStyle = this._muted();
       ctx.font = "12px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Top " + this.files.length, cx, cy - 8);
-      ctx.fillStyle = "#e6edf3";
+      ctx.fillStyle = this._fg();
       ctx.font = "bold 13px sans-serif";
       ctx.fillText(this._formatSize(totalSize), cx, cy + 10);
     }
@@ -657,7 +687,7 @@ class DiagramRenderer {
     const availH = h - margin * 2 - titleH;
 
     if (this.files.length === 0 || availW < 20 || availH < 20) {
-      ctx.fillStyle = "#484f58";
+      ctx.fillStyle = this._muted();
       ctx.font = "14px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("No data", w / 2, h / 2);
@@ -796,7 +826,7 @@ class DiagramRenderer {
         ctx.beginPath();
         ctx.rect(rx + 1, ry + 1, rw - 2, rh - 2);
         ctx.clip();
-        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        ctx.fillStyle = this._labelColor();
         ctx.font = "bold 9px sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
@@ -805,7 +835,7 @@ class DiagramRenderer {
         if (this._showLabels) ctx.fillText(name, rx + 3, ry + 3);
 
         if (rh > 28 && rw > 70 && this._showLabels) {
-          ctx.fillStyle = "rgba(255,255,255,0.7)";
+          ctx.fillStyle = this._subLabelColor();
           ctx.font = "8px sans-serif";
           ctx.fillText(r.size_human, rx + 3, ry + 14);
         }
@@ -828,7 +858,7 @@ class DiagramRenderer {
       ctx.restore();
     }
 
-    ctx.fillStyle = "#8b949e";
+    ctx.fillStyle = this._muted();
     ctx.font = "10px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
@@ -896,7 +926,7 @@ class DiagramRenderer {
       const pctStr = pct.toFixed(1) + "%";
       const label = this._ellipsize(shortName, 28) + "  " + pctStr;
       const labelX = padding + Math.min(barW + 6, barMaxW - ctx.measureText(label).width - 8);
-      ctx.fillStyle = isHov ? "#ffd700" : i === 0 ? "#f8c87a" : "#e6edf3";
+      ctx.fillStyle = this._barTextColor(isHov, i === 0);
       ctx.font = (barH > 24 ? "12px bold" : barH > 10 ? "9px bold" : "7px bold") + " sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
@@ -1163,7 +1193,13 @@ class DiagramRenderer {
     };
     const p = palettes[theme] || palettes["default"];
     const res = [];
-    for (let i = 0; i < 50; i++) res.push(p[i % p.length]);
+    const isLight = this._isLight();
+    for (let i = 0; i < 50; i++) {
+      const c = p[i % p.length];
+      // On a light background the palettes (designed for the dark UI) can be
+      // far too pale to see — darken them so charts stay readable.
+      res.push(isLight ? this._darkenColor(c, 42) : c);
+    }
     return res;
   }
 
@@ -1198,5 +1234,34 @@ class DiagramRenderer {
 
   _formatSize(bytes) {
     return window.fmtSize(bytes);
+  }
+
+  // ── Theme-aware canvas colors ─────────────────────────────
+  // Canvas 2D can't read CSS variables, and the app draws on a canvas that
+  // is independent of the UI theme. Everything below is hardcoded for the
+  // dark UI, which made the whole diagram invisible on a light background.
+  _isLight() {
+    return (
+      typeof document !== "undefined" &&
+      !!document.body &&
+      document.body.classList.contains("light-theme")
+    );
+  }
+  _fg() {
+    return this._isLight() ? "#1f2328" : "#e6edf3";
+  }
+  _muted() {
+    return this._isLight() ? "#656d76" : "#8b949e";
+  }
+  _labelColor() {
+    return this._isLight() ? "rgba(31,35,56,0.92)" : "rgba(255,255,255,0.9)";
+  }
+  _subLabelColor() {
+    return this._isLight() ? "rgba(31,35,56,0.72)" : "rgba(255,255,255,0.7)";
+  }
+  _barTextColor(hov, first) {
+    if (hov) return this._isLight() ? "#9a6700" : "#ffd700";
+    if (first) return this._isLight() ? "#953800" : "#f8c87a";
+    return this._fg();
   }
 }
