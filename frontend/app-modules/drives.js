@@ -11,11 +11,11 @@
         if (!container) return;
         if (!vols || vols.length === 0) {
           container.innerHTML =
-            '<div style="font-size:11px;color:var(--text-muted);text-align:center;">No volumes detected</div>';
+            '<div style="font-size:11px;color:var(--text-muted);text-align:center;">' + (window.__ || function (s) { return s; })("drive.none") + "</div>";
           return;
         }
         let html =
-          '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">\uD83D\uDCBE Drives<span id="refresh-volumes" style="font-size:11px;cursor:pointer;color:var(--text-muted);font-weight:400;">\u21BB refresh</span></div>';
+          '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">\uD83D\uDCBE ' + (window.__ || function (s) { return s; })("drive.title") + '<span id="refresh-volumes" style="font-size:11px;cursor:pointer;color:var(--text-muted);font-weight:400;">\u21BB ' + (window.__ || function (s) { return s; })("action.refresh") + "</span></div>";
         let shown = 0;
         for (let vi = 0; vi < vols.length && shown < 10; vi++) {
           const v = vols[vi];

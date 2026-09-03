@@ -2342,13 +2342,27 @@ body.light-theme #about-overlay {
   #main-layout {
     flex-direction: column;
   }
-  #left-column, #right-column {
+  #left-column, #detail-panel {
     max-width: 100%;
     min-width: 0;
     width: 100%;
   }
-  #right-column {
+  #detail-panel {
+    flex: 0 1 40vh;
     max-height: 40vh;
+    overflow-y: auto;
+  }
+  #left-column {
+    flex: 1 1 60vh;
+    min-height: 280px;
+  }
+  #type-filters {
+    overflow-x: auto;
+    max-width: 42vw;
+  }
+  .diagram-controls {
+    max-height: 42px;
+    overflow-y: auto;
   }
   .tree-header {
     font-size: 10px;

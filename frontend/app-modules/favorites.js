@@ -58,10 +58,10 @@
       if (!favMenu) return;
       if (favorites.length === 0) {
         favMenu.classList.remove("active");
-        favMenu.innerHTML = '<div style="padding:8px 10px;font-size:11px;color:var(--text-muted);">No favorites yet</div>';
+        favMenu.innerHTML = '<div style="padding:8px 10px;font-size:11px;color:var(--text-muted);">' + (window.__ || function (s) { return s; })("history.no_favorites") + "</div>";
         return;
       }
-      let html = '<div class="fav-hint" style="padding:6px 8px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border);">Tip: add labeled folders for fast reuse</div>';
+      let html = '<div class="fav-hint" style="padding:6px 8px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border);">' + (window.__ || function (s) { return s; })("history.favorites_hint") + "</div>";
       for (let fi = 0; fi < favorites.length; fi++) {
         const f = favorites[fi];
         const label = escapeHtml(f.label || deriveLabel(f.path));

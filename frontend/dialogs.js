@@ -124,7 +124,8 @@
    * Confirmation dialog. Resolves true/false.
    */
   function confirmDialog(message) {
-    return dialog({ message, confirmText: "OK", cancelText: "Cancel" });
+    const t = window.__ || function (s) { return s; };
+    return dialog({ message, confirmText: t("dialog.ok") || "OK", cancelText: t("dialog.cancel") || "Cancel" });
   }
 
   /**
@@ -133,8 +134,8 @@
   function yesNoDialog(message, yesText, noText) {
     return dialog({
       message,
-      confirmText: yesText || "Yes",
-      cancelText: noText || "No",
+      confirmText: yesText || (window.__ || function (s) { return s; })("dialog.yes") || "Yes",
+      cancelText: noText || (window.__ || function (s) { return s; })("dialog.no") || "No",
     });
   }
 
@@ -142,14 +143,15 @@
    * Alert dialog. Resolves undefined when dismissed.
    */
   function alertDialog(message) {
-    return dialog({ message, confirmText: "OK" });
+    return dialog({ message, confirmText: (window.__ || function (s) { return s; })("dialog.ok") || "OK" });
   }
 
   /**
    * Prompt dialog. Resolves the entered string, or null on cancel.
    */
   function promptDialog(message, defaultValue) {
-    return dialog({ message, placeholder: "", value: defaultValue, confirmText: "OK", cancelText: "Cancel" });
+    const t = window.__ || function (s) { return s; };
+    return dialog({ message, placeholder: "", value: defaultValue, confirmText: t("dialog.ok") || "OK", cancelText: t("dialog.cancel") || "Cancel" });
   }
 
   window.confirmDialog = confirmDialog;

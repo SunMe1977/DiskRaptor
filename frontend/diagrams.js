@@ -120,14 +120,15 @@ class DiagramRenderer {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    const explorerLabel = this._isMac ? "Open in Finder" : this._isLinux ? "Open in File Manager" : "Open in Explorer";
+    const t = window.__ || function (s) { return s; };
+    const explorerLabel = this._isMac ? t("action.finder") : this._isLinux ? t("action.file_manager") : t("action.explorer");
     this.contextMenu.innerHTML =
       '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
-      '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
-      '<div class="diag-ctx-item" data-action="tree">\u{1F332} Jump in Tree</div>' +
+      '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} ' + t("action.terminal") + '</div>' +
+      '<div class="diag-ctx-item" data-action="tree">\u{1F332} ' + t("action.jump_in_tree") + '</div>' +
       '<div class="diag-ctx-sep"></div>' +
-      '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
-      '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} Copy Path</div>' +
+      '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F ' + t("action.properties") + '</div>' +
+      '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} ' + t("action.copy_path") + '</div>' +
       '<div class="diag-ctx-sep"></div>' +
       '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (window.__ ? window.__("action.move_to_trash") : "Move to Trash") + '</div>';
     document.body.appendChild(this.contextMenu);

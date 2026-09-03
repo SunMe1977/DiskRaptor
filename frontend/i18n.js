@@ -76,6 +76,7 @@
     const codes = [];
     if (!hasData(code)) codes.push(code);
     if (code !== "en" && !hasData("en")) codes.push("en");
+    if (!DATA.__uiExtra) codes.push("ui-extra");
     if (codes.length === 0) return Promise.resolve();
     if (!loadQueue) {
       loadQueue = Promise.all(

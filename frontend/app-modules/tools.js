@@ -501,7 +501,7 @@
             }
           }
           if (end < nodes.length) {
-            if (st0) st0.textContent = "Searching... " + Math.round((end / nodes.length) * 100) + "%";
+            if (st0) st0.textContent = (window.__ || function (s) { return s; })("action.searching").replace("{percent}", Math.round((end / nodes.length) * 100));
             if (typeof requestIdleCallback === "function") {
               requestIdleCallback(function () { processChunk(end); });
             } else {
@@ -535,7 +535,7 @@
         } catch (e) { console.debug("[DiskRaptor]", e); }
         if (!(await window.confirmDialog(t("confirm.empty_trash") + trashInfo))) return;
         try {
-          item.textContent = "\u23F3 Emptying...";
+          item.textContent = "\u23F3 " + (window.__ || function (s) { return s; })("action.emptying");
           await window.__TAURI__.invoke("empty_trash", {});
           document.querySelector(".status-bar").textContent = t(
             "status.trash_emptied",
@@ -617,7 +617,7 @@
 
     function render() {
       if (files.length === 0) {
-        listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">No large, old, or temporary files found in Downloads.</div>';
+        listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">' + (window.__ || function (s) { return s; })("downloads.none") + "</div>";
         totalEl.textContent = "";
         cleanBtn.disabled = true;
         return;

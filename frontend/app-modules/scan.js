@@ -170,7 +170,7 @@
         // (e.g. a network drive that never answers). Hide the overlay AND tell
         // the backend to stop so we don't leave a zombie scan running.
         progressOverlay.classList.remove("active");
-        document.querySelector(".status-bar").textContent = "Timeout triggered";
+        document.querySelector(".status-bar").textContent = (window.__ || function (s) { return s; })("status.timeout");
         window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
       }, 1800000);
 
@@ -316,7 +316,7 @@
       }
 
       progressOverlay.classList.add("active");
-      progressPath.textContent = "Scanning: " + path;
+      progressPath.textContent = (window.__ || function (s) { return s; })("progress.scanning_path").replace("{path}", path);
       const scanHint = document.getElementById("scan-hint");
       if (scanHint) {
         scanHint.textContent = (window.__ || function (s) { return s; })("scan.hint");
@@ -349,9 +349,9 @@
         }
         const arr = Array.isArray(entries) ? entries : [];
         let html =
-          '<div style="color:var(--text-muted);font-size:11px;margin-bottom:6px;">\u23F3 Live scan\u2026 ' +
-          arr.length +
-          ' items so far</div>';
+          '<div style="color:var(--text-muted);font-size:11px;margin-bottom:6px;">\u23F3 ' +
+          (window.__ || function (s) { return s; })("progress.live_scan").replace("{count}", arr.length) +
+          "</div>";
         const shown = arr.slice(-500);
         for (let i = shown.length - 1; i >= 0; i--) {
           html +=
@@ -374,7 +374,7 @@
         if (old) old.remove();
         const badge = document.createElement("button");
         badge.id = "scan-error-badge";
-        badge.title = "Click to view errors";
+        badge.title = (window.__ || function (s) { return s; })("progress.view_errors");
         badge.style.cssText =
           "margin-left:8px;padding:3px 9px;font-size:11px;border:1px solid rgba(248,81,73,0.4);border-radius:12px;" +
           "background:rgba(248,81,73,0.12);color:var(--accent-red);cursor:pointer;flex-shrink:0;font-weight:600;";
@@ -404,7 +404,7 @@
               " more</div>";
           card.innerHTML =
             '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">' +
-            '<span style="font-size:14px;font-weight:600;">\u26A0 Scan errors (' + errs.length + ")</span>" +
+            '<span style="font-size:14px;font-weight:600;">\u26A0 ' + (window.__ || function (s) { return s; })("progress.scan_errors").replace("{count}", errs.length) + "</span>" +
             '<button class="sb-close" aria-label="Close" style="padding:3px 9px;font-size:14px;border:none;background:none;color:var(--text-muted);cursor:pointer;">\u2715</button></div>' +
             '<div style="flex:1;overflow-y:auto;padding:8px 0;">' + rows + "</div>";
           overlay.appendChild(card);
@@ -939,7 +939,9 @@
             var cbs = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]');
             var someUnchecked = Array.from(cbs).some(function (cb) { return !cb.checked; });
             cbs.forEach(function (cb) { cb.checked = someUnchecked; });
-            if (btn) btn.textContent = someUnchecked ? "Select All" : "Select None";
+            if (btn) btn.textContent = someUnchecked
+              ? (window.__ || function (s) { return s; })("action.select_all")
+              : (window.__ || function (s) { return s; })("action.select_none");
           };
           document.getElementById("cleanup-move-trash").onclick = function () {
             var items = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');

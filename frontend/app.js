@@ -125,10 +125,10 @@
       setTimeout(() => reject(new Error("Tauri bridge timeout")), 30000),
     );
 
-    if (statusBar) statusBar.textContent = "Connecting to backend...";
+    if (statusBar) statusBar.textContent = (window.__ || function (s) { return s; })("status.connecting");
     try {
       await Promise.race([bridgeReady, timeout]);
-      if (statusBar) statusBar.textContent = "Backend connected";
+      if (statusBar) statusBar.textContent = (window.__ || function (s) { return s; })("status.connected");
       try {
         const w = window.__TAURI__.window.getCurrentWindow();
         await w.maximize();
@@ -136,7 +136,7 @@
     } catch (err) {
       console.error("Tauri backend not connected:", err);
       if (statusBar)
-        statusBar.textContent = "Backend not connected. " + err.message;
+        statusBar.textContent = (window.__ || function (s) { return s; })("status.backend_error").replace("{error}", err.message);
       return;
     }
 
@@ -242,7 +242,7 @@
             );
           }
           const sb = document.querySelector(".status-bar");
-          if (sb) sb.textContent = "Running in App Store sandbox mode";
+          if (sb) sb.textContent = (window.__ || function (s) { return s; })("status.sandbox");
           // Hide tools that rely on subprocesses forbidden in the sandbox.
           document
             .querySelectorAll(
@@ -536,7 +536,7 @@
 
     loader.onProgress = (loaded, total) => {
       const el = document.querySelector("#tree-panel .status-bar");
-      if (el) el.textContent = "Loading chunks... " + loaded + "/" + total;
+      if (el) el.textContent = (window.__ || function (s) { return s; })("status.loading_chunks").replace("{loaded}", loaded).replace("{total}", total);
     };
 
     treeView.onSelect = function () {};
@@ -607,7 +607,7 @@
       head.style.cssText =
         "padding:12px 18px;font-size:14px;font-weight:600;color:var(--text-primary);" +
         "border-bottom:1px solid var(--border,#30363d);";
-      head.textContent = "⌨ Keyboard Shortcuts";
+      head.textContent = "⌨ " + (window.__ || function (s) { return s; })("shortcut.title");
       const body = document.createElement("div");
       body.style.cssText = "padding:14px 18px;font-size:13px;line-height:2;color:var(--text-primary);";
       const rows = [
@@ -629,7 +629,7 @@
           "font-family:var(--font-mono);font-size:12px;background:var(--bg-tertiary);" +
           "border:1px solid var(--border);border-radius:4px;padding:1px 6px;white-space:nowrap;";
         const d = document.createElement("span");
-        d.textContent = r[1];
+        d.textContent = (window.__ || function (s) { return s; })(r[1]);
         line.appendChild(k);
         line.appendChild(d);
         body.appendChild(line);

@@ -130,9 +130,12 @@ class TreeView {
   _initTypeFilters() {
     const self = this;
     document.querySelectorAll(".type-filter").forEach(function(btn) {
-      btn.addEventListener("click", function() {
+      btn.addEventListener("click", async function() {
         if (this.dataset.ext === "custom") {
-          const input = window.prompt("Enter extensions (comma-separated, e.g. md,tsx,toml):", "");
+          const input = await window.promptDialog(
+            (window.__ || function (s) { return s; })("tree.custom_prompt"),
+            "",
+          );
           if (input === null) return;
           const exts = input.split(",").map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
           if (exts.length === 0) return;
@@ -319,13 +322,14 @@ class TreeView {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    const explorerLabel = this._isMac ? "Open in Finder" : this._isLinux ? "Open in File Manager" : "Open in Explorer";
+    const t = window.__ || function (s) { return s; };
+    const explorerLabel = this._isMac ? t("action.finder") : this._isLinux ? t("action.file_manager") : t("action.explorer");
     this._ctxMenu.innerHTML =
       '<div class="tctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
-      '<div class="tctx-item" data-action="terminal">\u{1F4BB} Open Terminal</div>' +
-      '<div class="tctx-item" data-action="scan-here">🔍 Scan this Folder</div>' +
+      '<div class="tctx-item" data-action="terminal">\u{1F4BB} ' + t("action.terminal") + '</div>' +
+      '<div class="tctx-item" data-action="scan-here">🔍 ' + t("action.scan_here") + '</div>' +
       '<div class="tctx-sep"></div>' +
-      '<div class="tctx-item" data-action="properties">\u2699\uFE0F Properties</div>' +
+      '<div class="tctx-item" data-action="properties">\u2699\uFE0F ' + t("action.properties") + '</div>' +
       '<div class="tctx-item" data-action="copy">\u{1F4CB} ' + (window.__ ? window.__("action.copy_path") : "Copy Path") + '</div>' +
       '<div class="tctx-item" data-action="copy-size">\u{1F4B0} ' + (window.__ ? window.__("action.copy_size") : "Copy Size") + '</div>' +
       '<div class="tctx-sep"></div>' +
@@ -1020,7 +1024,7 @@ class TreeView {
         t("toast.undo_trash") || "Moved to Trash — undo?",
         "info",
         {
-          label: "Undo",
+          label: t("action.undo") || "Undo",
           onClick: async function () {
             let ok = 0;
             for (const r of toRestore) {
@@ -1034,7 +1038,10 @@ class TreeView {
               } catch (e) { /* ignore */ }
             }
             if (ok > 0 && window.showToast) {
-              window.showToast("Restored " + ok + " item(s)", "success");
+              window.showToast(
+                t("toast.restored_items").replace("{count}", ok),
+                "success",
+              );
             }
             if (typeof window.__trashRefresh === "function") window.__trashRefresh();
           },

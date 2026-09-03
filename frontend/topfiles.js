@@ -14,9 +14,9 @@ class TopFilesPanel {
     if (thead) {
       thead.innerHTML =
         '<th># <span class="sort-arrow">\u25BC</span></th>' +
-        '<th>Path <span class="sort-arrow">\u25B2\u25BC</span></th>' +
-        '<th>Size <span class="sort-arrow">\u25BC</span></th>' +
-        '<th style="width:40px">Action</th>';
+        '<th>' + (window.__ || function (s) { return s; })("sel.name") + ' <span class="sort-arrow">\u25B2\u25BC</span></th>' +
+        '<th>' + (window.__ || function (s) { return s; })("sel.size") + ' <span class="sort-arrow">\u25BC</span></th>' +
+        '<th style="width:40px">' + (window.__ || function (s) { return s; })("action.action") + "</th>";
     }
   }
 
@@ -191,7 +191,7 @@ class TopFilesPanel {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
       td.colSpan = showDelete ? 4 : 3;
-      td.textContent = "📭 No files found — run a scan first";
+      td.textContent = "📭 " + (window.__ || function (s) { return s; })("empty.topfiles");
       td.style.textAlign = "center";
       td.style.color = "var(--text-muted)";
       td.style.padding = "24px";
@@ -216,10 +216,17 @@ class TopFilesPanel {
         self._ctxMenu.style.top = e.clientY + "px";
       });
       tr.addEventListener("click", function(e) {
-        self._ctxMenu._filePath = filePath;
-        self._ctxMenu.style.display = "block";
-        self._ctxMenu.style.left = e.clientX + "px";
-        self._ctxMenu.style.top = e.clientY + "px";
+        document.querySelectorAll("#topfiles-table tbody tr.selected").forEach(function (row) {
+          row.classList.remove("selected");
+          row.removeAttribute("aria-selected");
+        });
+        tr.classList.add("selected");
+        tr.setAttribute("aria-selected", "true");
+        const sb = document.querySelector(".status-bar");
+        if (sb) {
+          const t = window.__ || function (s) { return s; };
+          sb.textContent = t("status.selected").replace("{path}", filePath || "");
+        }
       });
 
       // Rank
