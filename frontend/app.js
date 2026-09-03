@@ -511,12 +511,26 @@
     })();
 
     // ── Collapsible detail cards ─────────────────────────
+    // Toggleable with the mouse AND the keyboard (Enter/Space) — the header
+    // becomes a real button for assistive tech.
     document.querySelectorAll(".collapsible .card-header").forEach(function (
       h,
     ) {
-      h.addEventListener("click", function () {
-        const card = this.closest(".collapsible");
-        if (card) card.classList.toggle("collapsed");
+      h.setAttribute("role", "button");
+      h.setAttribute("tabindex", "0");
+      h.setAttribute("aria-expanded", "true");
+      const card = h.closest(".collapsible");
+      function toggleCard() {
+        if (!card) return;
+        const collapsed = card.classList.toggle("collapsed");
+        h.setAttribute("aria-expanded", String(!collapsed));
+      }
+      h.addEventListener("click", toggleCard);
+      h.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggleCard();
+        }
       });
     });
 

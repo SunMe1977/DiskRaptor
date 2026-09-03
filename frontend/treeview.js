@@ -41,27 +41,53 @@ class TreeView {
   /** Listen for diagram "jump in tree" clicks */
   _initSortControls() {
     const self = this;
-    // Default sort: size desc
-    document.querySelectorAll(".tree-col-sort").forEach(function(btn) {
-      if (btn.dataset.col === "size") {
-        btn.classList.add("sort-desc");
+
+    const setSortState = function (col) {
+      document.querySelectorAll(".tree-col-sort").forEach(function (b) {
+        b.classList.remove("sort-asc", "sort-desc");
+        b.setAttribute("aria-sort", "none");
+      });
+      if (col !== self.sortBy) return;
+      const active = document.querySelector(
+        '.tree-col-sort[data-col="' + col + '"]',
+      );
+      if (active) {
+        active.classList.add(self.sortDesc ? "sort-desc" : "sort-asc");
+        active.setAttribute(
+          "aria-sort",
+          self.sortDesc ? "descending" : "ascending",
+        );
       }
-      btn.addEventListener("click", function() {
-        const col = this.dataset.col;
-        if (self.sortBy === col) {
-          self.sortDesc = !self.sortDesc;
-        } else {
-          self.sortBy = col;
-          self.sortDesc = true;
+    };
+
+    const applySort = function (col) {
+      if (self.sortBy === col) {
+        self.sortDesc = !self.sortDesc;
+      } else {
+        self.sortBy = col;
+        self.sortDesc = true;
+      }
+      setSortState(col);
+      self.rebuild();
+      self._saveSortPref();
+    };
+
+    // Sortable columns are reachable & sortable by keyboard (Enter/Space).
+    document.querySelectorAll(".tree-col-sort").forEach(function (btn) {
+      btn.setAttribute("tabindex", "0");
+      btn.setAttribute("aria-sort", "none");
+      btn.addEventListener("click", function () {
+        applySort(this.dataset.col);
+      });
+      btn.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          applySort(this.dataset.col);
         }
-        document.querySelectorAll(".tree-col-sort").forEach(function(b) {
-          b.classList.remove("sort-asc", "sort-desc");
-        });
-        this.classList.add(self.sortDesc ? "sort-desc" : "sort-asc");
-        self.rebuild();
-        self._saveSortPref();
       });
     });
+    setSortState(self.sortBy);
+
     // Restore persisted sort preference.
     window.__TAURI__
       .invoke("load_settings", {})
@@ -70,11 +96,7 @@ class TreeView {
         if (tr.sort_by) {
           self.sortBy = tr.sort_by;
           if (typeof tr.sort_desc === "boolean") self.sortDesc = tr.sort_desc;
-          document.querySelectorAll(".tree-col-sort").forEach(function (b) {
-            b.classList.remove("sort-asc", "sort-desc");
-            if (b.dataset.col === self.sortBy)
-              b.classList.add(self.sortDesc ? "sort-desc" : "sort-asc");
-          });
+          setSortState(self.sortBy);
           self.rebuild();
         }
       })

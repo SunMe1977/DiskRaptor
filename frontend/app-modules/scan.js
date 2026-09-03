@@ -189,6 +189,18 @@
       const speedSamples = [];
       const maxSamples = 40;
 
+      // One-shot green pulse on the Scan button when a scan finishes cleanly.
+      function pulseScanSuccess() {
+        const b = document.getElementById("btn-scan");
+        if (!b) return;
+        b.classList.remove("btn-success-flash");
+        void b.offsetWidth; // restart the animation if it just played
+        b.classList.add("btn-success-flash");
+        setTimeout(function () {
+          b.classList.remove("btn-success-flash");
+        }, 950);
+      }
+
       function drawSpeedChart() {
         if (!speedChartCtx) return;
         speedChartCanvas.width =
@@ -680,6 +692,7 @@
             result.stats ? result.stats.top_files : [],
             true,
           );
+          pulseScanSuccess();
         } else {
           const fbStats = {
             total_files: lastFilesFound || 0,

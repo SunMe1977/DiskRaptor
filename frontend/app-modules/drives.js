@@ -165,6 +165,8 @@
                   ? Math.round((used / total) * 100)
                   : 0;
           const free = d.free_bytes || d.free || 0;
+          const barColor =
+            pct > 90 ? "#f85149" : pct > 70 ? "#d29922" : "#3fb950";
           const icon = driveIcon(type, path);
           const curPath = scanPath.value;
           const isActive = isWin
@@ -194,7 +196,9 @@
             '<div class="drive-bar-row">' +
             '<div class="drive-bar-wrap"><div class="drive-bar-fill" style="width:' +
             pct +
-            '%"></div></div>' +
+            '%;background:' +
+            barColor +
+            ';"></div></div>' +
             '<span class="drive-pct">' +
             pct +
             "%</span>" +
