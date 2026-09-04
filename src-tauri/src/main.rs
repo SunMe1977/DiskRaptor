@@ -80,6 +80,11 @@ struct ScanResultData {
     scan_time_ms: u64,
     errors: Vec<String>,
     termination: scanner::walker::ScanTermination,
+    /// Absolute path that was scanned; used to build real paths for insights /
+    /// tree-search results (arena nodes only store relative names).
+    root_path: String,
+    /// Precomputed "plain-language" insight payload (#4) attached to stats.
+    insights: serde_json::Value,
 }
 
 // -- Duplicate scanner state ------------------------------------------------
@@ -634,6 +639,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             cmds::system::check_for_updates, cmds::path_ops::open_url,
             cmds::scan::start_scan, cmds::scan::get_scan_progress, cmds::scan::get_scan_result,
             cmds::scan::get_chunk, cmds::scan::get_children, cmds::scan::cancel_scan, cmds::scan::release_scan, cmds::scan::get_stats,
+            cmds::scan::search_tree,
             cmds::dups::find_duplicates, cmds::dups::get_dup_stats, cmds::dups::get_dup_result, cmds::dups::cancel_dup_scan,
             cmds::settings::save_settings, cmds::settings::load_settings,
             cmds::system::list_disks, cmds::path_ops::exit_app,

@@ -353,16 +353,37 @@ print(json.dumps(out))"#;
 }
 
 #[tauri::command]
-pub async fn restore_trash(trash_path: String, original_path: Option<String>) -> JsonResult {
+pub async fn restore_trash(
+    trash_path: String,
+    original_path: Option<String>,
+    strategy: Option<String>,
+) -> JsonResult {
     // Moving / copy+removing a large tree can block for seconds; run off the
     // main thread so the UI stays responsive.
-    tauri::async_runtime::spawn_blocking(move || restore_trash_inner(trash_path, original_path))
-        .await
-        .unwrap_or_else(|e| JsonResult::err(format!("Restore failed: {e}")))
+    tauri::async_runtime::spawn_blocking(move || {
+        restore_trash_inner(trash_path, original_path, strategy)
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Restore failed: {e}")))
 }
 
-fn restore_trash_inner(trash_path: String, original_path: Option<String>) -> JsonResult {
+/// Restore strategies, chosen by the conflict-resolution dialog:
+///   "" | "rename"   -> if the target exists, restore under a timestamp name
+///   "keep_both"     -> same as rename (kept for API symmetry)
+///   "overwrite"     -> replace the existing target with the restored item
+///   "probe"         -> do nothing; report whether the target already exists
+fn restore_trash_inner(
+    trash_path: String,
+    original_path: Option<String>,
+    strategy: Option<String>,
+) -> JsonResult {
     use std::path::PathBuf;
+
+    // "" / "rename" / "keep_both" all restore under a timestamp name when the
+    // original target already exists; "overwrite" replaces it; "probe" reports
+    // the conflict without touching anything.
+    let strategy = strategy.unwrap_or_default();
+    let strategy = strategy.trim().to_lowercase();
 
     let src = std::path::Path::new(&trash_path);
     if !src.exists() {
@@ -375,19 +396,30 @@ fn restore_trash_inner(trash_path: String, original_path: Option<String>) -> Jso
     let is_dir = meta.is_dir();
 
     // Prefer the original location (parsed from trash metadata on Windows).
-    let mut dest: Option<PathBuf> = original_path
+    let dest: Option<PathBuf> = original_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from)
         .filter(|p| is_safe_restore_target(p));
-    if dest.is_none() {
-        // Fallback: home directory, named after the trashed file.
-        let home = dirs::home_dir().unwrap_or_default();
-        let fname = src.file_name().and_then(|n| n.to_str()).unwrap_or("restored");
-        dest = Some(home.join(fname));
-    }
-    let mut dest = dest.unwrap();
+    let mut dest = match dest {
+        Some(d) => d,
+        None => {
+            // Fallback: home directory, named after the trashed file.
+            let home = dirs::home_dir().unwrap_or_default();
+            let fname = src.file_name().and_then(|n| n.to_str()).unwrap_or("restored");
+            home.join(fname)
+        }
+    };
 
-    if dest.exists() {
+    // Probe mode: answer "is there already something at the target?" without
+    // touching anything, so the UI can offer the conflict-resolution dialog.
+    if strategy == "probe" {
+        return JsonResult::ok(serde_json::json!({
+            "dest": dest.to_string_lossy().to_string(),
+            "conflict": dest.exists(),
+        }));
+    }
+
+    if dest.exists() && strategy != "overwrite" {
         // Conflict strategy: rename with a timestamp suffix.
         let base = dest
             .file_stem()
@@ -419,6 +451,23 @@ fn restore_trash_inner(trash_path: String, original_path: Option<String>) -> Jso
         ));
     }
 
+    // Overwrite strategy: explicitly remove the conflicting target first.
+    // Only reachable with a user-confirmed "overwrite"; guarded by the same
+    // safety rules above, so it can never target an OS-critical path.
+    if strategy == "overwrite" && dest.exists() {
+        if dest == src {
+            return JsonResult::err("Refusing to overwrite the item being restored");
+        }
+        let rm = if dest.is_dir() {
+            std::fs::remove_dir_all(&dest)
+        } else {
+            std::fs::remove_file(&dest)
+        };
+        if let Err(e) = rm {
+            return JsonResult::err(format!("Cannot replace {}: {e}", dest.display()));
+        }
+    }
+
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() {
             if let Err(e) = std::fs::create_dir_all(parent) {
@@ -429,8 +478,8 @@ fn restore_trash_inner(trash_path: String, original_path: Option<String>) -> Jso
 
     // Atomic move where possible; fall back to copy + remove across devices.
     // Never copy over an existing destination: the conflict branch above picked
-    // a unique name, so a destination that reappears here is a race we must not
-    // overwrite silently.
+    // a unique name (or the overwrite branch removed the target), so a
+    // destination that reappears here is a race we must not overwrite silently.
     let moved = if is_dir {
         if dest.exists() {
             return JsonResult::err(format!(

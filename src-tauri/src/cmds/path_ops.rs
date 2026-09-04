@@ -117,8 +117,92 @@ impl PathSnapshot {
     }
 }
 
+/// Folders the user has marked as protected in Settings ("protectedFolders").
+/// Deletion commands refuse any path equal to or nested inside one of them —
+/// a visible, user-level safety net on top of the technical path hardening.
+fn read_protected_folders() -> Vec<std::path::PathBuf> {
+    let cfg = dirs::config_dir()
+        .unwrap_or_default()
+        .join("diskraptor")
+        .join("settings.json");
+    let Ok(s) = std::fs::read_to_string(&cfg) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) else {
+        return Vec::new();
+    };
+    v.get("protectedFolders")
+        .and_then(|a| a.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str())
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Is `candidate` equal to one of `bases`, or nested anywhere beneath it?
+/// Case-insensitive on Windows.
+fn path_is_protected(candidate: &std::path::Path, bases: &[std::path::PathBuf]) -> bool {
+    if bases.is_empty() {
+        return false;
+    }
+    let norm = |p: &std::path::Path| -> String {
+        let s = p.to_string_lossy();
+        #[cfg(target_os = "windows")]
+        {
+            s.to_lowercase()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            s.to_string()
+        }
+    };
+    let c = norm(candidate);
+    let c = c.trim_end_matches(['/', '\\']);
+    for b in bases {
+        let mut base = norm(b);
+        base = base.trim_end_matches(['/', '\\']).to_string();
+        if base.is_empty() {
+            continue;
+        }
+        if c == base {
+            return true;
+        }
+        let sep = if cfg!(target_os = "windows") { "\\" } else { "/" };
+        if c.starts_with(&format!("{}{}", base, sep)) {
+            return true;
+        }
+    }
+    false
+}
+
+fn protected_delete_error(path: &str) -> Option<String> {
+    let list = read_protected_folders();
+    if list.is_empty() {
+        return None;
+    }
+    let pb = std::path::PathBuf::from(path);
+    for b in &list {
+        if path_is_protected(&pb, std::slice::from_ref(b)) {
+            return Some(format!(
+                "{} is inside a protected folder ({}). Remove the protection in Settings first.",
+                path,
+                b.display()
+            ));
+        }
+    }
+    None
+}
+
 #[tauri::command]
 pub(crate) fn delete_path(path: String) -> JsonResult {
+    if let Some(msg) = protected_delete_error(&path) {
+        return JsonResult::err(msg);
+    }
     let snap = match PathSnapshot::capture(&path) {
         Ok(s) => s,
         Err(e) => return JsonResult::err(e),
@@ -157,6 +241,9 @@ pub(crate) fn delete_path(path: String) -> JsonResult {
 
 #[tauri::command]
 pub(crate) async fn delete_permanent(path: String) -> JsonResult {
+    if let Some(msg) = protected_delete_error(&path) {
+        return JsonResult::err(msg);
+    }
     let snap = match PathSnapshot::capture(&path) {
         Ok(s) => s,
         Err(e) => return JsonResult::err(e),
@@ -664,5 +751,34 @@ mod tests {
         {
             assert!(PathSnapshot::capture("/").is_err());
         }
+    }
+
+    #[test]
+    fn protected_matcher_detects_equal_and_nested() {
+        let base = std::env::temp_dir().join("diskraptor_protected_photos");
+        let nested = base.join("holidays").join("img.jpg");
+        let sibling = std::env::temp_dir().join("diskraptor_protected_photos_backup");
+        let bases = vec![base.clone()];
+        assert!(path_is_protected(&base, &bases));
+        assert!(path_is_protected(&nested, &bases));
+        assert!(!path_is_protected(&sibling, &bases), "prefix collision must not match");
+        assert!(!path_is_protected(&std::env::temp_dir(), &bases));
+    }
+
+    #[test]
+    fn protected_matcher_is_empty_safe_and_case_insensitive_on_windows() {
+        assert!(!path_is_protected(&std::env::temp_dir(), &[]));
+        #[cfg(target_os = "windows")]
+        {
+            let bases = vec![std::path::PathBuf::from("C:\\Users\\Me\\Photos")];
+            assert!(path_is_protected(&std::path::PathBuf::from("c:\\users\\me\\photos\\a.jpg"), &bases));
+        }
+    }
+
+    #[test]
+    fn protected_error_absent_when_no_settings_file() {
+        // The real config dir may or may not exist, but the function must never
+        // error; it simply reports no protection when nothing is configured.
+        assert!(protected_delete_error(&std::env::temp_dir().to_string_lossy()).is_none());
     }
 }

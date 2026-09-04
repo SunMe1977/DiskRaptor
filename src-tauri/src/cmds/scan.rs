@@ -5,6 +5,7 @@
 use crate::{AppState, JsonResult, LiveEntries, ScanResultData};
 use diskraptor_scanner::scanner;
 use diskraptor_scanner::scanner::tree::format_size;
+use diskraptor_scanner::scanner::tree::{NodeType, TreeNodeArena};
 use diskraptor_scanner::streaming::chunker::CHUNK_SIZE;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -162,9 +163,12 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
                 // junctions, ...) that used to be silently dropped on success.
                 let walk_errors = scan_errors.lock().clone();
                 s.scan.errors.lock().extend(walk_errors.clone());
+                let insights = compute_scan_insights(&sr.arena, &p);
                 let data = ScanResultData {
                     arena: sr.arena, stats: sr.stats, scan_time_ms: elapsed,
                     errors: walk_errors, termination,
+                    root_path: p.clone(),
+                    insights,
                 };
                 // Cache the serialized result once per scan (see get_scan_result).
                 let json = build_result_json(&data, active_id);
@@ -278,10 +282,250 @@ fn build_result_json(d: &ScanResultData, active_id: u64) -> serde_json::Value {
         "size_human": format_size(d.stats.total_size),
         "time_human": format!("{:.2}s", d.scan_time_ms as f64 / 1000.0),
         "termination": d.termination,
+        "insights": d.insights,
     });
     let total_chunks = (d.arena.len() as u32).div_ceil(CHUNK_SIZE);
     let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": total_chunks});
     serde_json::json!({"stats": sj, "root_info": ri, "scan_id": active_id, "errors": d.errors})
+}
+
+// ── Plain-language scan insights (#4) ──────────────────────────────────────
+//
+// Computed once when a scan finishes and embedded in the cached result so the
+// frontend never pays the arena pass again. Answers the two questions a scan
+// result should answer without reading a diagram: "which folders dominate?"
+// and "how much of this is old / never touched?".
+
+/// Current time as Unix seconds (used by the age aggregation).
+fn now_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Rebuild the absolute path of an arena node by walking parent pointers to the
+/// root (index 0) and joining the root path with the relative segment names.
+fn arena_node_path(arena: &TreeNodeArena, root_path: &str, mut idx: usize) -> String {
+    let mut segs: Vec<&str> = Vec::new();
+    let mut guard = 0usize;
+    while idx != 0 && idx < arena.nodes.len() && guard < 4096 {
+        let n = &arena.nodes[idx];
+        segs.push(&n.name);
+        idx = n.parent as usize;
+        guard += 1;
+    }
+    if segs.is_empty() {
+        return root_path.to_string();
+    }
+    segs.reverse();
+    let sep = if cfg!(target_os = "windows") { "\\" } else { "/" };
+    let mut out = root_path.trim_end_matches(['/', '\\']).to_string();
+    for s in segs {
+        out.push_str(sep);
+        out.push_str(s);
+    }
+    out
+}
+
+/// Compute the scan-insights payload for a finished arena.
+pub(crate) fn compute_scan_insights(arena: &TreeNodeArena, root_path: &str) -> serde_json::Value {
+    let total = arena.nodes.first().map(|n| n.size).unwrap_or(0);
+    let now = now_unix_secs();
+
+    // 1) Largest directories, skipping any folder nested under one already
+    //    listed (so the list shows distinct space hogs, not a family tree).
+    let mut candidates: Vec<(usize, u64)> = arena
+        .nodes
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(_, n)| n.node_type == NodeType::Directory && n.size > 0)
+        .map(|(i, n)| (i, n.size))
+        .collect();
+    candidates.sort_unstable_by_key(|x| std::cmp::Reverse(x.1));
+    let mut chosen: Vec<usize> = Vec::new();
+    let mut chosen_set = std::collections::HashSet::new();
+    for (i, size) in candidates {
+        if chosen.len() >= 8 {
+            break;
+        }
+        // Reject if any ancestor (up to root) is already a chosen hog.
+        let mut a = arena.nodes[i].parent as usize;
+        let mut blocked = false;
+        let mut g = 0usize;
+        while a != 0 && a < arena.nodes.len() && g < 4096 {
+            if chosen_set.contains(&a) {
+                blocked = true;
+                break;
+            }
+            a = arena.nodes[a].parent as usize;
+            g += 1;
+        }
+        if blocked {
+            continue;
+        }
+        chosen.push(i);
+        chosen_set.insert(i);
+        let _ = size;
+    }
+    let pct_of = |s: u64| -> f64 {
+        if total == 0 {
+            0.0
+        } else {
+            (s as f64 / total as f64 * 1000.0).round() / 10.0
+        }
+    };
+    let top_dirs: Vec<serde_json::Value> = chosen
+        .into_iter()
+        .map(|i| {
+            let n = &arena.nodes[i];
+            serde_json::json!({
+                "idx": i,
+                "name": n.name,
+                "path": arena_node_path(arena, root_path, i),
+                "size": n.size,
+                "size_human": format_size(n.size),
+                "pct": pct_of(n.size),
+                "files": n.file_count,
+                "dirs": n.dir_count,
+            })
+        })
+        .collect();
+
+    // 2) File age distribution.
+    const DAY: u64 = 86400;
+    let mut counts: std::collections::BTreeMap<&'static str, (u64, u64)> = [
+        ("lt_1m", (0, 0)),
+        ("1m_6m", (0, 0)),
+        ("6m_12m", (0, 0)),
+        ("gt_1y", (0, 0)),
+        ("unknown", (0, 0)),
+    ]
+    .into_iter()
+    .collect();
+    for n in arena.nodes.iter().skip(1) {
+        if n.node_type != NodeType::File {
+            continue;
+        }
+        let key = if n.mtime == 0 {
+            "unknown"
+        } else {
+            let age = now.saturating_sub(n.mtime);
+            if age < 30 * DAY {
+                "lt_1m"
+            } else if age < 180 * DAY {
+                "1m_6m"
+            } else if age < 365 * DAY {
+                "6m_12m"
+            } else {
+                "gt_1y"
+            }
+        };
+        let e = counts.entry(key).or_insert((0, 0));
+        e.0 += 1;
+        e.1 += n.size;
+    }
+    let mut ages: Vec<serde_json::Value> = Vec::new();
+    for key in ["lt_1m", "1m_6m", "6m_12m", "gt_1y", "unknown"] {
+        let (count, size) = counts[key];
+        if count > 0 || size > 0 {
+            ages.push(serde_json::json!({ "key": key, "count": count, "size": size, "pct": pct_of(size) }));
+        }
+    }
+    let (old_count, old_size) = counts["gt_1y"];
+
+    serde_json::json!({
+        "total_size": total,
+        "top_dirs": top_dirs,
+        "ages": ages,
+        "old_files": { "count": old_count, "size": old_size, "pct": pct_of(old_size) },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use diskraptor_scanner::scanner::tree::TreeNode;
+
+    fn mk_node(
+        name: &str,
+        size: u64,
+        parent: u32,
+        depth: u16,
+        mtime: u64,
+        node_type: NodeType,
+    ) -> TreeNode {
+        TreeNode {
+            name: name.to_string(),
+            size,
+            file_count: if node_type == NodeType::File { 1 } else { 0 },
+            dir_count: if node_type == NodeType::Directory { 1 } else { 0 },
+            node_type,
+            parent,
+            first_child: u32::MAX,
+            next_sibling: u32::MAX,
+            depth,
+            chunk_id: 0,
+            mtime,
+        }
+    }
+
+    fn arena_for_tests() -> TreeNodeArena {
+        let mut arena = TreeNodeArena::with_capacity(16);
+        // Root size = aggregated total of everything below (as the walker
+        // would leave it after finish_scan).
+        let root = arena.alloc(mk_node("data", 1_000_000_000, u32::MAX, 0, 0, NodeType::Directory));
+        let now = now_unix_secs();
+        let big = arena.alloc(mk_node("Movies", 800_000_000, root, 1, now, NodeType::Directory));
+        arena.alloc(mk_node("old.bin", 300_000_000, big, 2, now - 500 * 86400, NodeType::File));
+        arena.alloc(mk_node("new.mp4", 500_000_000, big, 2, now - 5 * 86400, NodeType::File));
+        let docs = arena.alloc(mk_node("Documents", 200_000_000, root, 1, now, NodeType::Directory));
+        arena.alloc(mk_node("a.txt", 50_000_000, docs, 2, now - 100 * 86400, NodeType::File));
+        arena.alloc(mk_node("b.txt", 150_000_000, docs, 2, now - 400 * 86400, NodeType::File));
+        // Deeply nested hog must be skipped because Movies is already listed.
+        arena.alloc(mk_node("archive", 700_000_000, big, 3, now, NodeType::Directory));
+        arena
+    }
+
+    #[test]
+    fn arena_path_reconstruction() {
+        let arena = arena_for_tests();
+        let idx = arena.nodes.len() - 1; // .../data/Movies/archive
+        let p = arena_node_path(&arena, "C:\\data", idx);
+        assert!(p.ends_with("archive") && p.contains("Movies"), "got {p}");
+        let p2 = arena_node_path(&arena, "C:\\data", 1);
+        assert!(p2.contains("Movies") && p2.ends_with("Movies"), "got {p2}");
+    }
+
+    #[test]
+    fn insights_find_top_dirs_and_skip_nested() {
+        let arena = arena_for_tests();
+        let ins = compute_scan_insights(&arena, "C:\\data");
+        let dirs = ins["top_dirs"].as_array().unwrap();
+        // Movies (800 MB) listed, its nested archive (700 MB) skipped.
+        let names: Vec<&str> = dirs.iter().map(|d| d["name"].as_str().unwrap()).collect();
+        assert_eq!(names, vec!["Movies", "Documents"]);
+        assert_eq!(dirs[0]["pct"].as_f64().unwrap(), 80.0); // 800/1000
+        let path0 = dirs[0]["path"].as_str().unwrap();
+        assert!(path0.contains("Movies") && path0.ends_with("Movies"), "got {path0}");
+    }
+
+    #[test]
+    fn insights_age_buckets_old_files() {
+        let arena = arena_for_tests();
+        let now = now_unix_secs();
+        let ins = compute_scan_insights(&arena, "C:\\data");
+        let ages = ins["ages"].as_array().unwrap();
+        // old.bin + b.txt are > 1y -> 450 MB old
+        assert_eq!(ins["old_files"]["count"].as_u64().unwrap(), 2);
+        assert_eq!(ins["old_files"]["size"].as_u64().unwrap(), 450_000_000);
+        // new.mp4 (< 1 month) lands in the first bucket
+        let lt_1m = ages.iter().find(|a| a["key"] == "lt_1m").unwrap();
+        assert_eq!(lt_1m["count"].as_u64().unwrap(), 1);
+        assert_eq!(lt_1m["size"].as_u64().unwrap(), 500_000_000);
+        let _ = now;
+    }
 }
 
 #[tauri::command]
@@ -368,6 +612,65 @@ pub(crate) fn get_children(state: State<AppState>, node_index: u32, scan_id: Opt
     }
 }
 
+/// Substring search across every scanned node (directories + files). Used by
+/// the Ctrl+J quick-jump. Returns `limit` matches with real absolute paths and
+/// the arena index so the frontend can jump straight to them.
+#[tauri::command]
+pub(crate) fn search_tree(
+    state: State<AppState>,
+    query: String,
+    limit: Option<usize>,
+    scan_id: Option<u64>,
+) -> JsonResult {
+    if !scan_id_matches(&state, scan_id) {
+        return JsonResult::err("Scan id is stale");
+    }
+    let q = query.trim().to_lowercase();
+    if q.is_empty() || q.chars().count() < 1 {
+        return JsonResult::ok(serde_json::json!([]));
+    }
+    let limit = limit.unwrap_or(50).min(300);
+    let g = state.scan.result.lock();
+    if let Some(ref d) = *g {
+        let arena = &d.arena;
+        let mut out: Vec<serde_json::Value> = Vec::new();
+        // Rank prefix matches above substring matches.
+        for pass in 0..2 {
+            if out.len() >= limit {
+                break;
+            }
+            for (i, n) in arena.nodes.iter().enumerate().skip(1) {
+                if out.len() >= limit {
+                    break;
+                }
+                let lower = n.name.to_lowercase();
+                let hit = if pass == 0 {
+                    lower.starts_with(&q)
+                } else {
+                    lower.contains(&q)
+                };
+                if !hit {
+                    continue;
+                }
+                out.push(serde_json::json!({
+                    "idx": i,
+                    "name": n.name,
+                    "path": arena_node_path(arena, &d.root_path, i),
+                    "size": n.size,
+                    "size_human": format_size(n.size),
+                    "is_dir": n.node_type == NodeType::Directory,
+                    "files": n.file_count,
+                    "dirs": n.dir_count,
+                }));
+            }
+        }
+        JsonResult::ok(serde_json::json!(out))
+    } else {
+        drop(g);
+        JsonResult::ok(serde_json::json!([]))
+    }
+}
+
 #[tauri::command]
 pub(crate) fn cancel_scan(state: State<AppState>) -> JsonResult {
     if !state.scan.running.load(Ordering::Acquire) {
@@ -400,6 +703,7 @@ pub(crate) fn get_stats(state: State<AppState>, scan_id: Option<u64>) -> JsonRes
             "size_human": format_size(d.stats.total_size),
             "time_human": format!("{:.2}s", d.scan_time_ms as f64 / 1000.0),
             "termination": d.termination,
+            "insights": d.insights,
         });
         drop(g);
         JsonResult::ok(sj)
