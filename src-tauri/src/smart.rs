@@ -562,11 +562,10 @@ pub async fn get_smart_status(app: tauri::AppHandle, device_id: String) -> JsonR
     .unwrap_or_else(|e| JsonResult::err(format!("S.M.A.R.T. query failed: {e}")))
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "windows")]
     #[test]
     fn smart_health_score_thresholds() {
         // Healthy, cool drive.
@@ -589,7 +588,6 @@ mod tests {
         assert!(hot < cool);
     }
 
-    #[cfg(target_os = "windows")]
     #[test]
     fn smart_wmi_rejects_non_numeric_drive_ids() {
         // The PowerShell fallback must never be reached with a crafted id.

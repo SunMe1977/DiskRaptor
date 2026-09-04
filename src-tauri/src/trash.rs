@@ -563,8 +563,8 @@ fn path_is_within_or_equal(base: &str, path: &std::path::Path) -> bool {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let b = base.to_string();
-        q == b || q.starts_with(&format!("{}/", b))
+        let path_str: &str = &p;
+        path_str == base || path_str.starts_with(&format!("{}/", base))
     }
 }
 
