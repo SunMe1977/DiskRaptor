@@ -162,20 +162,17 @@ pub fn available_memory_bytes() -> u64 {
     guard.1
 }
 
-/// Try to estimate number of files/dirs in a tree from available RAM.
-/// ~128 bytes per node → the arena should stay comfortably under available
-/// memory so huge scans don't OOM.
-fn estimate_node_capacity(root_path: &str) -> usize {
+/// Try to estimate the initial number of nodes to reserve.
+///
+/// The old heuristic reserved up to 20M nodes (~1.6 GB) purely from how much
+/// RAM happened to be free, no matter how small the scanned target was — every
+/// tiny scan paid a huge up-front allocation. `Vec` grows geometrically, so the
+/// initial reservation only needs to cover the common case; huge scans grow
+/// from there. Cap the reserve at 1M nodes (~80 MB).
+fn estimate_node_capacity(_root_path: &str) -> usize {
     let avail = available_memory_bytes();
-    let by_ram = (avail / 128) as usize;
-    // Filesystem-free-space proxy: a nearly full disk usually has more files.
-    let mut fs_factor = 1usize;
-    if let Ok(meta) = std::fs::metadata(root_path) {
-        if meta.is_dir() {
-            fs_factor = 2;
-        }
-    }
-    (by_ram * fs_factor).clamp(100_000, 20_000_000)
+    let by_ram = (avail / (128 * 4)) as usize;
+    by_ram.clamp(50_000, 1_000_000)
 }
 
 /// Format bytes to a human-readable string.

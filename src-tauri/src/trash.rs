@@ -5,7 +5,14 @@ use crate::JsonResult;
 use crate::in_mac_sandbox;
 
 #[tauri::command]
-pub fn empty_trash() -> JsonResult {
+pub async fn empty_trash() -> JsonResult {
+    // Shell/`gio`/`osascript` calls can block; run off the main thread.
+    tauri::async_runtime::spawn_blocking(empty_trash_inner)
+        .await
+        .unwrap_or_else(|e| JsonResult::err(format!("Empty Trash failed: {e}")))
+}
+
+fn empty_trash_inner() -> JsonResult {
     #[cfg(target_os = "macos")]
     {
         if in_mac_sandbox() {
@@ -14,29 +21,58 @@ pub fn empty_trash() -> JsonResult {
             if let Some(home) = dirs::home_dir() {
                 let trash = home.join(".Trash");
                 if let Ok(entries) = std::fs::read_dir(&trash) {
-                    let mut ok = false;
+                    let mut removed_any = false;
+                    let mut had_visible = false;
                     for entry in entries.flatten() {
                         let p = entry.path();
                         let name = entry.file_name();
                         if name.to_string_lossy().starts_with('.') { continue; }
+                        had_visible = true;
                         let r = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
-                        if r.is_ok() { ok = true; }
+                        if r.is_ok() { removed_any = true; }
                     }
-                    if ok || !trash.exists() {
-                        return JsonResult::ok_empty();
+                    if had_visible && !removed_any {
+                        return JsonResult::err("Failed to empty the Trash (items may be in use or locked).");
                     }
+                    return JsonResult::ok_empty();
                 }
             }
             return JsonResult::err("Empty Trash is unavailable in the sandboxed build.");
         }
-        let _ = std::process::Command::new("osascript").args(["-e", "tell app \"Finder\" to empty trash"]).status();
+        // Report Finder's actual result instead of claiming success blindly.
+        match std::process::Command::new("osascript")
+            .args(["-e", "tell app \"Finder\" to empty trash"])
+            .status()
+        {
+            Ok(s) if s.success() => JsonResult::ok_empty(),
+            Ok(_) => JsonResult::err("Finder could not empty the Trash."),
+            Err(e) => JsonResult::err(format!("Could not ask Finder to empty the Trash: {e}")),
+        }
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = std::process::Command::new("gio").args(["trash", "--empty"]).status();
+        let gio_ok = match std::process::Command::new("gio").args(["trash", "--empty"]).status() {
+            Ok(s) => s.success(),
+            Err(_) => false,
+        };
+        let mut failures: Vec<String> = Vec::new();
         if let Some(home) = dirs::home_dir() {
-            let _ = std::fs::remove_dir_all(home.join(".local/share/Trash/files"));
-            let _ = std::fs::remove_dir_all(home.join(".local/share/Trash/info"));
+            for sub in [".local/share/Trash/files", ".local/share/Trash/info"] {
+                let p = home.join(sub);
+                if p.exists() {
+                    if let Err(e) = std::fs::remove_dir_all(&p) {
+                        failures.push(format!("{}: {e}", p.display()));
+                    }
+                }
+            }
+        }
+        if gio_ok && failures.is_empty() {
+            JsonResult::ok_empty()
+        } else if !failures.is_empty() {
+            JsonResult::err(format!("Trash could not be fully emptied: {}", failures.join("; ")))
+        } else {
+            // `gio` missing/failed but there was nothing left to remove.
+            JsonResult::ok_empty()
         }
     }
     #[cfg(target_os = "windows")]
@@ -48,19 +84,35 @@ pub fn empty_trash() -> JsonResult {
         use windows::Win32::UI::Shell::{
             SHEmptyRecycleBinW, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI, SHERB_NOSOUND,
         };
-        let _ = unsafe {
+        // SHEmptyRecycleBinW returns S_OK on success, S_FALSE when the bin was
+        // already empty. Report a real failure (e.g. ERROR_ACCESS_DENIED) rather
+        // than always telling the UI the bin was emptied.
+        match unsafe {
             SHEmptyRecycleBinW(
                 HWND::default(),
                 PCWSTR::null(),
                 SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND,
             )
-        };
+        } {
+            Ok(()) => JsonResult::ok_empty(),
+            Err(e) => JsonResult::err(format!("Failed to empty the Recycle Bin (0x{:08X}).", e.code().0)),
+        }
     }
-    JsonResult::ok_empty()
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        JsonResult::ok_empty()
+    }
 }
 
 #[tauri::command]
-pub fn list_trash() -> JsonResult {
+pub async fn list_trash() -> JsonResult {
+    // Directory walks / a Python subprocess (macOS) can block; run off-thread.
+    tauri::async_runtime::spawn_blocking(list_trash_inner)
+        .await
+        .unwrap_or_else(|e| JsonResult::err(format!("List Trash failed: {e}")))
+}
+
+fn list_trash_inner() -> JsonResult {
     let items = {
         #[cfg(target_os = "macos")] { list_trash_macos() }
         #[cfg(target_os = "linux")] { list_trash_linux() }
@@ -301,7 +353,15 @@ print(json.dumps(out))"#;
 }
 
 #[tauri::command]
-pub fn restore_trash(trash_path: String, original_path: Option<String>) -> JsonResult {
+pub async fn restore_trash(trash_path: String, original_path: Option<String>) -> JsonResult {
+    // Moving / copy+removing a large tree can block for seconds; run off the
+    // main thread so the UI stays responsive.
+    tauri::async_runtime::spawn_blocking(move || restore_trash_inner(trash_path, original_path))
+        .await
+        .unwrap_or_else(|e| JsonResult::err(format!("Restore failed: {e}")))
+}
+
+fn restore_trash_inner(trash_path: String, original_path: Option<String>) -> JsonResult {
     use std::path::PathBuf;
 
     let src = std::path::Path::new(&trash_path);
@@ -349,6 +409,16 @@ pub fn restore_trash(trash_path: String, original_path: Option<String>) -> JsonR
         }
         dest = dest.with_file_name(new_name);
     }
+
+    // Re-validate the final target: a malicious trash entry must never be able
+    // to place files inside an OS-critical directory (C:\Windows, /etc, ...).
+    if !is_safe_restore_target(&dest) {
+        return JsonResult::err(format!(
+            "Restore location is not allowed: {}",
+            dest.display()
+        ));
+    }
+
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() {
             if let Err(e) = std::fs::create_dir_all(parent) {
@@ -358,12 +428,44 @@ pub fn restore_trash(trash_path: String, original_path: Option<String>) -> JsonR
     }
 
     // Atomic move where possible; fall back to copy + remove across devices.
+    // Never copy over an existing destination: the conflict branch above picked
+    // a unique name, so a destination that reappears here is a race we must not
+    // overwrite silently.
     let moved = if is_dir {
+        if dest.exists() {
+            return JsonResult::err(format!(
+                "Destination unexpectedly exists: {}",
+                dest.display()
+            ));
+        }
         std::fs::rename(src, &dest)
             .or_else(|_| copy_dir_all(src, &dest).and_then(|_| std::fs::remove_dir_all(src)))
     } else {
-        std::fs::rename(src, &dest)
-            .or_else(|_| std::fs::copy(src, &dest).and_then(|_| std::fs::remove_file(src)))
+        if dest.exists() {
+            return JsonResult::err(format!(
+                "Destination unexpectedly exists: {}",
+                dest.display()
+            ));
+        }
+        match std::fs::rename(src, &dest) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if dest.exists() {
+                    return JsonResult::err(format!(
+                        "Destination appeared before restore: {}",
+                        dest.display()
+                    ));
+                }
+                std::fs::copy(src, &dest)
+                    .and_then(|_| std::fs::remove_file(src))
+                    .map_err(|ce| {
+                        std::io::Error::new(
+                            e.kind(),
+                            format!("rename ({e}) and copy ({ce}) both failed"),
+                        )
+                    })
+            }
+        }
     };
     match moved {
         Ok(()) => JsonResult::ok(serde_json::json!({
@@ -373,25 +475,97 @@ pub fn restore_trash(trash_path: String, original_path: Option<String>) -> JsonR
     }
 }
 
-/// A restore target must never be a filesystem root, the home directory or
-/// contain NUL bytes (a malicious trash entry could otherwise be used to write
-/// anywhere on disk).
+/// A restore target must never be a filesystem root, the home directory, an
+/// OS-critical system directory or contain NUL bytes. The original path comes
+/// from the user-writable `$I` metadata, so a crafted trash entry could
+/// otherwise be used to write files anywhere on disk.
 fn is_safe_restore_target(path: &std::path::Path) -> bool {
     if path.as_os_str().to_string_lossy().as_bytes().contains(&0) {
         return false;
     }
     if path.parent().map(|x| x == path).unwrap_or(false) {
-        return false; // filesystem root
+        return false; // filesystem root ("/")
     }
-    #[cfg(target_os = "windows")]
-    if path.components().count() == 1 {
-        return false; // drive root
+    if path.file_name().is_none() {
+        return false; // volume / drive root ("C:\", "/")
     }
     let home = dirs::home_dir().unwrap_or_default();
     if !home.as_os_str().is_empty() && path == home {
         return false;
     }
+    for base in system_critical_dirs() {
+        if path_is_within_or_equal(&base, path) {
+            return false;
+        }
+    }
     true
+}
+
+/// Directories no restore may write into, resolved from environment variables
+/// (Windows) or fixed OS locations (macOS/Linux).
+fn system_critical_dirs() -> Vec<String> {
+    let mut deny: Vec<String> = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        // Windows keeps case-insensitive paths; compare lowercased below.
+        for var in [
+            "SystemRoot",
+            "WINDIR",
+            "ProgramFiles",
+            "ProgramFiles(x86)",
+            "ProgramData",
+        ] {
+            if let Ok(v) = std::env::var(var) {
+                if !v.trim().is_empty() {
+                    deny.push(v);
+                }
+            }
+        }
+        // Never restore into the recycle bin itself (a recursive source).
+        if let Some(bin) = current_user_recycle_bin() {
+            deny.push(bin.to_string_lossy().into_owned());
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        deny.extend(
+            [
+                "/System",
+                "/Library",
+                "/etc",
+                "/usr",
+                "/var",
+                "/private",
+                "/bin",
+                "/sbin",
+                "/cores",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
+    }
+    deny
+}
+
+/// Case-insensitive on Windows, exact elsewhere: is `path` equal to `base` or
+/// located anywhere beneath it?
+fn path_is_within_or_equal(base: &str, path: &std::path::Path) -> bool {
+    let base = base.trim().trim_end_matches(['/', '\\']);
+    if base.is_empty() {
+        return false;
+    }
+    let p = path.to_string_lossy();
+    #[cfg(target_os = "windows")]
+    {
+        let b = base.to_lowercase();
+        let q = p.to_lowercase();
+        q == b || q.starts_with(&format!("{}\\", b))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let b = base.to_string();
+        q == b || q.starts_with(&format!("{}/", b))
+    }
 }
 
 /// Recursive directory copy (used when `rename` crosses filesystem boundaries).
@@ -408,4 +582,76 @@ fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restore_target_rejects_nul_bytes() {
+        let p = std::path::PathBuf::from("C:\\evil\0name");
+        assert!(!is_safe_restore_target(&p));
+    }
+
+    #[test]
+    fn restore_target_rejects_filesystem_and_drive_roots() {
+        // Root of the current volume (path whose parent == itself).
+        let root = std::env::current_dir()
+            .map(|c| c.ancestors().last().unwrap().to_path_buf())
+            .unwrap();
+        assert!(!is_safe_restore_target(&root));
+        #[cfg(target_os = "windows")]
+        assert!(!is_safe_restore_target(&std::path::PathBuf::from("C:\\")));
+    }
+
+    #[test]
+    fn restore_target_rejects_home_root() {
+        if let Some(home) = dirs::home_dir() {
+            assert!(!is_safe_restore_target(&home));
+        }
+    }
+
+    #[test]
+    fn restore_target_rejects_system_dirs() {
+        #[cfg(target_os = "windows")]
+        if let Ok(sys) = std::env::var("SystemRoot") {
+            let root = std::path::PathBuf::from(&sys);
+            // Deny files directly inside the system dir and nested below it.
+            assert!(!is_safe_restore_target(&root.join("evil.dll")));
+            assert!(!is_safe_restore_target(&root.join("System32\\evil.dll")));
+        }
+        #[cfg(not(target_os = "windows"))]
+        for deny in ["/etc", "/usr", "/System", "/Library", "/var"] {
+            let p = std::path::PathBuf::from(deny).join("evil");
+            assert!(!is_safe_restore_target(&p), "{deny} must be denied");
+        }
+    }
+
+    #[test]
+    fn restore_target_allows_home_subdirs() {
+        if let Some(home) = dirs::home_dir() {
+            let ok = home.join("Documents\\restored.txt");
+            // If the OS deny list ever grows a home subdir (rare), the assert
+            // would fail loudly here; currently home subdirs are fine.
+            assert!(is_safe_restore_target(&ok));
+        }
+    }
+
+    #[test]
+    fn path_within_or_equal_matches_prefix() {
+        #[cfg(target_os = "windows")]
+        {
+            assert!(path_is_within_or_equal("C:\\Windows", &std::path::PathBuf::from("c:\\WINDOWS\\System32")));
+            assert!(path_is_within_or_equal("C:\\Windows", &std::path::PathBuf::from("C:\\Windows")));
+            assert!(!path_is_within_or_equal("C:\\Windows", &std::path::PathBuf::from("C:\\WindowsStuff")));
+            assert!(!path_is_within_or_equal("C:\\Windows", &std::path::PathBuf::from("D:\\Windows\\System32")));
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(path_is_within_or_equal("/etc", &std::path::PathBuf::from("/etc/shadow")));
+            assert!(path_is_within_or_equal("/etc", &std::path::PathBuf::from("/etc")));
+            assert!(!path_is_within_or_equal("/etc", &std::path::PathBuf::from("/etcetera")));
+        }
+    }
 }

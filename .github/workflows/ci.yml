@@ -63,7 +63,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --no-audit --no-fund
-      - run: npx eslint frontend/ frontend/app-modules/ frontend/galaxyview/
+      - run: npx eslint frontend/ frontend/app-modules/ frontend/galaxyview/ frontend/i18n/ tests/ scripts/
 
   test:
     needs: [rust, js, lint]
@@ -86,6 +86,12 @@ jobs:
           workspaces: src-tauri
       - name: Install JS dependencies
         run: npm ci --no-audit --no-fund
+      - name: Rust tests (Windows/macOS paths)
+        if: runner.os != 'Linux'
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Rust clippy (Windows/macOS paths)
+        if: runner.os != 'Linux'
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Build minified frontend (frontend-dist)
         run: node scripts/build-frontend.mjs
       - name: Install Linux dependencies

@@ -273,7 +273,10 @@ pub(crate) async fn get_dir_stats(path: String) -> JsonResult {
 // â”€â”€ S.M.A.R.T. Tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[tauri::command]
-pub(crate) fn list_disks() -> JsonResult {
+pub(crate) async fn list_disks() -> JsonResult {
+    // Probing \\.\PHYSICALDRIVE0..31, spawning smartctl/system_profiler or
+    // invoking PowerShell takes seconds — never block the main thread.
+    tauri::async_runtime::spawn_blocking(|| {
     #[cfg(target_os = "windows")]
     {
         // Native probe of \\.\PHYSICALDRIVE0..31 via DeviceIoControl â€” needs
@@ -397,6 +400,9 @@ pub(crate) fn list_disks() -> JsonResult {
     {
         JsonResult::err("Unsupported platform")
     }
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Disk enumeration failed: {e}")))
 }
 
 #[allow(dead_code)]

@@ -54,17 +54,35 @@ fn test_format_size_monotonic() {
 
 #[test]
 fn test_quick_hash_consistency() {
+    use diskraptor_scanner::scanner::duplicates::{hash_file_full, hash_file_head, HEAD_HASH_BYTES};
     use std::io::Write;
-    let dir = std::env::temp_dir().join("diskraptor_test");
+    let dir = std::env::temp_dir().join(format!("diskraptor_hash_test_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("hash_test.txt");
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(b"Hello, DiskRaptor!").unwrap();
     drop(f);
 
-    assert!(path.exists());
-    let metadata = std::fs::metadata(&path).unwrap();
-    assert!(metadata.len() > 0);
+    // The head hash of a small file reads the whole file and must be non-zero.
+    let (read, head) = hash_file_head(&path, HEAD_HASH_BYTES);
+    assert_eq!(read, b"Hello, DiskRaptor!".len() as u64);
+    assert_ne!(head, 0, "head hash of a non-empty file must not be zero");
 
-    std::fs::remove_dir_all(&dir).unwrap();
+    // Full stream hash must agree with the head hash for a tiny file.
+    let (fsize, full, changed) = hash_file_full(&path);
+    assert_eq!(fsize, read);
+    assert!(!changed, "unchanged file must not report changed_during_scan");
+    assert_eq!(full, head, "head and full hash must agree for a small file");
+
+    // Identical content → identical hash; different content → different hash.
+    let copy = dir.join("hash_test_copy.txt");
+    std::fs::write(&copy, b"Hello, DiskRaptor!").unwrap();
+    let (_, copy_full, _) = hash_file_full(&copy);
+    assert_eq!(full, copy_full, "identical files must hash identically");
+    std::fs::write(&copy, b"Hello, DiskRaptor?").unwrap();
+    let (_, changed_full, _) = hash_file_full(&copy);
+    assert_ne!(full, changed_full, "different content must hash differently");
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

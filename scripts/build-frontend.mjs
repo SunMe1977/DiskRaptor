@@ -59,8 +59,11 @@ for (const src of files) {
         logLevel: "silent",
       });
     } catch (e) {
-      console.error("[build-frontend] minify failed for", rel, e);
-      fs.copyFileSync(src, dest);
+      // A file that cannot be minified would otherwise silently ship verbatim
+      // (and the build would still "pass" in CI). Fail hard instead.
+      console.error("[build-frontend] minify FAILED for", rel);
+      console.error(String((e && e.message) || e));
+      process.exit(1);
     }
   } else if (ext === ".css") {
     try {
@@ -70,8 +73,9 @@ for (const src of files) {
       });
       fs.writeFileSync(dest, r.code);
     } catch (e) {
-      console.error("[build-frontend] css minify failed for", rel, e);
-      fs.copyFileSync(src, dest);
+      console.error("[build-frontend] css minify FAILED for", rel);
+      console.error(String((e && e.message) || e));
+      process.exit(1);
     }
   } else {
     fs.copyFileSync(src, dest);

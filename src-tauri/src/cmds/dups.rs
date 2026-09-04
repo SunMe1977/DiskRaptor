@@ -8,6 +8,18 @@ use rayon::prelude::*;
 use std::sync::atomic::Ordering;
 use tauri::{Manager, State};
 
+/// Clears `dup.running` when the duplicate-scan thread exits — including on a
+/// panic or an early return — so a wedged flag can't block future scans.
+struct ResetDupRunning {
+    app: tauri::AppHandle,
+}
+impl Drop for ResetDupRunning {
+    fn drop(&mut self) {
+        let s = self.app.state::<AppState>();
+        s.dup.running.store(false, Ordering::Release);
+    }
+}
+
 #[tauri::command]
 pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
     let st = app.state::<AppState>();
@@ -22,7 +34,9 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
     *st.dup.wasted_bytes.lock() = 0;
 
     let handle = app.clone();
-    std::thread::Builder::new().name("dup-scan".into()).spawn(move || {
+    let spawned = std::thread::Builder::new().name("dup-scan".into()).spawn(move || {
+        // Drop guard resets `running` even if this thread panics or exits early.
+        let _reset = ResetDupRunning { app: handle.clone() };
         let st = handle.state::<AppState>();
         const FILE_CAP: u64 = 200_000;
 
@@ -152,8 +166,13 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
         });
         *st.dup.groups.lock() = groups;
         *st.dup.wasted_bytes.lock() = wasted;
+        // `running` is cleared by the ResetDupRunning drop guard on exit.
+    });
+    if spawned.is_err() {
+        // Thread could not be started; undo the running flag we set above.
         st.dup.running.store(false, Ordering::Release);
-    }).ok();
+        return JsonResult::err("Failed to start duplicate scan thread");
+    }
 
     JsonResult::ok_empty()
 }

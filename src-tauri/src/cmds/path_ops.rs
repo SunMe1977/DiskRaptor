@@ -363,8 +363,8 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
     use std::mem::size_of;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::Graphics::Gdi::{
-        BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DeleteObject,
-        DIB_RGB_COLORS, HBRUSH, HGDIOBJ, SelectObject,
+        BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DeleteDC,
+        DeleteObject, DIB_RGB_COLORS, HBRUSH, HGDIOBJ, SelectObject,
     };
     use windows::Win32::UI::WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx};
 
@@ -386,9 +386,22 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
         bmiColors: [Default::default()],
     };
 
+    // Every handle below must be released: the memory DC, the DIB and the icon
+    // itself. Leaking them (as this function used to) exhausts the ~10k GDI
+    // object limit after enough icon lookups and breaks shell drawing.
     let dc = unsafe { CreateCompatibleDC(None) };
+    if dc.0 == 0 {
+        unsafe {
+            let _ = DestroyIcon(hicon);
+        }
+        return None;
+    }
     let hbitmap = unsafe { CreateDIBSection(dc, &bmi, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0) };
     if hbitmap.is_err() || bits.is_null() {
+        unsafe {
+            let _ = DeleteDC(dc);
+            let _ = DestroyIcon(hicon);
+        }
         return None;
     }
     let hbitmap = hbitmap.unwrap();
@@ -421,6 +434,9 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
     }
     unsafe {
         let _ = DeleteObject(HGDIOBJ(hbitmap.0));
+    }
+    unsafe {
+        let _ = DeleteDC(dc);
     }
     unsafe {
         let _ = DestroyIcon(hicon);

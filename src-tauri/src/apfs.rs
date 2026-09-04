@@ -8,7 +8,15 @@
 use crate::JsonResult;
 
 #[tauri::command]
-pub(crate) fn list_apfs_volumes() -> JsonResult {
+pub(crate) async fn list_apfs_volumes() -> JsonResult {
+    // diskutil / tmutil / statvfs subprocesses can take seconds per mount;
+    // run off the main thread so the UI never freezes.
+    tauri::async_runtime::spawn_blocking(list_apfs_volumes_inner)
+        .await
+        .unwrap_or_else(|e| JsonResult::err(format!("APFS scan failed: {e}")))
+}
+
+fn list_apfs_volumes_inner() -> JsonResult {
     #[cfg(target_os = "macos")]
     {
         let mut volumes = Vec::new();
@@ -63,7 +71,14 @@ pub(crate) fn list_apfs_volumes() -> JsonResult {
 /// Delete all local Time-Machine snapshots of an APFS volume. This is
 /// permanent and cannot be undone — the UI must confirm before calling.
 #[tauri::command]
-pub(crate) fn delete_local_snapshot(volume: String) -> JsonResult {
+pub(crate) async fn delete_local_snapshot(volume: String) -> JsonResult {
+    // tmutil can block; run off the main thread.
+    tauri::async_runtime::spawn_blocking(move || delete_local_snapshot_inner(volume))
+        .await
+        .unwrap_or_else(|e| JsonResult::err(format!("Snapshot delete failed: {e}")))
+}
+
+fn delete_local_snapshot_inner(volume: String) -> JsonResult {
     #[cfg(target_os = "macos")]
     {
         match std::process::Command::new("tmutil")

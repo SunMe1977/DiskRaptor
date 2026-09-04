@@ -265,6 +265,11 @@ pub fn scan(
 
                 files_found.fetch_add(local_files, Ordering::Relaxed);
                 bytes_found.fetch_add(local_bytes, Ordering::Relaxed);
+                // `dirs_found` was declared but never incremented, so live scan
+                // progress on Windows always reported 0 directories while the
+                // jwalk/macOS paths counted them. Count the subdirectories this
+                // worker discovered and hand the queue to the sibling workers.
+                dirs_found.fetch_add(new_dirs.len() as u64, Ordering::Relaxed);
 
                 // Enqueue newly discovered subdirectories.
                 {

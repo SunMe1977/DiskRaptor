@@ -1,8 +1,7 @@
 ﻿//! S.M.A.R.T. disk health commands (smartmontools / WMI / system_profiler).
 
-use tauri::State;
-
 use crate::{AppState, JsonResult};
+use tauri::Manager;
 #[cfg(target_os = "macos")]
 use crate::in_mac_sandbox;
 #[cfg(not(target_os = "windows"))]
@@ -420,8 +419,22 @@ pub(crate) fn native_list_disks() -> Vec<serde_json::Value> {
 /// Minimal S.M.A.R.T. report from WMI (MSFT_PhysicalDisk) — works as a normal
 /// user. Used as a fallback when the physical drive can't be opened without
 /// admin rights. `source` is "wmi" so the UI can offer a privileged restart.
+/// True when `device_id` is a plain physical-drive number in 0..32. Every
+/// PowerShell / DeviceIoControl path must pass this gate first.
+#[cfg(target_os = "windows")]
+pub(crate) fn is_valid_physical_device_id(device_id: &str) -> bool {
+    device_id.parse::<u32>().map(|n| n < 32).unwrap_or(false)
+}
+
 #[cfg(target_os = "windows")]
 fn smart_from_wmi(device_id: &str) -> Option<serde_json::Value> {
+    // `device_id` comes straight from IPC and is interpolated into a
+    // PowerShell -Command string below. Only plain integers 0..31 are valid
+    // physical-drive ids; rejecting anything else prevents a crafted value
+    // (e.g. `0"; <payload>; "`) from injecting PowerShell.
+    if !is_valid_physical_device_id(device_id) {
+        return None;
+    }
     let script = format!(
         "try {{ $d = Get-CimInstance -ClassName MSFT_PhysicalDisk -Namespace 'root\\Microsoft\\Windows\\Storage' -Filter \"DeviceId = {id}\"; if (-not $d) {{ '{{}}'; exit 0 }}; $d | Select-Object DeviceId, FriendlyName, MediaType, HealthStatus, OperationalStatus, Size, Model, SerialNumber, BusType, FirmwareVersion | ConvertTo-Json -Compress }} catch {{ '{{}}' }}",
         id = device_id
@@ -466,7 +479,11 @@ fn smart_from_wmi(device_id: &str) -> Option<serde_json::Value> {
 }
 
 #[tauri::command]
-pub fn get_smart_status(state: State<AppState>, device_id: String) -> JsonResult {
+pub async fn get_smart_status(app: tauri::AppHandle, device_id: String) -> JsonResult {
+    // Native disk probes / smartctl / pkexec can take seconds (pkexec can block
+    // on a polkit dialog). Run off the main thread so the UI never freezes.
+    tauri::async_runtime::spawn_blocking(move || {
+    let state = app.state::<AppState>();
     #[cfg(target_os = "windows")]
     {
         let _ = &state;
@@ -539,6 +556,51 @@ pub fn get_smart_status(state: State<AppState>, device_id: String) -> JsonResult
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         JsonResult::err("Unsupported platform")
+    }
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("S.M.A.R.T. query failed: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn smart_health_score_thresholds() {
+        // Healthy, cool drive.
+        assert_eq!(smart_health_from_attrs(0, None, Some(30.0), 0, 0), (100, "Healthy"));
+        // High wear pushes the score below the Healthy band.
+        let (score, status) = smart_health_from_attrs(0, Some(80.0), Some(40.0), 0, 0);
+        assert!((55..100).contains(&score), "wear should give Warning, got {score}");
+        assert_eq!(status, "Warning");
+        // Failing health is always Critical.
+        let (score, status) = smart_health_from_attrs(2, None, Some(30.0), 0, 0);
+        assert!(score < 55, "failing health must be Critical, got {score}");
+        assert_eq!(status, "Critical");
+        // Uncorrectable read errors reduce the score.
+        let (errs, _) = smart_health_from_attrs(0, None, None, 5, 0);
+        let (clean, _) = smart_health_from_attrs(0, None, None, 0, 0);
+        assert!(errs < clean);
+        // Overheating penalizes the score.
+        let (hot, _) = smart_health_from_attrs(0, None, Some(65.0), 0, 0);
+        let (cool, _) = smart_health_from_attrs(0, None, Some(30.0), 0, 0);
+        assert!(hot < cool);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn smart_wmi_rejects_non_numeric_drive_ids() {
+        // The PowerShell fallback must never be reached with a crafted id.
+        assert!(is_valid_physical_device_id("0"));
+        assert!(is_valid_physical_device_id("31"));
+        assert!(!is_valid_physical_device_id("32"), "ids >= 32 are invalid");
+        assert!(!is_valid_physical_device_id("-1"));
+        assert!(!is_valid_physical_device_id("abc"));
+        assert!(!is_valid_physical_device_id(" 1 "));
+        assert!(!is_valid_physical_device_id("0\"; Remove-Item -Recurse C:\\; \""));
+        assert!(!is_valid_physical_device_id(""));
     }
 }
 

@@ -12,20 +12,37 @@ use std::sync::Arc;
 use std::time::Instant;
 use tauri::{Emitter, Manager, State};
 
+/// Build a scan config whose walker-error list the caller can read after the
+/// walk finishes (the walkers push "Access denied" / timeout entries into it).
+/// Returns the config plus a handle on the same shared list.
 pub(crate) fn scan_config(
     path: &str,
     follow_symlinks: bool,
     timeout_secs: u64,
     live: LiveEntries,
-) -> scanner::walker::ScanConfig {
-    scanner::walker::ScanConfig {
+) -> (scanner::walker::ScanConfig, Arc<Mutex<Vec<String>>>) {
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let cfg = scanner::walker::ScanConfig {
         root_path: path.into(),
         follow_symlinks,
         scan_timeout_secs: timeout_secs,
-        errors: Arc::new(Mutex::new(Vec::new())),
+        errors: errors.clone(),
         cancelled: Some(Arc::new(AtomicBool::new(false))),
         live_entries: live,
         ..scanner::walker::ScanConfig::default()
+    };
+    (cfg, errors)
+}
+
+/// Clears `scan.running` when the scan thread exits — including when it panics
+/// or is cancelled early — so a wedged flag can never block future scans.
+struct ResetScanRunning {
+    app: tauri::AppHandle,
+}
+impl Drop for ResetScanRunning {
+    fn drop(&mut self) {
+        let s = self.app.state::<AppState>();
+        s.scan.running.store(false, Ordering::Release);
     }
 }
 
@@ -56,8 +73,12 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
     *scan.scan.live_entries.lock() = Some(live.clone());
 
     let result_handle = handle.clone();
-    std::thread::Builder::new().name("scan".into()).spawn(move || {
-        let config = scan_config(&p, fs, ts, live);
+    let spawned = std::thread::Builder::new().name("scan".into()).spawn(move || {
+        // Drop guard resets `running` even if this thread panics or returns
+        // early; a permanently-true flag would otherwise reject every later
+        // scan until the app is restarted.
+        let _reset = ResetScanRunning { app: result_handle.clone() };
+        let (config, scan_errors) = scan_config(&p, fs, ts, live);
         let cancel_flag = config.cancelled.clone().unwrap();
         {
             let s = result_handle.state::<AppState>();
@@ -137,9 +158,13 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
                 // whole arena and doubling peak memory for huge scans).
                 let termination = sr.termination;
                 let active_id = s.scan.active_scan_id.load(Ordering::Acquire);
+                // Surface the walkers' per-entry failures (access denied, stuck
+                // junctions, ...) that used to be silently dropped on success.
+                let walk_errors = scan_errors.lock().clone();
+                s.scan.errors.lock().extend(walk_errors.clone());
                 let data = ScanResultData {
                     arena: sr.arena, stats: sr.stats, scan_time_ms: elapsed,
-                    errors: Vec::new(), termination,
+                    errors: walk_errors, termination,
                 };
                 // Cache the serialized result once per scan (see get_scan_result).
                 let json = build_result_json(&data, active_id);
@@ -156,8 +181,14 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
                 // Timed out: errors were already pushed by the watchdog.
             }
         }
-        s.scan.running.store(false, Ordering::Release);
-    }).ok();
+        // `running` is cleared by the ResetScanRunning drop guard when this
+        // thread exits (normal return, early return or panic).
+    });
+    if spawned.is_err() {
+        // The thread could not be started; undo the running flag we set above.
+        scan.scan.running.store(false, Ordering::Release);
+        return JsonResult::err("Failed to start scan thread");
+    }
 
     JsonResult::ok(serde_json::json!({"status": "started", "scan_id": scan_id}))
 }
@@ -250,7 +281,7 @@ fn build_result_json(d: &ScanResultData, active_id: u64) -> serde_json::Value {
     });
     let total_chunks = (d.arena.len() as u32).div_ceil(CHUNK_SIZE);
     let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": total_chunks});
-    serde_json::json!({"stats": sj, "root_info": ri, "scan_id": active_id, "errors": []})
+    serde_json::json!({"stats": sj, "root_info": ri, "scan_id": active_id, "errors": d.errors})
 }
 
 #[tauri::command]
