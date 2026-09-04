@@ -165,9 +165,9 @@ async function main() {
   let testList = ALL_TESTS;
 
   if (args.includes("--quick")) {
-    // Smoke set that runs on every OS in CI. Curated to DOM/interaction tests
-    // that are fast and deterministic; deeper feature tests are available via
-    // the full suite (`node tests/run_tests.mjs`).
+    // Smoke set that runs on every OS in CI. Curated to tests that are fast,
+    // deterministic and stable across all three webviews (WKWebView/WebView2/
+    // WebKitGTK); the full suite (`node tests/run_tests.mjs`) covers the rest.
     const quickFiles = new Set([
       "test_scan_ui.mjs",
       "test_welcome_ui.mjs",
@@ -176,10 +176,6 @@ async function main() {
       "test_tree_ui.mjs",
       "test_galaxy_ui.mjs",
       "test_smart_ui.mjs",
-      "test_tree_selection_ui.mjs",
-      "test_tree_expand_collapse_ui.mjs",
-      "test_status_bar_ui.mjs",
-      "test_scan_history_ui.mjs",
     ]);
     testList = ALL_TESTS.filter(t => quickFiles.has(t.file));
     console.log(`Quick mode: running ${testList.length} smoke tests\n`);
