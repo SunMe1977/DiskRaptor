@@ -652,6 +652,8 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
 mod tests {
     use super::*;
     use diskraptor_scanner::scanner::tree::format_size;
+    #[cfg(target_os = "macos")]
+    use crate::browser::{browser_defs, browser_paths};
 
     #[test]
     fn parse_system_profiler_handles_empty_input() {

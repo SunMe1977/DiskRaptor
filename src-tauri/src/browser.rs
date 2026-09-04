@@ -5,7 +5,7 @@ use crate::JsonResult;
 // â”€â”€ Browser Cleanup Tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Clone)]
-struct BrowserDef {
+pub(crate) struct BrowserDef {
     name: &'static str,
     #[allow(dead_code)] // used by browser_paths_windows
     sub: &'static str,
@@ -50,7 +50,7 @@ fn delete_path_recursive(path: &std::path::Path) -> u64 {
     size
 }
 
-fn browser_defs() -> Vec<BrowserDef> {
+pub(crate) fn browser_defs() -> Vec<BrowserDef> {
     vec![
         BrowserDef { name: "Google Chrome", sub: r"Google\Chrome\User Data", kind: "chrome", base: "local" },
         BrowserDef { name: "Microsoft Edge", sub: r"Microsoft\Edge\User Data", kind: "chrome", base: "local" },
@@ -197,7 +197,7 @@ fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std:
 }
 
 #[allow(clippy::needless_return)] // cfg-gated returns keep each platform arm type-consistent
-fn browser_paths(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
+pub(crate) fn browser_paths(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
     #[cfg(target_os = "windows")]
     { return browser_paths_windows(def); }
     #[cfg(target_os = "linux")]
