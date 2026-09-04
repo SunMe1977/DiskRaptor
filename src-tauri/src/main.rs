@@ -751,8 +751,8 @@ mod tests {
         for def in browser_defs() {
             if def.name != "Safari" { continue; }
             if let Some((_base, cookies, cache)) = browser_paths(&def) {
-                assert!(cookies.len() >= 1);
-                assert!(cache.len() >= 1);
+                assert!(!cookies.is_empty());
+                assert!(!cache.is_empty());
                 return;
             }
             panic!("browser_paths returned None for Safari");

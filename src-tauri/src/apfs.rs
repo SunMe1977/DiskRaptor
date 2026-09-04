@@ -236,7 +236,7 @@ fn flush_snapshot(
         return;
     }
     // Local TM snapshots are reported separately via tmutil.
-    if name.as_deref().map_or(false, |n| n.starts_with("com.apple.TimeMachine.")) {
+    if name.as_deref().is_some_and(|n| n.starts_with("com.apple.TimeMachine.")) {
         return;
     }
     let size = size.take();
