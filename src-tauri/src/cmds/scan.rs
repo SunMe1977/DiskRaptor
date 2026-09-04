@@ -346,7 +346,7 @@ pub(crate) fn compute_scan_insights(arena: &TreeNodeArena, root_path: &str) -> s
     candidates.sort_unstable_by_key(|x| std::cmp::Reverse(x.1));
     let mut chosen: Vec<usize> = Vec::new();
     let mut chosen_set = std::collections::HashSet::new();
-    for (i, size) in candidates {
+    for (i, _size) in candidates {
         if chosen.len() >= 8 {
             break;
         }
@@ -367,7 +367,6 @@ pub(crate) fn compute_scan_insights(arena: &TreeNodeArena, root_path: &str) -> s
         }
         chosen.push(i);
         chosen_set.insert(i);
-        let _ = size;
     }
     let pct_of = |s: u64| -> f64 {
         if total == 0 {
