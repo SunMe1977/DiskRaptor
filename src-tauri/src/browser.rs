@@ -6,12 +6,12 @@ use crate::JsonResult;
 
 #[derive(Clone)]
 pub(crate) struct BrowserDef {
-    name: &'static str,
+    pub(crate) name: &'static str,
     #[allow(dead_code)] // used by browser_paths_windows
-    sub: &'static str,
-    kind: &'static str,
+    pub(crate) sub: &'static str,
+    pub(crate) kind: &'static str,
     #[allow(dead_code)] // used by browser_paths_windows
-    base: &'static str, // "local" | "appdata"
+    pub(crate) base: &'static str, // "local" | "appdata"
 }
 
 pub(crate) fn dir_size(path: &std::path::Path) -> u64 {
