@@ -882,7 +882,11 @@ button.icon-btn {
     background: var(--bg-secondary);
     padding: var(--space-md);
     gap: var(--space-md);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-height: 0;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
 }
 
 .card {
