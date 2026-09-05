@@ -660,15 +660,19 @@
         // A partial scan must never be presented as complete.
         const term = result && result.stats ? result.stats.termination : "";
         if (term && term !== "completed") {
+          const t = window.__ || function (s) { return s; };
           const msg =
             term === "cancelled"
-              ? "Scan was cancelled - results are partial"
+              ? t("scan.partial_cancelled")
               : term === "timed_out"
-                ? "Scan timed out - results are partial"
+                ? t("scan.partial_timed_out")
                 : term === "limit_reached"
-                  ? "Scan hit the size limit - results are partial"
-                  : "Scan was interrupted - results are partial";
-          window.showToast(msg, "warning");
+                  ? t("scan.partial_limit")
+                  : t("scan.partial_interrupted");
+          window.showToast(
+            msg || "Scan was interrupted - results are partial",
+            "warning",
+          );
         }
 
         if (result && result.stats && result.stats.total_files > 0) {
