@@ -20,6 +20,23 @@
       .replace(/>/g, "&gt;");
   }
 
+  function tKey(k) {
+    return (window.__ || function (s) { return s; })(k);
+  }
+
+  // Scan-error entries arrive from the Rust backend as English strings. Map
+  // the known prefixes so they render in the active language.
+  function localizeScanError(msg) {
+    const s = String(msg || "");
+    if (s.indexOf("Access denied: ") === 0) {
+      return tKey("error.access_denied") + ": " + s.slice("Access denied: ".length);
+    }
+    if (s.indexOf("TIMEOUT: ") === 0) {
+      return tKey("error.timeout") + ": " + s.slice("TIMEOUT: ".length);
+    }
+    return s;
+  }
+
   // After a scan, append the scanned drive's free space to the status bar.
   function updateFreeSpaceStatus(path) {
     window.__TAURI__
@@ -378,7 +395,9 @@
         badge.style.cssText =
           "margin-left:8px;padding:3px 9px;font-size:11px;border:1px solid rgba(248,81,73,0.4);border-radius:12px;" +
           "background:rgba(248,81,73,0.12);color:var(--accent-red);cursor:pointer;flex-shrink:0;font-weight:600;";
-        badge.textContent = "\u26A0 " + errs.length + " errors";
+        badge.textContent =
+          "\u26A0 " +
+          tKey("error.badge").replace("{count}", errs.length);
         header.appendChild(badge);
         badge.addEventListener("click", function () {
           const overlay = document.createElement("div");
@@ -394,17 +413,19 @@
           for (let i = 0; i < shown.length; i++) {
             rows +=
               '<div style="padding:6px 10px;font-size:12px;font-family:var(--font-mono);color:var(--text-secondary);border-bottom:1px solid var(--border-light);word-break:break-all;">' +
-              esc(String(shown[i])) +
+              esc(localizeScanError(shown[i])) +
               "</div>";
           }
           if (errs.length > 200)
             rows +=
               '<div style="padding:6px 10px;font-size:11px;color:var(--text-muted);text-align:center;">+' +
               (errs.length - 200) +
-              " more</div>";
+              " " +
+              tKey("error.more") +
+              "</div>";
           card.innerHTML =
             '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">' +
-            '<span style="font-size:14px;font-weight:600;">\u26A0 ' + (window.__ || function (s) { return s; })("progress.scan_errors").replace("{count}", errs.length) + "</span>" +
+            '<span style="font-size:14px;font-weight:600;">\u26A0 ' + tKey("progress.scan_errors").replace("{count}", errs.length) + "</span>" +
             '<button class="sb-close" aria-label="Close" style="padding:3px 9px;font-size:14px;border:none;background:none;color:var(--text-muted);cursor:pointer;">\u2715</button></div>' +
             '<div style="flex:1;overflow-y:auto;padding:8px 0;">' + rows + "</div>";
           overlay.appendChild(card);
@@ -561,7 +582,7 @@
           }
 
           if (p.error_count > 0 && errDisplay) {
-            const errMsg = p.last_error || "";
+            const errMsg = localizeScanError(p.last_error || "");
             const escErr = String(errMsg.substring(0, 80))
               .replace(/&/g, "&amp;")
               .replace(/</g, "&lt;")
@@ -570,23 +591,29 @@
             errDisplay.innerHTML =
               '\uD83D\uDD12 <strong>' +
               p.error_count +
-              '</strong> permission denied \u2014 ' +
+              '</strong> ' +
+              tKey("error.permission_denied") +
+              " \u2014 " +
               escErr +
-              ' <span style="color:var(--text-muted);font-size:11px;">Some folders could not be scanned.</span> ' +
+              ' <span style="color:var(--text-muted);font-size:11px;">' +
+              tKey("error.some_folders_skipped") +
+              "</span> " +
               ' <button class="retry-admin-btn" data-path="' +
               encodeURIComponent(path) +
-              '">Run with elevated permissions</button>';
+              '">' +
+              tKey("error.run_admin") +
+              "</button>";
             errDisplay.style.display = "block";
             var adminBtn = errDisplay.querySelector(".retry-admin-btn");
             if (adminBtn && !adminBtn._listener) {
               adminBtn._listener = true;
               adminBtn.addEventListener("click", async function () {
                 this.disabled = true;
-                this.textContent = "Restarting...";
+                this.textContent = tKey("error.restarting");
                 try {
                   await window.__TAURI__.invoke("restart_as_admin", {});
                 } catch (e) {
-                  this.textContent = "Failed: " + e.message;
+                  this.textContent = tKey("toast.failed") + ": " + e.message;
                 }
               });
             }
@@ -771,11 +798,11 @@
           const errs = (prog2 && prog2.data && prog2.data.errors) ||
                        (prog2 && prog2.errors) || [];
           if (Array.isArray(errs) && errs.length > 0) {
-            const first = String(errs[0]);
+            const first = String(localizeScanError(errs[0]));
             document.querySelector(".status-bar").textContent =
-              "Scan finished with errors: " + first.substring(0, 200);
+              tKey("status.scan_finished_errors") + first.substring(0, 200);
             if (window.showToast) {
-              window.showToast("Scan errors: " + first.substring(0, 160), "warning");
+              window.showToast(tKey("toast.scan_errors") + first.substring(0, 160), "warning");
             }
             showErrorBadge(errs);
           }
