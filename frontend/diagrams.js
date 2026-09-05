@@ -875,6 +875,7 @@ class DiagramRenderer {
     // proportional to its own size vs. the largest file, so the #1 entry spans
     // the full width and all the rest scale according to their full size.
     const maxSize = this.files[0] ? this.files[0].size : 0;
+    const palette = this._colors();
 
     // Use full width — labels overlaid on bars
     const padding = 8;
@@ -893,9 +894,9 @@ class DiagramRenderer {
       const pct = maxSize > 0 ? (file.size / maxSize) * 100 : 0;
       const barW = Math.max(2, Math.round(barMaxW * (pct / 100)));
       const y = startY + i * (barH + gap);
-      // Entry #1 (largest) gets a strong accent color; the rest are muted so
-      // the biggest file stands out at "full size".
-      const color = i === 0 ? this._highlightColor() : "rgba(139,148,158,0.55)";
+      // Use the same per-item palette as pie/treemap so the bar chart matches
+      // the other diagram modes (every file keeps its own color).
+      const color = palette[i % palette.length];
       const isHov = i === this._hoveredIndex;
       const isSel = i === this._selectedIndex;
 
