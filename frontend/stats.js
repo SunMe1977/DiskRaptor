@@ -61,7 +61,8 @@ class StatsPanel {
       this.wrap = document.createElement("div");
       this.wrap.id = "insights-wrap";
       this.wrap.style.cssText =
-        "margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);font-size:12px;line-height:1.5;";
+        "margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);font-size:12px;line-height:1.5;" +
+        "max-height:220px;overflow-y:auto;overscroll-behavior:contain;";
       content.appendChild(this.wrap);
     }
     const t = window.__ || function (s) { return s; };
