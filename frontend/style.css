@@ -960,8 +960,11 @@ button.icon-btn {
 }
 
 #topfiles-card {
-    flex: 1 1 auto;
-    min-height: 60px;
+    /* Natural height: the card no longer swallows all remaining space, so the
+       whole detail column scrolls as one. After a splitter drag it gets an
+       explicit height and the table inside scrolls instead. */
+    flex: 0 0 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1039,10 +1042,16 @@ button.icon-btn {
    TOP 50 FILES
    ═══════════════════════════════════════════════════════════════ */
 #topfiles-container {
-    flex: 1;
-    overflow-y: auto;
+    flex: 0 0 auto;
+    overflow: visible;
     min-height: 0;
     margin: 0 calc(-1 * var(--space-lg)) calc(-1 * var(--space-md));
+}
+/* When the user pinned a Top-50 height via the splitter, the table scrolls
+   inside the card instead of growing the whole column. */
+#topfiles-card.tf-pinned #topfiles-container {
+    flex: 1;
+    overflow-y: auto;
 }
 #topfiles-table {
     width: 100%;

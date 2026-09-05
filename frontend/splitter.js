@@ -57,6 +57,7 @@
         if (layout.topfiles_height && t) {
           t.style.flex = "none";
           t.style.height = layout.topfiles_height + "px";
+          t.classList.add("tf-pinned");
         }
       })
       .catch(function () {});
@@ -196,6 +197,7 @@
         newHeight = Math.max(60, Math.min(newHeight, maxH));
         topfilesCard.style.flex = "none";
         topfilesCard.style.height = newHeight + "px";
+        topfilesCard.classList.add("tf-pinned");
       });
 
       document.addEventListener("mouseup", function () {
@@ -212,6 +214,7 @@
       tfSplit.addEventListener("dblclick", function () {
         topfilesCard.style.flex = "";
         topfilesCard.style.height = "";
+        topfilesCard.classList.remove("tf-pinned");
       });
     }
   });
