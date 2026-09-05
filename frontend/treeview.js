@@ -980,7 +980,9 @@ class TreeView {
       if (n) totalSize += n.size || 0;
     }
     if (!(await window.confirmDialog(
-      t("confirm.move_trash_multi") || "Move " + paths.length + " item(s) to Trash?\n\n" + paths.slice(0, 5).join("\n") + (paths.length > 5 ? "\n…" : "") + "\n\nTotal: " + this._formatSize(totalSize) + "\n\nThis cannot be undone.",
+      (t("confirm.move_trash_multi") || "Move " + paths.length + " item(s) to Trash?\n\n" + paths.slice(0, 5).join("\n") + (paths.length > 5 ? "\n…" : "") + "\n\nTotal: " + this._formatSize(totalSize) + "\n\nThis cannot be undone.")
+        .replace("{n}", String(paths.length))
+        .replace("{size}", this._formatSize(totalSize)),
     ))) return;
     let ok = 0;
     for (const p of paths) {
