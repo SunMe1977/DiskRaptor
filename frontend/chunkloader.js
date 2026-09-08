@@ -48,10 +48,12 @@ class ChunkLoader {
       return;
     }
 
+    const nodes = this.allNodes;
     const chunk = await this._invoke("get_chunk", {
       scanId: this.scanId,
       chunkIndex: chunkIndex,
     });
+    if (this.allNodes !== nodes) return;
     if (!chunk || !Array.isArray(chunk.nodes)) {
       console.warn("loadChunk: invalid chunk payload for", chunkIndex);
       return;
@@ -120,10 +122,12 @@ class ChunkLoader {
       return cached;
     }
     // Fallback to backend (useful when chunks not yet loaded)
+    const nodes = this.allNodes;
     const result = await this._invoke("get_children", {
       scanId: this.scanId,
       nodeIndex: arenaIndex,
     });
+    if (this.allNodes !== nodes) return [];
     if (Array.isArray(result)) {
       return result;
     }
@@ -141,10 +145,12 @@ class ChunkLoader {
    */
   async fetchChildrenBackend(arenaIndex) {
     if (arenaIndex === 4294967295) return [];
+    const nodes = this.allNodes;
     const result = await this._invoke("get_children", {
       scanId: this.scanId,
       nodeIndex: arenaIndex,
     });
+    if (this.allNodes !== nodes) return [];
     if (Array.isArray(result)) {
       return result;
     }
@@ -172,10 +178,11 @@ class ChunkLoader {
    * Release the current scan and reset the loader state.
    */
   async release() {
-    if (this.scanId) {
-      await this._invoke("release_scan", { scanId: this.scanId });
-    }
+    const scanId = this.scanId;
     this._reset();
+    if (scanId) {
+      await this._invoke("release_scan", { scanId: scanId });
+    }
   }
 
   async _invoke(cmd, args) {

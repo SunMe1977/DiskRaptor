@@ -1,4 +1,5 @@
 ﻿use crate::scanner::tree::*;
+use crate::scanner::activity::{record_error, ScanActivity};
 use anyhow::Result;
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -10,11 +11,14 @@ use std::time::Instant;
 pub type ScanProgressCallback = Box<dyn Fn(u64, u64, u64, &str) + Send + Sync>;
 
 pub struct ScanConfig {
+    pub activity: Arc<super::activity::ScanActivity>,
     pub root_path: String,
     pub skip_dirs: Vec<String>,
     pub top_file_min_size: u64,
     pub top_files_count: usize,
     pub follow_symlinks: bool,
+    /// No-progress limit; zero disables it. The app's outer watchdog can also
+    /// detach a blocked worker, whereas cooperative checks cannot interrupt I/O.
     pub scan_timeout_secs: u64,
     /// Shared error list â€” scanner pushes inaccessible paths here
     pub errors: std::sync::Arc<parking_lot::Mutex<Vec<String>>>,
@@ -41,7 +45,8 @@ impl Default for ScanConfig {
             top_file_min_size: 0,
             top_files_count: 100,
             follow_symlinks: false,
-            scan_timeout_secs: 0,
+            scan_timeout_secs: super::activity::DEFAULT_TIMEOUT_SECS,
+            activity: Arc::new(super::activity::ScanActivity::default()),
             errors: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
             cancelled: None,
             live_entries: std::sync::Arc::new(parking_lot::Mutex::new(std::collections::VecDeque::new())),
@@ -320,8 +325,6 @@ mod platform {
         let mut lc: HashMap<u32, u32> = HashMap::new();
         let mut last_progress = Instant::now();
         let cancel = config.cancelled.clone();
-        let errors = config.errors.clone();
-        let timeout = config.scan_timeout_secs;
         let mut files_found: u64 = 0;
         let mut dirs_found: u64 = 0;
         let mut bytes_found: u64 = 0;
@@ -336,41 +339,35 @@ mod platform {
         };
         let mut termination = ScanTermination::Completed;
 
-        for entry_result in WalkDir::new(root_path).follow_links(config.follow_symlinks).sort(false).parallelism(jwalk::Parallelism::RayonNewPool(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8))) {
+        // jwalk 0.9 collects a whole directory before its process_read_dir hook
+        // or next() yields. It exposes no entry-level heartbeat/cancellation
+        // hook, so Linux/fallback scans can still time out on a slow, moving
+        // batch. Fixing that requires changing traversal or the dependency;
+        // a timer heartbeat would instead conceal genuinely blocked I/O.
+        let mut entries = WalkDir::new(root_path).follow_links(config.follow_symlinks).sort(false).parallelism(jwalk::Parallelism::RayonNewPool(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8))).into_iter();
+        loop {
+            if cancel.as_ref().is_some_and(|cf| cf.load(Ordering::Relaxed)) {
+                termination = ScanTermination::Cancelled;
+                break;
+            }
+            if let Some(message) = config.activity.timeout_message(config.scan_timeout_secs, root_path) {
+                record_error(&config.errors, message);
+                termination = ScanTermination::TimedOut;
+                break;
+            }
+            let operation = config.activity.operation(root_path, "jwalk next (scan root; internal active directory unknown)");
+            let Some(entry_result) = entries.next() else { break; };
+            config.activity.progress();
+            drop(operation);
             if arena.nodes.len() > node_cap {
                 termination = ScanTermination::LimitReached;
                 break;
             }
             iter_count += 1;
-            if (iter_count & 0x3FF) == 0 {
-                if let Some(ref cf) = cancel {
-                    if cf.load(Ordering::Relaxed) {
-                        termination = ScanTermination::Cancelled;
-                        break;
-                    }
-                }
-            }
-            if timeout > 0
-                && (iter_count & 0x1FFF) == 0
-                && last_progress.elapsed().as_secs() > timeout
-            {
-                errors.lock().push(format!(
-                    "TIMEOUT: No progress for {}s at {}",
-                    timeout, root_path
-                ));
-                termination = ScanTermination::TimedOut;
-                break;
-            }
             let entry = match entry_result {
                 Ok(e) => e,
                 Err(e) => {
-                    if let Some(path) = e.path() {
-                        let err_path = path.to_string_lossy().to_string();
-                        let mut errs = errors.lock();
-                        if errs.len() < 100 {
-                            errs.push(format!("Access denied: {}", err_path));
-                        }
-                    }
+                    record_error(&config.errors, format!("jwalk: {}", e));
                     continue;
                 }
             };
@@ -406,7 +403,10 @@ mod platform {
                 ptix.insert(path_buf.clone(), ci);
             } else {
                 files_found += 1;
+                let _operation = config.activity.operation(&path_buf, "metadata");
                 let meta = entry.metadata();
+                config.activity.progress();
+                if let Err(ref e) = meta { record_error(&config.errors, format!("metadata: {:?}: {}", path_buf, e)); }
                 let sz = meta.as_ref().map(|m| m.len()).unwrap_or(0);
                 bytes_found += sz;
                 let depth = child_depth(&arena, pi, root_idx);
@@ -427,7 +427,7 @@ mod platform {
             }
         }
         progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
-        finish_scan(start, arena, top_files, file_types, progress, termination)
+        finish_scan(start, arena, top_files, file_types, progress, termination, &config.activity)
     }
 }
 
@@ -438,11 +438,14 @@ pub(crate) fn finish_scan(
     file_types: Arc<FileTypeAccum>,
     _progress: &ScanProgressCallback,
     termination: ScanTermination,
+    activity: &Arc<ScanActivity>,
 ) -> Result<ScanResult> {
+    let _operation = activity.operation("", "Finalizing tree (no native I/O)");
     let n = arena.nodes.len();
     let mut total_files: u64 = 0;
     let mut total_dirs: u64 = 1; // root is a directory
     for i in (1..n).rev() {
+        if i.is_multiple_of(1024) { activity.progress(); }
         let node = &arena.nodes[i];
         let p = node.parent;
         let s = node.size;
@@ -519,7 +522,22 @@ pub fn scan_simple(
     let iter_cap: u64 = 1_500_000;
     let mut termination = ScanTermination::Completed;
 
-    for entry_result in WalkDir::new(root_path).follow_links(false).into_iter() {
+    let mut entries = WalkDir::new(root_path).follow_links(false).into_iter();
+    let mut current_directory = root_path.to_owned();
+    loop {
+        if config.cancelled.as_ref().is_some_and(|cf| cf.load(Ordering::Relaxed)) {
+            termination = ScanTermination::Cancelled;
+            break;
+        }
+        if let Some(message) = config.activity.timeout_message(config.scan_timeout_secs, root_path) {
+            record_error(&config.errors, message);
+            termination = ScanTermination::TimedOut;
+            break;
+        }
+        let operation = config.activity.operation(&current_directory, "walkdir next (last yielded directory; internal active directory unknown)");
+        let Some(entry_result) = entries.next() else { break; };
+        config.activity.progress();
+        drop(operation);
         if arena.nodes.len() > node_cap {
             termination = ScanTermination::LimitReached;
             break;
@@ -529,32 +547,15 @@ pub fn scan_simple(
             termination = ScanTermination::LimitReached;
             break;
         }
-        if (iter_count & 0x3FF) == 0 {
-            if let Some(ref cf) = config.cancelled {
-                if cf.load(Ordering::Relaxed) {
-                    termination = ScanTermination::Cancelled;
-                    break;
-                }
-            }
-        }
         let entry = match entry_result {
             Ok(e) => e,
             Err(e) => {
-                // Collect errors like the jwalk path so the caller learns
-                // which folders were inaccessible. For a recycle bin most
-                // entries are SYSTEM-owned and unreadable â€” that's expected,
-                // so don't flood the UI with hundreds of them.
-                if let Some(p) = e.path() {
-                    let mut errs = config.errors.lock();
-                    let cap = if root_path.contains("$Recycle.Bin") { 3 } else { 100 };
-                    if errs.len() < cap {
-                        errs.push(format!("Access denied: {}", p.to_string_lossy()));
-                    }
-                }
+                record_error(&config.errors, format!("walkdir: {}", e));
                 continue;
             }
         };
         let full = entry.path().to_string_lossy().to_string();
+        if entry.file_type().is_dir() { current_directory = full.clone(); }
         if full == root_path {
             continue;
         }
@@ -580,7 +581,11 @@ pub fn scan_simple(
             ptix.insert(full.clone(), ci);
         } else {
             files_found += 1;
-            let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let _operation = config.activity.operation(&full, "metadata");
+            let meta = entry.metadata();
+            config.activity.progress();
+            if let Err(ref e) = meta { record_error(&config.errors, format!("metadata: {:?}: {}", full, e)); }
+            let sz = meta.map(|m| m.len()).unwrap_or(0);
             bytes_found += sz;
             let depth = child_depth(&arena, pi, root_idx);
             let fname = file_name.clone();
@@ -597,7 +602,7 @@ pub fn scan_simple(
         }
     }
     progress(files_found, dirs_found, bytes_found, "Finalizing tree...");
-    finish_scan(start, arena, top_files, file_types, progress, termination)
+    finish_scan(start, arena, top_files, file_types, progress, termination, &config.activity)
 }
 
 pub fn scan_directory_with_progress(
@@ -605,6 +610,7 @@ pub fn scan_directory_with_progress(
     progress: ScanProgressCallback,
 ) -> Result<ScanResult> {
     let root_path = config.root_path.clone();
+    config.activity.progress();
     // The Windows $Recycle.Bin is a junction-heavy raw store of $R/$I files
     // that can hold millions of SYSTEM-owned entries. Scanning it is either
     // painfully slow or hangs, and the raw names are useless to the user.

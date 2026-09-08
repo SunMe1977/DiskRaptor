@@ -17,6 +17,20 @@ window.GalaxyViewConfig = {
     hdr: false,
   },
 
+  // ── Visual Engine ────────────────────────────────────────────
+  visual: {
+    spriteCache: true,           // Cache gradient sphere/glow sprites
+    planetBands: true,           // Animated surface bands on large planets
+    nightLights: true,           // City lights on the night side
+    starFlare: true,             // Diffraction spikes on stars
+    milkyWay: true,              // Baked milky-way band in the starfield
+    dustCount: 600,              // Drifting 3D dust particles
+    twinkleCount: 140,           // Live twinkling foreground stars
+    adaptiveQuality: true,       // Downscale effects when FPS drops
+    qualityFpsLow: 40,
+    qualityFpsHigh: 55,
+  },
+
   // ── Camera ─────────────────────────────────────────────
   camera: {
     fov: 60,

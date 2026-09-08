@@ -22,13 +22,13 @@
       card.style.cssText =
         "background:var(--bg-secondary,#1c2128);border:1px solid var(--border,#30363d);" +
         "border-radius:12px;max-width:420px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);" +
-        "overflow:hidden;";
+         "overflow:hidden;max-height:90vh;display:flex;flex-direction:column;";
       card.className = "dlg-card";
 
       const body = document.createElement("div");
       body.style.cssText =
         "padding:18px 20px;font-size:13px;color:var(--text-primary,var(--text-primary));" +
-        "line-height:1.5;white-space:pre-wrap;word-break:break-word;";
+        "line-height:1.5;white-space:pre-wrap;word-break:break-word;overflow-y:auto;";
       body.textContent = message;
 
       const input = placeholder !== undefined ? document.createElement("input") : null;
@@ -45,7 +45,7 @@
       const footer = document.createElement("div");
       footer.style.cssText =
         "padding:10px 16px;border-top:1px solid var(--border,#30363d);" +
-        "display:flex;justify-content:flex-end;gap:8px;background:var(--bg-secondary,#1c2128);";
+        "display:flex;flex-wrap:wrap;flex-shrink:0;justify-content:flex-end;gap:8px;background:var(--bg-secondary,#1c2128);";
 
       function makeBtn(text, isPrimary) {
         const b = document.createElement("button");

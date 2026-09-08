@@ -19,6 +19,7 @@
     "test:quick": "node tests/run_tests.mjs --quick",
     "test:list": "node tests/run_tests.mjs --list",
     "test:scan": "node tests/test_scan_ui.mjs",
+    "test:scan-timeout": "node tests/test_scan_timeout_mock.mjs",
     "test:welcome": "node tests/test_welcome_ui.mjs",
     "test:settings": "node tests/test_settings_ui.mjs",
     "test:settings-flow": "node tests/test_settings_flow_ui.mjs",

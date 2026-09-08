@@ -16,6 +16,7 @@
 #![cfg(target_os = "macos")]
 
 use crate::scanner::tree::*;
+use crate::scanner::activity::{record_error, ScanActivity};
 use crate::scanner::walker::{
     FileTypeAccum, ScanConfig, ScanProgressCallback, ScanResult, ScanTermination, TopFilesAccum,
     file_ext_lower, finish_scan,
@@ -160,7 +161,9 @@ impl Drop for FdGuard {
 /// Enumerate `dir`, calling `f` for every entry (getattrlistbulk never returns
 /// "." or "..").
 /// Returns Err only for hard failures (open/read denied on the dir itself).
-fn read_dir<F: FnMut(MacEntry)>(dir: &str, mut f: F) -> std::io::Result<()> {
+fn read_dir<F: FnMut(MacEntry)>(dir: &str, activity: &Arc<ScanActivity>, stopped: impl Fn() -> bool, mut f: F) -> std::io::Result<()> {
+    if stopped() { return Ok(()); }
+    let operation = activity.operation(dir, "open (directory)");
     let c_path = match CString::new(Path::new(dir).as_os_str().as_bytes()) {
         Ok(c) => c,
         Err(_) => return Ok(()), // interior NUL cannot exist in real paths
@@ -172,8 +175,11 @@ fn read_dir<F: FnMut(MacEntry)>(dir: &str, mut f: F) -> std::io::Result<()> {
         )
     };
     if dirfd < 0 {
-        return Err(std::io::Error::last_os_error());
+        let error = std::io::Error::last_os_error();
+        activity.progress();
+        return Err(error);
     }
+    activity.progress();
     let _guard = FdGuard(dirfd);
 
     let mut attr_list = libc::attrlist {
@@ -189,7 +195,9 @@ fn read_dir<F: FnMut(MacEntry)>(dir: &str, mut f: F) -> std::io::Result<()> {
     let mut buf = [0u8; ATTR_BUF_SIZE];
     let mut entries: Vec<MacEntry> = Vec::with_capacity(256);
     loop {
+        if stopped() { break; }
         entries.clear();
+        operation.set("getattrlistbulk (enumerating directory)");
         let n = unsafe {
             libc::getattrlistbulk(
                 dirfd,
@@ -200,14 +208,20 @@ fn read_dir<F: FnMut(MacEntry)>(dir: &str, mut f: F) -> std::io::Result<()> {
             )
         };
         if n < 0 {
-            return Err(std::io::Error::last_os_error());
+            let error = std::io::Error::last_os_error();
+            activity.progress();
+            return Err(error);
         }
+        activity.progress();
         if n == 0 {
             break; // no more entries
         }
         parse_entries(&buf, n, &mut entries);
+        operation.set("Processing directory entries (may query symlink metadata)");
         for e in entries.drain(..) {
+            if stopped() { return Ok(()); }
             f(e);
+            activity.progress();
         }
     }
     Ok(())
@@ -235,6 +249,7 @@ pub fn scan(
     let top_count = config.top_files_count;
     let cancel = config.cancelled.clone();
     let errors = config.errors.clone();
+    let activity = config.activity.clone();
     let timeout = config.scan_timeout_secs;
     let follow_symlinks = config.follow_symlinks;
 
@@ -275,6 +290,7 @@ pub fn scan(
         let skip_dirs = skip_dirs.clone();
         let cancel = cancel.clone();
         let errors = errors.clone();
+        let activity = activity.clone();
         let files_found = files_found.clone();
         let dirs_found = dirs_found.clone();
         let bytes_found = bytes_found.clone();
@@ -284,10 +300,7 @@ pub fn scan(
         let root_path = root_path.to_string();
 
         handles.push(std::thread::spawn(move || {
-            // `last_progress` tracks when this worker last reported progress;
-            // the timeout is a *no-progress* watchdog, not a wall-clock limit,
-            // so a slow-but-moving scan (e.g. a 1M-file home folder) never gets
-            // cut off at `timeout` seconds.
+            // UI updates are throttled independently of the activity watchdog.
             let mut last_progress = progress_start;
             // Worker-local file-type map: avoids the global map lock per file.
             let mut local_types: HashMap<String, (u64, u64)> = HashMap::new();
@@ -303,6 +316,17 @@ pub fn scan(
                 };
 
                 if stop_flag.load(Ordering::Relaxed) {
+                    return local_types;
+                }
+                if cancel.as_ref().is_some_and(|cf| cf.load(Ordering::Relaxed)) {
+                    *termination.lock() = ScanTermination::Cancelled;
+                    stop_flag.store(true, Ordering::Relaxed);
+                    return local_types;
+                }
+                if let Some(message) = activity.timeout_message(timeout, &root_path) {
+                    record_error(&errors, message);
+                    *termination.lock() = ScanTermination::TimedOut;
+                    stop_flag.store(true, Ordering::Relaxed);
                     return local_types;
                 }
 
@@ -325,7 +349,10 @@ pub fn scan(
                 let mut local_entries: Vec<(String, bool, u64, u64)> =
                     Vec::new(); // name, is_dir, size, mtime
 
-                let read_res = read_dir(&dir_path, |e| {
+                let read_res = read_dir(&dir_path, &activity, || {
+                    stop_flag.load(Ordering::Relaxed)
+                        || cancel.as_ref().is_some_and(|cf| cf.load(Ordering::Relaxed))
+                }, |e| {
                     live_count += 1;
                     if live_count.is_multiple_of(100) {
                         push_live(&live_entries, &e.name);
@@ -341,11 +368,15 @@ pub fn scan(
                             // to decide whether to descend when following
                             // symlinked directories is enabled.
                             let full = format!("{}/{}", dir_path, e.name);
-                            match std::fs::symlink_metadata(&full) {
+                            let meta = std::fs::symlink_metadata(&full);
+                            activity.progress();
+                            match meta {
                                 Ok(meta) => {
                                     let mut is_dir = false;
                                     if follow_symlinks {
-                                        is_dir = std::fs::metadata(&full)
+                                        let target = std::fs::metadata(&full);
+                                        activity.progress();
+                                        is_dir = target
                                             .map(|m| m.is_dir())
                                             .unwrap_or(false);
                                     }
@@ -384,19 +415,7 @@ pub fn scan(
                 });
 
                 if let Err(err) = read_res {
-                    let mut errs = errors.lock();
-                    if errs.len() < 100 {
-                        let kind = err.kind();
-                        errs.push(match kind {
-                            std::io::ErrorKind::NotFound => {
-                                format!("Not found: {}", dir_path)
-                            }
-                            std::io::ErrorKind::PermissionDenied => {
-                                format!("Access denied: {}", dir_path)
-                            }
-                            _ => format!("Cannot read {}: {}", dir_path, err),
-                        });
-                    }
+                    record_error(&errors, format!("open/getattrlistbulk: directory {:?}: {}", dir_path, err));
                 }
 
                 // Insert all entries of this directory with a single arena lock.
@@ -406,6 +425,12 @@ pub fn scan(
                     let mut lc2 = lc.lock();
                     let depth = child_depth(&ar, parent_idx, root_idx);
                     for (name, is_dir, size, mtime) in local_entries {
+                        if cancel.as_ref().is_some_and(|cf| cf.load(Ordering::Relaxed)) {
+                            *termination.lock() = ScanTermination::Cancelled;
+                            stop_flag.store(true, Ordering::Relaxed);
+                            break;
+                        }
+                        activity.progress();
                         if is_dir {
                             let ci = alloc_directory(&mut ar, name.clone(), parent_idx, depth);
                             link_child(&mut ar, &mut lc2, parent_idx, ci);
@@ -447,17 +472,7 @@ pub fn scan(
                         return local_types;
                     }
                 }
-                if timeout > 0 && last_progress.elapsed().as_secs() > timeout {
-                    let mut errs = errors.lock();
-                    if errs.len() < 100 {
-                        errs.push(format!("TIMEOUT: No progress for {}s at {}", timeout, root_path));
-                    }
-                    *termination.lock() = ScanTermination::TimedOut;
-                    stop_flag.store(true, Ordering::Relaxed);
-                    return local_types;
-                }
-
-                if progress_start.elapsed().as_millis() >= 100 {
+                if last_progress.elapsed().as_millis() >= 100 {
                     let f = files_found.load(Ordering::Relaxed);
                     let d = dirs_found.load(Ordering::Relaxed);
                     let b = bytes_found.load(Ordering::Relaxed);
@@ -483,7 +498,7 @@ pub fn scan(
         .into_inner();
     let term = *termination.lock();
     let finish_progress: ScanProgressCallback = Box::new(move |f, d, b, p| progress_arc(f, d, b, p));
-    finish_scan(start, arena, top_files, file_types, &finish_progress, term)
+    finish_scan(start, arena, top_files, file_types, &finish_progress, term, &config.activity)
 }
 
 fn path_has_component(path: &str, target: &str) -> bool {

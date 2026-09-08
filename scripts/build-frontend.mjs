@@ -34,6 +34,7 @@ const galaxy = [
   "galaxyview/data-mapper.js",
   "galaxyview/animation.js",
   "galaxyview/effects.js",
+  "galaxyview/visuals.js",
   "galaxyview/interaction.js",
   "galaxyview/lod.js",
   "galaxyview/timeline.js",

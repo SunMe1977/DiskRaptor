@@ -76,12 +76,13 @@
     const codes = [];
     if (!hasData(code)) codes.push(code);
     if (code !== "en" && !hasData("en")) codes.push("en");
-    if (!DATA.__uiExtra) codes.push("ui-extra");
+    // Locale files replace their tables. Apply supplemental strings last,
+    // including after a language switch, so they cannot be overwritten.
+    if (codes.length > 0 || !DATA.__uiExtra) codes.push("ui-extra");
     if (codes.length === 0) return Promise.resolve();
     if (!loadQueue) {
-      loadQueue = Promise.all(
-        codes.map(function (c) {
-          return new Promise(function (resolve) {
+      loadQueue = codes.reduce(function (queue, c) {
+          return queue.then(function () { return new Promise(function (resolve) {
             const s = document.createElement("script");
             s.src = "i18n/" + c + ".js";
             s.onload = function () {
@@ -94,9 +95,8 @@
               resolve();
             };
             document.head.appendChild(s);
-          });
-        }),
-      ).then(function () {
+          }); });
+        }, Promise.resolve()).then(function () {
         loadQueue = null;
       });
     }

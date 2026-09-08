@@ -1,6 +1,9 @@
 ﻿(function () {
   "use strict";
   window.app = window.app || {};
+  window.app.scanTimeoutSeconds = function (value) {
+    return Number.isInteger(value) && value >= 0 && value <= 3600 ? value : 120;
+  };
   window.app.initSettings = function (config) {
     const { scanPath, btnScan, btnBrowse } = config;
     // ── First-run tips ────────────────────────────────
@@ -129,6 +132,9 @@
         .getElementById("settings-save")
         ?.addEventListener("click", async function () {
           const defPath = document.getElementById("settings-default-path")?.value || "";
+          const timeoutEl = document.getElementById("settings-scan-timeout");
+          if (timeoutEl && !timeoutEl.reportValidity()) return;
+          const scanTimeout = window.app.scanTimeoutSeconds(timeoutEl ? timeoutEl.valueAsNumber : undefined);
           const selTheme = document.getElementById("settings-theme")?.value || "auto";
           const selLang = (document.getElementById("settings-language")?.value || "auto");
           const termChoice = termEl ? termEl.value : "cmd";
@@ -142,7 +148,7 @@
               });
           }
           await window.__TAURI__
-            .invoke("save_settings", { settings: { default_scan_path: defPath, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor } })
+            .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor } })
             .catch(function (e) {
               window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
             });

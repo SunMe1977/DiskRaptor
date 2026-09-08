@@ -68,6 +68,13 @@ The UI is **pure JavaScript** rendered in the system webview (no bundled Chromiu
 - **Percentage bars** -- Colored gradient bars per tree row showing size relative to parent
 - **File age column** -- Last modification date, sortable
 
+### Scan Timeouts
+- **Preferences > Scan idle timeout** controls how long a scan may go without completing work. The default is 120 seconds; values from 0 to 3600 are accepted. Set 0 to disable the watchdog; Cancel remains available. This is not a total scan-duration limit.
+- On timeout, diagnostics show recorded active directories/operations and recent OS errors. Directory enumeration cannot always identify an exact blocked file. Windows enumeration does not request UAC elevation, and the diagnostics cannot detect hidden permission dialogs.
+- **Retry with a longer timeout** restarts the same path from the beginning, doubles the timeout (minimum 120, maximum 3600 seconds), and leaves the saved preference unchanged. Retries are never automatic.
+- Check the connection and responsiveness of an external drive before retrying. Cancellation cannot forcibly interrupt a blocked OS call; it may remain pending until the OS returns. Its late progress is isolated from subsequent scans.
+- Windows native enumeration reports activity within a directory. The jwalk fallback (also used on Linux) still batches whole directories and may time out on a very slow batch; increase or disable the idle timeout in that case.
+
 ### Interaction
 - **Context menus** -- Right-click anywhere (Tree, Top 50, Diagram): Open in Explorer, Open Terminal, Properties, Copy Path, Copy Size, Move to Trash, Jump in Tree, Scan this Folder
 - **Keyboard navigation** -- Arrow keys to navigate tree, Enter to open files

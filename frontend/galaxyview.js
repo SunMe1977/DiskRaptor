@@ -118,6 +118,11 @@
       this._EffectCtor = EffectCtor;
       this._InteractionCtor = InteractionCtor;
 
+      // Enhanced visual engine (cached gradient sprites, dust, starfield).
+      this.visuals = GV.Visuals ? new GV.Visuals(CFG) : null;
+      this._lightScreen = null;
+      this._extent = 0;
+
       // Background star field
       this.backgroundStars = [];
       this._generateBackground();
@@ -220,6 +225,7 @@
       this.canvas.style.width = w + 'px';
       this.canvas.style.height = h + 'px';
       if (this.effects) this.effects.resize();
+      if (this.visuals) this.visuals.resize(this.canvas.width, this.canvas.height);
     }
 
     _createUI() {
@@ -263,8 +269,10 @@
       this.emptyState.innerHTML = `
         <div class="galaxy-empty-icon">🌌</div>
         <div class="galaxy-empty-text" data-i18n="galaxy.empty">Scan a directory to explore the galaxy</div>
+        <button id="galaxy-demo-btn" class="btn-primary galaxy-demo-btn" data-i18n="galaxy.demo">✨ Demo Galaxy</button>
       `;
       this.container.appendChild(this.emptyState);
+      document.getElementById("galaxy-demo-btn")?.addEventListener("click", () => this.loadDemo());
 
       // Scan stats overlay container (for LiveScanEngine)
       this.scanStatsContainer = document.createElement("div");
@@ -300,6 +308,7 @@
 
       this.scanData = scanResult;
       this.stats = stats;
+      this._extent = 0;
 
       // Map data to galaxy objects
       this.objects = this.dataMapper.mapData(scanResult, stats, topFiles);
@@ -363,13 +372,34 @@
 
     // ── Render Loop ─────────────────────────────────────────────
 
-    _startRenderLoop() {
-      this.active = true;
-      this.lastTimestamp = performance.now();
-      this._renderFrame(this.lastTimestamp);
-    }
+_startRenderLoop() {
+       if (this._renderLoopRunning) return;
+       this._renderLoopRunning = true;
+       this.lastTimestamp = performance.now();
+       this.lastFpsTime = this.lastTimestamp;
+       this.frameCount = 0;
+       this.active = true;
+       requestAnimationFrame((t) => this._renderFrame(t));
+     }
 
-    _renderFrame(timestamp) {
+     /** Load a built-in demo scene (no filesystem scan needed) */
+     loadDemo() {
+       if (!GV.buildDemoScene) return;
+       console.debug("[GalaxyView] Loading demo galaxy...");
+       const scene = GV.buildDemoScene();
+       this.canvas.style.display = "block";
+       if (this.emptyState) this.emptyState.style.display = "none";
+       this.scanData = null;
+       this.stats = scene.stats;
+       this.objects = scene.objects;
+       this.spatialIndex.clear();
+       for (const obj of this.objects) { obj.active = true; this.spatialIndex.insert(obj); }
+       this._extent = 0;
+       this._autoFitCamera();
+       this._startRenderLoop();
+     }
+
+     _renderFrame(timestamp) {
       if (!this.active) return;
 
       const dt = timestamp - this.lastTimestamp;
@@ -382,6 +412,7 @@
         this.frameCount = 0;
         this.lastFpsTime = timestamp;
         this._updateFpsDisplay();
+        if (this.visuals) this.visuals.adaptToFPS(this.fps);
       }
 
       // Skip frame if too slow (maintain at least 15 FPS)
@@ -422,15 +453,32 @@
       const h = this.canvas.height;
       const time = timestamp * 0.001;
 
-      // Clear
       ctx.clearRect(0, 0, w, h);
 
-      // Background
-      const bgColor = CFG.palettes.normal.background;
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(0, 0, w, h);
+      // Backdrop (cached gradient + Milky Way + vignette) or flat fallback.
+      if (this.visuals) {
+        this.visuals.resize(w, h);
+        this.visuals.paintBackdrop(ctx);
+      } else {
+        ctx.fillStyle = CFG.palettes.normal.background;
+        ctx.fillRect(0, 0, w, h);
+      }
 
-      // Welcome overlay - brighter for visibility
+      // Camera transforms: hoisted so dust/starfield/light can use them.
+      const viewMatrix = this._calculateViewMatrix();
+      const projMatrix = this._calculateProjectionMatrix(w, h);
+      const lightScreen = this._project([0, 0, 0], viewMatrix, projMatrix, w, h);
+      this._lightScreen = lightScreen;
+
+      // Background starfield + drifting dust.
+      if (this.visuals) {
+        this.visuals.renderStarfield(ctx, w, h, time, this.camera);
+        this.visuals.renderDust(ctx, (pos) => this._project(pos, viewMatrix, projMatrix, w, h), time, this._galaxyExtent());
+      } else {
+        this._renderBackgroundStars(ctx, time);
+      }
+
+      // Welcome overlay
       ctx.save();
       ctx.fillStyle = "rgba(180,220,255,0.35)";
       ctx.font = "bold 22px system-ui, sans-serif";
@@ -442,87 +490,47 @@
       ctx.fillText("Objects: " + (this.objects ? this.objects.length : 0) + " | " + (this.stats ? (this.stats.total_files || "") + " files, " + (this.stats.total_size ? this._fmtSize(this.stats.total_size) : "") : "loading..."), w/2, 48);
       ctx.restore();
 
-      // Draw background stars
-      this._renderBackgroundStars(ctx, time);
-
-      // Camera transform: calculate view-projection matrix
-      const viewMatrix = this._calculateViewMatrix();
-      const projMatrix = this._calculateProjectionMatrix(w, h);
-
       // Sort objects by depth (back to front)
       const visible = this._getVisibleObjects();
       visible.sort((a, b) => {
         const az = a._screenZ || 0;
         const bz = b._screenZ || 0;
-        return az - bz; // Far to near
+        return az - bz;
       });
 
       // Render celestial objects
       ctx.save();
       for (const obj of visible) {
         if (!obj || !obj.active) continue;
-
-        // Project to screen
         const screen = this._project(obj.position, viewMatrix, projMatrix, w, h);
         if (!screen) continue;
         obj._screenX = screen.x;
         obj._screenY = screen.y;
         obj._screenZ = screen.z;
-
-        // Get animation state
         const state = this.animation.getState(obj);
-
-        // Render based on type
         switch (obj.type) {
-          case "star":
-            this._renderStar(ctx, screen, obj, state, time);
-            break;
-          case "planet":
-            this._renderPlanet(ctx, screen, obj, state, time);
-            break;
-          case "moon":
-            this._renderMoon(ctx, screen, obj, state, time);
-            break;
-          case "blackHole":
-            this._renderBlackHole(ctx, screen, obj, state, time);
-            break;
-          case "nebula":
-            this._renderNebula(ctx, screen, obj, state, time);
-            break;
-          case "particleCloud":
-            this._renderParticleCloud(ctx, screen, obj, state);
-            break;
-          case "comet":
-            this._renderComet(ctx, screen, obj, state, time);
-            break;
-          case "diamond":
-            this._renderDiamond(ctx, screen, obj, state, time);
-            break;
-          case "satellite":
-            this._renderSatellite(ctx, screen, obj, state, time);
-            break;
-          case "meteor":
-            this._renderMeteor(ctx, screen, obj, state);
-            break;
-          case "cluster":
-            this._renderCluster(ctx, screen, obj, state);
-            break;
-          default:
-            // Custom body types
-            this._renderCustomBody(ctx, screen, obj, state, time);
-            break;
+          case "star": this._renderStar(ctx, screen, obj, state, time); break;
+          case "planet": this._renderPlanet(ctx, screen, obj, state, time); break;
+          case "moon": this._renderMoon(ctx, screen, obj, state, time); break;
+          case "blackHole": this._renderBlackHole(ctx, screen, obj, state, time); break;
+          case "nebula": this._renderNebula(ctx, screen, obj, state, time); break;
+          case "particleCloud": this._renderParticleCloud(ctx, screen, obj, state); break;
+          case "comet": this._renderComet(ctx, screen, obj, state, time); break;
+          case "diamond": this._renderDiamond(ctx, screen, obj, state, time); break;
+          case "satellite": this._renderSatellite(ctx, screen, obj, state, time); break;
+          case "meteor": this._renderMeteor(ctx, screen, obj, state); break;
+          case "cluster": this._renderCluster(ctx, screen, obj, state); break;
+          default: this._renderCustomBody(ctx, screen, obj, state, time); break;
         }
       }
       ctx.restore();
 
-      // Overlay effects (meteors, trails, particles) - composited onto main canvas
       if (this.effects) {
         this.effects.renderOverlay(viewMatrix, { width: w, height: h }, time);
         this.effects.compositeOverlay(ctx);
         this.effects.updateAndRenderParticles(ctx, timestamp);
       }
 
-      // Hover ring — circle around the hovered object
       if (this.hoveredObject && this.hoveredObject._screenX !== undefined) {
         const hx = this.hoveredObject._screenX;
         const hy = this.hoveredObject._screenY;
@@ -535,7 +543,6 @@
         ctx.beginPath();
         ctx.arc(hx, hy, hr, 0, Math.PI * 2);
         ctx.stroke();
-        // Dashed inner ring for extra visibility
         ctx.strokeStyle = "rgba(255,255,255,0.2)";
         ctx.lineWidth = 1;
         ctx.shadowBlur = 0;
@@ -547,7 +554,6 @@
         ctx.restore();
       }
 
-      // Hover label
       this._renderHoverLabel(ctx);
     }
 
@@ -646,6 +652,10 @@
     // ── Rendering: Celestial Bodies ───────────────────────────
 
     _renderStar(ctx, screen, star, state, time) {
+      if (this.visuals) {
+        this.visuals.drawStar(ctx, screen.x, screen.y, star.scale * (1 + state.pulse * 0.1), star.color, state.glow, time);
+        return;
+      }
       const r = star.scale * (1 + state.pulse * 0.1);
       const c = star.color;
       const glow = state.glow;
@@ -676,30 +686,34 @@
       ctx.restore();
     }
 
-    _renderPlanet(ctx, screen, planet, state, time) {
-      // Planet size follows its data-driven scale so big files/folders appear
-      // clearly larger than small ones (min 4 keeps tiny planets visible).
-      const baseScale = Math.max(planet.scale || 1, 4);
-      const r = baseScale * state.pulse;
-      const c = planet.color;
-      const rotation = state.rotation || 0;
+     _renderPlanet(ctx, screen, planet, state, time) {
+       const baseScale = Math.max(planet.scale || 1, 4);
+       const r = baseScale * state.pulse;
+       if (this.visuals) {
+         if (planet.orbitRadius > 30 && planet.showOrbit && this._lightScreen) {
+           const camDist = Math.max(1, Math.hypot(this.camera.position[0], this.camera.position[1], this.camera.position[2]));
+           const pxPerUnit = (this.canvas.height * 0.5) / Math.max(1, Math.tan(CFG.camera.fov * Math.PI / 360) * camDist);
+           const orbitR = planet.orbitRadius * pxPerUnit;
+           ctx.save();
+           ctx.strokeStyle = "rgba(100,120,180,0.1)";
+           ctx.lineWidth = 0.6;
+           ctx.setLineDash([3, 6]);
+           ctx.beginPath();
+           ctx.arc(this._lightScreen.x, this._lightScreen.y, orbitR, 0, Math.PI * 2);
+           ctx.stroke();
+           ctx.setLineDash([]);
+           ctx.restore();
+         }
+          const lightAngle = this._lightScreen ? Math.atan2(this._lightScreen.y - screen.y, this._lightScreen.x - screen.x) : -Math.PI / 2;
+          this.visuals.drawPlanet(ctx, screen.x, screen.y, r, planet.color, lightAngle, state.rotation || 0, { id: planet.id, hasRing: planet.hasRing });
+         return;
+       }
 
-      if (r < 1) return;
-
-      ctx.save();
-
-      // Orbit trail hint (only for the largest planets, flagged by the mapper)
-      if (planet.orbitRadius > 30 && planet.showOrbit) {
-        ctx.strokeStyle = `rgba(100,100,180,0.08)`;
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([3, 6]);
-        ctx.beginPath();
-        ctx.arc(0, 0, planet.orbitRadius, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      // Glow
+       // Glow
+       const c = planet.color;
+       const rotation = state.rotation || 0;
+       if (r < 0.6) return;
+       ctx.save();
       if (state.glow > 0.1) {
         ctx.shadowColor = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},${state.glow * 0.4})`;
         ctx.shadowBlur = r * 3;
@@ -737,6 +751,11 @@
 
     _renderMoon(ctx, screen, moon, state, time) {
       const r = moon.scale * 0.8;
+      if (this.visuals) {
+        const lightAngle = this._lightScreen ? Math.atan2(this._lightScreen.y - screen.y, this._lightScreen.x - screen.x) : -Math.PI / 2;
+        this.visuals.drawMoon(ctx, screen.x, screen.y, r, moon.color, lightAngle, state.sparkle);
+        return;
+      }
       const c = moon.color;
       if (r < 0.3) return;
 
@@ -757,6 +776,10 @@
 
     _renderBlackHole(ctx, screen, bh, state, time) {
       const r = state.eventHorizonScale || bh.scale;
+      if (this.visuals) {
+        this.visuals.drawBlackHole(ctx, screen.x, screen.y, r, time, state.lensing || 0);
+        return;
+      }
       if (r < 2) return;
 
       // Gravitational lensing ring
@@ -796,6 +819,10 @@
 
     _renderNebula(ctx, screen, nebula, state, time) {
       const r = nebula.scale * state.nebulaPulse;
+      if (this.visuals) {
+        this.visuals.drawNebula(ctx, screen.x, screen.y, r, nebula.color, nebula.alpha, time, nebula.id);
+        return;
+      }
       if (r < 2) return;
       const c = nebula.color;
 
@@ -836,6 +863,14 @@
 
     _renderComet(ctx, screen, comet, state, time) {
       const alpha = state.alpha;
+      if (this.visuals && alpha > 0) {
+        const r = state.scale * 0.5;
+        const tailLen = (comet.tailLength || 20) * (1 - alpha);
+        const tailDx = comet.velocity ? -(comet.velocity[0] * tailLen) : tailLen;
+        const tailDy = comet.velocity ? (comet.velocity[1] * tailLen) : 0;
+        this.visuals.drawComet(ctx, screen.x, screen.y, r, alpha, tailDx, tailDy);
+        return;
+      }
       if (alpha <= 0) return;
 
       const r = state.scale * 0.5;
@@ -1010,11 +1045,25 @@
       }
     }
 
-    _getVisibleObjects() {
-      return this.objects.filter(o => o.active && o._visible !== false);
-    }
+_getVisibleObjects() {
+       return this.objects.filter(o => o.active && o._visible !== false);
+     }
 
-    // ── Interaction Helpers ────────────────────────────────────
+     /** Extent of the galaxy for dust/depth scaling */
+     _galaxyExtent() {
+       if (this._extent > 0) return this._extent;
+       let max = 400;
+       for (const o of (this.objects || [])) {
+         if (o && o.position) {
+           const d = Math.hypot(o.position[0], o.position[1], o.position[2]);
+           if (d > max) max = d;
+         }
+       }
+       this._extent = max * 1.15;
+       return this._extent;
+     }
+
+     // ── Interaction Helpers ────────────────────────────────────
 
     _handleClick(x, y) {
       // Find nearest visible object

@@ -412,11 +412,16 @@
         </div>
 
         <div id="settings-overlay" class="overlay-base" style="display:none;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);">
-            <div class="overlay-card" style="max-width:360px;">
+            <div class="overlay-card" style="max-width:360px;max-height:90vh;overflow-y:auto;box-sizing:border-box;">
                 <h3 style="margin:0 0 16px 0;font-size:16px;color:var(--text-primary);" data-i18n="settings.title">⚙️ Preferences</h3>
                 <div style="margin-bottom:12px;">
                     <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.default_path">Default scan path</label>
                     <input id="settings-default-path" type="text" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="settings-scan-timeout" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.scan_timeout">Scan idle timeout (seconds)</label>
+                    <input id="settings-scan-timeout" type="number" min="0" max="3600" step="1" value="120" required aria-describedby="settings-scan-timeout-help" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);box-sizing:border-box;">
+                    <p id="settings-scan-timeout-help" style="font-size:11px;color:var(--text-muted);margin:4px 0 0;" data-i18n="settings.scan_timeout_help">Stop only when no work completes, not after a total scan duration. Default: 120 seconds. 0 disables the timeout; Cancel remains available.</p>
                 </div>
                 <div style="margin-bottom:16px;">
                     <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.theme">Theme</label>

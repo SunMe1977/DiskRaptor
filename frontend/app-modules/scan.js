@@ -38,10 +38,11 @@
   }
 
   // After a scan, append the scanned drive's free space to the status bar.
-  function updateFreeSpaceStatus(path) {
+  function updateFreeSpaceStatus(path, scanId) {
     window.__TAURI__
       .invoke("list_drives", {})
       .then(function (res) {
+        if (window.app.state.currentScanId !== scanId || !window.app.state.currentStats) return;
         const drives = Array.isArray(res) ? res : (res && res.data ? res.data : []);
         const p = String(path || "").replace(/\\/g, "/").toLowerCase();
         let best = null;
@@ -68,6 +69,8 @@
 
   window.app.initScan = function (refs) {
     const state = window.app.state;
+    let retryTimeout = null;
+    let cancelRequested = false;
 
     const {
       loader,
@@ -96,23 +99,14 @@
         // trash while a previous scan was in flight). Cancel it first, then
         // wait for the old scan loop's finally to release the UI, so the new
         // path actually scans instead of silently doing nothing.
-        try {
-          await window.__TAURI__.invoke("cancel_scan", {});
-        } catch (e) { console.debug("[DiskRaptor]", e); }
-        for (let ci = 0; ci < 25; ci++) {
-          await sleep(200);
-          try {
-            const sp = await window.__TAURI__.invoke("get_scan_progress", {
-              scanId: state.currentScanId,
-            });
-            if (sp && !sp.is_running) break;
-          } catch (e) {
-            break;
-          }
-        }
+        btnCancel.click();
         const cancelDeadline = Date.now() + 8000;
         while (state.isScanning && Date.now() < cancelDeadline) {
           await sleep(100);
+        }
+        if (state.isScanning) {
+          window.showToast(tKey("status.cancelling"), "warning");
+          return;
         }
       }
 
@@ -124,6 +118,20 @@
       }
 
       state.isScanning = true;
+      cancelRequested = false;
+      state.currentScanId = null;
+      state.currentScanResult = null;
+      state.currentStats = null;
+      loader.prepare(0, 0, null);
+      treeView.clear();
+      statsPanel.render(null);
+      diagram.setData(null);
+      topFiles.render([], true);
+      document.querySelector(".status-bar").textContent = tKey("progress.scanning");
+      const oldCleanup = document.getElementById("cleanup-overlay");
+      if (oldCleanup) oldCleanup.remove();
+      const oldErrorBadge = document.getElementById("scan-error-badge");
+      if (oldErrorBadge) oldErrorBadge.remove();
       btnScan.disabled = true;
       if (btnRescan) btnRescan.disabled = true;
       btnBrowse.disabled = true;
@@ -181,15 +189,9 @@
         .catch(function () {});
 
       const followLinks = chkFollow.querySelector("input").checked;
-
-      const safetyTimer = setTimeout(function () {
-        // A scan that runs this long without the poll loop finishing is stuck
-        // (e.g. a network drive that never answers). Hide the overlay AND tell
-        // the backend to stop so we don't leave a zombie scan running.
-        progressOverlay.classList.remove("active");
-        document.querySelector(".status-bar").textContent = (window.__ || function (s) { return s; })("status.timeout");
-        window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
-      }, 1800000);
+      let timeoutSecs = retryTimeout;
+      retryTimeout = null;
+      let timeoutDiagnostic = null;
 
       // Progress elements
       const progressFilesEl = document.getElementById("progress-files");
@@ -348,6 +350,10 @@
       progressDirEl.textContent = "";
       speedSamples.length = 0;
       let unlisten = null;
+      let scanId = null;
+      let uiRaf = null;
+      let pendingUi = null;
+      let progressActive = true;
 
       let lastLiveRender = 0;
 
@@ -438,16 +444,29 @@
       }
 
       try {
+        if (timeoutSecs === null) {
+          const savedTimeout = await window.app.getSetting("scan_timeout_secs", 120);
+          timeoutSecs = window.app.scanTimeoutSeconds(savedTimeout);
+        }
+        if (cancelRequested) {
+          document.querySelector(".status-bar").textContent =
+            tKey("status.scan_cancelled").replace("{files}", "0");
+          return;
+        }
         const initScan = await window.__TAURI__.invoke("start_scan", {
           path: path,
-          follow_symlinks: followLinks,
-          timeout_secs: 120,
+          followSymlinks: followLinks,
+          timeoutSecs: timeoutSecs,
         });
         if (initScan && initScan.error) {
           throw new Error(initScan.error);
         }
-        const scanId = (initScan && initScan.scan_id) || 1;
+        scanId = (initScan && initScan.scan_id) || 1;
         state.currentScanId = scanId;
+        loader.scanId = scanId;
+        if (cancelRequested) {
+          window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
+        }
 
         let lastFilesFound = 0;
         let lastDirsFound = 0;
@@ -456,8 +475,6 @@
         let zeroCount = 0;
         let scanDone = false;
         let emaRate = 0;
-        let uiRaf = null;
-        let pendingUi = null;
         let _lastProgressRender = 0;
 
         function onProgress(p) {
@@ -546,7 +563,7 @@
               uiRaf = null;
               const u = pendingUi;
               pendingUi = null;
-              if (!u) return;
+              if (!u || !progressActive || !state.isScanning || state.currentScanId !== scanId) return;
               if (u.elapsedSecs > 0 && u.filesFound > 0) {
                 const fps = u.filesFound / u.elapsedSecs;
                 const bps = u.bytesFound / u.elapsedSecs;
@@ -639,37 +656,45 @@
 
         unlisten = null;
 
-        let done = false;
+        let finalProgress = null;
         // The backend also emits scan:progress events, but they only carry raw
         // counters — fetching the full payload per event doubles IPC traffic.
         // Poll get_scan_progress at 1 Hz instead: one roundtrip, everything the
         // progress UI needs (phase, is_running, live_entries, errors...).
-        for (let i = 0; i < 600; i++) {
+        // Only the backend's idle watchdog limits a scan. Large, progressing
+        // drives must not fail because of an unrelated total-duration limit.
+        let pollFailures = 0;
+        while (!scanDone) {
           await sleep(1000);
-          if (scanDone) {
-            done = true;
-            break;
-          }
           const p = await window.__TAURI__
             .invoke("get_scan_progress", { scanId: scanId })
             .catch(function () {
               return null;
             });
           if (p) {
+            if (p.error) throw new Error(p.error);
+            pollFailures = 0;
             onProgress(p);
+            finalProgress = p;
             // Backend reports the scan as finished — stop polling early.
             if (p.is_running === false && p.phase >= 3) {
-              done = true;
               break;
             }
+          } else if (++pollFailures >= 10) {
+            await window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
+            throw new Error("Scan progress unavailable");
           }
         }
 
-        if (!done) throw new Error("Scan timeout");
-
+        progressActive = false;
+        if (uiRaf !== null) cancelAnimationFrame(uiRaf);
+        uiRaf = null;
+        pendingUi = null;
         progressSpeedValEl.textContent = "\u2713";
 
         let result = null;
+        const progressErrors = (finalProgress && finalProgress.errors) || [];
+        timeoutDiagnostic = progressErrors.find(function (e) { return String(e).startsWith("TIMEOUT: "); }) || null;
         for (let ri = 0; ri < 20; ri++) {
           result = await window.__TAURI__
             .invoke("get_scan_result", { scanId: scanId })
@@ -677,15 +702,20 @@
               return null;
             });
           if (result && result.stats) break;
+          if (timeoutDiagnostic || (result && result.error === "No scan result")) break;
           if (ri < 5) await sleep(100);
           else await sleep(500);
         }
-        clearTimeout(safetyTimer);
         progressOverlay.classList.remove("active");
         hideWelcome();
 
         // A partial scan must never be presented as complete.
-        const term = result && result.stats ? result.stats.termination : "";
+        const hasResult = !!(result && result.stats);
+        let term = timeoutDiagnostic ? "timed_out" :
+          (result && result.stats && result.stats.termination) ||
+          (finalProgress && finalProgress.termination) || "interrupted";
+        if (!hasResult && term === "completed") term = "interrupted";
+        let partialMessage = "";
         if (term && term !== "completed") {
           const t = window.__ || function (s) { return s; };
           const msg =
@@ -696,13 +726,15 @@
                 : term === "limit_reached"
                   ? t("scan.partial_limit")
                   : t("scan.partial_interrupted");
+          partialMessage = msg;
           window.showToast(
             msg || "Scan was interrupted - results are partial",
             "warning",
           );
         }
 
-        if (result && result.stats && result.stats.total_files > 0) {
+        if (hasResult) {
+          result.stats.termination = term;
           state.currentScanResult = result;
           state.currentStats = result.stats;
           statsPanel.render(result.stats);
@@ -714,7 +746,7 @@
             result.stats.total_dirs || 0,
           ).toLocaleString("en-US");
           const t = window.__ || function (s) { return s; };
-          document.querySelector(".status-bar").textContent = t(
+          document.querySelector(".status-bar").textContent = partialMessage || t(
             "status.complete",
           )
             .replace("{files}", files)
@@ -723,7 +755,7 @@
             result.stats ? result.stats.top_files : [],
             true,
           );
-          pulseScanSuccess();
+          if (!partialMessage) pulseScanSuccess();
         } else {
           const fbStats = {
             total_files: lastFilesFound || 0,
@@ -732,6 +764,7 @@
             scan_time_ms: Date.now() - pollStartTime,
             top_files: [],
             file_type_breakdown: [],
+            termination: term,
           };
           state.currentStats = fbStats;
           statsPanel.render(fbStats);
@@ -743,30 +776,17 @@
           const es = totalSecs % 60;
           progressElapsedValEl.textContent =
             (em < 10 ? "0" : "") + em + ":" + (es < 10 ? "0" : "") + es;
-          const t = window.__ || function (s) { return s; };
-          const isTrashPath =
-            /recycle/i.test(path) || /\$recycle\.bin/i.test(path);
-          document.querySelector(".status-bar").textContent = isTrashPath
-            ? t("trash.empty")
-            : t("status.complete")
-                .replace(
-                  "{files}",
-                  lastFilesFound.toLocaleString(),
-                )
-                .replace(
-                  "{dirs}",
-                  lastDirsFound.toLocaleString(),
-                );
           topFiles.render([], true);
         }
+        if (partialMessage) {
+          treeView.scanStatus = { scanId: scanId, message: partialMessage };
+          document.querySelector(".status-bar").textContent = partialMessage;
+        }
 
-        let hadChunks = false;
         hideLiveTree();
 
-        updateFreeSpaceStatus(path);
-
         if (
-          result &&
+          hasResult &&
           result.root_info &&
           result.root_info.total_chunks > 0 &&
           result.root_info.total_nodes > 0
@@ -779,7 +799,6 @@
 
           try {
             await loader.loadChunk(0);
-            hadChunks = true;
           } catch (e) {
             console.warn("Chunk 0:", e);
           }
@@ -797,9 +816,10 @@
           const prog2 = await window.__TAURI__.invoke("get_scan_progress", { scanId: scanId });
           const errs = (prog2 && prog2.data && prog2.data.errors) ||
                        (prog2 && prog2.errors) || [];
+          timeoutDiagnostic = errs.find(function (e) { return String(e).startsWith("TIMEOUT: "); }) || timeoutDiagnostic;
           if (Array.isArray(errs) && errs.length > 0) {
-            const first = String(localizeScanError(errs[0]));
-            document.querySelector(".status-bar").textContent =
+            const first = String(localizeScanError(timeoutDiagnostic || errs[0]));
+            partialMessage = (partialMessage ? partialMessage + " " : "") +
               tKey("status.scan_finished_errors") + first.substring(0, 200);
             if (window.showToast) {
               window.showToast(tKey("toast.scan_errors") + first.substring(0, 160), "warning");
@@ -807,36 +827,13 @@
             showErrorBadge(errs);
           }
         } catch (e) { console.debug("[DiskRaptor]", e); }
+        if (term === "timed_out" && !timeoutDiagnostic) timeoutDiagnostic = partialMessage;
 
-        if (
-          !hadChunks &&
-          state.currentStats &&
-          state.currentStats.total_files > 0
-        ) {          try {
-            const rootNode = {
-              name: scanPath.value,
-              size: state.currentStats.total_size || 0,
-              file_count: state.currentStats.total_files || 0,
-              dir_count: state.currentStats.total_dirs || 0,
-              node_type: 0,
-              parent: 4294967295,
-              first_child: 4294967295,
-              next_sibling: 4294967295,
-              depth: 0,
-              chunk_id: 0,
-              _arenaIndex: 0,
-            };
-            loader.prepare(1, 0, scanId);
-            loader.allNodes = [rootNode];
-            treeView.expanded.add(0);
-            try {
-              await treeView.rebuild();
-            } catch (e) { console.debug("[DiskRaptor]", e); }
-          } catch (e) {
-            console.warn("Synthetic root:", e);
-          }
-          showCleanupPanel();
+        if (partialMessage) {
+          treeView.scanStatus = { scanId: scanId, message: partialMessage };
+          document.querySelector(".status-bar").textContent = partialMessage;
         }
+        updateFreeSpaceStatus(path, scanId);
 
         function showCleanupPanel() {
           const spv = (scanPath && scanPath.value) || "";
@@ -1009,7 +1006,7 @@
 
         // Trigger next queued scan if multi-path
         if (
-          window.__pendingScans &&
+          !timeoutDiagnostic && window.__pendingScans &&
           window.__pendingScans.length > 0
         ) {
           const nextPath = window.__pendingScans.shift();
@@ -1018,7 +1015,7 @@
             btnScan.click();
           }
         }
-        btnExport.disabled = false;
+        btnExport.disabled = !hasResult;
         const nc = document.getElementById("node-count");
         if (nc)
           nc.textContent =
@@ -1028,15 +1025,38 @@
         document.querySelector(".status-bar").textContent =
           "Error: " + err;
       } finally {
+        progressActive = false;
+        if (uiRaf !== null) cancelAnimationFrame(uiRaf);
+        uiRaf = null;
+        pendingUi = null;
         hideLiveTree();
         if (unlisten && typeof unlisten === "function") unlisten();
-        clearTimeout(safetyTimer);
         state.isScanning = false;
         btnScan.disabled = false;
         if (btnRescan) btnRescan.disabled = false;
         btnBrowse.disabled = false;
         btnCancel.disabled = true;
         progressOverlay.classList.remove("active");
+      }
+      if (timeoutDiagnostic) {
+        // Explicit, one-shot retry after the scan loop has released the UI.
+        // Do not persist this override or silently retry a blocked OS call.
+        const timedOutStats = state.currentStats;
+        const longerTimeout = Math.min(3600, Math.max(120, timeoutSecs * 2));
+        const retry = await window.yesNoDialog(
+          tKey("scan.timeout_help") + "\n\n" + localizeScanError(timeoutDiagnostic),
+          tKey("scan.retry_timeout").replace("{seconds}", longerTimeout),
+          tKey("action.close"),
+        );
+        if (state.isScanning || state.currentScanId !== scanId || state.currentStats !== timedOutStats) return;
+        if (retry) {
+          scanPath.value = path;
+          chkFollow.querySelector("input").checked = followLinks;
+          retryTimeout = longerTimeout;
+          btnScan.click();
+        } else {
+          window.__pendingScans = [];
+        }
       }
     });
 
@@ -1049,121 +1069,19 @@
 
     // Cancel (toolbar)
     btnCancel.addEventListener("click", async function () {
+      if (!state.isScanning) return;
+      cancelRequested = true;
+      window.__pendingScans = [];
       const psEl = document.getElementById("progress-status");
       if (psEl)
         psEl.textContent =
           (window.__ || function (s) { return s; })("status.cancelling");
       btnCancel.disabled = true;
+      // The scan loop owns results and UI cleanup, even if this IPC is slow.
+      if (state.currentScanId === null) return;
       try {
         await window.__TAURI__.invoke("cancel_scan", {});
       } catch (e) { console.debug("[DiskRaptor]", e); }
-      for (let ci = 0; ci < 25; ci++) {
-        await sleep(200);
-        try {
-          const sp = await window.__TAURI__.invoke("get_scan_progress", {
-            scanId: state.currentScanId,
-          });
-          if (!sp.is_running) break;
-        } catch (e) {
-          break;
-        }
-      }
-      try {
-        const partial = await window.__TAURI__.invoke("get_scan_result", {
-          scanId: state.currentScanId,
-        });
-        if (
-          partial &&
-          partial.stats &&
-          partial.stats.total_files > 0
-        ) {
-          state.currentScanResult = partial;
-          state.currentStats = partial.stats;
-          statsPanel.render(partial.stats);
-          diagram.setData(partial.stats);
-          const files = Number(
-            partial.stats.total_files || 0,
-          ).toLocaleString("en-US");
-          const dirs = Number(
-            partial.stats.total_dirs || 0,
-          ).toLocaleString("en-US");
-          const t = window.__ || function (s) { return s; };
-          document.querySelector(".status-bar").textContent = t(
-            "status.cancelled_partial",
-          )
-            .replace("{files}", files)
-            .replace("{dirs}", dirs);
-          topFiles.render(
-            partial.stats ? partial.stats.top_files : [],
-            true,
-          );
-          if (
-            partial.root_info &&
-            partial.root_info.total_chunks > 0
-          ) {
-            loader.prepare(
-              partial.root_info.total_nodes,
-              partial.root_info.total_chunks,
-              state.currentScanId,
-            );
-            try {
-              await loader.loadChunk(0);
-            } catch (e) {
-              console.warn("cancel chunk 0:", e);
-            }
-            treeView.expanded.add(0);
-            try {
-              await treeView.rebuild();
-            } catch (e) {
-              console.warn("cancel rebuild:", e);
-            }
-          }
-        } else {
-          const fbStats = {
-            total_files: state.lastFilesFound || 0,
-            total_dirs: state.lastDirsFound || 0,
-            total_size: 0,
-            scan_time_ms: 0,
-            top_files: [],
-            file_type_breakdown: [],
-          };
-          state.currentStats = fbStats;
-          statsPanel.render(fbStats);
-          diagram.setData(fbStats);
-          topFiles.render([], true);
-          document.querySelector(".status-bar").textContent = (
-            window.__ || function (s) { return s; }
-          )("status.scan_cancelled")
-            .replace(
-              "{files}",
-              (state.lastFilesFound || 0).toLocaleString(),
-            );
-        }
-      } catch (e) {
-        console.warn("cancel partial error:", e);
-        try {
-          const emptyStats = {
-            total_files: 0, total_dirs: 0, total_size: 0,
-            scan_time_ms: 0, top_files: [], file_type_breakdown: [],
-          };
-          statsPanel.render(emptyStats);
-          diagram.setData(emptyStats);
-          topFiles.render([], true);
-        } catch (e2) {}
-        document.querySelector(".status-bar").textContent =
-          "Scan cancelled - " +
-          (state.lastFilesFound || 0).toLocaleString() +
-          " files found";
-      }
-      try {
-        await loader.release();
-      } catch (e) { console.debug("[DiskRaptor]", e); }
-      state.isScanning = false;
-      btnScan.disabled = false;
-      btnBrowse.disabled = false;
-      btnCancel.disabled = true;
-      btnExport.disabled = false;
-      progressOverlay.classList.remove("active");
     });
 
     const progressCancelBtn = document.getElementById("progress-cancel");

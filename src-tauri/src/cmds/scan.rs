@@ -10,7 +10,7 @@ use diskraptor_scanner::streaming::chunker::CHUNK_SIZE;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, State};
 
 /// Build a scan config whose walker-error list the caller can read after the
@@ -47,6 +47,29 @@ impl Drop for ResetScanRunning {
     }
 }
 
+fn progress_channel() -> (
+    scanner::walker::ScanProgressCallback,
+    std::sync::mpsc::Receiver<(u64, u64, u64, String)>,
+) {
+    let (tx, rx) = std::sync::mpsc::sync_channel(32);
+    let callback = Box::new(move |files: u64, dirs: u64, bytes: u64, msg: &str| {
+        // Progress is lossy by design; a blocked coordinator must not stall I/O
+        // workers or build an unbounded queue. Final totals come from the result.
+        let _ = tx.try_send((files, dirs, bytes, msg.to_owned()));
+    });
+    (callback, rx)
+}
+
+fn latest_progress<T>(messages: impl Iterator<Item = T>) -> Option<T> {
+    // A producer can refill even a bounded channel while it is being drained.
+    // Bound work per poll and coalesce UI updates so the watchdog cannot starve.
+    messages.take(32).last()
+}
+
+fn cancellation_grace_expired(cancel_since: &mut Option<Instant>, now: Instant) -> bool {
+    now.saturating_duration_since(*cancel_since.get_or_insert(now)) >= Duration::from_secs(1)
+}
+
 #[tauri::command]
 pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<u64>, app: tauri::AppHandle) -> JsonResult {
     let scan = app.state::<AppState>();
@@ -67,19 +90,19 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
 
     let p = path.clone();
     let fs = follow_symlinks.unwrap_or(false);
-    let ts = timeout_secs.unwrap_or(30);
-    let handle = app.clone();
+    let ts = timeout_secs.unwrap_or(scanner::activity::DEFAULT_TIMEOUT_SECS);
 
     let live = std::sync::Arc::new(parking_lot::Mutex::new(std::collections::VecDeque::new()));
     *scan.scan.live_entries.lock() = Some(live.clone());
 
-    let result_handle = handle.clone();
+    let result_handle = app.clone();
     let spawned = std::thread::Builder::new().name("scan".into()).spawn(move || {
         // Drop guard resets `running` even if this thread panics or returns
         // early; a permanently-true flag would otherwise reject every later
         // scan until the app is restarted.
         let _reset = ResetScanRunning { app: result_handle.clone() };
         let (config, scan_errors) = scan_config(&p, fs, ts, live);
+        let activity = config.activity.clone();
         let cancel_flag = config.cancelled.clone().unwrap();
         {
             let s = result_handle.state::<AppState>();
@@ -87,24 +110,9 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
             if s.scan.cancelled.load(Ordering::Acquire) { return; }
         }
 
-        let progress_handle = result_handle.clone();
-        let emit_handle = handle.clone();
-        let progress = Box::new(move |files: u64, dirs: u64, bytes: u64, msg: &str| {
-            let s = progress_handle.state::<AppState>();
-            s.scan.files_found.store(files, Ordering::Relaxed);
-            s.scan.dirs_found.store(dirs, Ordering::Relaxed);
-            s.scan.bytes_found.store(bytes, Ordering::Relaxed);
-            if !msg.is_empty() {
-                *s.scan.current_dir.lock() = msg.to_owned();
-            }
-            let _ = emit_handle.emit(
-                "scan:progress",
-                serde_json::json!({
-                    "scan_id": s.scan.active_scan_id.load(Ordering::Acquire),
-                    "files": files, "dirs": dirs, "bytes": bytes, "path": msg,
-                }),
-            );
-        });
+        // Only this coordinator writes AppState. A detached worker retains only
+        // its own channel and per-scan config, never an app handle or a new ID.
+        let (progress, progress_rx) = progress_channel();
 
         let result = {
             // Run the walker on a dedicated worker so a hung walker (e.g. a
@@ -116,29 +124,44 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
                 let _ = tx.send(scanner::walker::scan_directory_with_progress(config, progress));
             });
 
-            let poll = std::time::Duration::from_millis(250);
-            let mut last_progress = Instant::now();
-            let mut last_count = (0u64, 0u64);
+            let poll = Duration::from_millis(250);
+            let mut cancel_since = None;
             let watchdog_result = loop {
+                let s = result_handle.state::<AppState>();
+                if let Some((files, dirs, bytes, msg)) = latest_progress(progress_rx.try_iter()) {
+                    s.scan.files_found.store(files, Ordering::Relaxed);
+                    s.scan.dirs_found.store(dirs, Ordering::Relaxed);
+                    s.scan.bytes_found.store(bytes, Ordering::Relaxed);
+                    if !msg.is_empty() { *s.scan.current_dir.lock() = msg.clone(); }
+                    let _ = result_handle.emit("scan:progress", serde_json::json!({
+                        "scan_id": scan_id, "files": files, "dirs": dirs,
+                        "bytes": bytes, "path": msg,
+                    }));
+                }
                 match rx.recv_timeout(poll) {
                     Ok(res) => break Some(res),
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break None,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        s.scan.errors.lock().extend(scan_errors.lock().clone());
+                        s.scan.errors.lock().push("Scan worker exited without a result".into());
+                        break None;
+                    }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        let s = result_handle.state::<AppState>();
-                        let f = s.scan.files_found.load(Ordering::Relaxed);
-                        let d = s.scan.dirs_found.load(Ordering::Relaxed);
-                        if (f, d) != last_count {
-                            last_count = (f, d);
-                            last_progress = Instant::now();
+                        if s.scan.cancelled.load(Ordering::Acquire) {
+                            cancel_flag.store(true, Ordering::Release);
+                            // Keep receiving cooperative partial results for a
+                            // bounded grace period before detaching blocked I/O.
+                            if !cancellation_grace_expired(&mut cancel_since, Instant::now()) {
+                                continue;
+                            }
+                            s.scan.errors.lock().extend(scan_errors.lock().clone());
+                            break None;
                         }
-                        if last_progress.elapsed().as_secs() > ts {
+                        if let Some(message) = activity.timeout_message(ts, &p) {
                             cancel_flag.store(true, Ordering::Release);
                             s.scan.cancelled.store(true, Ordering::Release);
-                            s.scan.errors.lock().push(format!(
-                                "TIMEOUT: scan made no progress for {}s and was stopped",
-                                ts
-                            ));
-                            eprintln!("[scan] no progress for {}s, stopped walker", ts);
+                            let mut errors = s.scan.errors.lock();
+                            errors.extend(scan_errors.lock().clone());
+                            errors.push(message);
                             break None;
                         }
                     }
@@ -158,7 +181,7 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
                 // NOTE: chunks are built on demand in get_chunk (avoids cloning the
                 // whole arena and doubling peak memory for huge scans).
                 let termination = sr.termination;
-                let active_id = s.scan.active_scan_id.load(Ordering::Acquire);
+                let active_id = scan_id;
                 // Surface the walkers' per-entry failures (access denied, stuck
                 // junctions, ...) that used to be silently dropped on success.
                 let walk_errors = scan_errors.lock().clone();
@@ -178,11 +201,13 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
             Some(Err(e)) => {
                 eprintln!("[scan] error: {}", e);
                 // Surface the error to the UI so the user sees why the tree is empty.
+                s.scan.errors.lock().extend(scan_errors.lock().clone());
                 s.scan.errors.lock().push(e.to_string());
-                let _ = result_handle.emit("scan:error", serde_json::json!({ "error": e.to_string() }));
+                let _ = result_handle.emit("scan:error", serde_json::json!({ "scan_id": scan_id, "error": e.to_string() }));
             }
             None => {
-                // Timed out: errors were already pushed by the watchdog.
+                // Cancelled, timed out, or disconnected; diagnostics were
+                // already captured by the coordinator.
             }
         }
         // `running` is cleared by the ResetScanRunning drop guard when this
@@ -207,6 +232,25 @@ pub(crate) fn scan_id_matches(state: &AppState, scan_id: Option<u64>) -> bool {
     }
 }
 
+fn progress_termination(
+    running: bool,
+    result: Option<scanner::walker::ScanTermination>,
+    cancelled: bool,
+    errors: &[String],
+) -> serde_json::Value {
+    if running {
+        serde_json::Value::Null
+    } else if let Some(termination) = result {
+        serde_json::json!(termination)
+    } else if errors.iter().any(|error| error.starts_with("TIMEOUT:")) {
+        serde_json::json!("timed_out")
+    } else if cancelled {
+        serde_json::json!("cancelled")
+    } else {
+        serde_json::json!("failed")
+    }
+}
+
 pub(crate) fn scan_progress_data(state: &AppState) -> serde_json::Value {
     let is_running = state.scan.running.load(Ordering::Acquire);
     let rg = state.scan.result.lock();
@@ -218,6 +262,12 @@ pub(crate) fn scan_progress_data(state: &AppState) -> serde_json::Value {
         (state.scan.files_found.load(Ordering::Relaxed), state.scan.dirs_found.load(Ordering::Relaxed), state.scan.bytes_found.load(Ordering::Relaxed))
     };
     let errors: Vec<String> = state.scan.errors.lock().clone();
+    let termination = progress_termination(
+        is_running,
+        rg.as_ref().map(|r| r.termination),
+        state.scan.cancelled.load(Ordering::Acquire),
+        &errors,
+    );
     drop(rg);
     let phase: u64 = if !is_running && has_result { 3 } else if is_running { 0 } else { 3 };
     let elapsed = state.scan.start_time.lock().elapsed().as_secs();
@@ -239,7 +289,7 @@ pub(crate) fn scan_progress_data(state: &AppState) -> serde_json::Value {
         "files_found": files, "dirs_found": dirs, "bytes_found": bytes,
         "is_running": is_running, "current_dir": cd,
         "elapsed_secs": elapsed, "phase": phase,
-        "errors": errors, "live_entries": live,
+        "errors": errors, "live_entries": live, "termination": termination,
     })
 }
 
@@ -446,6 +496,68 @@ pub(crate) fn compute_scan_insights(arena: &TreeNodeArena, root_path: &str) -> s
 mod tests {
     use super::*;
     use diskraptor_scanner::scanner::tree::TreeNode;
+
+    #[test]
+    fn cancellation_grace_allows_a_second_poll_but_has_a_fixed_deadline() {
+        let start = Instant::now();
+        let mut cancel_since = None;
+        assert!(!cancellation_grace_expired(&mut cancel_since, start));
+        for millis in [250, 500, 750, 999] {
+            assert!(!cancellation_grace_expired(&mut cancel_since, start + Duration::from_millis(millis)));
+        }
+        assert_eq!(cancel_since, Some(start), "polls must not extend the grace period");
+        assert!(cancellation_grace_expired(&mut cancel_since, start + Duration::from_secs(1)));
+        assert!(cancellation_grace_expired(&mut cancel_since, start + Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn progress_drain_is_bounded_even_when_the_producer_never_stops() {
+        let mut messages = 0;
+        let latest = latest_progress(std::iter::from_fn(|| {
+            messages += 1;
+            Some(messages)
+        }));
+        assert_eq!(latest, Some(32));
+        assert_eq!(messages, 32);
+        assert_eq!(latest_progress(0..3), Some(2));
+        assert_eq!(latest_progress(std::iter::empty::<u64>()), None);
+    }
+
+    #[test]
+    fn progress_termination_distinguishes_partial_and_missing_results() {
+        use scanner::walker::ScanTermination::*;
+        let timeout = vec!["TIMEOUT: blocked native call".into()];
+        assert!(progress_termination(true, None, true, &timeout).is_null());
+        assert_eq!(progress_termination(false, None, true, &timeout), "timed_out");
+        assert_eq!(progress_termination(false, None, true, &[]), "cancelled");
+        assert_eq!(progress_termination(false, None, false, &[]), "failed");
+        assert_eq!(progress_termination(false, Some(Cancelled), true, &[]), "cancelled");
+        assert_eq!(progress_termination(false, Some(TimedOut), false, &[]), "timed_out");
+        assert_eq!(progress_termination(false, Some(LimitReached), false, &[]), "limit_reached");
+        assert_eq!(progress_termination(false, Some(Completed), true, &[]), "completed");
+    }
+
+    #[test]
+    fn scan_timeout_default_and_disabled_contract() {
+        assert_eq!(scanner::walker::ScanConfig::default().scan_timeout_secs, 120);
+        let (config, _) = scan_config("root", false, 0, LiveEntries::default());
+        assert_eq!(config.scan_timeout_secs, 0);
+        assert!(config.activity.timeout_message(0, "root").is_none());
+    }
+
+    #[test]
+    fn detached_progress_is_isolated_from_a_retry_and_bounded() {
+        let (old_callback, old_rx) = progress_channel();
+        for n in 0..100 { old_callback(n, 0, 0, "old scan"); }
+        assert_eq!(old_rx.try_iter().count(), 32);
+        drop(old_rx);
+        let (new_callback, new_rx) = progress_channel();
+        let worker = std::thread::spawn(move || old_callback(999, 0, 0, "late old scan"));
+        worker.join().unwrap();
+        assert!(new_rx.try_recv().is_err());
+        new_callback(1, 2, 3, "new scan");
+        assert_eq!(new_rx.recv().unwrap(), (1, 2, 3, "new scan".into()));
+    }
 
     fn mk_node(
         name: &str,

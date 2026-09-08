@@ -135,6 +135,8 @@
           const defPath = document.getElementById("settings-default-path");
           const selTheme = document.getElementById("settings-theme");
           const selLang = document.getElementById("settings-language");
+          const scanTimeout = document.getElementById("settings-scan-timeout");
+          if (scanTimeout) scanTimeout.value = 120;
           if (defPath) defPath.value = scanPath.value || "";
           if (selTheme) selTheme.value = "auto";
           if (selLang) selLang.value = "auto";
@@ -142,6 +144,7 @@
             .invoke("load_settings", {})
             .then(function (s) {
               if (s) {
+                if (scanTimeout) scanTimeout.value = window.app.scanTimeoutSeconds(s.scan_timeout_secs);
                 if (defPath && s.default_scan_path)
                   defPath.value = s.default_scan_path;
                 if (selTheme && s.theme)

@@ -14,6 +14,7 @@ class TreeView {
     this.expanded = new Set();
     this.selectedIndex = null;
     this.selectedIndices = [];
+    this.scanStatus = null;
     this.onSelect = null;
     this.maxSize = 0;
     this.maxFileCount = 0;
@@ -623,10 +624,32 @@ class TreeView {
     menu.style.top = top + "px";
   }
 
+  // Clear synchronously without waiting for a root that no longer exists.
+  clear() {
+    this.visibleNodes = [];
+    this.expanded.clear();
+    this.selectedIndex = null;
+    this.selectedIndices = [];
+    this.maxSize = 0;
+    this.maxFileCount = 0;
+    this.maxDirCount = 0;
+    this.scanStatus = null;
+    this._pathCache.clear();
+    this._updateBatchBar();
+    this._updateBreadcrumb(null);
+    this._updateSelection();
+    if (this._ctxMenu) this._ctxMenu.style.display = "none";
+    this.vs.setTotalItems(0, 0);
+    this.vs.refresh();
+    const nc = document.getElementById("node-count");
+    if (nc) nc.textContent = (window.__ || function (s) { return s; })("tree.shown").replace("{n}", "0");
+  }
+
   /**
    * Rebuild the visible node list and re-render the tree.
    */
   async rebuild() {
+    const nodes = this.loader.allNodes;
     const scrollEl = document.getElementById("tree-scroll");
     const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
 
@@ -637,6 +660,7 @@ class TreeView {
     } catch (e) {
       console.warn("_buildList error:", e);
     }
+    if (this.loader.allNodes !== nodes) return;
     // If the root never materialised, try loading chunk 0 explicitly once.
     if (this.visibleNodes.length === 0 && this.loader && !this.loader.getNode(0)) {
       try {
@@ -648,6 +672,7 @@ class TreeView {
         console.warn("Root chunk fallback failed:", e);
       }
     }
+    if (this.loader.allNodes !== nodes) return;
 
     const totalItems = this.visibleNodes.length;
     this.vs.setTotalItems(totalItems, totalItems * 26);
@@ -661,8 +686,13 @@ class TreeView {
     if (nc) nc.textContent = t("tree.shown").replace("{n}", totalItems.toLocaleString());
 
     const se = document.querySelector("#tree-panel .status-bar");
+    if (this.scanStatus && this.scanStatus.scanId !== this.loader.scanId) {
+      this.scanStatus = null;
+    }
     if (se) {
-      if (totalItems === 0) {
+      if (this.scanStatus) {
+        se.textContent = this.scanStatus.message;
+      } else if (totalItems === 0) {
         // Distinguish "scan still loading chunks" from "truly empty".
         const loading =
           this.loader &&
@@ -678,10 +708,13 @@ class TreeView {
   }
 
   async _buildList(rootIdx, rootDepth) {
+    if (this.loader.totalNodes === 0) return;
+    const nodes = this.loader.allNodes;
     // If the requested node isn't loaded yet (chunks still arriving), wait a
     // short moment and retry so we never render a half-empty tree.
     for (let tries = 0; tries < 50 && !this.loader.getNode(rootIdx); tries++) {
       await new Promise(function (r) { setTimeout(r, 100); });
+      if (this.loader.allNodes !== nodes) return;
     }
     // Maxima are computed during the same traversal (avoids a second pass over
     // the whole visible list on every rebuild).
@@ -730,6 +763,7 @@ class TreeView {
         let children = this.loader.getChildrenIndices(arenaIdx);
         if (children.length === 0) {
           const rawNodes = await this.loader.fetchChildren(arenaIdx);
+          if (this.loader.allNodes !== nodes) return;
           if (rawNodes && rawNodes.length > 0) {
             const indices = [];
             for (const raw of rawNodes) {
@@ -1227,6 +1261,9 @@ class TreeView {
   _updateSelection() {
     const node = this.loader.getNode(this.selectedIndex);
     if (!node) {
+      document.querySelectorAll("#sel-name, #sel-size, #sel-files, #sel-type").forEach(function (el) {
+        el.textContent = "";
+      });
       document.querySelectorAll(".sel-action").forEach(function (b) {
         b.disabled = true;
       });

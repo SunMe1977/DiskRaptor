@@ -1720,12 +1720,29 @@ body.light-theme .about-bg {
     background: rgba(255,50,50,0.4);
 }
 .g-separator {
-    width: 1px;
-    height: 20px;
-    background: rgba(255,255,255,0.2);
-    margin: 0 4px;
-}
-.g-fps {
+     width: 1px;
+     height: 20px;
+     background: rgba(255,255,255,0.2);
+     margin: 0 4px;
+   }
+
+   /* Galaxy empty state */
+   .galaxy-empty {
+     position: absolute;
+     inset: 0;
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     justify-content: center;
+     gap: 12px;
+     background: var(--bg-primary);
+     z-index: 9998;
+   }
+   .galaxy-empty-icon { font-size: 48px; opacity: 0.6; }
+   .galaxy-empty-text { color: var(--text-secondary); font-size: 14px; }
+   .galaxy-demo-btn { margin-top: 6px; }
+
+   .g-fps {
     margin-left: auto;
     font-size: 11px;
     color: rgba(255,255,255,0.5);
