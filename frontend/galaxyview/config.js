@@ -54,8 +54,8 @@ window.GalaxyViewConfig = {
     orbitBaseRadius: 30,       // Base orbit radius for planets
     orbitScale: 0.15,          // Scale factor for orbit radius = folder_size * this
     moonOrbitScale: 0.02,
-    planetMinRadius: 3.0,
-    planetMaxRadius: 45,
+    planetMinRadius: 9.0,
+    planetMaxRadius: 58,
     moonMinRadius: 1.5,
     moonMaxRadius: 14.0,
     starMinRadius: 5,

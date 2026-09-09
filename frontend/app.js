@@ -868,9 +868,9 @@
           "galaxyview/spatial-index.js",
           "galaxyview/data-mapper.js",
           "galaxyview/animation.js",
-"galaxyview/effects.js",
-           "galaxyview/visuals.js",
-           "galaxyview/interaction.js",
+          "galaxyview/effects.js",
+          "galaxyview/visuals.js",
+          "galaxyview/interaction.js",
           "galaxyview/lod.js",
           "galaxyview/timeline.js",
           "galaxyview/live-scan.js",
@@ -882,6 +882,8 @@
         let failedAny = false;
         scripts.forEach(function (src) {
           var s = document.createElement("script");
+          // Modules capture config and their namespace when evaluated.
+          s.async = false;
           s.src = src;
           s.onload = function () {
             loaded++;
@@ -997,10 +999,11 @@
       });
     });
 
-    // Restore the saved diagram mode on startup.
+    // Restore the saved diagram mode on startup. The Galaxy view is opt-in:
+    // it must never open by itself, only when the user clicks it after a scan.
     window.__TAURI__.invoke("load_settings", {}).then(function (s) {
       const saved = s && s.diagram_mode;
-      if (saved) {
+      if (saved && saved !== "galaxy") {
         const target = Array.prototype.find.call(diagramModes, function (b) {
           return b.dataset.mode === saved;
         });

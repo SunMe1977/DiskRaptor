@@ -271,10 +271,11 @@
     _createPlanets(scanResult, stats) {
       if (!scanResult && !stats) return;
 
-      // If we have topFiles, derive more planets from directory structure
-      if (scanResult && scanResult.topFiles) {
+      // Folder sizes come from the same native scan payload as the file bodies.
+      const topFiles = (stats && stats.top_files) || (scanResult && scanResult.topFiles);
+      if (topFiles) {
         const dirMap = new Map();
-        for (const file of scanResult.topFiles) {
+        for (const file of topFiles) {
           const parts = (file.path || file).replace(/\\/g, "/").split("/");
           if (parts.length > 1) {
             const dir = parts.slice(0, -1).join("/");

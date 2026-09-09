@@ -1322,8 +1322,14 @@ _getVisibleObjects() {
       switch (obj.type) {
         case "star":
           return obj.name + " ★ " + (obj.data?.totalFiles?.toLocaleString() || "") + " files";
-        case "planet":
-          return obj.name + " · " + this._fmtSize(obj.data?.size || 0) + " · " + (obj.data?.files || 0) + " files";
+        case "planet": {
+          const pSize = this._fmtSize(obj.data?.size || 0);
+          // Files are mapped to small planets and carry `type` but no folder
+          // file-count; never label a single file with "0 files".
+          if (obj.data && obj.data.type) return obj.name + " · " + pSize;
+          const pFiles = obj.data?.files || 0;
+          return obj.name + " · " + pSize + (pFiles > 0 ? " · " + pFiles.toLocaleString() + " files" : "");
+        }
         case "moon":
           return (obj.name || "").substring(0, 30) + " · " + this._fmtSize(obj.data?.size || 0);
         case "blackHole":
@@ -1380,6 +1386,9 @@ _getVisibleObjects() {
 
     hide() {
       this.active = false;
+      // The RAF loop stops scheduling itself while inactive. Reset the flag so
+      // a later show() can start a fresh loop instead of finding it "running".
+      this._renderLoopRunning = false;
       this.container.style.display = "none";
       this.container.style.position = "";
       this.container.style.top = "";

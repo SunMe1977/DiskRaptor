@@ -34,6 +34,17 @@
     if (s.indexOf("TIMEOUT: ") === 0) {
       return tKey("error.timeout") + ": " + s.slice("TIMEOUT: ".length);
     }
+    // Native Windows Find*FileW failures, e.g.
+    //   FindFirstFileW: directory "C:\x": Zugriff verweigert (os error 5)
+    // Turn the technical message into a clean, localized one.
+    const osErr = /^(?:FindFirstFileW|FindNextFileW): directory "([^"]*)": .* \(os error (\d+)\)$/.exec(s);
+    if (osErr) {
+      const path = osErr[1].replace(/\\\\/g, "\\");
+      if (osErr[2] === "5") {
+        return tKey("error.access_denied") + ": " + path;
+      }
+      return tKey("error.some_folders_skipped") + " (" + path + ")";
+    }
     return s;
   }
 

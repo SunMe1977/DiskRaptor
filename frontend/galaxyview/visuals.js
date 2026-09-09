@@ -36,9 +36,14 @@
     return (h >>> 0) / 4294967295;
   }
   function seededRand(seed) {
-    let s = (seed * 2147483647) | 0 || 1;
+    // Keep the LCG state strictly positive: `| 0` on a large seed can wrap to a
+    // negative int, and a negative `%` result made rnd() return negative values,
+    // which crashed arc() with a negative radius and produced NaN positions.
+    let s = (seed * 2147483647) >>> 0;
+    if (s === 0) s = 1;
     return function () {
       s = (s * 16807) % 2147483647;
+      if (s <= 0) s = 1;
       return (s - 1) / 2147483646;
     };
   }
@@ -89,69 +94,85 @@
       return `${(clamp01(c[0]) * 255 | 0) >> 3},${(clamp01(c[1]) * 255 | 0) >> 3},${(clamp01(c[2]) * 255 | 0) >> 3}`;
     }
 
-    /**
-     * Gradient sphere lit from the top of the sprite: bright specular lobe,
-     * saturated midtone, deep limb shading. Blitted rotated toward the light.
-     */
-_sphereSprite(color, kind) {
-      const key = kind === "m" ? `moon|${this._colorKey(color)}` : `sph|${kind}|${this._colorKey(color)}`;
-      const isMoon = kind === "m";
-      const wispCount = isMoon ? 4 : 8;
-      const glowPower = isMoon ? 0.6 : 1.0;
-      return this._sprite(key, SPRITE_SIZE, (x, S) => {
-        const cx = S / 2, cy = S / 2, r = S / 2 - 1;
-        // Plasma core — bright white-yellow center.
-        const coreR = isMoon ? r * 0.25 : r * 0.35;
-        const core = x.createRadialGradient(cx, cy, 0, cx, cy, coreR);
-        core.addColorStop(0, `rgba(255,255,255,0.95)`);
-        core.addColorStop(0.3, `rgba(255,240,200,0.6)`);
-        core.addColorStop(0.6, rgba(mixc(color, [1, 1, 1], 0.5), 0.25));
-        core.addColorStop(1, rgba(color, 0));
-        x.fillStyle = core;
-        x.beginPath(); x.arc(cx, cy, coreR, 0, TAU); x.fill();
-        // Main plasma body — vivid color gradient.
-        const bodyOff = isMoon ? r * 0.15 : r * 0.25;
-        const body = x.createRadialGradient(cx - bodyOff, cy - bodyOff * 1.3, r * 0.08, cx, cy, r * 1.02);
-        body.addColorStop(0, rgba(mixc(color, [1, 1, 1], 0.7), 1));
-        body.addColorStop(0.15, rgba(mixc(color, [1, 1, 1], 0.45), 1));
-        body.addColorStop(0.35, rgba(color, 0.95));
-        body.addColorStop(0.6, rgba(mul(color, 0.5), 0.85));
-        body.addColorStop(0.82, rgba(mul(color, 0.18), 0.55));
-        body.addColorStop(1, rgba([0, 0, 0], 0));
-        x.fillStyle = body;
-        x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.fill();
-        // Energy wisps — bright spots around the limb.
-        x.globalCompositeOperation = "lighter";
-        const rnd = seededRand(hashStr(color[0].toFixed(2) + color[1].toFixed(2) + color[2].toFixed(2)));
-        for (let i = 0; i < wispCount; i++) {
-          const ang = rnd() * TAU;
-          const dist = r * (0.78 + rnd() * 0.22);
-          const wx = cx + Math.cos(ang) * dist;
-          const wy = cy + Math.sin(ang) * dist;
-          const ws = r * (0.03 + rnd() * 0.05);
-          const wg = x.createRadialGradient(wx, wy, 0, wx, wy, ws);
-          wg.addColorStop(0, `rgba(255,255,255,${0.25 + rnd() * 0.3})`);
-          wg.addColorStop(1, "rgba(255,255,255,0)");
-          x.fillStyle = wg;
-          x.beginPath(); x.arc(wx, wy, ws, 0, TAU); x.fill();
+    // Surface normals provide a curved terminator and limb shading. Textures
+    // are evaluated on the sphere, then lit, never painted over the night side.
+    _sphereSprite(color, kind, variant = 0) {
+      const key = `sph|${kind}|${variant}|${this._colorKey(color)}`;
+      return this._sprite(key, SPRITE_SIZE, (ctx, size) => {
+        const radius = size / 2 - 1;
+        if (kind === "star") {
+          const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, radius);
+          glow.addColorStop(0, rgba([1, 1, 0.94], 1));
+          glow.addColorStop(0.7, rgba(mixc(color, [1, 1, 1], 0.4), 1));
+          glow.addColorStop(1, rgba(color, 1));
+          ctx.fillStyle = glow;
+          ctx.beginPath(); ctx.arc(size / 2, size / 2, radius, 0, TAU); ctx.fill();
+          return;
         }
-        // Outer plasma glow.
-        const ogR = r * (isMoon ? 1.1 : 1.3);
-        const og = x.createRadialGradient(cx, cy, r * 0.85, cx, cy, ogR);
-        og.addColorStop(0, rgba(color, 0.18 * glowPower));
-        og.addColorStop(0.4, rgba(mul(color, 0.5), 0.08 * glowPower));
-        og.addColorStop(1, rgba(color, 0));
-        x.fillStyle = og;
-        x.beginPath(); x.arc(cx, cy, ogR, 0, TAU); x.fill();
-        // Specular spot — sharp bright point.
-        const spOff = isMoon ? r * 0.25 : r * 0.32;
-        const sp = x.createRadialGradient(cx - spOff, cy - spOff * 1.3, 0, cx - spOff, cy - spOff * 1.3, r * 0.28);
-        sp.addColorStop(0, "rgba(255,255,255,0.85)");
-        sp.addColorStop(0.25, "rgba(255,255,255,0.3)");
-        sp.addColorStop(0.6, "rgba(255,255,255,0.05)");
-        sp.addColorStop(1, "rgba(255,255,255,0)");
-        x.fillStyle = sp;
-        x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.fill();
+        const moon = kind === "m";
+        const gas = !moon && variant % 2 === 0 && this.vcfg.planetBands !== false;
+        const phase = variant * 2.37 + hashStr(this._colorKey(color)) * TAU;
+        const rnd = seededRand(hashStr(key));
+        const craters = Array.from({ length: moon ? 18 : 0 }, () => {
+          const cy = rnd() * 1.7 - 0.85;
+          const angle = rnd() * Math.PI;
+          const ring = Math.sqrt(1 - cy * cy);
+          return { x: Math.cos(angle) * ring, y: cy, z: Math.sin(angle) * ring, r: 0.06 + rnd() * 0.16 };
+        });
+        const image = ctx.createImageData(size, size);
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            const nx = (x + 0.5 - size / 2) / radius;
+            const ny = (y + 0.5 - size / 2) / radius;
+            const rr = nx * nx + ny * ny;
+            if (rr >= 1) continue;
+            const nz = Math.sqrt(1 - rr);
+            const lat = Math.asin(ny);
+            const lon = Math.atan2(nx, nz);
+            const terrain = Math.sin(nx * 8 + phase + Math.sin(nz * 11 + ny * 5)) *
+              Math.cos(ny * 9 - nz * 6 + phase) +
+              0.35 * Math.sin(nx * 23 + ny * 17 + Math.sin(nz * 19));
+            let surface;
+            let relief = 1;
+            if (gas) {
+              const wave = lat * 24 + Math.sin(lon * 5 + phase + lat * 8) * 0.8 + terrain * 0.6;
+              const bands = Math.sin(wave) * 0.5 + Math.sin(wave * 2.3) * 0.18;
+              surface = mixc(mul(color, 0.5), mixc(color, [0.94, 0.87, 0.72], 0.6), clamp01(0.5 + bands));
+            } else if (moon) {
+              surface = mul(mixc(color, [0.55, 0.53, 0.5], 0.45), 0.8 + terrain * 0.18);
+              for (const crater of craters) {
+                const d = Math.hypot(nx - crater.x, ny - crater.y, nz - crater.z) / crater.r;
+                if (d < 1.2) {
+                  relief *= d < 0.8 ? 0.65 + 0.3 * (ny - crater.y) / crater.r : 1.2;
+                }
+              }
+            } else {
+              const land = clamp01((terrain - 0.05) * 7);
+              const ocean = mul(color, 0.65);
+              const rock = mixc(color, [0.55, 0.53, 0.32], 0.65);
+              surface = mixc(ocean, rock, land);
+              const clouds = clamp01((Math.sin(lon * 13 + lat * 8 + terrain * 3 + phase) +
+                Math.sin(lat * 22 - lon * 7) - 1.05) * 0.8);
+              surface = mixc(surface, [0.92, 0.94, 0.95], clouds * 0.8);
+              const ice = clamp01((Math.abs(ny) - 0.88 + terrain * 0.025) * 14);
+              surface = mixc(surface, [0.85, 0.9, 0.94], ice);
+            }
+            // Light points upward and slightly toward the viewer. A specular
+            // lobe and a deep terminator read as a curved, glossy sphere rather
+            // than a flat disc. The surface stays opaque even in full shadow.
+            const diffuse = Math.max(0, -ny * 0.88 + nz * 0.475);
+            const specular = Math.pow(diffuse, 24) * 0.55;
+            const light = Math.min(1.12, 0.035 + 0.965 * Math.pow(diffuse, 0.7) + specular);
+            const atmosphere = moon ? 0 : Math.pow(1 - nz, 3) * diffuse * 0.32;
+            const i = (y * size + x) * 4;
+            for (let channel = 0; channel < 3; channel++) {
+              image.data[i + channel] = clamp01(surface[channel] * relief * light +
+                atmosphere * [0.35, 0.6, 1][channel]) * 255;
+            }
+            image.data[i + 3] = clamp01((1 - Math.sqrt(rr)) * radius) * 255;
+          }
+        }
+        ctx.putImageData(image, 0, 0);
       });
     }
 
@@ -456,60 +477,13 @@ _sphereSprite(color, kind) {
 
       if (hasRing) this._ringHalf(ctx, x0, y0, r, c, tilt, true, seed);
 
-      // Plasma sphere blit, rotated so the highlight faces the star.
-      const sph = this._sphereSprite(c, "p");
+      // A small set of stable surface variants keeps the sprite cache bounded.
+      const sph = this._sphereSprite(c, "p", Math.round(seed * 4294967295) % 4);
       ctx.save();
       ctx.translate(x0, y0);
       ctx.rotate(rot);
       ctx.drawImage(sph, -r, -r, r * 2, r * 2);
       ctx.restore();
-
-      // Plasma bands + energy spikes only when big enough to be visible.
-      const bandMin = this.quality === "high" ? 9 : 18;
-      if (r > bandMin && this.quality !== "low") {
-        ctx.save();
-        ctx.translate(x0, y0);
-        ctx.rotate(rot);
-        ctx.beginPath(); ctx.arc(0, 0, r * 0.985, 0, TAU); ctx.clip();
-        if (this.vcfg.planetBands !== false) {
-          const bands = 3 + ((seed * 3) | 0);
-          const phase = (rotation || 0) * 0.6 + seed * 9;
-          for (let b = 0; b < bands; b++) {
-            const by = Math.sin(phase + b * 2.1) * r * 0.72;
-            const bh = r * (0.06 + 0.08 * Math.abs(Math.cos(b * 1.7 + seed * 5)));
-            const bright = b % 2 === 0;
-            ctx.fillStyle = bright ? rgba(mixc(c, [1, 1, 1], 0.6), 0.35) : rgba(mixc(c, [1, 1, 1], 0.15), 0.3);
-            ctx.beginPath();
-            ctx.ellipse(0, by, r, bh, 0, 0, TAU);
-            ctx.fill();
-          }
-        }
-        // Energy sparkles on the lit side.
-        if (this.quality === "high" && r > 12) {
-          const rnd = seededRand(((seed * 1e6) | 0) + 7);
-          ctx.globalCompositeOperation = "lighter";
-          const sparks = 5 + ((seed * 6) | 0);
-          for (let i = 0; i < sparks; i++) {
-            const sx = (rnd() - 0.5) * r * 1.2;
-            const sy = -r * 0.3 + rnd() * r * 0.6;
-            if (sx * sx + sy * sy > r * r * 0.75) continue;
-            const ss = 0.4 + rnd() * 0.8;
-            ctx.fillStyle = `rgba(255,255,255,${0.15 + rnd() * 0.25})`;
-            ctx.beginPath(); ctx.arc(sx, sy, ss, 0, TAU); ctx.fill();
-          }
-        }
-        ctx.restore();
-      }
-
-      // Strong atmospheric glow around big planets.
-      if (r > 5) {
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.25;
-        const g = this._glowSprite(c, 1.2);
-        ctx.drawImage(g, x0 - r * 2.2, y0 - r * 2.2, r * 4.4, r * 4.4);
-        ctx.restore();
-      }
 
       if (hasRing) this._ringHalf(ctx, x0, y0, r, c, tilt, false, seed);
     }
