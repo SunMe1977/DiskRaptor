@@ -1,6 +1,6 @@
 [package]
 name = "diskraptor"
-version = "1.0.29"
+version = "1.0.30"
 description = "Ultra-fast disk space analyzer"
 authors = ["DiskRaptor Team"]
 license = "MIT"

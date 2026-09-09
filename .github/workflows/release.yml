@@ -158,42 +158,67 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Build Tauri app bundle (universal, unsigned)
         run: npx tauri build --bundles app --ci --target universal-apple-darwin
-      - name: Setup code signing keychain
+      - name: Setup code signing keychain (Developer ID)
         env:
+          DEVELOPER_ID_CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          echo "$MACOS_CERT_P12" | base64 --decode > /tmp/mas_certs.p12
+          if [ -z "$DEVELOPER_ID_CERT_P12" ] || [ -z "$DEVELOPER_ID_CERT_PASSWORD" ]; then
+            echo "ERROR: DEVELOPER_ID_CERT_P12 / DEVELOPER_ID_CERT_PASSWORD not configured." >&2
+            echo "  Direct-download DMGs must be signed with a Developer ID Application certificate" >&2
+            echo "  (not a Mac App Store cert) or Apple's notary rejects them as 'Invalid'." >&2
+            exit 1
+          fi
           security create-keychain -p ci /tmp/ci.keychain
           security default-keychain -s /tmp/ci.keychain
           security unlock-keychain -p ci /tmp/ci.keychain
           security set-keychain-settings -t 3600 /tmp/ci.keychain
-          security import /tmp/mas_certs.p12 -P "$MACOS_CERT_PASSWORD" \
+          # Developer ID certs — required for DMG/PKG outside the App Store.
+          echo "$DEVELOPER_ID_CERT_P12" | base64 --decode > /tmp/devid_certs.p12
+          security import /tmp/devid_certs.p12 -P "$DEVELOPER_ID_CERT_PASSWORD" \
             -A -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security
+          rm -f /tmp/devid_certs.p12
+          # Legacy MAS certs — imported only as a fallback for older setups.
+          if [ -n "$MACOS_CERT_P12" ] && [ -n "$MACOS_CERT_PASSWORD" ]; then
+            echo "$MACOS_CERT_P12" | base64 --decode > /tmp/mas_certs.p12
+            security import /tmp/mas_certs.p12 -P "$MACOS_CERT_PASSWORD" \
+              -A -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security
+            rm -f /tmp/mas_certs.p12
+          fi
           security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: \
             -s -k ci /tmp/ci.keychain
           security list-keychains -d user -s /tmp/ci.keychain
-          rm -f /tmp/mas_certs.p12
           security find-identity -v -p codesigning /tmp/ci.keychain
-      - name: Codesign macOS app
+      - name: Codesign macOS app (Developer ID + secure timestamp)
         env:
-          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
           BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
         shell: bash
         run: |
           set -euo pipefail
           APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/DiskRaptor.app"
           [ -d "$APP" ] || { echo "App bundle not found: $APP"; exit 1; }
+          # Must be a Developer ID Application cert, otherwise notarization returns
+          # "The binary is not signed with a valid Developer ID certificate."
+          IDENTITY="$(security find-identity -v -p codesigning /tmp/ci.keychain 2>/dev/null \
+            | grep -i 'Developer ID Application' | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+          if [ -z "$IDENTITY" ]; then
+            echo "ERROR: no 'Developer ID Application' identity found in the signing keychain." >&2
+            echo "  A Mac App Store (3rd Party Mac Developer) cert can NOT be notarized for direct downloads." >&2
+            exit 1
+          fi
+          echo "Signing with: $IDENTITY"
           xattr -cr "$APP" || true
           plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$APP/Contents/Info.plist"
           find "$APP/Contents" -type f -name "*.dylib" -print0 | \
-            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$SIGNING_IDENTITY" "{}" || true
+            xargs -0 -P4 -I{} codesign --force --options=runtime --timestamp --sign "$IDENTITY" "{}"
           find "$APP/Contents" -type d -name "*.framework" -print0 | \
-            xargs -0 -P4 -I{} codesign --force --options=runtime --sign "$SIGNING_IDENTITY" "{}" || true
-          codesign --force --options=runtime --entitlements installer/DiskRaptor.entitlements \
-            --sign "$SIGNING_IDENTITY" "$APP"
+            xargs -0 -P4 -I{} codesign --force --options=runtime --timestamp --sign "$IDENTITY" "{}"
+          codesign --force --options=runtime --timestamp --entitlements installer/DiskRaptor.entitlements \
+            --sign "$IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
       - name: Stage and create DMG + PKG
         shell: bash
@@ -217,16 +242,17 @@ jobs:
           test -f "release-assets/DiskRaptor-${ver}-macos-universal.dmg" || { echo "DMG creation failed" >&2; exit 1; }
           rm -rf dmg-staging
           # macOS .pkg installer (the .deb equivalent) for direct distribution.
+          # Only produced when a "Developer ID Installer" certificate is present:
+          # an unsigned pkg cannot be notarized and would be rejected by
+          # Gatekeeper exactly like the old MAS-signed DMGs.
           PKG="release-assets/DiskRaptor-${ver}-macos-universal.pkg"
-          INSTALLER_CERT="$(security find-identity -v -p basic 2>/dev/null | grep -i 'Developer ID Installer' | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+          INSTALLER_CERT="$(security find-identity -v -p basic /tmp/ci.keychain 2>/dev/null | grep -i 'Developer ID Installer' | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
           if [ -n "$INSTALLER_CERT" ]; then
             echo "Signing PKG with: $INSTALLER_CERT"
             productbuild --component "macos-app/DiskRaptor-${ver}-macos.app" /Applications \
               --sign "$INSTALLER_CERT" --identifier diskraptor --version "$ver" "$PKG"
           else
-            echo "WARNING: no 'Developer ID Installer' cert found â€” building unsigned pkg"
-            productbuild --component "macos-app/DiskRaptor-${ver}-macos.app" /Applications \
-              --identifier diskraptor --version "$ver" "$PKG"
+            echo "SKIP pkg: no 'Developer ID Installer' cert found - only the DMG is shipped."
           fi
           ls -la release-assets
       # Notarization requires a "Developer ID Application" certificate. Auth
@@ -234,6 +260,10 @@ jobs:
       # of an app-specific password, which Apple can silently revoke. A failure
       # here is a hard error: never ship a DMG or PKG that Gatekeeper will
       # reject as unverified/damaged.
+      #
+      # NOTE: we check Apple's reported status ("Accepted"), NOT notarytool's
+      # exit code. notarytool can return 0 even when Apple reports "Invalid"
+      # (e.g. MAS-signed binaries), which silently shipped broken DMGs before.
       - name: Notarize and staple
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -253,31 +283,49 @@ jobs:
           dmg="release-assets/DiskRaptor-${ver}-macos-universal.dmg"
           pkg="release-assets/DiskRaptor-${ver}-macos-universal.pkg"
           app="macos-app/DiskRaptor-${ver}-macos.app"
-          set +e
-          xcrun notarytool submit "$dmg" \
-            --key "$KEY" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
-          DMG_OK=$?
-          xcrun notarytool submit "$pkg" \
-            --key "$KEY" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
-          PKG_OK=$?
-          set -e
-          if [ "$DMG_OK" -eq 0 ]; then
-            xcrun stapler staple "$dmg" && xcrun stapler validate "$dmg"
-            # The .app inside macos-app/ is only used to build the DMG/PKG.
-            xcrun stapler staple "$app" || true
-          else
-            echo "ERROR: DMG notarization failed (exit $DMG_OK) - refusing to ship an un-notarized DMG" >&2
-          fi
-          if [ "$PKG_OK" -eq 0 ]; then
+
+          # Submit one artifact and require Apple's final status to be "Accepted".
+          notarize() {
+            local file="$1" label="$2"
+            echo "=== Notarizing $label: $(basename "$file") ==="
+            set +e
+            xcrun notarytool submit "$file" \
+              --key "$KEY" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              --wait --output-format json > "/tmp/notary-$label.json" 2> "/tmp/notary-$label.err"
+            local rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              echo "ERROR: notarytool submit for $label failed (exit $rc):" >&2
+              cat "/tmp/notary-$label.err" >&2 || true
+              return 1
+            fi
+            # Latest status line decides (notarytool can exit 0 even on Invalid).
+            local status
+            status="$(tr -d '\n' < "/tmp/notary-$label.json" | python3 -c 'import sys,re; s=sys.stdin.read(); m=list(re.finditer(r"\"status\"\s*:\s*\"([A-Za-z]+)\"", s)); print(m[-1].group(1) if m else "unknown")' 2>/dev/null || echo unknown)"
+            echo "Apple status for $label: $status"
+            if [ "$status" != "Accepted" ]; then
+              echo "ERROR: Apple notarization for $label reported status '$status' (expected Accepted)." >&2
+              echo "  If it says 'Invalid', the binary is signed with the wrong certificate (MAS" >&2
+              echo "  instead of Developer ID) or lacks a secure timestamp." >&2
+              cat "/tmp/notary-$label.err" >&2 || true
+              return 1
+            fi
+            return 0
+          }
+
+          notarize "$dmg" dmg
+          xcrun stapler staple "$dmg" && xcrun stapler validate "$dmg"
+          # The .app inside macos-app/ is only used to build the DMG/PKG.
+          xcrun stapler staple "$app" || true
+
+          if [ -f "$pkg" ]; then
+            notarize "$pkg" pkg
             xcrun stapler staple "$pkg" && xcrun stapler validate "$pkg"
           else
-            echo "ERROR: PKG notarization failed (exit $PKG_OK) - refusing to ship an un-notarized PKG" >&2
+            echo "SKIP: no pkg produced in this run."
           fi
-          if [ "$DMG_OK" -ne 0 ] || [ "$PKG_OK" -ne 0 ]; then
-            echo "Notarization failed; aborting macOS release (no un-notarized artifacts are shipped)." >&2
-            exit 1
-          fi
-          echo "DMG and PKG notarized and stapled."
+
+          echo "macOS artifacts notarized and stapled."
       - name: Deploy to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

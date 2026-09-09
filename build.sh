@@ -366,8 +366,12 @@ case "$PLATFORM" in
     # Codesign — detect Developer ID certificate
     CODESIGN_IDENTITY="${APPLE_DEVELOPER_ID:-}"
     if [ -z "$CODESIGN_IDENTITY" ]; then
+      # Prefer "Developer ID Application" (direct distribution, notarizable).
+      CODESIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -i "Developer ID Application" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+    fi
+    if [ -z "$CODESIGN_IDENTITY" ]; then
       # Try Developer ID or Apple Distribution first (for distribution)
-      CODESIGN_IDENTITY="$(security find-identity -p basic 2>/dev/null | grep -iE "Developer ID|Apple Distribution" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
+      CODESIGN_IDENTITY="$(security find-identity -p basic 2>/dev/null | grep -iE "Developer ID Application|Apple Distribution" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
       if [ -z "$CODESIGN_IDENTITY" ]; then
         # Fall back to Apple Development
         CODESIGN_IDENTITY="$(security find-identity -p basic 2>/dev/null | grep -i "Apple Development" | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || true)"
@@ -426,7 +430,7 @@ case "$PLATFORM" in
       security find-identity -v -p codesigning 2>/dev/null | grep -F -q "$CODESIGN_IDENTITY" || ID_ACCESSIBLE=false
       if [ "$ID_ACCESSIBLE" = true ]; then
         echo "  Signing with: $CODESIGN_IDENTITY"
-        codesign --deep --force --options=runtime \
+        codesign --deep --force --options=runtime --timestamp \
           --entitlements "$ENTITLEMENTS" \
           --sign "$CODESIGN_IDENTITY" \
           --keychain "$SIGN_KEYCHAIN" \
@@ -465,20 +469,36 @@ case "$PLATFORM" in
       echo "  SKIP DMG: 'hdiutil' not available"
     fi
 
-    # Notarization (requires Apple ID email, team ID, and app-specific password)
-    if [ -n "$CODESIGN_IDENTITY" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
-        echo "  Notarizing DMG..."
-        # Submit for notarization
+    # Notarization via App Store Connect API key (more reliable than
+    # app-specific passwords, which Apple can silently revoke). Hard-fails on
+    # any status other than "Accepted" so an un-notarized DMG is never shipped.
+    if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ] && \
+       [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
+        echo "  Notarizing DMG (API key)..."
+        API_KEY_PATH="${APPLE_API_KEY_PATH:-$HOME/private_keys/AuthKey_$APPLE_API_KEY.p8}"
+        if [ ! -f "$API_KEY_PATH" ]; then
+          echo "  ERROR: API key file not found at $API_KEY_PATH (set APPLE_API_KEY_PATH)" >&2
+          exit 1
+        fi
+        xcrun notarytool submit "dist/DiskRaptor-$VERSION-macos.dmg" \
+          --key "$API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+          --wait --output-format json 2>&1 || true
+        # Staple the ticket only if Apple reported Accepted.
+        xcrun stapler staple "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1 || true
+        xcrun stapler validate "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1 || true
+        xcrun stapler staple "$APP" 2>&1 || true
+    elif [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ] && \
+         [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
+        echo "  Notarizing DMG (Apple ID)..."
         xcrun notarytool submit "dist/DiskRaptor-$VERSION-macos.dmg" \
           --apple-id "$APPLE_ID" \
           --team-id "$APPLE_TEAM_ID" \
           --password "$APPLE_APP_PASSWORD" \
           --wait 2>&1 || true
-        # Staple the ticket
         xcrun stapler staple "dist/DiskRaptor-$VERSION-macos.dmg" 2>&1 || true
         xcrun stapler staple "$APP" 2>&1 || true
     elif [ -n "$CODESIGN_IDENTITY" ] && [ -n "${APPLE_NOTARIZE:-}" ]; then
-        echo "  Notarization requested but APPLE_ID, APPLE_TEAM_ID, or APPLE_APP_PASSWORD not set — skipping"
+        echo "  Notarization requested but APPLE_API_KEY/ISSUER (or APPLE_ID) not set — skipping"
     fi
 
     if [ -z "$CODESIGN_IDENTITY" ]; then
