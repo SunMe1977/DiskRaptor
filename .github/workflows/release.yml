@@ -229,11 +229,11 @@ jobs:
               --identifier diskraptor --version "$ver" "$PKG"
           fi
           ls -la release-assets
-      # Notarization requires a "Developer ID Application" certificate. The
-      # DMG and the PKG are both submitted so Gatekeeper accepts direct
-      # downloads of either; only successfully notarized files are stapled.
+      # Notarization requires a "Developer ID Application" certificate plus
+      # valid Apple credentials (APPLE_ID + app-specific password +
+      # APPLE_TEAM_ID). A failure here is a hard error: never ship a DMG or
+      # PKG that Gatekeeper will reject as unverified/damaged.
       - name: Notarize and staple
-        continue-on-error: true
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -241,6 +241,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
+            echo "ERROR: notarization secrets not configured (APPLE_ID / APPLE_APP_PASSWORD / APPLE_TEAM_ID)." >&2
+            exit 1
+          fi
           ver=$(node -p "require('./package.json').version")
           dmg="release-assets/DiskRaptor-${ver}-macos-universal.dmg"
           pkg="release-assets/DiskRaptor-${ver}-macos-universal.pkg"
@@ -255,20 +259,21 @@ jobs:
           set -e
           if [ "$DMG_OK" -eq 0 ]; then
             xcrun stapler staple "$dmg" && xcrun stapler validate "$dmg"
+            # The .app inside macos-app/ is only used to build the DMG/PKG.
+            xcrun stapler staple "$app" || true
           else
-            echo "WARNING: DMG notarization failed ($DMG_OK) - shipping un-notarized DMG"
+            echo "ERROR: DMG notarization failed (exit $DMG_OK) - refusing to ship an un-notarized DMG" >&2
           fi
           if [ "$PKG_OK" -eq 0 ]; then
             xcrun stapler staple "$pkg" && xcrun stapler validate "$pkg"
           else
-            echo "WARNING: PKG notarization failed ($PKG_OK) - shipping un-notarized PKG"
+            echo "ERROR: PKG notarization failed (exit $PKG_OK) - refusing to ship an un-notarized PKG" >&2
           fi
-          # The .app bundle inside macos-app/ is only used to build the DMG/PKG;
-          # staple it only if the DMG submission (which covers the same binary)
-          # succeeded.
-          if [ "$DMG_OK" -eq 0 ]; then
-            xcrun stapler staple "$app" || true
+          if [ "$DMG_OK" -ne 0 ] || [ "$PKG_OK" -ne 0 ]; then
+            echo "Notarization failed; aborting macOS release (no un-notarized artifacts are shipped)." >&2
+            exit 1
           fi
+          echo "DMG and PKG notarized and stapled."
       - name: Deploy to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
