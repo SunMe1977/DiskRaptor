@@ -229,32 +229,36 @@ jobs:
               --identifier diskraptor --version "$ver" "$PKG"
           fi
           ls -la release-assets
-      # Notarization requires a "Developer ID Application" certificate plus
-      # valid Apple credentials (APPLE_ID + app-specific password +
-      # APPLE_TEAM_ID). A failure here is a hard error: never ship a DMG or
-      # PKG that Gatekeeper will reject as unverified/damaged.
+      # Notarization requires a "Developer ID Application" certificate. Auth
+      # uses the App Store Connect API key (same one as the MAS upload) instead
+      # of an app-specific password, which Apple can silently revoke. A failure
+      # here is a hard error: never ship a DMG or PKG that Gatekeeper will
+      # reject as unverified/damaged.
       - name: Notarize and staple
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
-            echo "ERROR: notarization secrets not configured (APPLE_ID / APPLE_APP_PASSWORD / APPLE_TEAM_ID)." >&2
+          if [ -z "$APPLE_API_KEY" ] || [ -z "$APPLE_API_ISSUER" ] || [ -z "$APPLE_API_KEY_P8" ]; then
+            echo "ERROR: notarization API key secrets not configured (APPLE_API_KEY / APPLE_API_ISSUER / APPLE_API_KEY_P8)." >&2
             exit 1
           fi
+          mkdir -p "$HOME/private_keys"
+          echo "$APPLE_API_KEY_P8" | base64 --decode > "$HOME/private_keys/AuthKey_$APPLE_API_KEY.p8"
+          KEY="$HOME/private_keys/AuthKey_$APPLE_API_KEY.p8"
           ver=$(node -p "require('./package.json').version")
           dmg="release-assets/DiskRaptor-${ver}-macos-universal.dmg"
           pkg="release-assets/DiskRaptor-${ver}-macos-universal.pkg"
           app="macos-app/DiskRaptor-${ver}-macos.app"
           set +e
           xcrun notarytool submit "$dmg" \
-            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            --key "$KEY" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
           DMG_OK=$?
           xcrun notarytool submit "$pkg" \
-            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            --key "$KEY" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
           PKG_OK=$?
           set -e
           if [ "$DMG_OK" -eq 0 ]; then
