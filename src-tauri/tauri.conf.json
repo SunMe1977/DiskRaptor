@@ -48,7 +48,10 @@
         "language": "en-US"
       },
       "nsis": {
-        "languages": ["English", "German", "French", "Italian", "Spanish"]
+        "languages": ["English", "German", "French", "Italian", "Spanish"],
+        "webviewInstallMode": {
+          "type": "offlineInstaller"
+        }
       }
     }
   }
