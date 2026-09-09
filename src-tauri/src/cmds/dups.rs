@@ -8,6 +8,15 @@ use rayon::prelude::*;
 use std::sync::atomic::Ordering;
 use tauri::{Manager, State};
 
+/// A same-size candidate awaiting hashing: `(path, length, mtime)`. The length
+/// and mtime snapshot is used in phase 3 to detect a concurrent change via a
+/// cheap re-stat instead of re-reading files whose head hash covered the whole
+/// file.
+type Candidate = (std::path::PathBuf, u64, Option<std::time::SystemTime>);
+
+/// A hashed candidate: `((bytes_read, hash), path, length, mtime)`.
+type HashedCandidate = ((u64, u64), std::path::PathBuf, u64, Option<std::time::SystemTime>);
+
 /// Clears `dup.running` when the duplicate-scan thread exits — including on a
 /// panic or an early return — so a wedged flag can't block future scans.
 struct ResetDupRunning {
@@ -40,9 +49,11 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
         let st = handle.state::<AppState>();
         const FILE_CAP: u64 = 200_000;
 
-        // Phase 1: collect files grouped by size. jwalk parallelizes the
-        // directory I/O underneath (walkdir was fully sequential).
-        let mut by_size: std::collections::HashMap<u64, Vec<std::path::PathBuf>> =
+        // Phase 1: collect files grouped by size. Each entry also keeps the
+        // metadata snapshot (length + mtime) used in phase 3 to detect a
+        // concurrent change *without* re-reading files whose head hash already
+        // covered the whole file. jwalk parallelizes the directory I/O.
+        let mut by_size: std::collections::HashMap<u64, Vec<Candidate>> =
             std::collections::HashMap::new();
         let mut scanned: u64 = 0;
         // Throttle the "currently examined file" progress string: a lock + String
@@ -71,44 +82,47 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
                 last_file_at = scanned;
                 last_file_update = std::time::Instant::now();
             }
-            by_size.entry(meta.len()).or_default().push(e.path().to_path_buf());
+            by_size
+                .entry(meta.len())
+                .or_default()
+                .push((e.path().to_path_buf(), meta.len(), meta.modified().ok()));
             if scanned >= FILE_CAP {
                 break;
             }
         }
 
-        // Phase 2: head-hash candidate groups (same size) in parallel. Hashing
-        // is I/O-bound, so rayon workers saturate the disk better than one
-        // thread; hash_file_head reuses a thread-local read buffer.
+        // Phase 2: head-hash every candidate file in parallel. Candidates are
+        // flattened out of the same-size groups first so a single dominant
+        // group (e.g. thousands of identically-sized logs) cannot starve the
+        // rayon pool by occupying one whole task.
         st.dup.phase.store(2, Ordering::Relaxed);
         let cancelled = &st.dup.cancelled;
         let files_scanned = &st.dup.files_scanned;
         let current_file = &st.dup.current_file;
-        let pairs: Vec<((u64, u64), std::path::PathBuf)> = by_size
+        let candidates: Vec<Candidate> = by_size
             .into_values()
             .filter(|g| g.len() >= 2)
-            .collect::<Vec<_>>()
-            .into_par_iter()
-            .flat_map_iter(|group| {
-                let mut out = Vec::with_capacity(group.len());
-                for p in group {
+            .flatten()
+            .collect();
+        let hashed: Vec<HashedCandidate> = candidates
+                .into_par_iter()
+                .filter_map(|(p, len0, mtime0)| {
                     if cancelled.load(Ordering::Relaxed) {
-                        break;
+                        return None;
                     }
                     let n = files_scanned.fetch_add(1, Ordering::Relaxed) + 1;
                     if n.is_multiple_of(500) {
                         *current_file.lock() = p.to_string_lossy().to_string();
                     }
-                    let h = scanner::duplicates::hash_file_head(&p, scanner::duplicates::HEAD_HASH_BYTES);
-                    out.push((h, p));
-                }
-                out
-            })
-            .collect();
-        let mut by_hash: std::collections::HashMap<(u64, u64), Vec<std::path::PathBuf>> =
+                    let (bytes, hash) =
+                        scanner::duplicates::hash_file_head(&p, scanner::duplicates::HEAD_HASH_BYTES);
+                    Some(((bytes, hash), p, len0, mtime0))
+                })
+                .collect();
+        let mut by_hash: std::collections::HashMap<(u64, u64), Vec<Candidate>> =
             std::collections::HashMap::new();
-        for (h, p) in pairs {
-            by_hash.entry(h).or_default().push(p);
+        for ((bytes_read, hash), p, len0, mtime0) in hashed {
+            by_hash.entry((bytes_read, hash)).or_default().push((p, len0, mtime0));
         }
 
         // Phase 3: full verification of head-hash groups (parallel per group),
@@ -116,7 +130,7 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
         st.dup.phase.store(3, Ordering::Relaxed);
         let mut groups = Vec::new();
         let mut wasted: u64 = 0;
-        for ((size, _), files) in by_hash {
+        for ((bytes_read, head_hash), files) in by_hash {
             if files.len() < 2 {
                 continue;
             }
@@ -124,16 +138,27 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
             // identical full content are true duplicates. Files that changed
             // while scanning are excluded so we never suggest deleting them.
             let verified: Vec<(std::path::PathBuf, (u64, u64))> = files
-                .par_iter()
-                .filter_map(|p| {
+                .into_par_iter()
+                .filter_map(|(p, len0, mtime0)| {
                     if cancelled.load(Ordering::Relaxed) {
                         return None;
                     }
-                    let (fsize, fhash, changed) = scanner::duplicates::hash_file_full(p);
-                    if changed || fsize != size {
-                        return None;
+                    if bytes_read == len0 {
+                        // The head read covered the entire file, so its digest
+                        // *is* the full hash. Re-stat instead of re-reading the
+                        // bytes to confirm the file did not change meanwhile.
+                        let m = std::fs::metadata(&p).ok()?;
+                        if m.len() != len0 || m.modified().ok() != mtime0 {
+                            return None;
+                        }
+                        Some((p, (bytes_read, head_hash)))
+                    } else {
+                        let (fsize, fhash, changed) = scanner::duplicates::hash_file_full(&p);
+                        if changed || fsize != bytes_read {
+                            return None;
+                        }
+                        Some((p, (fsize, fhash)))
                     }
-                    Some((p.clone(), (fsize, fhash)))
                 })
                 .collect();
             let mut by_full: std::collections::HashMap<(u64, u64), Vec<std::path::PathBuf>> =
@@ -145,7 +170,7 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
                 if dup_files.len() < 2 {
                     continue;
                 }
-                let wasted_g = size * (dup_files.len() as u64 - 1);
+                let wasted_g = bytes_read * (dup_files.len() as u64 - 1);
                 wasted += wasted_g;
                 let paths: Vec<String> = dup_files
                     .iter()
@@ -153,8 +178,8 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
                     .collect();
                 groups.push(serde_json::json!({
                     "count": dup_files.len(),
-                    "size": size,
-                    "sizeHuman": format_size(size),
+                    "size": bytes_read,
+                    "sizeHuman": format_size(bytes_read),
                     "wasted": wasted_g,
                     "wastedHuman": format_size(wasted_g),
                     "files": paths,

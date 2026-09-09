@@ -14,9 +14,32 @@ permissions:
   contents: write
 
 jobs:
+  validate:
+    name: Validate version and tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Version consistency + tag match
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          node scripts/check-version.mjs
+          ver="$(node -p "require('./package.json').version")"
+          want="$REF"
+          if [[ "$want" != v* ]]; then want="v$ver"; fi
+          if [ "$want" != "v$ver" ]; then
+            echo "ERROR: tag '$REF' does not match package version v$ver" >&2
+            exit 1
+          fi
+          echo "OK: tag '$REF' matches version v$ver"
+
   windows-x64:
     name: Windows x64 (Tauri)
     runs-on: windows-latest
+    needs: [validate]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,7 +52,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          cache: false
+          cache: true
       - name: Build normal installers (NSIS + MSI)
         run: npx tauri build --bundles nsis,msi --ci
       - name: Stage normal MSI
@@ -96,12 +119,28 @@ jobs:
           }
           gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
           if ($LASTEXITCODE -ne 0) { Write-Error "Release $tag still not available"; exit 1 }
+          # Prune managed assets from earlier (possibly broken) runs that are no
+          # longer staged here; --clobber only overwrites same-named files and
+          # would otherwise leave orphans that the checksums job blesses.
+          $local = (Get-ChildItem release-assets -File | ForEach-Object { $_.Name })
+          $lines = gh release view $tag --json assets --jq '.assets[] | "\(.id)\t\(.name)"' 2>$null
+          foreach ($line in $lines) {
+            $parts = $line -split "\t", 2
+            if ($parts.Count -ne 2) { continue }
+            $id = $parts[0]; $name = $parts[1]
+            $managed = $name -eq "DiskRaptor.exe" -or $name.StartsWith("DiskRaptor-") -or $name -eq "SHA256SUMS.txt"
+            if ($managed -and ($name -notin $local)) {
+              gh api "/repos/$env:GITHUB_REPOSITORY/releases/assets/$id" -X DELETE | Out-Null
+              Write-Host "Pruned stale asset: $name"
+            }
+          }
           gh release upload $tag "release-assets/*" --clobber
           gh release view $tag --json assets --jq '[.assets[] | {name, size}]'
 
   macos-universal:
     name: macOS Universal (Tauri)
     runs-on: macos-14
+    needs: [validate]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -114,7 +153,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          cache: false
+          cache: true
       - name: Add macOS universal targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Build Tauri app bundle (universal, unsigned)
@@ -190,8 +229,9 @@ jobs:
               --identifier diskraptor --version "$ver" "$PKG"
           fi
           ls -la release-assets
-      # Notarization requires a "Developer ID Application" certificate. The current
-      # MAS cert may be rejected; continue-on-error ships the signed DMG regardless.
+      # Notarization requires a "Developer ID Application" certificate. The
+      # DMG and the PKG are both submitted so Gatekeeper accepts direct
+      # downloads of either; only successfully notarized files are stapled.
       - name: Notarize and staple
         continue-on-error: true
         env:
@@ -205,12 +245,30 @@ jobs:
           dmg="release-assets/DiskRaptor-${ver}-macos-universal.dmg"
           pkg="release-assets/DiskRaptor-${ver}-macos-universal.pkg"
           app="macos-app/DiskRaptor-${ver}-macos.app"
+          set +e
           xcrun notarytool submit "$dmg" \
             --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-          xcrun stapler staple "$dmg"
-          xcrun stapler staple "$pkg"
-          xcrun stapler staple "$app"
-          xcrun stapler validate "$dmg" "$pkg" "$app"
+          DMG_OK=$?
+          xcrun notarytool submit "$pkg" \
+            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          PKG_OK=$?
+          set -e
+          if [ "$DMG_OK" -eq 0 ]; then
+            xcrun stapler staple "$dmg" && xcrun stapler validate "$dmg"
+          else
+            echo "WARNING: DMG notarization failed ($DMG_OK) - shipping un-notarized DMG"
+          fi
+          if [ "$PKG_OK" -eq 0 ]; then
+            xcrun stapler staple "$pkg" && xcrun stapler validate "$pkg"
+          else
+            echo "WARNING: PKG notarization failed ($PKG_OK) - shipping un-notarized PKG"
+          fi
+          # The .app bundle inside macos-app/ is only used to build the DMG/PKG;
+          # staple it only if the DMG submission (which covers the same binary)
+          # succeeded.
+          if [ "$DMG_OK" -eq 0 ]; then
+            xcrun stapler staple "$app" || true
+          fi
       - name: Deploy to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -226,6 +284,27 @@ jobs:
             sleep 5
           done
           gh release view "$tag" >/dev/null 2>&1 || { echo "ERROR: release $tag still not available" >&2; exit 1; }
+          # Prune managed assets from earlier (possibly broken) runs that are no
+          # longer staged here; --clobber only overwrites same-named files.
+          local=()
+          for f in release-assets/*; do
+            [ -f "$f" ] || continue
+            local+=("$(basename "$f")")
+          done
+          gh release view "$tag" --json assets --jq '.assets[] | "\(.id)\t\(.name)"' 2>/dev/null | while IFS=$'\t' read -r id name; do
+            case "$name" in
+              DiskRaptor.exe|SHA256SUMS.txt|DiskRaptor-*)
+                keep=0
+                for l in "${local[@]}"; do
+                  if [ "$l" = "$name" ]; then keep=1; break; fi
+                done
+                if [ "$keep" -eq 0 ]; then
+                  gh api "/repos/${GITHUB_REPOSITORY}/releases/assets/${id}" -X DELETE >/dev/null 2>&1 || true
+                  echo "Pruned stale asset: $name"
+                fi
+                ;;
+            esac
+          done
           gh release upload "$tag" "release-assets/*" --clobber
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
 
@@ -235,6 +314,7 @@ jobs:
   macos-mas:
     name: macOS App Store (MAS PKG + upload)
     runs-on: macos-14
+    needs: [validate]
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -248,7 +328,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          cache: false
+          cache: true
       - name: Add macOS universal targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       # Upload to Apple only once per version. Re-pushing an existing tag (e.g.
@@ -399,13 +479,29 @@ jobs:
             --apiIssuer "$APPLE_API_ISSUER" \
             --output-format json
           echo "Upload submitted. Check status in App Store Connect -> TestFlight."
-          # Mark this version as uploaded so later re-runs of the same tag skip it.
+          # Mark this version as uploaded so later re-runs of the same tag skip
+          # it. The marker must survive even when the platform jobs have not
+          # created the release yet (this job runs in parallel), so ensure the
+          # release exists first and verify the marker afterwards.
           tag="${{ github.ref_name }}"
-          echo "uploaded" | gh release upload "$tag" .apple-uploaded --clobber || true
+          if [[ "$tag" != v* ]]; then tag="v$(node -p "require('./package.json').version")"; fi
+          for i in $(seq 1 12); do
+            gh release view "$tag" >/dev/null 2>&1 && break
+            gh release create "$tag" --title "DiskRaptor $tag" --generate-notes >/dev/null 2>&1 || true
+            sleep 5
+          done
+          echo "uploaded" | gh release upload "$tag" .apple-uploaded --clobber
+          if gh release view "$tag" --json assets --jq '[.assets[].name] | any(. == ".apple-uploaded")' 2>/dev/null | grep -q true; then
+            echo "Version $tag marked as uploaded to App Store Connect."
+          else
+            echo "ERROR: failed to attach .apple-uploaded marker to $tag" >&2
+            exit 1
+          fi
 
   linux-universal:
     name: Linux (AppImage + DEB + RPM)
     runs-on: ubuntu-22.04
+    needs: [validate]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -418,7 +514,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          cache: false
+          cache: true
       - name: Install Linux dependencies
         run: |
           sudo apt-get update -qq
@@ -433,20 +529,20 @@ jobs:
           set -euo pipefail
           ver=$(node -p "require('./package.json').version")
           mkdir -p release-assets
-          # Tauri writes the binary architecture into the bundle names; keep
-          # that, but prefix a stable "DiskRaptor-<version>" so all three
-          # platform jobs use a consistent naming scheme.
+          # Canonical Linux names (DiskRaptor-{ver}-linux-x86_64.{ext}): the
+          # in-app updater looks these up verbatim, so the double-versioned
+          # basenames Tauri produces must not leak into the release.
           for deb in src-tauri/target/release/bundle/deb/*.deb; do
             [ -f "$deb" ] || continue
-            cp "$deb" "release-assets/DiskRaptor-${ver}-$(basename "$deb")"
+            cp "$deb" "release-assets/DiskRaptor-${ver}-linux-x86_64.deb"
           done
           for rpm in src-tauri/target/release/bundle/rpm/*.rpm; do
             [ -f "$rpm" ] || continue
-            cp "$rpm" "release-assets/DiskRaptor-${ver}-$(basename "$rpm")"
+            cp "$rpm" "release-assets/DiskRaptor-${ver}-linux-x86_64.rpm"
           done
           for appimage in src-tauri/target/release/bundle/appimage/*.AppImage; do
             [ -f "$appimage" ] || continue
-            cp "$appimage" "release-assets/DiskRaptor-${ver}-$(basename "$appimage")"
+            cp "$appimage" "release-assets/DiskRaptor-${ver}-linux-x86_64.AppImage"
           done
           cp src-tauri/target/release/diskraptor "release-assets/DiskRaptor-${ver}-linux-x86_64.bin" 2>/dev/null || true
           echo "=== Staged assets ==="
@@ -470,6 +566,27 @@ jobs:
             sleep 5
           done
           gh release view "$tag" >/dev/null 2>&1 || { echo "ERROR: release $tag still not available" >&2; exit 1; }
+          # Prune managed assets from earlier (possibly broken) runs that are no
+          # longer staged here; --clobber only overwrites same-named files.
+          local=()
+          for f in release-assets/*; do
+            [ -f "$f" ] || continue
+            local+=("$(basename "$f")")
+          done
+          gh release view "$tag" --json assets --jq '.assets[] | "\(.id)\t\(.name)"' 2>/dev/null | while IFS=$'\t' read -r id name; do
+            case "$name" in
+              DiskRaptor.exe|SHA256SUMS.txt|DiskRaptor-*)
+                keep=0
+                for l in "${local[@]}"; do
+                  if [ "$l" = "$name" ]; then keep=1; break; fi
+                done
+                if [ "$keep" -eq 0 ]; then
+                  gh api "/repos/${GITHUB_REPOSITORY}/releases/assets/${id}" -X DELETE >/dev/null 2>&1 || true
+                  echo "Pruned stale asset: $name"
+                fi
+                ;;
+            esac
+          done
           gh release upload "$tag" "release-assets/*" --clobber
           gh release view "$tag" --json assets --jq '[.assets[] | {name, size}]'
 

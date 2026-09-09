@@ -18,11 +18,12 @@ use crate::scanner::tree::*;
 use crate::scanner::activity::{record_error, ScanActivity};
 use crate::scanner::walker::{
     FileTypeAccum, ScanConfig, ScanProgressCallback, ScanResult, ScanTermination, TopFilesAccum,
-    file_ext_lower, finish_scan,
+    file_ext_lower, finish_scan, path_is_skipped,
 };
 use anyhow::Result;
+use parking_lot::Condvar;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use windows::core::PCWSTR;
@@ -85,10 +86,14 @@ fn enumerate(
     let mut first = true;
     while !stopped() {
         let name = if first { "FindFirstFileW" } else { "FindNextFileW" };
-        operation.set(if first { "FindFirstFileW (enumerating directory)" } else { "FindNextFileW (enumerating directory)" });
         let result = next(first);
         activity.progress();
-        first = false;
+        if first {
+            // Every later native call is FindNextFileW. Update the diagnostic
+            // once per directory, not once per file entry.
+            operation.set("FindNextFileW (enumerating directory)");
+            first = false;
+        }
         match result {
             Ok(Some(e)) => {
                 if stopped() { break; }
@@ -196,8 +201,13 @@ pub fn scan(
     let termination: Arc<Mutex<ScanTermination>> = Arc::new(Mutex::new(ScanTermination::Completed));
     let stop_flag = Arc::new(AtomicBool::new(false));
 
-    // Shared work queue. Initially the root directory.
+    // Shared work queue. Initially the root directory. `inflight` counts
+    // directories that have been popped but are still being processed, so a
+    // worker that drains the queue never exits while another worker might still
+    // enqueue children (that bug made the "parallel" pool run on one thread).
     let queue: Arc<Mutex<VecDeque<(String, u32)>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let cv = Arc::new(Condvar::new());
+    let inflight = Arc::new(AtomicUsize::new(0));
     queue.lock().push_back((root_path.to_string(), root_idx));
 
     let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8);
@@ -205,6 +215,8 @@ pub fn scan(
     let mut handles = Vec::new();
     for _ in 0..workers {
         let queue = queue.clone();
+        let cv = cv.clone();
+        let inflight = inflight.clone();
         let arena = arena.clone();
         let ptix = ptix.clone();
         let lc = lc.clone();
@@ -230,18 +242,31 @@ pub fn scan(
             let mut local_types: HashMap<String, (u64, u64)> = HashMap::new();
             let mut live_count: u64 = 0;
             loop {
-                // Take a directory from the queue.
+                // Take a directory from the queue, or park until work arrives.
+                // A worker only leaves when the queue is empty and nobody is
+                // processing a directory (so nobody can enqueue more work), or
+                // the scan is being stopped.
                 let (dir_path, parent_idx) = {
                     let mut q = queue.lock();
-                    match q.pop_front() {
-                        Some(item) => item,
-                        None => return local_types, // no more work
+                    loop {
+                        if stop_flag.load(Ordering::Relaxed) {
+                            return local_types;
+                        }
+                        if let Some(item) = q.pop_front() {
+                            inflight.fetch_add(1, Ordering::AcqRel);
+                            break item;
+                        }
+                        if inflight.load(Ordering::Acquire) == 0 {
+                            return local_types; // nothing in flight can add work
+                        }
+                        cv.wait(&mut q);
                     }
                 };
+                // Decrement + wake waiters on every exit from this iteration
+                // (including `continue` and early `return`), so a drained queue
+                // can only be observed once this worker has published children.
+                let _inflight = InflightGuard { inflight: inflight.clone(), cv: cv.clone() };
 
-                if stop_flag.load(Ordering::Relaxed) {
-                    return local_types;
-                }
                 if cancel.as_ref().is_some_and(|cf| cf.load(Ordering::Relaxed)) {
                     *termination.lock() = ScanTermination::Cancelled;
                     stop_flag.store(true, Ordering::Relaxed);
@@ -261,9 +286,7 @@ pub fn scan(
                     return local_types;
                 }
 
-                if dir_path != root_path
-                    && skip_dirs.iter().any(|sd| path_has_component(&dir_path, sd.as_str()))
-                {
+                if dir_path != root_path && path_is_skipped(&dir_path, &skip_dirs) {
                     continue;
                 }
 
@@ -308,22 +331,22 @@ pub fn scan(
                         }
                         activity.progress();
                         if is_dir {
-                            let ci = alloc_directory(&mut ar, name.clone(), parent_idx, depth);
-                            link_child(&mut ar, &mut lc2, parent_idx, ci);
                             let child_path = format!("{}\\{}", dir_path, name);
+                            let ci = alloc_directory(&mut ar, name, parent_idx, depth);
+                            link_child(&mut ar, &mut lc2, parent_idx, ci);
                             ptx.insert(child_path.clone(), ci);
                             new_dirs.push((child_path, ci));
                         } else {
-                            let ci = alloc_file(&mut ar, name.clone(), size, parent_idx, depth, mtime);
-                            link_child(&mut ar, &mut lc2, parent_idx, ci);
                             if size > 0 {
-                                let full = format!("{}\\{}", dir_path, name);
-                                top_files.insert(full, size, top_count);
                                 let ext = file_ext_lower(&name);
                                 let entry = local_types.entry(ext).or_insert((0, 0));
                                 entry.0 += 1;
                                 entry.1 += size;
+                                let full = format!("{}\\{}", dir_path, name);
+                                top_files.insert(&full, size, top_count);
                             }
+                            let ci = alloc_file(&mut ar, name, size, parent_idx, depth, mtime);
+                            link_child(&mut ar, &mut lc2, parent_idx, ci);
                         }
                     }
                 }
@@ -355,8 +378,16 @@ pub fn scan(
         }));
     }
     for h in handles {
-        if let Ok(m) = h.join() {
-            file_types.merge(m);
+        match h.join() {
+            Ok(m) => file_types.merge(m),
+            Err(payload) => {
+                // A panicked worker may leave others parked on the empty queue.
+                // Unblock them and propagate so the caller falls back to the
+                // jwalk walker instead of trusting a partial tree as Complete.
+                stop_flag.store(true, Ordering::Relaxed);
+                cv.notify_all();
+                std::panic::resume_unwind(payload);
+            }
         }
     }
 
@@ -374,8 +405,18 @@ pub fn scan(
     finish_scan(start, arena, top_files, file_types, &finish_progress, term, &config.activity)
 }
 
-fn path_has_component(path: &str, target: &str) -> bool {
-    path.split(['/', '\\']).any(|c| c == target)
+/// Releases a worker's claim on a popped directory. Dropped on every exit from
+/// a worker iteration (normal, `continue`, early `return`, or panic unwind), so
+/// `inflight` can only reach zero once all children have been enqueued.
+struct InflightGuard {
+    inflight: Arc<AtomicUsize>,
+    cv: Arc<Condvar>,
+}
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        self.inflight.fetch_sub(1, Ordering::AcqRel);
+        self.cv.notify_all();
+    }
 }
 
 const LIVE_CAP: usize = 1000;

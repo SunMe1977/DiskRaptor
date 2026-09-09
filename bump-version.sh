@@ -35,9 +35,11 @@ rep() {
 }
 
 rep "package.json"
+rep "package-lock.json"
 rep "src-tauri/Cargo.toml"
 rep "src-tauri/tauri.conf.json"
 rep "installer/nsis/DiskRaptor.nsi"
+rep "installer/nsis/DiskRaptor-silent.nsi"
 
 # Cargo.lock: only the diskraptor crate entry should change (other crates share
 # version numbers, so do a targeted replacement on that block).

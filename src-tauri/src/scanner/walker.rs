@@ -32,13 +32,17 @@ impl Default for ScanConfig {
     fn default() -> Self {
         Self {
             root_path: String::new(),
+            // Matched as bare path components so a whole-drive scan of `C:\`
+            // actually skips `C:\Windows` (previously the full-path entries
+            // could never match a single segment). Entries containing a path
+            // separator are instead matched as a path prefix.
             skip_dirs: vec![
                 #[cfg(windows)]
-                "C:\\Windows".into(),
+                "Windows".into(),
                 #[cfg(target_os = "macos")]
-                "/System".into(),
+                "System".into(),
                 #[cfg(target_os = "macos")]
-                "/Library".into(),
+                "Library".into(),
                 "target".into(),
                 ".git".into(),
             ],
@@ -54,10 +58,25 @@ impl Default for ScanConfig {
     }
 }
 
-/// True if any path segment equals `target` (avoids matching partial names
-/// like "bin" matching "binary_folder").
-fn path_has_component(path: &str, target: &str) -> bool {
-    path.split(['/', '\\']).any(|c| c == target)
+/// True if `path` should be pruned from a scan. A skip entry is either:
+/// - a bare component name (`"Windows"`, `"target"`) matched against any path
+///   segment (avoids partial matches like `"bin"` matching `"binary_folder"`),
+/// - or a path that contains a separator (`"C:\\Games\\Old"`), matched as a
+///   prefix of the walked path with a component boundary.
+pub(crate) fn path_is_skipped(path: &str, skip_dirs: &[String]) -> bool {
+    skip_dirs.iter().any(|sd| {
+        if sd.is_empty() {
+            return false;
+        }
+        if sd.contains('/') || sd.contains('\\') {
+            if let Some(rest) = path.strip_prefix(sd.as_str()) {
+                return rest.is_empty() || rest.starts_with('/') || rest.starts_with('\\');
+            }
+            false
+        } else {
+            path.split(['/', '\\']).any(|c| c == sd.as_str())
+        }
+    })
 }
 
 const LIVE_CAP: usize = 1000;
@@ -102,7 +121,7 @@ impl Default for TopFilesAccum {
     }
 }
 impl TopFilesAccum {
-    pub(crate) fn insert(&self, path: String, size: u64, max_count: usize) {
+    pub(crate) fn insert(&self, path: &str, size: u64, max_count: usize) {
         // Fast reject without taking the files lock: once the list is full,
         // anything at or below the current minimum can never enter.
         if size <= self.min_size.load(Ordering::Relaxed) {
@@ -120,7 +139,10 @@ impl TopFilesAccum {
             .binary_search_by(|f| f.size.cmp(&size).reverse())
             .unwrap_or_else(|e| e);
         files.insert(idx, TopFileEntry {
-            path,
+            // Only materialize the owned path string once the entry is actually
+            // kept — callers pass a borrowed path to avoid allocating a String
+            // for every scanned file that never makes the top-N.
+            path: path.to_string(),
             size,
             size_human: format_size(size),
         });
@@ -394,7 +416,7 @@ mod platform {
 
             if is_dir {
                 dirs_found += 1;
-                if skip_dirs.iter().any(|sd| path_has_component(&path_buf, sd.as_str())) {
+                if path_is_skipped(&path_buf, &skip_dirs) {
                     continue;
                 }
                 let depth = child_depth(&arena, pi, root_idx);
@@ -414,12 +436,12 @@ mod platform {
                     .map(|m| m.modified().map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()).unwrap_or(0))
                     .unwrap_or(0);
                 let fname = file_name.into_owned();
-                let ci = alloc_file(&mut arena, fname.clone(), sz, pi, depth, mtime);
-                link_child(&mut arena, &mut lc, pi, ci);
                 if sz > 0 {
-                    top_files.insert(path_buf.clone(), sz, top_count);
+                    top_files.insert(&path_buf, sz, top_count);
                     file_types.add(&fname, sz);
                 }
+                let ci = alloc_file(&mut arena, fname, sz, pi, depth, mtime);
+                link_child(&mut arena, &mut lc, pi, ci);
             }
             if last_progress.elapsed().as_millis() >= 100 {
                 progress(files_found, dirs_found, bytes_found, &path_buf);
@@ -572,7 +594,7 @@ pub fn scan_simple(
         let pi = *ptix.get(&parent).unwrap_or(&root_idx);
         if is_dir {
             dirs_found += 1;
-            if skip_dirs.iter().any(|sd| path_has_component(&full, sd.as_str())) {
+            if path_is_skipped(&full, &skip_dirs) {
                 continue;
             }
             let depth = child_depth(&arena, pi, root_idx);
@@ -588,13 +610,12 @@ pub fn scan_simple(
             let sz = meta.map(|m| m.len()).unwrap_or(0);
             bytes_found += sz;
             let depth = child_depth(&arena, pi, root_idx);
-            let fname = file_name.clone();
-            let ci = alloc_file(&mut arena, fname.clone(), sz, pi, depth, 0);
-            link_child(&mut arena, &mut lc, pi, ci);
             if sz > 0 {
-                top_files.insert(full.clone(), sz, top_count);
-                file_types.add(&fname, sz);
+                top_files.insert(&full, sz, top_count);
+                file_types.add(&file_name, sz);
             }
+            let ci = alloc_file(&mut arena, file_name, sz, pi, depth, 0);
+            link_child(&mut arena, &mut lc, pi, ci);
         }
         if last_progress.elapsed().as_millis() >= 100 {
             progress(files_found, dirs_found, bytes_found, &full);
@@ -798,8 +819,8 @@ mod tests {
     #[test]
     fn test_top_files_below_max() {
         let accum = TopFilesAccum::default();
-        accum.insert("a".into(), 100, 5);
-        accum.insert("b".into(), 200, 5);
+        accum.insert("a", 100, 5);
+        accum.insert("b", 200, 5);
         let result = accum.into_inner();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].size, 200);
@@ -808,10 +829,10 @@ mod tests {
     #[test]
     fn test_top_files_truncates() {
         let accum = TopFilesAccum::default();
-        accum.insert("a".into(), 100, 3);
-        accum.insert("b".into(), 200, 3);
-        accum.insert("c".into(), 50, 3);
-        accum.insert("d".into(), 150, 3);
+        accum.insert("a", 100, 3);
+        accum.insert("b", 200, 3);
+        accum.insert("c", 50, 3);
+        accum.insert("d", 150, 3);
         let result = accum.into_inner();
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].size, 200);
@@ -822,9 +843,9 @@ mod tests {
     #[test]
     fn test_top_files_skips_small() {
         let accum = TopFilesAccum::default();
-        accum.insert("a".into(), 200, 2);
-        accum.insert("b".into(), 100, 2);
-        accum.insert("c".into(), 50, 2);
+        accum.insert("a", 200, 2);
+        accum.insert("b", 100, 2);
+        accum.insert("c", 50, 2);
         let result = accum.into_inner();
         assert_eq!(result.len(), 2);
         assert_eq!(result[1].size, 100);

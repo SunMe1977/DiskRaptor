@@ -2,42 +2,49 @@
 //! only work actually completed by a scanner advances the watchdog.
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::ThreadId;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const ACTIVE_CAP: usize = 16;
 const ERROR_CAP: usize = 100;
 
 pub struct ScanActivity {
-    state: Mutex<ActivityState>,
-}
-
-struct ActivityState {
-    last_progress: Instant,
-    active: HashMap<ThreadId, (String, &'static str, Instant)>,
+    /// Monotonic origin: `last_progress_ms` counts milliseconds since `base`.
+    base: Instant,
+    /// Last heartbeat of completed work (ms since `base`). Lock-free so the
+    /// per-entry progress calls of a multi-threaded walk never serialize on a
+    /// single mutex.
+    last_progress_ms: AtomicU64,
+    /// Diagnostics for slow/blocked operations (per thread). Only touched at
+    /// directory granularity, never per file entry.
+    active: Mutex<HashMap<ThreadId, (String, &'static str, Instant)>>,
 }
 
 impl Default for ScanActivity {
     fn default() -> Self {
-        Self { state: Mutex::new(ActivityState {
-            last_progress: Instant::now(),
-            active: HashMap::new(),
-        }) }
+        Self {
+            base: Instant::now(),
+            last_progress_ms: AtomicU64::new(0),
+            active: Mutex::new(HashMap::new()),
+        }
     }
 }
 
 impl ScanActivity {
+    #[inline]
     pub fn progress(&self) {
-        self.state.lock().last_progress = Instant::now();
+        self.last_progress_ms
+            .store(self.base.elapsed().as_millis() as u64, Ordering::Relaxed);
     }
 
     pub fn operation(self: &Arc<Self>, path: &str, operation: &'static str) -> ActiveOperation {
         let id = std::thread::current().id();
-        let mut state = self.state.lock();
-        if state.active.len() < ACTIVE_CAP || state.active.contains_key(&id) {
-            state.active.insert(id, (path.to_owned(), operation, Instant::now()));
+        let mut active = self.active.lock();
+        if active.len() < ACTIVE_CAP || active.contains_key(&id) {
+            active.insert(id, (path.to_owned(), operation, Instant::now()));
         }
         ActiveOperation { activity: self.clone(), id }
     }
@@ -47,11 +54,17 @@ impl ScanActivity {
     }
 
     pub(crate) fn timeout_at(&self, timeout_secs: u64, root: &str, now: Instant) -> Option<String> {
-        let state = self.state.lock();
-        if timeout_secs == 0 || now.saturating_duration_since(state.last_progress) < Duration::from_secs(timeout_secs) {
+        if timeout_secs == 0 {
             return None;
         }
-        let mut active: Vec<_> = state.active.values().map(|(path, op, since)| {
+        // Same clock as `progress()`: last heartbeat in ms since `base`.
+        let last_ms = self.last_progress_ms.load(Ordering::Relaxed);
+        let now_ms = now.saturating_duration_since(self.base).as_millis() as u64;
+        if now_ms.saturating_sub(last_ms) < timeout_secs * 1000 {
+            return None;
+        }
+        let active = self.active.lock();
+        let mut active: Vec<_> = active.values().map(|(path, op, since)| {
             format!("{} at {:?} ({}s in operation)", op, path, now.saturating_duration_since(*since).as_secs())
         }).collect();
         active.sort();
@@ -71,7 +84,8 @@ pub struct ActiveOperation {
 
 impl ActiveOperation {
     pub fn set(&self, operation: &'static str) {
-        if let Some((_, op, since)) = self.activity.state.lock().active.get_mut(&self.id) {
+        let mut active = self.activity.active.lock();
+        if let Some((_, op, since)) = active.get_mut(&self.id) {
             *op = operation;
             *since = Instant::now();
         }
@@ -80,7 +94,7 @@ impl ActiveOperation {
 
 impl Drop for ActiveOperation {
     fn drop(&mut self) {
-        self.activity.state.lock().active.remove(&self.id);
+        self.activity.active.lock().remove(&self.id);
     }
 }
 
@@ -96,11 +110,12 @@ pub fn record_error(errors: &Mutex<Vec<String>>, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn watchdog_uses_completed_work_and_zero_disables_it() {
         let activity = Arc::new(ScanActivity::default());
-        let start = activity.state.lock().last_progress;
+        let start = activity.base;
         let op = activity.operation("slow-directory", "FindFirstFileW (enumerating directory)");
         assert!(activity.timeout_at(0, "root", start + Duration::from_secs(10000)).is_none());
         assert!(activity.timeout_at(2, "root", start + Duration::from_secs(1)).is_none());
@@ -110,11 +125,12 @@ mod tests {
         assert!(activity.timeout_at(2, "root", start + Duration::from_secs(2)).is_some());
         // Simulate a long directory yielding an entry every second, without sleeping.
         for second in 1..100 {
-            activity.state.lock().last_progress = start + Duration::from_secs(second);
-            assert!(activity.timeout_at(2, "root", start + Duration::from_secs(second + 1)).is_none());
+            activity.last_progress_ms.store(second * 1000, Ordering::Relaxed);
+            let now = start + Duration::from_secs(second + 1);
+            assert!(activity.timeout_at(2, "root", now).is_none());
         }
         drop(op);
-        assert!(activity.state.lock().active.is_empty());
+        assert!(activity.active.lock().is_empty());
     }
 
     #[test]

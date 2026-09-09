@@ -37,9 +37,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../frontend/**/*"
-    ],
     "macOS": {
       "minimumSystemVersion": "12.0"
     },
