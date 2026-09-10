@@ -2,7 +2,13 @@
   "use strict";
   window.app = window.app || {};
 
-  window.app.initFavorites = function (scanPath, btnFav) {
+  /**
+ * Initialize the favorites module: load saved favorites, render the
+ * favorites dropdown, and wire add/remove/edit interactions.
+ * @param {HTMLInputElement} scanPath - The scan path input element.
+ * @param {HTMLButtonElement} btnFav - The favorites button element.
+ */
+window.app.initFavorites = function (scanPath, btnFav) {
     const favMenu = document.getElementById("fav-menu");
     let favorites = [];
 

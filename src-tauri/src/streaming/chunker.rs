@@ -2,9 +2,25 @@ use crate::scanner::tree::*;
 use anyhow::Result;
 
 /// Chunk size in number of nodes.
-/// Optimal for transfer: ~10 000 nodes per chunk.
-/// With ~56 bytes/node + string content, this is roughly 1–2 MB per chunk.
-pub const CHUNK_SIZE: u32 = 10_000;
+/// Configurable via `settings.chunk_size`; defaults to 10_000.
+///
+/// Optimal for transfer: ~10 000 nodes per chunk.
+/// With ~56 bytes/node + string content, this is roughly 1–2 MB per chunk.
+/// Override at your own risk — values below 500 or above 100_000 will be clamped.
+pub const DEFAULT_CHUNK_SIZE: u32 = 10_000;
+pub const MIN_CHUNK_SIZE: u32 = 500;
+pub const MAX_CHUNK_SIZE: u32 = 100_000;
+
+/// Resolve the effective chunk size from settings, falling back to the default.
+/// Invalid / out-of-range values are clamped to [MIN_CHUNK_SIZE, MAX_CHUNK_SIZE].
+pub fn chunk_size(settings: &Option<serde_json::Value>) -> u32 {
+    let raw = settings
+        .as_ref()
+        .and_then(|s| s.get("chunk_size"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_CHUNK_SIZE as u64) as u32;
+    raw.clamp(MIN_CHUNK_SIZE, MAX_CHUNK_SIZE)
+}
 
 /// Splits the arena tree into ordered chunks for streaming to the UI.
 ///
@@ -15,18 +31,20 @@ pub const CHUNK_SIZE: u32 = 10_000;
 ///
 /// # Arguments
 /// * `arena` - The completed arena tree.
+/// * `settings` - Optional settings object; `settings.chunk_size` overrides the default.
 ///
 /// # Returns
-/// A vector of `TreeChunk` objects, each containing up to `CHUNK_SIZE` nodes.
-pub fn chunk_tree(arena: &TreeNodeArena) -> Result<Vec<TreeChunk>> {
+/// A vector of `TreeChunk` objects, each containing up to the configured chunk size.
+pub fn chunk_tree(arena: &TreeNodeArena, settings: &Option<serde_json::Value>) -> Result<Vec<TreeChunk>> {
+    let size = chunk_size(settings);
     let total = arena.nodes.len() as u32;
-    let total_chunks = total.div_ceil(CHUNK_SIZE);
+    let total_chunks = total.div_ceil(size);
     let mut chunks = Vec::with_capacity(total_chunks as usize);
 
     for chunk_id in 0..total_chunks {
         // Promote to u64 to avoid u32 overflow on huge arenas.
-        let start = (chunk_id as u64 * CHUNK_SIZE as u64) as usize;
-        let end = (((chunk_id as u64 + 1) * CHUNK_SIZE as u64).min(total as u64)) as usize;
+        let start = (chunk_id as u64 * size as u64) as usize;
+        let end = (((chunk_id as u64 + 1) * size as u64).min(total as u64)) as usize;
 
         let mut nodes: Vec<TreeNode> = Vec::with_capacity(end - start);
         for idx in start..end {
@@ -56,12 +74,13 @@ pub struct ScanRootInfo {
 }
 
 /// Get the root info for a scan result.
-pub fn get_root_info(arena: &TreeNodeArena) -> ScanRootInfo {
+pub fn get_root_info(arena: &TreeNodeArena, settings: &Option<serde_json::Value>) -> ScanRootInfo {
     let total = arena.nodes.len() as u32;
+    let size = chunk_size(settings);
     ScanRootInfo {
         root_index: 0,
         total_nodes: total,
-        total_chunks: total.div_ceil(CHUNK_SIZE),
+        total_chunks: total.div_ceil(size),
     }
 }
 
@@ -128,14 +147,14 @@ mod tests {
     #[test]
     fn test_chunk_tree_empty() {
         let arena = TreeNodeArena::new();
-        let chunks = chunk_tree(&arena).unwrap();
+        let chunks = chunk_tree(&arena, &None).unwrap();
         assert!(chunks.is_empty());
     }
 
     #[test]
     fn test_chunk_tree_small() {
         let arena = small_arena();
-        let chunks = chunk_tree(&arena).unwrap();
+        let chunks = chunk_tree(&arena, &None).unwrap();
         assert_eq!(chunks.len(), 1);
         let c = &chunks[0];
         assert_eq!(c.chunk_id, 0);
@@ -149,7 +168,7 @@ mod tests {
     #[test]
     fn test_chunk_tree_chunk_id_assigned() {
         let arena = small_arena();
-        let chunks = chunk_tree(&arena).unwrap();
+        let chunks = chunk_tree(&arena, &None).unwrap();
         for node in &chunks[0].nodes {
             assert_eq!(node.chunk_id, 0);
         }
@@ -163,13 +182,13 @@ mod tests {
         // parent's child, allocated in preorder (parent first).
         let mut arena = TreeNodeArena::new();
         let mut last = arena.alloc(make_node("root", 0, NodeType::Directory));
-        for i in 0..(CHUNK_SIZE as usize * 2 + 5) {
+        for i in 0..(DEFAULT_CHUNK_SIZE as usize * 2 + 5) {
             let child = arena.alloc(make_node(&format!("n{}", i), 1, NodeType::File));
             arena.get_mut(last).first_child = child;
             arena.get_mut(child).parent = last;
             last = child;
         }
-        let chunks = chunk_tree(&arena).unwrap();
+        let chunks = chunk_tree(&arena, &None).unwrap();
         assert!(chunks.len() >= 3, "expected >= 3 chunks, got {}", chunks.len());
 
         // start_index continuity across chunks
@@ -204,7 +223,7 @@ mod tests {
     #[test]
     fn test_get_root_info() {
         let arena = small_arena();
-        let info = get_root_info(&arena);
+        let info = get_root_info(&arena, &None);
         assert_eq!(info.root_index, 0);
         assert_eq!(info.total_nodes, 3);
         assert_eq!(info.total_chunks, 1);
@@ -213,7 +232,7 @@ mod tests {
     #[test]
     fn test_get_root_info_empty() {
         let arena = TreeNodeArena::new();
-        let info = get_root_info(&arena);
+        let info = get_root_info(&arena, &None);
         assert_eq!(info.total_nodes, 0);
         assert_eq!(info.total_chunks, 0);
     }
@@ -238,8 +257,31 @@ mod tests {
     #[test]
     fn test_root_info_serialize() {
         let arena = small_arena();
-        let info = get_root_info(&arena);
+        let info = get_root_info(&arena, &None);
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("\"total_nodes\":3"));
+    }
+
+    #[test]
+    fn test_chunk_size_defaults() {
+        assert_eq!(chunk_size(&None), DEFAULT_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn test_chunk_size_from_settings() {
+        let settings = serde_json::json!({ "chunk_size": 5000 });
+        assert_eq!(chunk_size(&Some(settings)), 5000);
+    }
+
+    #[test]
+    fn test_chunk_size_clamps_low() {
+        let settings = serde_json::json!({ "chunk_size": 10 });
+        assert_eq!(chunk_size(&Some(settings)), MIN_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn test_chunk_size_clamps_high() {
+        let settings = serde_json::json!({ "chunk_size": 999_999 });
+        assert_eq!(chunk_size(&Some(settings)), MAX_CHUNK_SIZE);
     }
 }

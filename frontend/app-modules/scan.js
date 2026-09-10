@@ -79,7 +79,29 @@
       .catch(function () {});
   }
 
-  window.app.initScan = function (refs) {
+  /**
+ * Initialize the scan module: wire scan/rescan/cancel buttons, run the
+ * scan lifecycle (start → progress → result), and update the UI.
+ * @param {Object} refs - Module references.
+ * @param {Object} refs.loader - The scan loader object.
+ * @param {Object} refs.treeView - The tree view object.
+ * @param {Object} refs.diagram - The diagram object.
+ * @param {Object} refs.topFiles - The top-files panel object.
+ * @param {Object} refs.statsPanel - The stats panel object.
+ * @param {HTMLInputElement} refs.scanPath - The scan path input element.
+ * @param {HTMLButtonElement} refs.btnBrowse - The browse button element.
+ * @param {HTMLButtonElement} refs.btnScan - The scan button element.
+ * @param {HTMLButtonElement} refs.btnRescan - The rescan button element.
+ * @param {HTMLButtonElement} refs.btnCancel - The cancel button element.
+ * @param {HTMLButtonElement} refs.btnExport - The export button element.
+ * @param {HTMLElement} refs.progressOverlay - The progress overlay element.
+ * @param {HTMLElement} refs.progressPath - The progress path element.
+ * @param {HTMLElement} refs.chkFollow - The follow-symlinks checkbox element.
+ * @param {HTMLElement} refs.errDisplay - The error display element.
+ * @param {Function} refs.hideWelcome - Function to hide the welcome page.
+ * @param {Function} refs.sleep - Async sleep function (ms).
+ */
+window.app.initScan = function (refs) {
     const state = window.app.state;
     let retryTimeout = null;
     let cancelRequested = false;
@@ -403,20 +425,24 @@
       }
 
       // Clickable "⚠ N errors" badge in the tree header; opens a detail list.
-      function showErrorBadge(errs) {
-        const header = document.querySelector("#tree-panel .panel-header");
-        const old = document.getElementById("scan-error-badge");
-        if (old) old.remove();
-        const badge = document.createElement("button");
-        badge.id = "scan-error-badge";
-        badge.title = (window.__ || function (s) { return s; })("progress.view_errors");
-        badge.style.cssText =
-          "margin-left:8px;padding:3px 9px;font-size:11px;border:1px solid rgba(248,81,73,0.4);border-radius:12px;" +
-          "background:rgba(248,81,73,0.12);color:var(--accent-red);cursor:pointer;flex-shrink:0;font-weight:600;";
-        badge.textContent =
-          "\u26A0 " +
-          tKey("error.badge").replace("{count}", errs.length);
-        header.appendChild(badge);
+       function showErrorBadge(errs, summary) {
+         const header = document.querySelector("#tree-panel .panel-header");
+         const old = document.getElementById("scan-error-badge");
+         if (old) old.remove();
+         const badge = document.createElement("button");
+         badge.id = "scan-error-badge";
+         badge.title = (window.__ || function (s) { return s; })("progress.view_errors");
+         badge.style.cssText =
+           "margin-left:8px;padding:3px 9px;font-size:11px;border:1px solid rgba(248,81,73,0.4);border-radius:12px;" +
+           "background:rgba(248,81,73,0.12);color:var(--accent-red);cursor:pointer;flex-shrink:0;font-weight:600;";
+         const total = errs.length;
+         badge.textContent =
+           "\u26A0 " +
+           tKey("error.badge").replace("{count}", total) +
+           (summary && total > 0
+             ? " (P:" + (summary.permission_denied || 0) + " T:" + (summary.timeout || 0) + " I:" + (summary.io_error || 0) + ")"
+             : "");
+         header.appendChild(badge);
         badge.addEventListener("click", function () {
           const overlay = document.createElement("div");
           overlay.style.cssText =
@@ -480,18 +506,58 @@
           window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
         }
 
-        let lastFilesFound = 0;
-        let lastDirsFound = 0;
-        const pollStartTime = Date.now();
+         let lastFilesFound = 0;
+         let lastDirsFound = 0;
+         const scanStartedAt = Date.now();
+         let finalProgress = null;
 
-        let zeroCount = 0;
-        let scanDone = false;
-        let emaRate = 0;
-        let _lastProgressRender = 0;
+         let zeroCount = 0;
+         let scanDone = false;
+         let emaRate = 0;
+         let _lastProgressRender = 0;
 
-        function onProgress(p) {
+         // ── Event-based progress (replaces 1 Hz polling) ──
+         let unlistenProgress = null;
+         let unlistenError = null;
+         let unlistenComplete = null;
+         try {
+           const { listener: lp } = await window.__TAURI__.listen("scan:progress", function (event) {
+             if (scanDone) return;
+             const p = event && event.payload;
+             if (!p) return;
+             onProgress(p);
+             if (p.is_running === false && p.phase >= 3) scanDone = true;
+           });
+           unlistenProgress = lp;
+         } catch (e) { console.warn("[DiskRaptor] listen scan:progress failed:", e); }
+         try {
+           const { listener: le } = await window.__TAURI__.listen("scan:error", function (event) {
+             if (scanDone) return;
+             const payload = event && event.payload;
+             if (payload && payload.error) {
+               const errDisplay = document.getElementById("scan-error-display");
+               if (errDisplay) {
+                 errDisplay.textContent = payload.error;
+                 errDisplay.style.display = "block";
+               }
+             }
+           });
+           unlistenError = le;
+         } catch (e) { console.warn("[DiskRaptor] listen scan:error failed:", e); }
+         try {
+           const { listener: lc } = await window.__TAURI__.listen("scan:complete", function (event) {
+             const p = event && event.payload;
+             if (!p || p.scan_id !== scanId) return;
+             finalProgress = p;
+             scanDone = true;
+           });
+           unlistenComplete = lc;
+         } catch (e) { console.warn("[DiskRaptor] listen scan:complete failed:", e); }
+
+         function onProgress(p) {
           if (scanDone) return;
           if (!p) return;
+          finalProgress = p;
 
           // Throttle DOM-heavy rendering to ~15 fps; the raw counter fields
           // still update cheaply on every event.
@@ -610,28 +676,32 @@
             });
           }
 
-          if (p.error_count > 0 && errDisplay) {
-            const errMsg = localizeScanError(p.last_error || "");
-            const escErr = String(errMsg.substring(0, 80))
-              .replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;")
-              .replace(/"/g, "&quot;");
-            errDisplay.innerHTML =
-              '\uD83D\uDD12 <strong>' +
-              p.error_count +
-              '</strong> ' +
-              tKey("error.permission_denied") +
-              " \u2014 " +
-              escErr +
-              ' <span style="color:var(--text-muted);font-size:11px;">' +
-              tKey("error.some_folders_skipped") +
-              "</span> " +
-              ' <button class="retry-admin-btn" data-path="' +
-              encodeURIComponent(path) +
-              '">' +
-              tKey("error.run_admin") +
-              "</button>";
+           if (p.error_count > 0 && errDisplay) {
+             const s = p.errors_summary || {};
+             const parts = [];
+             if (s.permission_denied) parts.push(tKey("error.access_denied") + " x" + s.permission_denied);
+             if (s.timeout) parts.push(tKey("error.timeout") + " x" + s.timeout);
+             if (s.io_error) parts.push(tKey("error.some_folders_skipped") + " x" + s.io_error);
+             if (s.other) parts.push(tKey("error.more") + " x" + s.other);
+             const errMsg = localizeScanError(p.last_error || "");
+             const escErr = String(errMsg.substring(0, 80))
+               .replace(/&/g, "&amp;")
+               .replace(/</g, "&lt;")
+               .replace(/>/g, "&gt;")
+               .replace(/"/g, "&quot;");
+             errDisplay.innerHTML =
+               '\uD83D\uDD12 <strong>' +
+               p.error_count +
+               '</strong> ' +
+               (parts.length ? parts.join(" \u00b7 ") : escErr) +
+               ' <span style="color:var(--text-muted);font-size:11px;">' +
+               tKey("error.some_folders_skipped") +
+               "</span> " +
+               ' <button class="retry-admin-btn" data-path="' +
+               encodeURIComponent(path) +
+               '">' +
+               tKey("error.run_admin") +
+               "</button>";
             errDisplay.style.display = "block";
             var adminBtn = errDisplay.querySelector(".retry-admin-btn");
             if (adminBtn && !adminBtn._listener) {
@@ -666,42 +736,36 @@
           }
         }
 
-        unlisten = null;
+         unlisten = null;
 
-        let finalProgress = null;
-        // The backend also emits scan:progress events, but they only carry raw
-        // counters — fetching the full payload per event doubles IPC traffic.
-        // Poll get_scan_progress at 1 Hz instead: one roundtrip, everything the
-        // progress UI needs (phase, is_running, live_entries, errors...).
-        // Only the backend's idle watchdog limits a scan. Large, progressing
-        // drives must not fail because of an unrelated total-duration limit.
-        let pollFailures = 0;
-        while (!scanDone) {
-          await sleep(1000);
-          const p = await window.__TAURI__
-            .invoke("get_scan_progress", { scanId: scanId })
-            .catch(function () {
-              return null;
-            });
-          if (p) {
-            if (p.error) throw new Error(p.error);
-            pollFailures = 0;
-            onProgress(p);
-            finalProgress = p;
-            // Backend reports the scan as finished — stop polling early.
-            if (p.is_running === false && p.phase >= 3) {
-              break;
+         // Wait for scan completion (event handler sets scanDone).
+          // Fallback poll every 1.5s in case events are lost.
+          let pollFailures = 0;
+          while (!scanDone) {
+            await sleep(1500);
+            if (scanDone) break;
+            const p = await window.__TAURI__
+              .invoke("get_scan_progress", { scanId: scanId })
+              .catch(function () { return null; });
+            if (p) {
+              if (p.error) throw new Error(p.error);
+              pollFailures = 0;
+              onProgress(p);
+              if (p.is_running === false && p.phase >= 3) scanDone = true;
+            } else if (++pollFailures >= 4) {
+              await window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
+              throw new Error("Scan progress unavailable");
             }
-          } else if (++pollFailures >= 10) {
-            await window.__TAURI__.invoke("cancel_scan", {}).catch(function () {});
-            throw new Error("Scan progress unavailable");
           }
-        }
 
-        progressActive = false;
-        if (uiRaf !== null) cancelAnimationFrame(uiRaf);
-        uiRaf = null;
-        pendingUi = null;
+         if (unlistenProgress) { try { unlistenProgress(); } catch (_) {} unlistenProgress = null; }
+         if (unlistenError) { try { unlistenError(); } catch (_) {} unlistenError = null; }
+         if (unlistenComplete) { try { unlistenComplete(); } catch (_) {} unlistenComplete = null; }
+
+         progressActive = false;
+         if (uiRaf !== null) cancelAnimationFrame(uiRaf);
+         uiRaf = null;
+         pendingUi = null;
         progressSpeedValEl.textContent = "\u2713";
 
         let result = null;
@@ -773,7 +837,7 @@
             total_files: lastFilesFound || 0,
             total_dirs: lastDirsFound || 0,
             total_size: 0,
-            scan_time_ms: Date.now() - pollStartTime,
+            scan_time_ms: Date.now() - scanStartedAt,
             top_files: [],
             file_type_breakdown: [],
             termination: term,
@@ -782,7 +846,7 @@
           statsPanel.render(fbStats);
           diagram.setData(fbStats);
           const totalSecs = Math.floor(
-            (Date.now() - pollStartTime) / 1000,
+            (Date.now() - scanStartedAt) / 1000,
           );
           const em = Math.floor(totalSecs / 60);
           const es = totalSecs % 60;
@@ -836,7 +900,8 @@
             if (window.showToast) {
               window.showToast(tKey("toast.scan_errors") + first.substring(0, 160), "warning");
             }
-            showErrorBadge(errs);
+             const summary = (prog2 && prog2.data && prog2.data.errors_summary) || (prog2 && prog2.errors_summary) || null;
+             showErrorBadge(errs, summary);
           }
         } catch (e) { console.debug("[DiskRaptor]", e); }
         if (term === "timed_out" && !timeoutDiagnostic) timeoutDiagnostic = partialMessage;
@@ -987,15 +1052,13 @@
             var items = overlay.querySelectorAll('.cleanup-item input[type="checkbox"]:checked');
             var files = Array.from(items).map(function (cb) { return cb.closest(".cleanup-item").dataset.file; });
             if (files.length === 0) { const t0 = window.__ || function (s) { return s; }; window.showToast(t0("toast.no_items"), "warning"); return; }
-            window.confirmDialog("Move " + files.length + " file(s) to Trash?").then(function (ok) {
-              if (!ok) return;
-            var rootPath = (scanPath && scanPath.value || "").replace(/[\\/]+$/, "");
+             if (files.length === 0) { const t0 = window.__ || function (s) { return s; }; window.showToast(t0("toast.no_items"), "warning"); return; }
             (async function () {
               var ok2 = 0, fail = 0;
               for (var fi = 0; fi < files.length; fi++) {
-                var fullPath = rootPath + "/" + files[fi];
+                var fullPath = spv + "/" + files[fi];
                 try {
-                  var delRes = await window.__TAURI__.invoke("delete_path", { path: fullPath });
+                  var delRes = await window.app.deletePath(fullPath);
                   if (delRes && delRes.success === false) { fail++; console.warn("Cleanup failed:", fullPath, delRes.error); }
                   else { ok2++; }
                 } catch (e) { fail++; console.warn("Cleanup failed:", fullPath, e); }
@@ -1006,9 +1069,8 @@
                 else if (ok2 > 0) window.showToast(ok2 + " file(s) moved to trash", "success");
               }
               if (btnScan) btnScan.click();
-            })();
-            });
-          };
+             })();
+           };
           overlay.querySelectorAll(".cleanup-item").forEach(function (row) {
             row.onclick = function (e) { if (e.target.tagName === "INPUT") return; var cb = this.querySelector('input[type="checkbox"]'); if (cb) cb.checked = !cb.checked; };
             row.onmouseenter = function () { this.style.background = "var(--bg-hover)"; };

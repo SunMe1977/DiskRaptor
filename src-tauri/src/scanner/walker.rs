@@ -96,15 +96,29 @@ fn push_live(live: &std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque
 /// `to_lowercase` path when the extension is already lowercase ASCII (the
 /// overwhelmingly common case).
 pub(crate) fn file_ext_lower(path: &str) -> String {
-    match Path::new(path).extension().and_then(|e| e.to_str()) {
-        Some(e) => {
-            if e.bytes().any(|b| b.is_ascii_uppercase()) {
-                e.to_lowercase()
-            } else {
-                e.to_string()
-            }
+    let p = Path::new(path);
+    let mut parts = Vec::new();
+    let mut ext = match p.extension().and_then(|e| e.to_str()) {
+        Some(e) => e.to_string(),
+        None => return "(none)".into(),
+    };
+    parts.push(ext);
+    // Walk up through multi-part extensions (e.g. "tar.gz").
+    let mut stem = p.file_stem();
+    while let Some(s) = stem {
+        if let Some(next_ext) = Path::new(s).extension().and_then(|e| e.to_str()) {
+            parts.push(next_ext.to_string());
+            stem = Path::new(s).file_stem();
+        } else {
+            break;
         }
-        None => "(none)".into(),
+    }
+    parts.reverse();
+    let joined = parts.join(".");
+    if joined.bytes().any(|b| b.is_ascii_uppercase()) {
+        joined.to_lowercase()
+    } else {
+        joined
     }
 }
 
@@ -230,6 +244,7 @@ pub enum ScanTermination {
     LimitReached,
 }
 
+#[must_use]
 pub struct ScanResult {
     pub arena: TreeNodeArena,
     pub stats: ScanStats,
@@ -274,7 +289,7 @@ fn alloc_directory(
     parent: u32,
     depth: u16,
 ) -> u32 {
-    arena.alloc(TreeNode {
+    let idx = arena.alloc(TreeNode {
         name,
         size: 0,
         file_count: 0,
@@ -286,7 +301,11 @@ fn alloc_directory(
         depth,
         chunk_id: 0,
         mtime: 0,
-    })
+    });
+    if parent != u32::MAX {
+        arena.get_mut(parent).first_child = idx;
+    }
+    idx
 }
 
 fn alloc_file(
@@ -626,24 +645,26 @@ pub fn scan_simple(
     finish_scan(start, arena, top_files, file_types, progress, termination, &config.activity)
 }
 
+fn log_panic(context: &str, panic: Box<dyn std::any::Any + Send>) {
+    let msg = panic
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown".to_string());
+    eprintln!("[walker] {} panicked: {}, falling back", context, msg);
+}
+
 pub fn scan_directory_with_progress(
     config: ScanConfig,
     progress: ScanProgressCallback,
 ) -> Result<ScanResult> {
     let root_path = config.root_path.clone();
     config.activity.progress();
-    // The Windows $Recycle.Bin is a junction-heavy raw store of $R/$I files
-    // that can hold millions of SYSTEM-owned entries. Scanning it is either
-    // painfully slow or hangs, and the raw names are useless to the user.
-    // Return an immediate, empty result so the UI shows an empty tree + message
-    // instead of an endless "cancel" scan.
     #[cfg(target_os = "windows")]
     if root_path.contains("$Recycle.Bin") {
         return empty_scan_result(&root_path);
     }
 
-    // Windows: prefer the fast FindFirstFileW scanner; fall back to the jwalk
-    // walker (then to the simple walkdir fallback) if it errors or panics.
     #[cfg(target_os = "windows")]
     {
         let progress_arc: Arc<ScanProgressCallback> = Arc::new(progress);
@@ -655,47 +676,10 @@ pub fn scan_directory_with_progress(
             Ok(Err(e)) => {
                 eprintln!("[walker] ntfs_fast scan error: {}, falling back to jwalk", e);
             }
-            Err(panic) => {
-                let msg = panic
-                    .downcast_ref::<&str>()
-                    .map(|s| s.to_string())
-                    .or_else(|| panic.downcast_ref::<String>().cloned())
-                    .unwrap_or_else(|| "unknown".to_string());
-                eprintln!(
-                    "[walker] ntfs_fast scanner panicked: {}, falling back to jwalk",
-                    msg
-                );
-            }
+            Err(panic) => log_panic("ntfs_fast scanner", panic),
         }
-        // Fallback: platform::scan takes &ScanProgressCallback. Deref the Arc.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            platform::scan(&config, progress_arc.as_ref(), &root_path)
-        }));
-        match result {
-            Ok(Ok(scan_result)) => Ok(scan_result),
-            Ok(Err(e)) => {
-                eprintln!("[walker] Win32 scan error: {}, falling back to walkdir", e);
-                scan_simple(&config, progress_arc.as_ref(), &root_path)
-            }
-            Err(panic) => {
-                let msg = if let Some(s) = panic.downcast_ref::<&str>() {
-                    s.to_string()
-                } else if let Some(s) = panic.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "unknown".to_string()
-                };
-                eprintln!(
-                    "[walker] Win32 scanner panicked: {}, falling back to walkdir",
-                    msg
-                );
-                scan_simple(&config, progress_arc.as_ref(), &root_path)
-            }
-        }
+        try_fallback_jwalk_walkdir(&config, progress_arc.as_ref(), &root_path, "Win32")
     }
-
-    // macOS: prefer the fast getattrlistbulk scanner; fall back to the jwalk
-    // walker (then to the simple walkdir fallback) if it errors or panics.
     #[cfg(target_os = "macos")]
     {
         let progress_arc: Arc<ScanProgressCallback> = Arc::new(progress);
@@ -707,64 +691,34 @@ pub fn scan_directory_with_progress(
             Ok(Err(e)) => {
                 eprintln!("[walker] macos_fast scan error: {}, falling back to jwalk", e);
             }
-            Err(panic) => {
-                let msg = panic
-                    .downcast_ref::<&str>()
-                    .map(|s| s.to_string())
-                    .or_else(|| panic.downcast_ref::<String>().cloned())
-                    .unwrap_or_else(|| "unknown".to_string());
-                eprintln!(
-                    "[walker] macos_fast scanner panicked: {}, falling back to jwalk",
-                    msg
-                );
-            }
+            Err(panic) => log_panic("macos_fast scanner", panic),
         }
-        // Fallback: platform::scan takes &ScanProgressCallback. Deref the Arc.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            platform::scan(&config, progress_arc.as_ref(), &root_path)
-        }));
-        match result {
-            Ok(Ok(scan_result)) => Ok(scan_result),
-            Ok(Err(e)) => {
-                eprintln!("[walker] scan error: {}, falling back to walkdir", e);
-                scan_simple(&config, progress_arc.as_ref(), &root_path)
-            }
-            Err(panic) => {
-                let msg = if let Some(s) = panic.downcast_ref::<&str>() {
-                    s.to_string()
-                } else if let Some(s) = panic.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "unknown".to_string()
-                };
-                eprintln!("[walker] scanner panicked: {}, falling back to walkdir", msg);
-                scan_simple(&config, progress_arc.as_ref(), &root_path)
-            }
-        }
+        try_fallback_jwalk_walkdir(&config, progress_arc.as_ref(), &root_path, "macOS")
     }
-
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            platform::scan(&config, &progress, &root_path)
-        }));
-        match result {
-            Ok(Ok(scan_result)) => Ok(scan_result),
-            Ok(Err(e)) => {
-                eprintln!("[walker] scan error: {}, falling back to walkdir", e);
-                scan_simple(&config, &progress, &root_path)
-            }
-            Err(panic) => {
-                let msg = if let Some(s) = panic.downcast_ref::<&str>() {
-                    s.to_string()
-                } else if let Some(s) = panic.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "unknown".to_string()
-                };
-                eprintln!("[walker] scanner panicked: {}, falling back to walkdir", msg);
-                scan_simple(&config, &progress, &root_path)
-            }
+        try_fallback_jwalk_walkdir(&config, &progress, &root_path, "jwalk")
+    }
+}
+
+fn try_fallback_jwalk_walkdir(
+    config: &ScanConfig,
+    progress: &ScanProgressCallback,
+    root_path: &str,
+    context: &str,
+) -> Result<ScanResult> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        platform::scan(config, progress, root_path)
+    }));
+    match result {
+        Ok(Ok(scan_result)) => Ok(scan_result),
+        Ok(Err(e)) => {
+            eprintln!("[walker] {} scan error: {}, falling back to walkdir", context, e);
+            scan_simple(config, progress, root_path)
+        }
+        Err(panic) => {
+            log_panic(&format!("{} jwalk scanner", context), panic);
+            scan_simple(config, progress, root_path)
         }
     }
 }
@@ -1014,5 +968,175 @@ mod tests {
         assert_eq!(fast.termination, super::ScanTermination::Completed);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── New: path skip logic ────────────────────────────────────
+
+    #[test]
+    fn test_path_is_skipped_bare_component() {
+        assert!(path_is_skipped("/home/user/Windows/system32", &["Windows".into()]));
+        assert!(path_is_skipped("C:\\Users\\user\\target\\debug", &["target".into()]));
+        assert!(!path_is_skipped("/home/user/myproject", &["target".into()]));
+    }
+
+    #[test]
+    fn test_path_is_skipped_full_path_prefix() {
+        assert!(path_is_skipped("C:\\Users\\user\\Projects", &["C:\\Users\\user\\Projects".into()]));
+        assert!(path_is_skipped("C:\\Users\\user\\Projects\\sub", &["C:\\Users\\user\\Projects".into()]));
+    }
+
+    #[test]
+    fn test_path_is_skipped_partial_name_ignored() {
+        // "bin" should NOT match "binary_folder" or "/usr/bin"
+        assert!(!path_is_skipped("/home/user/binary_folder", &["bin".into()]));
+    }
+
+    #[test]
+    fn test_path_is_skipped_empty_list() {
+        assert!(!path_is_skipped("/anything/here", &[]));
+    }
+
+    #[test]
+    fn test_path_is_skipped_git_dir() {
+        assert!(path_is_skipped("/repo/src/.git/objects", &[".git".into()]));
+        assert!(path_is_skipped("C:\\repo\\.git\\config", &[".git".into()]));
+    }
+
+    // ── New: file extension lowercasing ─────────────────────────
+
+    #[test]
+    fn test_file_ext_lower_ascii() {
+        assert_eq!(file_ext_lower("photo.JPG"), "jpg");
+        assert_eq!(file_ext_lower("archive.TAR.GZ"), "tar.gz");
+        assert_eq!(file_ext_lower("README"), "(none)");
+        assert_eq!(file_ext_lower("style.CSS"), "css");
+    }
+
+    #[test]
+    fn test_file_ext_lower_already_lower() {
+        // Fast path: already-lowercase ASCII returns without allocating
+        let result = file_ext_lower("photo.jpg");
+        assert_eq!(result, "jpg");
+    }
+
+    #[test]
+    fn test_file_ext_lower_unicode() {
+        let result = file_ext_lower("foto.JPG");
+        assert!(result == "jpg");
+    }
+
+    // ── New: tree node allocation helpers ───────────────────────
+
+    #[test]
+    fn test_alloc_root() {
+        use super::super::tree::{NodeType, TreeNodeArena};
+        let mut arena = TreeNodeArena::new();
+        let idx = super::alloc_root(&mut arena, "/home/user");
+        assert_eq!(idx, 0);
+        assert_eq!(arena.nodes.len(), 1);
+        assert_eq!(arena.nodes[0].name, "user");
+        assert!(arena.nodes[0].is_directory());
+        assert_eq!(arena.nodes[0].depth, 0);
+    }
+
+    #[test]
+    fn test_alloc_directory() {
+        use super::super::tree::{NodeType, TreeNodeArena};
+        let mut arena = TreeNodeArena::new();
+        let root = arena.alloc(super::super::tree::TreeNode {
+            name: "root".into(), size: 0, file_count: 0, dir_count: 1,
+            node_type: NodeType::Directory, parent: u32::MAX,
+            first_child: u32::MAX, next_sibling: u32::MAX, depth: 0, chunk_id: 0, mtime: 0,
+        });
+        let child = super::alloc_directory(&mut arena, "src".into(), root, 1);
+        assert_eq!(child, 1);
+        assert!(arena.nodes[child as usize].is_directory());
+        assert_eq!(arena.nodes[child as usize].depth, 1);
+        assert_eq!(arena.nodes[root as usize].first_child, child);
+    }
+
+    #[test]
+    fn test_alloc_file() {
+        use super::super::tree::{NodeType, TreeNodeArena};
+        let mut arena = TreeNodeArena::new();
+        let root = arena.alloc(super::super::tree::TreeNode {
+            name: "root".into(), size: 0, file_count: 0, dir_count: 1,
+            node_type: NodeType::Directory, parent: u32::MAX,
+            first_child: u32::MAX, next_sibling: u32::MAX, depth: 0, chunk_id: 0, mtime: 0,
+        });
+        let file = super::alloc_file(&mut arena, "main.rs".into(), 4096, root, 1, 1_700_000_000);
+        assert_eq!(file, 1);
+        assert!(arena.nodes[file as usize].is_file());
+        assert_eq!(arena.nodes[file as usize].size, 4096);
+        assert_eq!(arena.nodes[file as usize].file_count, 1);
+    }
+
+    #[test]
+    fn test_link_child() {
+        use super::super::tree::{NodeType, TreeNodeArena};
+        let mut arena = TreeNodeArena::new();
+        let root = arena.alloc(super::super::tree::TreeNode {
+            name: "root".into(), size: 0, file_count: 0, dir_count: 1,
+            node_type: NodeType::Directory, parent: u32::MAX,
+            first_child: u32::MAX, next_sibling: u32::MAX, depth: 0, chunk_id: 0, mtime: 0,
+        });
+        let d1 = super::alloc_directory(&mut arena, "a".into(), root, 1);
+        let d2 = super::alloc_directory(&mut arena, "b".into(), root, 1);
+        super::link_child(&mut arena, &mut std::collections::HashMap::new(), root, d1);
+        // link_child with empty map sets first_child; second call updates sibling
+        let mut lc = std::collections::HashMap::new();
+        lc.insert(root, d1);
+        super::link_child(&mut arena, &mut lc, root, d2);
+        assert_eq!(arena.nodes[root as usize].first_child, d1);
+        assert_eq!(arena.nodes[d1 as usize].next_sibling, d2);
+    }
+
+    // ── New: ScanTermination serialization ──────────────────────
+
+    #[test]
+    fn test_scan_termination_serde() {
+        use super::super::walker::ScanTermination;
+        let completed = serde_json::to_string(&ScanTermination::Completed).unwrap();
+        assert_eq!(completed, "\"completed\"");
+        let cancelled = serde_json::to_string(&ScanTermination::Cancelled).unwrap();
+        assert_eq!(cancelled, "\"cancelled\"");
+        let timed_out = serde_json::to_string(&ScanTermination::TimedOut).unwrap();
+        assert_eq!(timed_out, "\"timed_out\"");
+        let limit = serde_json::to_string(&ScanTermination::LimitReached).unwrap();
+        assert_eq!(limit, "\"limit_reached\"");
+    }
+
+    // ── New: finish_scan counts ─────────────────────────────────
+
+    #[test]
+    fn test_finish_scan_counts() {
+        use super::super::tree::{NodeType, TreeNodeArena};
+        let mut arena = TreeNodeArena::with_capacity(8);
+        let root = arena.alloc(super::super::tree::TreeNode {
+            name: "root".into(), size: 300, file_count: 2, dir_count: 1,
+            node_type: NodeType::Directory, parent: u32::MAX,
+            first_child: u32::MAX, next_sibling: u32::MAX, depth: 0, chunk_id: 0, mtime: 0,
+        });
+        arena.alloc(super::super::tree::TreeNode {
+            name: "a.txt".into(), size: 100, file_count: 1, dir_count: 0,
+            node_type: NodeType::File, parent: root,
+            first_child: u32::MAX, next_sibling: u32::MAX, depth: 1, chunk_id: 0, mtime: 0,
+        });
+        arena.alloc(super::super::tree::TreeNode {
+            name: "b.txt".into(), size: 200, file_count: 1, dir_count: 0,
+            node_type: NodeType::File, parent: root,
+            first_child: u32::MAX, next_sibling: u32::MAX, depth: 1, chunk_id: 0, mtime: 0,
+        });
+        let top = std::sync::Arc::new(TopFilesAccum::default());
+        let ft = std::sync::Arc::new(FileTypeAccum::default());
+        let activity = std::sync::Arc::new(super::super::activity::ScanActivity::default());
+         let progress: ScanProgressCallback = Box::new(|_, _, _, _| {});
+         let result = super::finish_scan(
+             std::time::Instant::now(), arena, top, ft,
+             &progress, ScanTermination::Completed, &activity,
+         ).unwrap();
+        assert_eq!(result.stats.total_files, 2);
+        assert_eq!(result.stats.total_dirs, 1);
+        assert_eq!(result.stats.total_size, 600);
     }
 }

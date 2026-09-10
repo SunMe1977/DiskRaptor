@@ -138,10 +138,10 @@
       setTimeout(() => reject(new Error("Tauri bridge timeout")), 30000),
     );
 
-    if (statusBar) statusBar.textContent = (window.__ || function (s) { return s; })("status.connecting");
+    if (statusBar) statusBar.textContent = window.t("status.connecting");
     try {
       await Promise.race([bridgeReady, timeout]);
-      if (statusBar) statusBar.textContent = (window.__ || function (s) { return s; })("status.connected");
+      if (statusBar) statusBar.textContent = window.t("status.connected");
       try {
         const w = window.__TAURI__.window.getCurrentWindow();
         await w.maximize();
@@ -149,7 +149,7 @@
     } catch (err) {
       console.error("Tauri backend not connected:", err);
       if (statusBar)
-        statusBar.textContent = (window.__ || function (s) { return s; })("status.backend_error").replace("{error}", err.message);
+        statusBar.textContent = window.t("status.backend_error").replace("{error}", err.message);
       return;
     }
 
@@ -157,6 +157,15 @@
       console.error("Tauri invoke still unavailable");
       return;
     }
+
+    (async function () {
+      try {
+        const res = await window.__TAURI__.invoke("run_apfs_cleanup", {});
+        if (res && res.status === "ok" && res.deleted > 0) {
+          window.showToast("APFS cleanup: removed " + res.deleted + " old snapshot(s)", "success");
+        }
+      } catch (_) {}
+    })();
 
     // ── IPC contract guard ────────────────────────────────────────────────
     // Wrap invoke so every response is validated against the documented shapes
@@ -251,7 +260,7 @@
          return window.__TAURI__.invoke("delete_path", { path });
        }
        const ok = await window.confirmDialog(
-         (window.__ || function (k) { return k; })("confirm.move_trash_file") + path,
+         window.t("confirm.move_trash_file") + path,
        );
         if (!ok) return { success: false, error: "cancelled" };
         return window.__TAURI__.invoke("delete_path", { path });
@@ -267,7 +276,7 @@
           return window.__TAURI__.invoke("delete_permanent", { path });
         }
         const ok = await window.confirmDialog(
-          (window.__ || function (k) { return k; })("trash.delete_confirm"),
+          window.t("trash.delete_confirm"),
         );
         if (!ok) return { success: false, error: "cancelled" };
         return window.__TAURI__.invoke("delete_permanent", { path });
@@ -290,7 +299,7 @@
             );
           }
           const sb = document.querySelector(".status-bar");
-          if (sb) sb.textContent = (window.__ || function (s) { return s; })("status.sandbox");
+          if (sb) sb.textContent = window.t("status.sandbox");
           // Hide tools that rely on subprocesses forbidden in the sandbox.
           document
             .querySelectorAll(
@@ -584,7 +593,7 @@
 
     loader.onProgress = (loaded, total) => {
       const el = document.querySelector("#tree-panel .status-bar");
-      if (el) el.textContent = (window.__ || function (s) { return s; })("status.loading_chunks").replace("{loaded}", loaded).replace("{total}", total);
+      if (el) el.textContent = window.t("status.loading_chunks").replace("{loaded}", loaded).replace("{total}", total);
     };
 
     treeView.onSelect = function () {};
@@ -603,6 +612,10 @@
     const btnFav = document.getElementById("btn-fav");
 
     // CLI: `diskraptor.exe <path>` scans that path on startup.
+    /**
+     * Scan a path provided as a CLI argument.
+     * @param {string} path - The directory path to scan.
+     */
     window.__scanPathArg = function (path) {
       if (path && scanPath) {
         scanPath.value = path;
@@ -655,7 +668,7 @@
       head.style.cssText =
         "padding:12px 18px;font-size:14px;font-weight:600;color:var(--text-primary);" +
         "border-bottom:1px solid var(--border,#30363d);";
-      head.textContent = "⌨ " + (window.__ || function (s) { return s; })("shortcut.title");
+      head.textContent = "⌨ " + window.t("shortcut.title");
       const body = document.createElement("div");
       body.style.cssText = "padding:14px 18px;font-size:13px;line-height:2;color:var(--text-primary);";
       const rows = [
@@ -677,7 +690,7 @@
           "font-family:var(--font-mono);font-size:12px;background:var(--bg-tertiary);" +
           "border:1px solid var(--border);border-radius:4px;padding:1px 6px;white-space:nowrap;";
         const d = document.createElement("span");
-        d.textContent = (window.__ || function (s) { return s; })(r[1]);
+        d.textContent = window.t(r[1]);
         line.appendChild(k);
         line.appendChild(d);
         body.appendChild(line);
@@ -783,7 +796,7 @@
     (async function renderStartHistory() {
       const wrap = document.getElementById("start-history");
       if (!wrap) return;
-      const t = window.__ || function (k) { return k; };
+      const t = window.t;
       let showAll = false;
 
       async function load() {
@@ -1135,7 +1148,7 @@
                 .then(function (h) { if (h) dupScanner.start(String(h)); })
                 .catch(function () {});
             } else {
-              const t0 = window.__ || function (s) { return s; };
+              const t0 = window.t;
               window.showToast(t0("toast.select_folder_first"), "info");
             }
           });
@@ -1316,6 +1329,10 @@
         });
       }
     }
+    /**
+     * Check for DiskRaptor updates by querying the GitHub releases API.
+     * Shows a popup with the latest version or a "no updates" message.
+     */
     window.__checkUpdate = async function () {
       const el = document.getElementById("about-update-check");
       const openPopup = function (contentHtml, clickHandler) {
@@ -1529,7 +1546,7 @@
           '<button data-lang="auto"' +
           autoActive +
           ' class="lang-item"><span class="lang-flag">\uD83D\uDDA5\uFE0F</span> <span>' +
-          window.__("lang.auto") +
+          window.t("lang.auto") +
           '</span> <span class="lang-code">auto</span></button>';
         html +=
           '<hr style="border:none;border-top:1px solid var(--border-light);margin:4px 0">';

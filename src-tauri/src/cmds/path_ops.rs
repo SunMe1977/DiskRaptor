@@ -384,6 +384,9 @@ pub(crate) fn open_properties(path: String) -> JsonResult {
         use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
         let wide: Vec<u16> = path_str.encode_utf16().chain(std::iter::once(0)).collect();
         let result = unsafe {
+            // SAFETY: `PCWSTR(wide.as_ptr())` points to a null-terminated UTF-16
+            // string; `&mut shfi` is a valid mutable reference; size matches the
+            // struct; flags are standard shell constants.
             ShellExecuteW(
                 None,
                 w!("properties"),
@@ -476,6 +479,8 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
     // Every handle below must be released: the memory DC, the DIB and the icon
     // itself. Leaking them (as this function used to) exhausts the ~10k GDI
     // object limit after enough icon lookups and breaks shell drawing.
+    // SAFETY: `None` requests a memory DC compatible with the screen; standard
+    // way to obtain a DC for DIB operations.
     let dc = unsafe { CreateCompatibleDC(None) };
     if dc.0 == 0 {
         unsafe {
@@ -483,6 +488,9 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
         }
         return None;
     }
+    // SAFETY: `dc` is a valid DC from `CreateCompatibleDC`; `&bmi` points to a
+    // fully initialized `BITMAPINFO`; `bits` is a valid pointer-to-ptr; `HANDLE::default()`
+    // (NULL) means no file mapping.
     let hbitmap = unsafe { CreateDIBSection(dc, &bmi, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0) };
     if hbitmap.is_err() || bits.is_null() {
         unsafe {
@@ -492,8 +500,14 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
         return None;
     }
     let hbitmap = hbitmap.unwrap();
+    // SAFETY: `dc` is a valid DC with a DIB selected; `hbitmap` is a valid
+    // HBITMAP from `CreateDIBSection`. The previous bitmap (if any) is saved in
+    // `_old` and will be restored implicitly when the DC is destroyed.
     let _old = unsafe { SelectObject(dc, hbitmap) };
     unsafe {
+        // SAFETY: `dc` is a valid DC with the DIB selected; `hicon` is a valid
+        // HICON from `SHGetFileInfoW`; dimensions match the DIB; `HBRUSH::default()`
+        // (NULL) means no background brush.
         DrawIconEx(
             dc,
             0,
@@ -509,7 +523,8 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
     let mut bytes: Vec<u8> = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     let src = bits as *const u8;
     unsafe {
-        // 32bpp DIBs store pixels as BGRA; the frontend canvas expects RGBA.
+        // SAFETY: `bits` is a valid pointer to `SIZE*SIZE` 32bpp pixels obtained
+        // from `CreateDIBSection`; reading 4 bytes per pixel is within bounds.
         for px in 0..(SIZE * SIZE) as usize {
             let off = px * 4;
             let (b, r) = (*src.add(off), *src.add(off + 2));
@@ -519,12 +534,18 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
             bytes.push(*src.add(off + 3));
         }
     }
+    // SAFETY: `hbitmap` is a valid HBITMAP created by `CreateDIBSection` and
+    // selected into `dc`; deleting it now is correct because we no longer need it.
     unsafe {
         let _ = DeleteObject(HGDIOBJ(hbitmap.0));
     }
+    // SAFETY: `dc` is a valid DC from `CreateCompatibleDC` and is no longer
+    // needed after the DIB has been read.
     unsafe {
         let _ = DeleteDC(dc);
     }
+    // SAFETY: `hicon` is a valid HICON from `SHGetFileInfoW`; all GDI objects
+    // have been released, so destroying the icon is safe.
     unsafe {
         let _ = DestroyIcon(hicon);
     }
@@ -543,6 +564,9 @@ pub(crate) fn windows_icon_bytes(probe: &str, attributes: u32) -> Option<Vec<u8>
     let wide: Vec<u16> = probe.encode_utf16().chain(std::iter::once(0)).collect();
     let flags = SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES;
     let ret = unsafe {
+        // SAFETY: `PCWSTR(wide.as_ptr())` points to a null-terminated UTF-16
+        // string; `&mut shfi` is a valid mutable reference; size matches the
+        // struct; flags are standard shell constants.
         SHGetFileInfoW(
             PCWSTR(wide.as_ptr()),
             FILE_FLAGS_AND_ATTRIBUTES(attributes),
@@ -655,6 +679,8 @@ pub(crate) fn native_browser_icon(exe_path: &str) -> Option<String> {
     // Probe the real executable so its embedded icon is used; USEFILEATTRIBUTES
     // is omitted so the actual file's icon (not the type icon) is returned.
     let ret = unsafe {
+        // SAFETY: `PCWSTR(wide.as_ptr())` points to a null-terminated UTF-16
+        // string; `&mut shfi` is valid; struct size is correct; flags are standard.
         SHGetFileInfoW(
             PCWSTR(wide.as_ptr()),
             FILE_FLAGS_AND_ATTRIBUTES(0x80), // FILE_ATTRIBUTE_NORMAL

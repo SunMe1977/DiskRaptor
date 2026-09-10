@@ -2,7 +2,15 @@
   "use strict";
   window.app = window.app || {};
 
-  window.app.initExport = function (refs) {
+  /**
+ * Initialize the export module: wire the export button to a format
+ * selection dialog and generate CSV/JSON/HTML reports.
+ * @param {Object} refs - Module references.
+ * @param {HTMLInputElement} refs.scanPath - The scan path input element.
+ * @param {HTMLButtonElement} refs.btnExport - The export button element.
+ * @param {Object} refs.loader - The scan loader object.
+ */
+window.app.initExport = function (refs) {
     const state = window.app.state;
     const { scanPath, btnExport, loader } = refs;
 

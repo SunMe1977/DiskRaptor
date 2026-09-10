@@ -3,10 +3,11 @@
 //! commands are kept separate so the concurrency-heavy walker glue is isolated
 //! from the rest of the command surface.
 use crate::{AppState, JsonResult, LiveEntries, ScanResultData};
+use anyhow::Result;
 use diskraptor_scanner::scanner;
 use diskraptor_scanner::scanner::tree::format_size;
 use diskraptor_scanner::scanner::tree::{NodeType, TreeNodeArena};
-use diskraptor_scanner::streaming::chunker::CHUNK_SIZE;
+use diskraptor_scanner::streaming::chunker::chunk_size;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -71,150 +72,164 @@ fn cancellation_grace_expired(cancel_since: &mut Option<Instant>, now: Instant) 
 }
 
 #[tauri::command]
-pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<u64>, app: tauri::AppHandle) -> JsonResult {
-    let scan = app.state::<AppState>();
-    if scan.scan.running.swap(true, Ordering::Acquire) {
-        return JsonResult::err("Scan already running");
-    }
+fn prepare_scan_state(
+    scan: &AppState,
+    path: &str,
+    live: std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>,
+) {
+    scan.scan.running.swap(true, Ordering::Acquire);
     let scan_id = scan.scan_counter.fetch_add(1, Ordering::Relaxed) + 1;
     scan.scan.active_scan_id.store(scan_id, Ordering::Release);
     scan.scan.cancelled.store(false, Ordering::Release);
     scan.scan.files_found.store(0, Ordering::Relaxed);
     scan.scan.dirs_found.store(0, Ordering::Relaxed);
     scan.scan.bytes_found.store(0, Ordering::Relaxed);
-    *scan.scan.current_dir.lock() = path.clone();
-    *scan.last_scan_path.lock() = Some(path.clone());
+    *scan.scan.current_dir.lock() = path.into();
+    *scan.last_scan_path.lock() = Some(path.into());
     *scan.scan.start_time.lock() = Instant::now();
     *scan.scan.result.lock() = None;
     *scan.scan.errors.lock() = Vec::new();
+    *scan.scan.live_entries.lock() = Some(live);
+}
 
+fn run_watchdog(
+    config: scanner::walker::ScanConfig,
+    progress: scanner::walker::ScanProgressCallback,
+    scan_id: u64,
+    result_handle: tauri::AppHandle,
+    scan_errors: std::sync::Arc<parking_lot::Mutex<Vec<String>>>,
+    timeout_secs: u64,
+    root_path: String,
+    progress_rx: std::sync::mpsc::Receiver<(u64, u64, u64, String)>,
+) -> Option<Result<scanner::walker::ScanResult>> {
+    let activity = config.activity.clone();
+    let cancel_flag = config.cancelled.clone().unwrap();
+    {
+        let s = result_handle.state::<AppState>();
+        *s.scan.cancel_flag.lock() = Some(cancel_flag.clone());
+        if s.scan.cancelled.load(Ordering::Acquire) { return None; }
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let worker = std::thread::Builder::new().name("scan-worker".into()).spawn(move || {
+        let _ = tx.send(scanner::walker::scan_directory_with_progress(config, progress));
+    });
+
+    let poll = Duration::from_millis(250);
+    let mut cancel_since = None;
+    let watchdog_result = loop {
+        let s = result_handle.state::<AppState>();
+        if let Some((files, dirs, bytes, msg)) = latest_progress(progress_rx.try_iter()) {
+            s.scan.files_found.store(files, Ordering::Relaxed);
+            s.scan.dirs_found.store(dirs, Ordering::Relaxed);
+            s.scan.bytes_found.store(bytes, Ordering::Relaxed);
+             if !msg.is_empty() { *s.scan.current_dir.lock() = msg.clone(); }
+             let errs = s.scan.errors.lock().clone();
+             let _ = result_handle.emit("scan:progress", serde_json::json!({
+                 "scan_id": scan_id, "files": files, "dirs": dirs,
+                 "bytes": bytes, "path": msg,
+                 "errors_summary": error_summary(&errs),
+             }));
+        }
+        match rx.recv_timeout(poll) {
+            Ok(res) => break Some(res),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                s.scan.errors.lock().extend(scan_errors.lock().clone());
+                s.scan.errors.lock().push("Scan worker exited without a result".into());
+                break None;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if s.scan.cancelled.load(Ordering::Acquire) {
+                    cancel_flag.store(true, Ordering::Release);
+                    if !cancellation_grace_expired(&mut cancel_since, Instant::now()) {
+                        continue;
+                    }
+                    s.scan.errors.lock().extend(scan_errors.lock().clone());
+                    break None;
+                }
+                if let Some(message) = activity.timeout_message(timeout_secs, &root_path) {
+                    cancel_flag.store(true, Ordering::Release);
+                    s.scan.cancelled.store(true, Ordering::Release);
+                    let mut errors = s.scan.errors.lock();
+                    errors.extend(scan_errors.lock().clone());
+                    errors.push(message);
+                    break None;
+                }
+            }
+        }
+    };
+    if let Ok(w) = worker { drop(w); }
+    watchdog_result
+}
+
+fn finalize_scan(
+    result: Option<Result<scanner::walker::ScanResult>>,
+    scan_errors: std::sync::Arc<parking_lot::Mutex<Vec<String>>>,
+    scan_id: u64,
+    root_path: String,
+    result_handle: tauri::AppHandle,
+) {
+    let s = result_handle.state::<AppState>();
+    match result {
+        Some(Ok(sr)) => {
+            let elapsed = sr.stats.scan_time_ms;
+            let termination = sr.termination;
+            let active_id = scan_id;
+            let walk_errors = scan_errors.lock().clone();
+            s.scan.errors.lock().extend(walk_errors.clone());
+            let insights = compute_scan_insights(&sr.arena, &root_path);
+            let data = ScanResultData {
+                arena: sr.arena, stats: sr.stats, scan_time_ms: elapsed,
+                errors: walk_errors, termination,
+                root_path: root_path.clone(),
+                insights,
+            };
+            let json = build_result_json(&data, active_id, &None);
+            *s.scan.result.lock() = Some(data);
+            *s.scan.cached_result.lock() = Some((active_id, json));
+        }
+        Some(Err(e)) => {
+            eprintln!("[scan] error: {}", e);
+            s.scan.errors.lock().extend(scan_errors.lock().clone());
+            s.scan.errors.lock().push(e.to_string());
+            let _ = result_handle.emit("scan:error", serde_json::json!({ "scan_id": scan_id, "error": e.to_string() }));
+        }
+        None => {}
+    }
+    let termination = s.scan.result.lock()
+        .as_ref()
+        .map(|result| result.termination)
+        .unwrap_or(scanner::walker::ScanTermination::Cancelled);
+    let _ = result_handle.emit("scan:complete", serde_json::json!({
+        "scan_id": scan_id,
+        "phase": 3,
+        "is_running": false,
+        "termination": termination,
+    }));
+}
+
+#[tauri::command]
+pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_secs: Option<u64>, app: tauri::AppHandle) -> JsonResult {
+    let scan = app.state::<AppState>();
+    if scan.scan.running.swap(true, Ordering::Acquire) {
+        return JsonResult::err("Scan already running");
+    }
+    let live = std::sync::Arc::new(parking_lot::Mutex::new(std::collections::VecDeque::new()));
+    let scan_id = scan.scan_counter.fetch_add(1, Ordering::Relaxed) + 1;
     let p = path.clone();
     let fs = follow_symlinks.unwrap_or(false);
     let ts = timeout_secs.unwrap_or(scanner::activity::DEFAULT_TIMEOUT_SECS);
-
-    let live = std::sync::Arc::new(parking_lot::Mutex::new(std::collections::VecDeque::new()));
-    *scan.scan.live_entries.lock() = Some(live.clone());
+    prepare_scan_state(&scan, &p, live.clone());
 
     let result_handle = app.clone();
     let spawned = std::thread::Builder::new().name("scan".into()).spawn(move || {
-        // Drop guard resets `running` even if this thread panics or returns
-        // early; a permanently-true flag would otherwise reject every later
-        // scan until the app is restarted.
         let _reset = ResetScanRunning { app: result_handle.clone() };
         let (config, scan_errors) = scan_config(&p, fs, ts, live);
-        let activity = config.activity.clone();
-        let cancel_flag = config.cancelled.clone().unwrap();
-        {
-            let s = result_handle.state::<AppState>();
-            *s.scan.cancel_flag.lock() = Some(cancel_flag.clone());
-            if s.scan.cancelled.load(Ordering::Acquire) { return; }
-        }
-
-        // Only this coordinator writes AppState. A detached worker retains only
-        // its own channel and per-scan config, never an app handle or a new ID.
         let (progress, progress_rx) = progress_channel();
-
-        let result = {
-            // Run the walker on a dedicated worker so a hung walker (e.g. a
-            // Windows junction loop in $Recycle.Bin) can be cut off after a
-            // no-progress timeout. Without this, a stuck scan never sets
-            // running=false and the UI hangs forever waiting for it.
-            let (tx, rx) = std::sync::mpsc::channel();
-            let worker = std::thread::Builder::new().name("scan-worker".into()).spawn(move || {
-                let _ = tx.send(scanner::walker::scan_directory_with_progress(config, progress));
-            });
-
-            let poll = Duration::from_millis(250);
-            let mut cancel_since = None;
-            let watchdog_result = loop {
-                let s = result_handle.state::<AppState>();
-                if let Some((files, dirs, bytes, msg)) = latest_progress(progress_rx.try_iter()) {
-                    s.scan.files_found.store(files, Ordering::Relaxed);
-                    s.scan.dirs_found.store(dirs, Ordering::Relaxed);
-                    s.scan.bytes_found.store(bytes, Ordering::Relaxed);
-                    if !msg.is_empty() { *s.scan.current_dir.lock() = msg.clone(); }
-                    let _ = result_handle.emit("scan:progress", serde_json::json!({
-                        "scan_id": scan_id, "files": files, "dirs": dirs,
-                        "bytes": bytes, "path": msg,
-                    }));
-                }
-                match rx.recv_timeout(poll) {
-                    Ok(res) => break Some(res),
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        s.scan.errors.lock().extend(scan_errors.lock().clone());
-                        s.scan.errors.lock().push("Scan worker exited without a result".into());
-                        break None;
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        if s.scan.cancelled.load(Ordering::Acquire) {
-                            cancel_flag.store(true, Ordering::Release);
-                            // Keep receiving cooperative partial results for a
-                            // bounded grace period before detaching blocked I/O.
-                            if !cancellation_grace_expired(&mut cancel_since, Instant::now()) {
-                                continue;
-                            }
-                            s.scan.errors.lock().extend(scan_errors.lock().clone());
-                            break None;
-                        }
-                        if let Some(message) = activity.timeout_message(ts, &p) {
-                            cancel_flag.store(true, Ordering::Release);
-                            s.scan.cancelled.store(true, Ordering::Release);
-                            let mut errors = s.scan.errors.lock();
-                            errors.extend(scan_errors.lock().clone());
-                            errors.push(message);
-                            break None;
-                        }
-                    }
-                }
-            };
-            if let Ok(w) = worker {
-                // Keep the worker handle alive while we finish up; dropping it
-                // merely detaches the thread.
-                drop(w);
-            }
-            watchdog_result
-        };
-        let s = result_handle.state::<AppState>();
-        match result {
-            Some(Ok(sr)) => {
-                let elapsed = sr.stats.scan_time_ms;
-                // NOTE: chunks are built on demand in get_chunk (avoids cloning the
-                // whole arena and doubling peak memory for huge scans).
-                let termination = sr.termination;
-                let active_id = scan_id;
-                // Surface the walkers' per-entry failures (access denied, stuck
-                // junctions, ...) that used to be silently dropped on success.
-                let walk_errors = scan_errors.lock().clone();
-                s.scan.errors.lock().extend(walk_errors.clone());
-                let insights = compute_scan_insights(&sr.arena, &p);
-                let data = ScanResultData {
-                    arena: sr.arena, stats: sr.stats, scan_time_ms: elapsed,
-                    errors: walk_errors, termination,
-                    root_path: p.clone(),
-                    insights,
-                };
-                // Cache the serialized result once per scan (see get_scan_result).
-                let json = build_result_json(&data, active_id);
-                *s.scan.result.lock() = Some(data);
-                *s.scan.cached_result.lock() = Some((active_id, json));
-            }
-            Some(Err(e)) => {
-                eprintln!("[scan] error: {}", e);
-                // Surface the error to the UI so the user sees why the tree is empty.
-                s.scan.errors.lock().extend(scan_errors.lock().clone());
-                s.scan.errors.lock().push(e.to_string());
-                let _ = result_handle.emit("scan:error", serde_json::json!({ "scan_id": scan_id, "error": e.to_string() }));
-            }
-            None => {
-                // Cancelled, timed out, or disconnected; diagnostics were
-                // already captured by the coordinator.
-            }
-        }
-        // `running` is cleared by the ResetScanRunning drop guard when this
-        // thread exits (normal return, early return or panic).
+        let result = run_watchdog(config, progress, scan_id, result_handle.clone(), scan_errors.clone(), ts, p.clone(), progress_rx);
+        finalize_scan(result, scan_errors, scan_id, p, result_handle);
     });
     if spawned.is_err() {
-        // The thread could not be started; undo the running flag we set above.
         scan.scan.running.store(false, Ordering::Release);
         return JsonResult::err("Failed to start scan thread");
     }
@@ -251,6 +266,39 @@ fn progress_termination(
     }
 }
 
+/// Categorize a raw error string into a telemetry kind.
+fn error_kind(msg: &str) -> &'static str {
+    if msg.starts_with("TIMEOUT:") || msg.starts_with("timeout") { "timeout" }
+    else if msg.starts_with("Access denied:") || msg.contains("os error 5") || msg.contains("Permission denied") { "permission_denied" }
+    else if msg.starts_with("jwalk:") || msg.starts_with("walkdir:") || msg.starts_with("metadata:") || msg.starts_with("FindFirstFileW:") || msg.starts_with("FindNextFileW:") || msg.starts_with("open/getattrlistbulk:") { "io_error" }
+    else { "other" }
+}
+
+/// Build a per-scan error summary: counts by kind + the most recent error per kind.
+fn error_summary(errors: &[String]) -> serde_json::Value {
+    let mut perm: u64 = 0;
+    let mut timeout: u64 = 0;
+    let mut io: u64 = 0;
+    let mut other: u64 = 0;
+    let mut last_perm = String::new();
+    let mut last_timeout = String::new();
+    let mut last_io = String::new();
+    let mut last_other = String::new();
+    for e in errors.iter().rev() {
+        match error_kind(e) {
+            "permission_denied" => { perm += 1; if last_perm.is_empty() { last_perm = e.clone(); } }
+            "timeout" => { timeout += 1; if last_timeout.is_empty() { last_timeout = e.clone(); } }
+            "io_error" => { io += 1; if last_io.is_empty() { last_io = e.clone(); } }
+            _ => { other += 1; if last_other.is_empty() { last_other = e.clone(); } }
+        }
+    }
+    serde_json::json!({
+        "permission_denied": perm, "timeout": timeout, "io_error": io, "other": other,
+        "last_permission_denied": last_perm, "last_timeout": last_timeout,
+        "last_io_error": last_io, "last_other": last_other,
+    })
+}
+
 pub(crate) fn scan_progress_data(state: &AppState) -> serde_json::Value {
     let is_running = state.scan.running.load(Ordering::Acquire);
     let rg = state.scan.result.lock();
@@ -285,11 +333,15 @@ pub(crate) fn scan_progress_data(state: &AppState) -> serde_json::Value {
             q.iter().skip(skip).cloned().collect()
         })
         .unwrap_or_default();
+    let err_count = errors.len() as u64;
+    let last_err = errors.last().cloned().unwrap_or_default();
     serde_json::json!({
         "files_found": files, "dirs_found": dirs, "bytes_found": bytes,
         "is_running": is_running, "current_dir": cd,
         "elapsed_secs": elapsed, "phase": phase,
         "errors": errors, "live_entries": live, "termination": termination,
+        "errors_summary": error_summary(&errors),
+        "error_count": err_count, "last_error": last_err,
     })
 }
 
@@ -303,17 +355,27 @@ pub(crate) fn get_scan_progress(state: State<AppState>, scan_id: Option<u64>) ->
 
 /// Build a single chunk from the arena on demand. Returns a clone-free borrow
 /// of the arena slice so a 10k-node chunk is never copied on the hot path.
-pub(crate) fn build_chunk(
+pub(crate) fn build_chunk<'a>(
+    arena: &'a scanner::tree::TreeNodeArena,
+    chunk_id: u32,
+    settings: &Option<serde_json::Value>,
+) -> Option<scanner::tree::BorrowedChunk<'a>> {
+    let size = chunk_size(settings);
+    build_chunk_with_size(arena, chunk_id, size as usize)
+}
+
+pub(crate) fn build_chunk_with_size(
     arena: &scanner::tree::TreeNodeArena,
     chunk_id: u32,
+    size: usize,
 ) -> Option<scanner::tree::BorrowedChunk<'_>> {
     let total = arena.nodes.len() as u32;
-    let total_chunks = total.div_ceil(CHUNK_SIZE);
+    let total_chunks = total.div_ceil(size as u32);
     if chunk_id >= total_chunks {
         return None;
     }
-    let start: usize = (chunk_id as u64 * CHUNK_SIZE as u64) as usize;
-    let end: usize = (((chunk_id as u64 + 1) * CHUNK_SIZE as u64).min(total as u64)) as usize;
+    let start: usize = (chunk_id as u64 * size as u64) as usize;
+    let end: usize = (((chunk_id as u64 + 1) * size as u64).min(total as u64)) as usize;
     Some(scanner::tree::BorrowedChunk::new(
         chunk_id,
         total_chunks,
@@ -324,7 +386,7 @@ pub(crate) fn build_chunk(
 }
 
 /// Build the serialized `get_scan_result` payload from a finished scan.
-fn build_result_json(d: &ScanResultData, active_id: u64) -> serde_json::Value {
+fn build_result_json(d: &ScanResultData, active_id: u64, settings: &Option<serde_json::Value>) -> serde_json::Value {
     let sj = serde_json::json!({
         "total_files": d.stats.total_files, "total_dirs": d.stats.total_dirs,
         "total_size": d.stats.total_size, "scan_time_ms": d.scan_time_ms,
@@ -334,9 +396,10 @@ fn build_result_json(d: &ScanResultData, active_id: u64) -> serde_json::Value {
         "termination": d.termination,
         "insights": d.insights,
     });
-    let total_chunks = (d.arena.len() as u32).div_ceil(CHUNK_SIZE);
+    let size = chunk_size(settings);
+    let total_chunks = (d.arena.len() as u32).div_ceil(size);
     let ri = serde_json::json!({"root_index": 0, "total_nodes": d.arena.len(), "total_chunks": total_chunks});
-    serde_json::json!({"stats": sj, "root_info": ri, "scan_id": active_id, "errors": d.errors})
+    serde_json::json!({"stats": sj, "root_info": ri, "scan_id": active_id, "errors": d.errors, "errors_summary": error_summary(&d.errors)})
 }
 
 // ── Plain-language scan insights (#4) ──────────────────────────────────────
@@ -640,7 +703,7 @@ mod tests {
 }
 
 #[tauri::command]
-pub(crate) fn get_scan_result(state: State<AppState>, scan_id: Option<u64>) -> JsonResult {
+pub(crate) fn get_scan_result(state: State<AppState>, scan_id: Option<u64>, settings: Option<serde_json::Value>) -> JsonResult {
     if !scan_id_matches(&state, scan_id) {
         return JsonResult::err("Scan id is stale");
     }
@@ -656,7 +719,7 @@ pub(crate) fn get_scan_result(state: State<AppState>, scan_id: Option<u64>) -> J
     // Fallback: build on demand (e.g. cache not yet filled for this scan id).
     let g = state.scan.result.lock();
     if let Some(ref d) = *g {
-        let json = build_result_json(d, active_id);
+        let json = build_result_json(d, active_id, &settings);
         drop(g);
         JsonResult::ok(json)
     } else {
@@ -666,13 +729,13 @@ pub(crate) fn get_scan_result(state: State<AppState>, scan_id: Option<u64>) -> J
 }
 
 #[tauri::command]
-pub(crate) fn get_chunk(state: State<AppState>, chunk_index: u32, scan_id: Option<u64>) -> JsonResult {
+pub(crate) fn get_chunk(state: State<AppState>, chunk_index: u32, scan_id: Option<u64>, settings: Option<serde_json::Value>) -> JsonResult {
     if !scan_id_matches(&state, scan_id) {
         return JsonResult::err("Scan id is stale");
     }
     let g = state.scan.result.lock();
     if let Some(ref d) = *g {
-        if let Some(chunk) = build_chunk(&d.arena, chunk_index) {
+        if let Some(chunk) = build_chunk(&d.arena, chunk_index, &settings) {
             if let Ok(json) = serde_json::to_value(&chunk) {
                 drop(g);
                 return JsonResult::ok(json);
@@ -687,7 +750,7 @@ pub(crate) fn get_chunk(state: State<AppState>, chunk_index: u32, scan_id: Optio
 /// `loadChunk` hands the UI. Used by the frontend when a node's children have
 /// not been received in any loaded chunk yet.
 #[tauri::command]
-pub(crate) fn get_children(state: State<AppState>, node_index: u32, scan_id: Option<u64>) -> JsonResult {
+pub(crate) fn get_children(state: State<AppState>, node_index: u32, scan_id: Option<u64>, settings: Option<serde_json::Value>) -> JsonResult {
     if !scan_id_matches(&state, scan_id) {
         return JsonResult::err("Scan id is stale");
     }
@@ -697,6 +760,7 @@ pub(crate) fn get_children(state: State<AppState>, node_index: u32, scan_id: Opt
         if (node_index as usize) >= arena.nodes.len() {
             return JsonResult::ok(serde_json::json!([]));
         }
+        let size = chunk_size(&settings);
         // Borrow the children instead of cloning every node (serialized via
         // BorrowedNode, which also patches chunk_id like loadChunk expects).
         let mut children: Vec<scanner::tree::BorrowedNode> = Vec::new();
@@ -705,7 +769,7 @@ pub(crate) fn get_children(state: State<AppState>, node_index: u32, scan_id: Opt
             match arena.nodes.get(cur as usize) {
                 Some(n) => {
                     let next = n.next_sibling;
-                    children.push(scanner::tree::BorrowedNode::new(cur / CHUNK_SIZE, n));
+                    children.push(scanner::tree::BorrowedNode::new(cur / size, cur, n));
                     cur = next;
                 }
                 None => break,

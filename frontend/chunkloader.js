@@ -99,22 +99,56 @@ class ChunkLoader {
     }
   }
 
+   /**
+    * Get a node by its arena index.
+    * @param {number} arenaIndex - The arena index
+    * @returns {Object|null} The node, or null if not found
+    */
   getNode(arenaIndex) {
     return this.allNodes[arenaIndex] || null;
   }
 
+  /** Store a node at its stable backend arena identity. */
+  storeNode(node, arenaIndex) {
+    if (!node || !Number.isInteger(arenaIndex) || arenaIndex < 0 || arenaIndex >= this.totalNodes) return null;
+    node._arenaIndex = arenaIndex;
+    this.allNodes[arenaIndex] = node;
+    if (node.parent !== 4294967295) {
+      let children = this.parentMap.get(node.parent);
+      if (!children) {
+        children = [];
+        this.parentMap.set(node.parent, children);
+      }
+      if (children.indexOf(arenaIndex) === -1) children.push(arenaIndex);
+    }
+    return arenaIndex;
+  }
+
   /**
-   * Arena indices of all loaded nodes with the given (case-insensitive) name.
-   */
-  getNodesByName(name) {
+    * Arena indices of all loaded nodes with the given (case-insensitive) name.
+    * @param {string} name - The name to look up (case-insensitive)
+    * @returns {number[]} Array of arena indices
+    */
+   getNodesByName(name) {
     return this.nameIndex.get(String(name || "").toLowerCase()) || [];
   }
 
-  getChildrenIndices(arenaIndex) {
+   /**
+    * Get child arena indices for a node.
+    * @param {number} arenaIndex - The parent node's arena index
+    * @returns {number[]} Array of child arena indices
+    */
+   getChildrenIndices(arenaIndex) {
     return this.parentMap.get(arenaIndex) || [];
   }
 
-  async fetchChildren(arenaIndex) {
+   /**
+    * Fetch children of a node, using the local parentMap cache first,
+    * falling back to the backend if not cached.
+    * @param {number} arenaIndex - The parent node's arena index
+    * @returns {Promise<Array>} Array of child node indices or objects
+    */
+   async fetchChildren(arenaIndex) {
     if (arenaIndex === 4294967295) return [];
     // Use the locally-built parentMap first (populated by loadChunk)
     const cached = this.getChildrenIndices(arenaIndex);
@@ -138,12 +172,14 @@ class ChunkLoader {
   }
 
   /**
-   * Always fetch a node's children straight from the backend and return them
-   * as full node objects. Unlike `fetchChildren` this never short-circuits on
-   * a partially-populated parentMap, so callers (e.g. "jump in tree") can
-   * resolve a deep path even when the relevant chunks were never loaded.
-   */
-  async fetchChildrenBackend(arenaIndex) {
+    * Always fetch a node's children straight from the backend and return them
+    * as full node objects. Unlike `fetchChildren` this never short-circuits on
+    * a partially-populated parentMap, so callers (e.g. "jump in tree") can
+    * resolve a deep path even when the relevant chunks were never loaded.
+    * @param {number} arenaIndex - The parent node's arena index
+    * @returns {Promise<Array>} Array of child node objects
+    */
+   async fetchChildrenBackend(arenaIndex) {
     if (arenaIndex === 4294967295) return [];
     const nodes = this.allNodes;
     const result = await this._invoke("get_children", {
@@ -160,7 +196,13 @@ class ChunkLoader {
     return [];
   }
 
-  async ensureChunks(startChunk, endChunk) {
+   /**
+    * Load a range of chunks concurrently.
+    * @param {number} startChunk - The first chunk index to load
+    * @param {number} endChunk - One past the last chunk index to load
+    * @returns {Promise<void>}
+    */
+   async ensureChunks(startChunk, endChunk) {
     const promises = [];
     for (let i = startChunk; i < endChunk && i < this.totalChunks; i++) {
       if (!this.loadedChunks.has(i)) {
@@ -170,12 +212,17 @@ class ChunkLoader {
     await Promise.all(promises);
   }
 
-  async getStats() {
+   /**
+    * Get scan statistics from the backend.
+    * @returns {Promise<Object>} Stats object
+    */
+   async getStats() {
     return this._invoke("get_stats", { scanId: this.scanId });
   }
 
   /**
    * Release the current scan and reset the loader state.
+   * @returns {Promise<void>}
    */
   async release() {
     const scanId = this.scanId;

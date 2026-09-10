@@ -233,15 +233,15 @@ impl<'a> BorrowedChunk<'a> {
     }
 }
 
-struct BorrowedNodes<'a>(u32, &'a [TreeNode]);
+struct BorrowedNodes<'a>(u32, u32, &'a [TreeNode]);
 
 /// A borrowed view of a single `TreeNode` that serializes like a `TreeNode`
 /// but with `chunk_id` patched to the provided value — no clone required.
-pub struct BorrowedNode<'a>(u32, &'a TreeNode);
+pub struct BorrowedNode<'a>(u32, u32, &'a TreeNode);
 
 impl<'a> BorrowedNode<'a> {
-    pub fn new(chunk_id: u32, node: &'a TreeNode) -> Self {
-        Self(chunk_id, node)
+    pub fn new(chunk_id: u32, arena_index: u32, node: &'a TreeNode) -> Self {
+        Self(chunk_id, arena_index, node)
     }
 }
 
@@ -253,7 +253,7 @@ impl serde::Serialize for BorrowedChunk<'_> {
         st.serialize_field("total_chunks", &self.total_chunks)?;
         st.serialize_field("total_nodes", &self.total_nodes)?;
         st.serialize_field("start_index", &self.start_index)?;
-        st.serialize_field("nodes", &BorrowedNodes(self.chunk_id, self.nodes))?;
+        st.serialize_field("nodes", &BorrowedNodes(self.chunk_id, self.start_index, self.nodes))?;
         st.end()
     }
 }
@@ -261,9 +261,9 @@ impl serde::Serialize for BorrowedChunk<'_> {
 impl serde::Serialize for BorrowedNodes<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeSeq;
-        let mut seq = serializer.serialize_seq(Some(self.1.len()))?;
-        for node in self.1 {
-            seq.serialize_element(&BorrowedNode(self.0, node))?;
+        let mut seq = serializer.serialize_seq(Some(self.2.len()))?;
+        for (offset, node) in self.2.iter().enumerate() {
+            seq.serialize_element(&BorrowedNode(self.0, self.1 + offset as u32, node))?;
         }
         seq.end()
     }
@@ -272,18 +272,21 @@ impl serde::Serialize for BorrowedNodes<'_> {
 impl serde::Serialize for BorrowedNode<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = serializer.serialize_struct("TreeNode", 11)?;
-        st.serialize_field("name", &self.1.name)?;
-        st.serialize_field("size", &self.1.size)?;
-        st.serialize_field("file_count", &self.1.file_count)?;
-        st.serialize_field("dir_count", &self.1.dir_count)?;
-        st.serialize_field("node_type", &self.1.node_type)?;
-        st.serialize_field("parent", &self.1.parent)?;
-        st.serialize_field("first_child", &self.1.first_child)?;
-        st.serialize_field("next_sibling", &self.1.next_sibling)?;
-        st.serialize_field("depth", &self.1.depth)?;
+        let mut st = serializer.serialize_struct("TreeNode", 12)?;
+        st.serialize_field("name", &self.2.name)?;
+        st.serialize_field("size", &self.2.size)?;
+        st.serialize_field("file_count", &self.2.file_count)?;
+        st.serialize_field("dir_count", &self.2.dir_count)?;
+        st.serialize_field("node_type", &self.2.node_type)?;
+        st.serialize_field("parent", &self.2.parent)?;
+        st.serialize_field("first_child", &self.2.first_child)?;
+        st.serialize_field("next_sibling", &self.2.next_sibling)?;
+        st.serialize_field("depth", &self.2.depth)?;
         st.serialize_field("chunk_id", &self.0)?;
-        st.serialize_field("mtime", &self.1.mtime)?;
+        st.serialize_field("mtime", &self.2.mtime)?;
+        // Direct child fetches are sparse, so the frontend needs the real
+        // arena identity instead of allocating a dense surrogate index.
+        st.serialize_field("arena_index", &self.1)?;
         st.end()
     }
 }

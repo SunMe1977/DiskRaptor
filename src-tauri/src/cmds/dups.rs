@@ -8,6 +8,21 @@ use rayon::prelude::*;
 use std::sync::atomic::Ordering;
 use tauri::{Manager, State};
 
+/// Keep duplicate hashing responsive on rotational and external drives.  The
+/// global Rayon pool may use every logical CPU, which turns random reads into
+/// seek contention and can starve the UI/scanner.  Four workers is enough to
+/// saturate typical storage while leaving capacity for the app.
+fn duplicate_hash_pool() -> rayon::ThreadPool {
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get().saturating_sub(1).clamp(1, 4))
+        .unwrap_or(2);
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(workers)
+        .thread_name(|i| format!("dup-hash-{i}"))
+        .build()
+        .expect("valid duplicate hash pool configuration")
+}
+
 /// A same-size candidate awaiting hashing: `(path, length, mtime)`. The length
 /// and mtime snapshot is used in phase 3 to detect a concurrent change via a
 /// cheap re-stat instead of re-reading files whose head hash covered the whole
@@ -104,7 +119,8 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
             .filter(|g| g.len() >= 2)
             .flatten()
             .collect();
-        let hashed: Vec<HashedCandidate> = candidates
+        let hash_pool = duplicate_hash_pool();
+        let hashed: Vec<HashedCandidate> = hash_pool.install(|| candidates
                 .into_par_iter()
                 .filter_map(|(p, len0, mtime0)| {
                     if cancelled.load(Ordering::Relaxed) {
@@ -118,7 +134,7 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
                         scanner::duplicates::hash_file_head(&p, scanner::duplicates::HEAD_HASH_BYTES);
                     Some(((bytes, hash), p, len0, mtime0))
                 })
-                .collect();
+                .collect());
         let mut by_hash: std::collections::HashMap<(u64, u64), Vec<Candidate>> =
             std::collections::HashMap::new();
         for ((bytes_read, hash), p, len0, mtime0) in hashed {
@@ -137,7 +153,7 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
             // Full stream-hash each candidate in parallel: only files with
             // identical full content are true duplicates. Files that changed
             // while scanning are excluded so we never suggest deleting them.
-            let verified: Vec<(std::path::PathBuf, (u64, u64))> = files
+            let verified: Vec<(std::path::PathBuf, (u64, u64))> = hash_pool.install(|| files
                 .into_par_iter()
                 .filter_map(|(p, len0, mtime0)| {
                     if cancelled.load(Ordering::Relaxed) {
@@ -160,17 +176,19 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
                         Some((p, (fsize, fhash)))
                     }
                 })
-                .collect();
+                .collect());
             let mut by_full: std::collections::HashMap<(u64, u64), Vec<std::path::PathBuf>> =
                 std::collections::HashMap::new();
             for (p, h) in verified {
                 by_full.entry(h).or_default().push(p);
             }
-            for ((_s, _fh), dup_files) in by_full {
+            for ((file_size, _fh), dup_files) in by_full {
                 if dup_files.len() < 2 {
                     continue;
                 }
-                let wasted_g = bytes_read * (dup_files.len() as u64 - 1);
+                // `bytes_read` is only the head-hash length for large files.
+                // The verified full-hash key carries the real file size.
+                let wasted_g = file_size * (dup_files.len() as u64 - 1);
                 wasted += wasted_g;
                 let paths: Vec<String> = dup_files
                     .iter()
@@ -191,6 +209,10 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
         });
         *st.dup.groups.lock() = groups;
         *st.dup.wasted_bytes.lock() = wasted;
+        // Phase 3 is full-hash verification; only signal completion after the
+        // result vector has been stored, otherwise the UI can fetch an empty
+        // result while a large final group is still being processed.
+        st.dup.phase.store(4, Ordering::Release);
         // `running` is cleared by the ResetDupRunning drop guard on exit.
     });
     if spawned.is_err() {
@@ -216,11 +238,23 @@ pub(crate) fn get_dup_stats(state: State<AppState>) -> JsonResult {
 }
 
 #[tauri::command]
-pub(crate) fn get_dup_result(state: State<AppState>) -> JsonResult {
-    let groups = state.dup.groups.lock().clone();
+pub(crate) fn get_dup_result(
+    state: State<AppState>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> JsonResult {
+    let groups = state.dup.groups.lock();
     let wasted = *state.dup.wasted_bytes.lock();
+    let total_groups = groups.len();
+    let start = offset.unwrap_or(0).min(total_groups);
+    // A bounded response prevents a single IPC message and DOM update from
+    // freezing the WebView on directories with many duplicate groups.
+    let end = start.saturating_add(limit.unwrap_or(100).clamp(1, 500)).min(total_groups);
     JsonResult::ok(serde_json::json!({
-        "groups": groups,
+        "groups": &groups[start..end],
+        "offset": start,
+        "totalGroups": total_groups,
+        "hasMore": end < total_groups,
         "wastedBytes": wasted,
         "filesScanned": state.dup.files_scanned.load(Ordering::Relaxed),
         "cancelled": state.dup.cancelled.load(Ordering::Relaxed),

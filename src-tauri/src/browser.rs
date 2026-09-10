@@ -77,24 +77,29 @@ pub(crate) fn browser_defs() -> Vec<BrowserDef> {
 }
 
 #[cfg(target_os = "windows")]
-fn browser_paths_windows(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
+fn browser_paths_windows(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, Vec<String>)> {
     let local = std::env::var("LOCALAPPDATA").ok()?;
     let appdata = std::env::var("APPDATA").ok()?;
     let base_dir = if def.base == "local" { &local } else { &appdata };
     let base = std::path::PathBuf::from(base_dir).join(def.sub);
+    let mut profiles = Vec::new();
     let (cookies, cache) = match def.kind {
-        "chrome" | "opera" => (
-            vec![
-                base.join("Default").join("Network").join("Cookies"),
-                base.join("Default").join("Cookies"),
-            ],
-            vec![
-                base.join("Default").join("Cache"),
-                base.join("Default").join("Code Cache"),
-                base.join("Default").join("GPUCache"),
-                base.join("Default").join("Service Worker").join("CacheStorage"),
-            ],
-        ),
+        "chrome" | "opera" => {
+            let mut all_cookies = Vec::new();
+            let mut all_cache = Vec::new();
+            let base_profiles = ["Default", "Profile 1", "Profile 2", "Profile 3"];
+            for prof in &base_profiles {
+                let p = base.join(prof);
+                if p.exists() { profiles.push(prof.to_string()); }
+                all_cookies.push(p.join("Network").join("Cookies"));
+                all_cookies.push(p.join("Cookies"));
+                all_cache.push(p.join("Cache"));
+                all_cache.push(p.join("Code Cache"));
+                all_cache.push(p.join("GPUCache"));
+                all_cache.push(p.join("Service Worker").join("CacheStorage"));
+            }
+            (all_cookies, all_cache)
+        }
         "firefox" => {
             let mut cookies = Vec::new();
             let mut cache = Vec::new();
@@ -102,6 +107,8 @@ fn browser_paths_windows(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<st
                 for entry in rd.flatten() {
                     let p = entry.path();
                     if !p.is_dir() { continue; }
+                    let name = p.file_name()?.to_string_lossy().to_string();
+                    profiles.push(name.clone());
                     let ck = p.join("cookies.sqlite");
                     if ck.exists() { cookies.push(ck); }
                     cache.push(p.join("cache2"));
@@ -116,11 +123,11 @@ fn browser_paths_windows(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<st
         ),
         _ => (Vec::new(), Vec::new()),
     };
-    Some((base, cookies, cache))
-}
+     Some((base, cookies, cache, profiles))
+ }
 
 #[cfg(target_os = "linux")]
-fn browser_paths_linux(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
+fn browser_paths_linux(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, Vec<String>)> {
     let home = std::env::var("HOME").ok()?;
     let cfg = |p: &str| std::path::PathBuf::from(&home).join(".config").join(p);
     let cache = |p: &str| std::path::PathBuf::from(&home).join(".cache").join(p);
@@ -146,11 +153,11 @@ fn browser_paths_linux(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std:
         }
         _ => return None,
     };
-    Some((base, cookies, cache_paths))
+    Some((base, cookies, cache_paths, Vec::new()))
 }
 
 #[cfg(target_os = "macos")]
-fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
+fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, Vec<String>)> {
     let home = std::env::var("HOME").ok()?;
     let support = |p: &str| std::path::PathBuf::from(&home).join("Library/Application Support").join(p);
     let caches = |p: &str| std::path::PathBuf::from(&home).join("Library/Caches").join(p);
@@ -193,11 +200,11 @@ fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std:
         }
         _ => return None,
     };
-    Some((base, cookies, cache_paths))
+    Some((base, cookies, cache_paths, Vec::new()))
 }
 
-#[allow(clippy::needless_return)] // cfg-gated returns keep each platform arm type-consistent
-pub(crate) fn browser_paths(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
+#[allow(clippy::needless_return)]
+pub(crate) fn browser_paths(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, Vec<String>)> {
     #[cfg(target_os = "windows")]
     { return browser_paths_windows(def); }
     #[cfg(target_os = "linux")]
@@ -317,7 +324,7 @@ pub async fn list_browser_data() -> JsonResult {
     tauri::async_runtime::spawn_blocking(|| {
         let mut list: Vec<serde_json::Value> = Vec::new();
         for def in browser_defs() {
-            if let Some((_base, cookies, cache)) = browser_paths(&def) {
+             if let Some((_base, cookies, cache, profiles)) = browser_paths(&def) {
                 let cookie_size = sum_sizes(&cookies);
                 let cache_size = sum_sizes(&cache);
                 if cookie_size == 0 && cache_size == 0 { continue; }
@@ -329,24 +336,25 @@ pub async fn list_browser_data() -> JsonResult {
                     #[cfg(not(target_os = "windows"))]
                     { None }
                 };
-                let cookie_paths: Vec<String> = cookies.iter()
-                    .filter(|p| p.exists())
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect();
-                let cache_paths: Vec<String> = cache.iter()
-                    .filter(|p| p.exists())
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect();
-                list.push(serde_json::json!({
-                    "name": def.name,
-                    "cookie_size": cookie_size,
-                    "cache_size": cache_size,
-                    "total_size": cookie_size + cache_size,
-                    "kind": def.kind,
-                    "exe": exe,
-                    "cookie_paths": cookie_paths,
-                    "cache_paths": cache_paths,
-                }));
+                 let cookie_paths: Vec<String> = cookies.iter()
+                     .filter(|p| p.exists())
+                     .map(|p| p.to_string_lossy().to_string())
+                     .collect();
+                 let cache_paths: Vec<String> = cache.iter()
+                     .filter(|p| p.exists())
+                     .map(|p| p.to_string_lossy().to_string())
+                     .collect();
+                 list.push(serde_json::json!({
+                     "name": def.name,
+                     "cookie_size": cookie_size,
+                     "cache_size": cache_size,
+                     "total_size": cookie_size + cache_size,
+                     "kind": def.kind,
+                     "exe": exe,
+                     "cookie_paths": cookie_paths,
+                     "cache_paths": cache_paths,
+                     "profiles": profiles,
+                 }));
             }
         }
         list.sort_by(|a, b| b["total_size"].as_u64().unwrap_or(0).cmp(&a["total_size"].as_u64().unwrap_or(0)));
@@ -357,20 +365,30 @@ pub async fn list_browser_data() -> JsonResult {
 }
 
 #[tauri::command]
-pub async fn clean_browser(name: String, cookies: bool, cache: bool) -> JsonResult {
+pub async fn clean_browser(name: String, cookies: bool, cache: bool, profile: Option<String>) -> JsonResult {
     tauri::async_runtime::spawn_blocking(move || {
         for def in browser_defs() {
             if def.name != name { continue; }
-            if let Some((_base, cookie_paths, cache_paths)) = browser_paths(&def) {
+            if let Some((_base, cookie_paths, cache_paths, _profiles)) = browser_paths(&def) {
                 let mut freed = 0u64;
                 if cookies {
                     for p in &cookie_paths {
-                        if p.exists() { freed += delete_path_recursive(p); }
+                        if p.exists() {
+                            if let Some(ref prof) = profile {
+                                if !p.to_string_lossy().contains(prof) { continue; }
+                            }
+                            freed += delete_path_recursive(p);
+                        }
                     }
                 }
                 if cache {
                     for p in &cache_paths {
-                        if p.exists() { freed += delete_path_recursive(p); }
+                        if p.exists() {
+                            if let Some(ref prof) = profile {
+                                if !p.to_string_lossy().contains(prof) { continue; }
+                            }
+                            freed += delete_path_recursive(p);
+                        }
                     }
                 }
                 return JsonResult::ok(serde_json::json!({

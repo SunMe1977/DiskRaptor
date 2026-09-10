@@ -14,9 +14,9 @@ class TopFilesPanel {
     if (thead) {
       thead.innerHTML =
         '<th># <span class="sort-arrow">\u25BC</span></th>' +
-        '<th>' + (window.__ || function (s) { return s; })("sel.name") + ' <span class="sort-arrow">\u25B2\u25BC</span></th>' +
-        '<th>' + (window.__ || function (s) { return s; })("sel.size") + ' <span class="sort-arrow">\u25BC</span></th>' +
-        '<th style="width:40px">' + (window.__ || function (s) { return s; })("action.action") + "</th>";
+        '<th>' + window.t("sel.name") + ' <span class="sort-arrow">\u25B2\u25BC</span></th>' +
+        '<th>' + window.t("sel.size") + ' <span class="sort-arrow">\u25BC</span></th>' +
+        '<th style="width:40px">' + window.t("action.action") + "</th>";
     }
   }
 
@@ -91,7 +91,7 @@ class TopFilesPanel {
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
     const tf = function (key, fb) {
-      const f = window.__ || function (k) { return k; };
+      const f = window.t;
       const s = f(key);
       return s === key ? fb : s;
     };
@@ -150,15 +150,13 @@ class TopFilesPanel {
           .writeText(path)
           .then(function () {
             const sb = document.querySelector(".status-bar");
-            if (sb) sb.textContent = (window.__ || function(s){return s;})("status.copied").replace("{path}", path);
+            if (sb) sb.textContent = window.t("status.copied").replace("{path}", path);
           })
           .catch(function () {});
-      } else if (action === "delete") {
-        const t = window.__ || function(s){return s;};
-        const self = this;
-        window.confirmDialog(t("confirm.move_trash_file") + path).then(function (ok) {
-          if (!ok) return;
-          self._exec("delete_path", { path: path })
+       } else if (action === "delete") {
+         const t = window.t;
+         const self = this;
+         self._exec("delete_path", { path: path })
             .then(function () {
               const sb = document.querySelector(".status-bar");
               if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
@@ -170,10 +168,9 @@ class TopFilesPanel {
               }
               if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
             })
-            .catch(function (err) {
-              window.alertDialog("Failed: " + err);
-            });
-        });
+             .catch(function (err) {
+               window.alertDialog("Failed: " + err);
+             });
       }
     });
   }
@@ -191,7 +188,7 @@ class TopFilesPanel {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
       td.colSpan = showDelete ? 4 : 3;
-      td.textContent = "📭 " + (window.__ || function (s) { return s; })("empty.topfiles");
+      td.textContent = "📭 " + window.t("empty.topfiles");
       td.style.textAlign = "center";
       td.style.color = "var(--text-muted)";
       td.style.padding = "24px";
@@ -224,7 +221,7 @@ class TopFilesPanel {
         tr.setAttribute("aria-selected", "true");
         const sb = document.querySelector(".status-bar");
         if (sb) {
-          const t = window.__ || function (s) { return s; };
+          const t = window.t;
           sb.textContent = t("status.selected").replace("{path}", filePath || "");
         }
       });
@@ -296,16 +293,13 @@ class TopFilesPanel {
         delBtn.style.cssText =
           "padding:1px 6px;font-size:12px;background:transparent;border:1px solid var(--border);border-radius:3px;cursor:pointer";
         delBtn.title = "Move to Trash: " + (entry.path || "");
-        delBtn.onclick = function (p, row) {
-          const self = this;
-          return function () {
-            const t = window.__ || function(s){return s;};
-            window.confirmDialog(t("confirm.move_trash_file") + p).then(function (ok) {
-              if (!ok) return;
-              self._exec("delete_path", { path: p })
+         delBtn.onclick = function (p, row) {
+           const self = this;
+           return function () {
+             self._exec("delete_path", { path: p })
                 .then(function () {
                   const sb = document.querySelector(".status-bar");
-                  if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", p);
+                  if (sb) sb.textContent = window.t("status.moved_to_trash").replace("{name}", p);
                   row.remove();
                   const st = window.app && window.app.state && window.app.state.currentStats;
                   if (st && Array.isArray(st.top_files)) {
@@ -315,11 +309,10 @@ class TopFilesPanel {
                   }
                   if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
                 })
-                .catch(function (err) {
-                  window.alertDialog("Failed: " + err);
-                });
-            });
-          };
+                 .catch(function (err) {
+                   window.alertDialog("Failed: " + err);
+                 });
+           };
         }.bind(this)(entry.path, tr);
         delTd.appendChild(delBtn);
         tr.appendChild(delTd);

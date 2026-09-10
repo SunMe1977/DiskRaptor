@@ -5,7 +5,7 @@
 //! often the real cause of "Other" in the Storage settings. On non-macOS
 //! platforms the commands return an error so the UI can degrade gracefully.
 
-use crate::JsonResult;
+use crate::{cmds::settings::save_settings, cmds::settings::load_settings, JsonResult};
 
 #[tauri::command]
 pub(crate) async fn list_apfs_volumes() -> JsonResult {
@@ -266,3 +266,100 @@ fn parse_size(s: &str) -> Option<u64> {
     };
     Some((value * mult as f64) as u64)
 }
+
+#[tauri::command]
+pub(crate) fn get_apfs_schedule(state: tauri::State<'_, crate::AppState>) -> JsonResult {
+    let settings = load_settings(state).into_data();
+    let schedule = settings
+        .get("apfs_schedule")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({ "enabled": false, "frequency": "daily", "retention_days": 7, "last_run": null }));
+    JsonResult::ok(schedule)
+}
+
+#[tauri::command]
+pub(crate) fn set_apfs_schedule(state: tauri::State<'_, crate::AppState>, schedule: serde_json::Value) -> JsonResult {
+    let _ = save_settings(state, serde_json::json!({ "apfs_schedule": schedule }));
+    JsonResult::ok_empty()
+}
+
+#[tauri::command]
+pub(crate) async fn run_apfs_cleanup(app: tauri::AppHandle) -> JsonResult {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<crate::AppState>();
+            let settings = load_settings(state).into_data();
+            let schedule = settings
+                .get("apfs_schedule")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({ "enabled": false }));
+            if schedule.get("enabled").and_then(|v| v.as_bool()) != Some(true) {
+                return JsonResult::err("APFS cleanup is not enabled in settings");
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let last_run = schedule.get("last_run").and_then(|v| v.as_u64()).unwrap_or(0);
+            let frequency_hours = match schedule.get("frequency").and_then(|v| v.as_str()) {
+                Some("weekly") => 168,
+                _ => 24,
+            };
+            if now - last_run < frequency_hours * 3600 {
+                return JsonResult::ok(serde_json::json!({ "status": "skipped", "reason": "Not due yet" }));
+            }
+            let retention_days = schedule.get("retention_days").and_then(|v| v.as_u64()).unwrap_or(7);
+            let cutoff = now - retention_days * 86400;
+            let mut deleted = 0;
+            for mount in mount_points() {
+                for snap in list_local_tm_snapshots(&mount) {
+                    if let Some(date) = snap.get("date").and_then(|v| v.as_str()) {
+                        if let Some(ts) = parse_tm_date(date) {
+                            if ts < cutoff {
+                                if let Ok(_) = std::process::Command::new("tmutil")
+                                    .args(["deletelocalsnapshots", &mount])
+                                    .status()
+                                {
+                                    deleted += 1;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            let mut updated = schedule.clone();
+            updated["last_run"] = serde_json::Value::Number(serde_json::Number::from(now));
+            let _ = save_settings(state, serde_json::json!({ "apfs_schedule": updated }));
+            JsonResult::ok(serde_json::json!({ "status": "ok", "deleted": deleted }))
+        })
+        .await
+        .unwrap_or_else(|e| JsonResult::err(format!("APFS cleanup failed: {e}")))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        JsonResult::err("APFS cleanup is only available on macOS")
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn parse_tm_date(s: &str) -> Option<u64> {
+    let parts: Vec<&str> = s.split('.').collect();
+    if parts.len() < 2 { return None; }
+    let date_part = parts[parts.len() - 1];
+    let nums: Vec<&str> = date_part.split('-').collect();
+    if nums.len() < 4 { return None; }
+    let year = nums[0].parse::<i64>().ok()?;
+    let month = nums[1].parse::<u32>().ok()?;
+    let day = nums[2].parse::<u32>().ok()?;
+    let time = nums[3];
+    if time.len() < 6 { return None; }
+    let hour = time[0..2].parse::<u32>().ok()?;
+    let min = time[2..4].parse::<u32>().ok()?;
+    let sec = time[4..6].parse::<u32>().ok()?;
+    let days = (year - 1970) * 365 + (month as i64 - 1) * 30 + (day as i64 - 1);
+    Some((days * 86400 + (hour as u64) * 3600 + (min as u64) * 60 + (sec as u64)).max(0))
+}
+

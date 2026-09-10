@@ -134,7 +134,7 @@ class TreeView {
       btn.addEventListener("click", async function() {
         if (this.dataset.ext === "custom") {
           const input = await window.promptDialog(
-            (window.__ || function (s) { return s; })("tree.custom_prompt"),
+            window.t("tree.custom_prompt"),
             "",
           );
           if (input === null) return;
@@ -220,8 +220,8 @@ class TreeView {
         return;
       }
       const root = scanPath.value.replace(/[\\/]+$/, "");
-      const fullNorm = fullPath.replace(new RegExp("/", "g"), "\\");
-      const rootNorm = root.replace(new RegExp("/", "g"), "\\");
+      const fullNorm = fullPath.replaceAll("/", "\\");
+      const rootNorm = root.replaceAll("/", "\\");
       if (fullNorm.toUpperCase().indexOf(rootNorm.toUpperCase()) !== 0) {
         console.warn("Jump: path mismatch", fullPath, "vs", root);
         return;
@@ -290,7 +290,7 @@ class TreeView {
         await self.rebuild();
         self.select(currentIdx);
         const sb = document.querySelector(".status-bar");
-        const t = window.__ || function(s){return s;};
+        const t = window.t;
         if (sb) sb.textContent = t("status.jumped").replace("{path}", fullPath);
       } else {
         console.warn("Jump: could not find path in tree:", fullPath);
@@ -323,7 +323,7 @@ class TreeView {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    const t = window.__ || function (s) { return s; };
+    const t = window.t;
     const explorerLabel = this._isMac ? t("action.finder") : this._isLinux ? t("action.file_manager") : t("action.explorer");
     this._ctxMenu.innerHTML =
       '<div class="tctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
@@ -331,10 +331,9 @@ class TreeView {
       '<div class="tctx-item" data-action="scan-here">🔍 ' + t("action.scan_here") + '</div>' +
       '<div class="tctx-sep"></div>' +
       '<div class="tctx-item" data-action="properties">\u2699\uFE0F ' + t("action.properties") + '</div>' +
-      '<div class="tctx-item" data-action="copy">\u{1F4CB} ' + (window.__ ? window.__("action.copy_path") : "Copy Path") + '</div>' +
-      '<div class="tctx-item" data-action="copy-size">\u{1F4B0} ' + (window.__ ? window.__("action.copy_size") : "Copy Size") + '</div>' +
-      '<div class="tctx-sep"></div>' +
-      '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (window.__ ? window.__("action.move_to_trash") : "Move to Trash") + '</div>';
+      '<div class="tctx-item" data-action="copy">\u{1F4CB} ' + window.t("action.copy_path") + '</div>' +
+      '<div class="tctx-item" data-action="copy-size">\u{1F4B0} ' + window.t("action.copy_size") + '</div>' +
+      '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + window.t("action.move_to_trash") + '</div>';
     document.body.appendChild(this._ctxMenu);
 
     // Show context menu on right-click
@@ -392,19 +391,13 @@ class TreeView {
     const node = this.loader.getNode(arenaIdx);
     if (!node) return;
     const path = this._buildPath(arenaIdx);
-    if (!path) return;
-    const name = node.name || "?";
-    const isDir = node.node_type === "Directory" || node.node_type === 0;
-    const t = window.__ || function(s){return s;};
-    const sizeTxt = this._formatSize(node.size);
-    if (!(await window.confirmDialog(
-      (isDir ? t("confirm.move_trash_folder") : t("confirm.move_trash_file")) +
-        path +
-        "\n\nSize: " + sizeTxt +
-        "\n\n" + (t("confirm.not_undone") || "This cannot be undone."),
-    ))) return;
-    try {
-      const res = await window.__TAURI__.invoke("delete_path", { path: path });
+     if (!path) return;
+     const name = node.name || "?";
+     const isDir = node.node_type === "Directory" || node.node_type === 0;
+     const t = window.t;
+     const sizeTxt = this._formatSize(node.size);
+      const res = await window.app.deletePath(path);
+      try {
       if (res && res.success === false) {
         window.alertDialog("Failed: " + (res.error || "unknown error"));
         return;
@@ -515,7 +508,7 @@ class TreeView {
     if (!path) return;
     try {
       await navigator.clipboard.writeText(path);
-      const t = window.__ || function(s){return s;};
+      const t = window.t;
       document.querySelector(".status-bar").textContent = t("status.copied").replace("{path}", path);
     } catch (e) {
       console.warn("Copy failed:", e);
@@ -539,7 +532,7 @@ class TreeView {
     const sizeStr = this._formatSize(node.size);
     try {
       await navigator.clipboard.writeText(sizeStr);
-      const t = window.__ || function(s){return s;};
+      const t = window.t;
       document.querySelector(".status-bar").textContent = t("status.copied").replace("{path}", sizeStr);
     } catch (e) { console.debug("[DiskRaptor]", e); }
   }
@@ -642,7 +635,7 @@ class TreeView {
     this.vs.setTotalItems(0, 0);
     this.vs.refresh();
     const nc = document.getElementById("node-count");
-    if (nc) nc.textContent = (window.__ || function (s) { return s; })("tree.shown").replace("{n}", "0");
+    if (nc) nc.textContent = window.t("tree.shown").replace("{n}", "0");
   }
 
   /**
@@ -681,7 +674,7 @@ class TreeView {
     // Restore scroll position
     if (scrollEl && savedScroll > 0) scrollEl.scrollTop = savedScroll;
 
-    const t = window.__ || function(s){return s;};
+    const t = window.t;
     const nc = document.getElementById("node-count");
     if (nc) nc.textContent = t("tree.shown").replace("{n}", totalItems.toLocaleString());
 
@@ -707,31 +700,26 @@ class TreeView {
     }
   }
 
-  async _buildList(rootIdx, rootDepth) {
-    if (this.loader.totalNodes === 0) return;
-    const nodes = this.loader.allNodes;
-    // If the requested node isn't loaded yet (chunks still arriving), wait a
-    // short moment and retry so we never render a half-empty tree.
-    for (let tries = 0; tries < 50 && !this.loader.getNode(rootIdx); tries++) {
-      await new Promise(function (r) { setTimeout(r, 100); });
-      if (this.loader.allNodes !== nodes) return;
-    }
-    // Maxima are computed during the same traversal (avoids a second pass over
-    // the whole visible list on every rebuild).
-    this.maxSize = 0;
-    this.maxFileCount = 0;
-    this.maxDirCount = 0;
-    // Iterative traversal with an explicit stack to avoid JS call-stack
-    // overflow on deeply nested directory trees.
-    const stack = [{ idx: rootIdx, depth: rootDepth }];
-    while (stack.length > 0) {
-      const item = stack.pop();
-      const arenaIdx = item.idx;
-      const depth = item.depth;
-      const node = this.loader.getNode(arenaIdx);
-      if (!node) continue;
+   async _buildList(rootIdx, rootDepth) {
+     if (this.loader.totalNodes === 0) return;
+     const nodes = this.loader.allNodes;
+     for (let tries = 0; tries < 50 && !this.loader.getNode(rootIdx); tries++) {
+       await new Promise(function (r) { setTimeout(r, 100); });
+       if (this.loader.allNodes !== nodes) return;
+     }
+     this.maxSize = 0;
+     this.maxFileCount = 0;
+     this.maxDirCount = 0;
+     const stack = [{ idx: rootIdx, depth: rootDepth }];
+     while (stack.length > 0) {
+       if (this.visibleNodes.length >= 5000) return;
+       const item = stack.pop();
+       const arenaIdx = item.idx;
+       const depth = item.depth;
+       const node = this.loader.getNode(arenaIdx);
+       if (!node) continue;
 
-      const isDir = node.node_type === "Directory" || node.node_type === 0;
+       const isDir = node.node_type === "Directory" || node.node_type === 0;
 
       // Apply filter: show node if name matches OR it's an ancestor of a match
       let filterMatch = true;
@@ -767,18 +755,11 @@ class TreeView {
           if (rawNodes && rawNodes.length > 0) {
             const indices = [];
             for (const raw of rawNodes) {
-              const found = this._findNodeByNameAndParent(
-                raw.name,
-                raw.size,
-                arenaIdx,
-              );
-              if (found !== null) indices.push(found);
-              else {
-                const newIdx = this.loader.allNodes.length;
-                raw._arenaIndex = newIdx;
-                this.loader.allNodes.push(raw);
-                indices.push(newIdx);
-              }
+              const realIndex = Number.isInteger(raw.arena_index)
+                ? raw.arena_index
+                : raw._arenaIndex;
+              const stored = this.loader.storeNode(raw, realIndex);
+              if (stored !== null) indices.push(stored);
             }
             if (indices.length > 0) {
               this.loader.parentMap.set(arenaIdx, indices);
@@ -1007,21 +988,16 @@ class TreeView {
       const p = this._buildPath(idx);
       if (p) paths.push(p);
     }
-    const t = window.__ || function (s) { return s; };
+    const t = window.t;
     let totalSize = 0;
     for (const idx of idxs) {
       const n = this.loader.getNode(idx);
       if (n) totalSize += n.size || 0;
     }
-    if (!(await window.confirmDialog(
-      (t("confirm.move_trash_multi") || "Move " + paths.length + " item(s) to Trash?\n\n" + paths.slice(0, 5).join("\n") + (paths.length > 5 ? "\n…" : "") + "\n\nTotal: " + this._formatSize(totalSize) + "\n\nThis cannot be undone.")
-        .replace("{n}", String(paths.length))
-        .replace("{size}", this._formatSize(totalSize)),
-    ))) return;
-    let ok = 0;
-    for (const p of paths) {
-      try {
-        const res = await window.__TAURI__.invoke("delete_path", { path: p });
+     let ok = 0;
+     for (const p of paths) {
+       try {
+         const res = await window.app.deletePath(p);
         if (res && res.success === false) continue;
         ok++;
       } catch (e) { /* keep going */ }
@@ -1055,7 +1031,7 @@ class TreeView {
         }
       }
       if (toRestore.length === 0) return;
-      const t = window.__ || function (s) { return s; };
+      const t = window.t;
       window.showToast(
         t("toast.undo_trash") || "Moved to Trash — undo?",
         "info",

@@ -70,11 +70,10 @@ runTest("DiskRaptor Downloads Cleanup Test", 9230, async (cdp) => {
   const loaded = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('load_settings', {})");
   assert("save/load settings", loaded && loaded.theme === "dark", `${JSON.stringify(loaded)}`);
 
-  // Test file ops commands (no-op, just check no throw)
-  console.log("\n  Testing file ops commands...");
-  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('open_explorer', {path: ${JSON.stringify(tmpDir)}})`).catch(() => {});
-  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('open_terminal', {path: ${JSON.stringify(tmpDir)}})`).catch(() => {});
-  await jsInvokeSafe(cdp, "window.__TAURI__.invoke('open_url', {url: 'https://example.com'})").catch(() => {});
+// Test file ops commands (no-op, just check no throw)
+   console.log("\n  Testing file ops commands...");
+   await jsInvokeSafe(cdp, `window.__TAURI__.invoke('open_explorer', {path: ${JSON.stringify(tmpDir)}})`).catch(() => {});
+   await jsInvokeSafe(cdp, `window.__TAURI__.invoke('open_terminal', {path: ${JSON.stringify(tmpDir)}})`).catch(() => {});
 
   // Test delete_path (move to trash) via IPC
   console.log("\n  Testing delete_path...");

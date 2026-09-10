@@ -105,6 +105,12 @@ window.__contract = (function () {
    * `{ success, data?, error? }` envelope (as produced by the Rust JsonResult
    * helper). Returns true when the payload matches the contract.
    */
+  /**
+   * Validate a command response against its IPC contract.
+   * @param {string} name - The command name
+   * @param {*} payload - The response payload to validate
+   * @returns {boolean} True if the payload matches the contract
+   */
   function check(name, payload) {
     const spec = SHAPES[name];
     if (!spec) return true; // unknown command → no contract yet

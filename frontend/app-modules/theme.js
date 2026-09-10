@@ -2,7 +2,13 @@
   "use strict";
   window.app = window.app || {};
 
-  window.app.initTheme = async function (getSetting, setSetting) {
+  /**
+ * Initialize the theme module: wire the theme toggle, diagram theme
+ * buttons, and language selector.
+ * @param {Function} getSetting - Async function (key, fallback) → value.
+ * @param {Function} setSetting - Async function (key, value) → void.
+ */
+window.app.initTheme = async function (getSetting, setSetting) {
     // ── Theme toggle ───────────────────────────────────────
     const btnTheme = document.getElementById("btn-theme");
     // Fresh installs default to dark mode (settings fall back to "dark").

@@ -19,6 +19,7 @@ class VirtualScroll {
     this.options = {
       estimatedRowHeight: 26,
       overscan: 10,
+      maxVisible: 5000,
       ...options,
     };
 
@@ -106,14 +107,25 @@ class VirtualScroll {
       return;
     }
 
-    const { estimatedRowHeight, overscan } = this.options;
+    const { estimatedRowHeight, overscan, maxVisible } = this.options;
 
-    // Compute visible range
-    this.firstVisible = Math.max(0, Math.floor(this.scrollTop / estimatedRowHeight) - overscan);
-    this.lastVisible = Math.min(
+    // Compute visible range, capped to keep DOM size sane for huge scans.
+    let first = Math.max(0, Math.floor(this.scrollTop / estimatedRowHeight) - overscan);
+    let last = Math.min(
       this.totalItems - 1,
       Math.ceil((this.scrollTop + this.viewportHeight) / estimatedRowHeight) + overscan
     );
+    const span = last - first + 1;
+    if (span > maxVisible) {
+      const center = Math.floor((first + last) / 2);
+      first = Math.max(0, center - Math.floor(maxVisible / 2));
+      last = Math.min(this.totalItems - 1, first + maxVisible - 1);
+      if (last - first + 1 < maxVisible) {
+        first = Math.max(0, last - maxVisible + 1);
+      }
+    }
+    this.firstVisible = first;
+    this.lastVisible = last;
 
     // Remove rows that are no longer visible
     for (const [index] of this.rows) {

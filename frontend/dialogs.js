@@ -97,6 +97,7 @@
    * Trap Tab focus inside a modal container so keyboard users can't tab out
    * into the page behind the overlay.
    * @param {HTMLElement} container - the modal card/root element
+   * @returns {function} Cleanup function that removes the keydown listener
    */
   function trapFocus(container) {
     if (!container) return function () {};
@@ -122,35 +123,46 @@
 
   /**
    * Confirmation dialog. Resolves true/false.
+   * @param {string} message - The message to display
+   * @returns {Promise<boolean>} Resolves true on confirm, null on cancel
    */
   function confirmDialog(message) {
-    const t = window.__ || function (s) { return s; };
+    const t = window.t;
     return dialog({ message, confirmText: t("dialog.ok") || "OK", cancelText: t("dialog.cancel") || "Cancel" });
   }
 
   /**
-   * Yes/No dialog. Resolves true/false.
+   * Yes/No dialog. Resolves true for yes, false for no.
+   * @param {string} message - The message to display
+   * @param {string} [yesText] - Custom yes button text
+   * @param {string} [noText] - Custom no button text
+   * @returns {Promise<boolean>} Resolves true for yes, false for no
    */
   function yesNoDialog(message, yesText, noText) {
     return dialog({
       message,
-      confirmText: yesText || (window.__ || function (s) { return s; })("dialog.yes") || "Yes",
-      cancelText: noText || (window.__ || function (s) { return s; })("dialog.no") || "No",
+      confirmText: yesText || window.t("dialog.yes") || "Yes",
+      cancelText: noText || window.t("dialog.no") || "No",
     });
   }
 
   /**
    * Alert dialog. Resolves undefined when dismissed.
+   * @param {string} message - The message to display
+   * @returns {Promise<void>}
    */
   function alertDialog(message) {
-    return dialog({ message, confirmText: (window.__ || function (s) { return s; })("dialog.ok") || "OK" });
+    return dialog({ message, confirmText: window.t("dialog.ok") || "OK" });
   }
 
   /**
    * Prompt dialog. Resolves the entered string, or null on cancel.
+   * @param {string} message - The message to display
+   * @param {string} [defaultValue] - The default input value
+   * @returns {Promise<string|null>} Resolves with the input value, or null on cancel
    */
   function promptDialog(message, defaultValue) {
-    const t = window.__ || function (s) { return s; };
+    const t = window.t;
     return dialog({ message, placeholder: "", value: defaultValue, confirmText: t("dialog.ok") || "OK", cancelText: t("dialog.cancel") || "Cancel" });
   }
 

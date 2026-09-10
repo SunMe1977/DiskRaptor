@@ -1,10 +1,23 @@
 ﻿(function () {
   "use strict";
   window.app = window.app || {};
-  window.app.scanTimeoutSeconds = function (value) {
+  /**
+ * Clamp a scan-timeout value to the valid range [0, 3600].
+ * @param {number} value - The requested timeout in seconds.
+ * @returns {number} The clamped timeout value.
+ */
+window.app.scanTimeoutSeconds = function (value) {
     return Number.isInteger(value) && value >= 0 && value <= 3600 ? value : 120;
   };
-  window.app.initSettings = function (config) {
+  /**
+ * Initialize the settings module: wire the settings dialog, load/save
+ * settings, and set up keyboard shortcuts and RAM status bars.
+ * @param {Object} config - Module configuration.
+ * @param {HTMLInputElement} config.scanPath - The scan path input element.
+ * @param {HTMLButtonElement} config.btnScan - The scan button element.
+ * @param {HTMLButtonElement} config.btnBrowse - The browse button element.
+ */
+window.app.initSettings = function (config) {
     const { scanPath, btnScan, btnBrowse } = config;
     // ── First-run tips ────────────────────────────────
     (async function () {
@@ -108,22 +121,48 @@
           .catch(function () {});
       }
 
-      // Accent color: load saved value, apply live on change.
-      const accentEl = document.getElementById("settings-accent");
-      if (accentEl) {
-        window.__TAURI__
-          .invoke("load_settings", {})
-          .then(function (s) {
-            if (s && s.accent_color) {
-              accentEl.value = s.accent_color;
-              document.documentElement.style.setProperty("--accent", s.accent_color);
-            }
-          })
-          .catch(function () {});
-        accentEl.addEventListener("input", function () {
-          document.documentElement.style.setProperty("--accent", accentEl.value);
-        });
-      }
+       // Accent color: load saved value, apply live on change.
+       const accentEl = document.getElementById("settings-accent");
+       if (accentEl) {
+         window.__TAURI__
+           .invoke("load_settings", {})
+           .then(function (s) {
+             if (s && s.accent_color) {
+               accentEl.value = s.accent_color;
+               document.documentElement.style.setProperty("--accent", s.accent_color);
+             }
+           })
+           .catch(function () {});
+         accentEl.addEventListener("input", function () {
+           document.documentElement.style.setProperty("--accent", accentEl.value);
+         });
+       }
+
+        // Confirm-delete toggle.
+        const confirmDelEl = document.getElementById("settings-confirm-delete");
+        if (confirmDelEl) {
+          window.__TAURI__
+            .invoke("load_settings", {})
+            .then(function (s) {
+              if (s && typeof s.confirm_delete === "boolean") confirmDelEl.checked = s.confirm_delete;
+            })
+            .catch(function () {});
+        }
+
+        // Welcome page URLs.
+        const starUrlEl = document.getElementById("settings-welcome-star");
+        const forkUrlEl = document.getElementById("settings-welcome-fork");
+        const storeUrlEl = document.getElementById("settings-welcome-store");
+        if (starUrlEl || forkUrlEl || storeUrlEl) {
+          window.__TAURI__
+            .invoke("load_settings", {})
+            .then(function (s) {
+              if (s && s.welcome_star_url && starUrlEl) starUrlEl.value = s.welcome_star_url;
+              if (s && s.welcome_fork_url && forkUrlEl) forkUrlEl.value = s.welcome_fork_url;
+              if (s && s.welcome_store_url && storeUrlEl) storeUrlEl.value = s.welcome_store_url;
+            })
+            .catch(function () {});
+        }
 
       document
         .getElementById("settings-close")
@@ -137,21 +176,25 @@
           const scanTimeout = window.app.scanTimeoutSeconds(timeoutEl ? timeoutEl.valueAsNumber : undefined);
           const selTheme = document.getElementById("settings-theme")?.value || "auto";
           const selLang = (document.getElementById("settings-language")?.value || "auto");
-          const termChoice = termEl ? termEl.value : "cmd";
-          const accentColor = accentEl ? accentEl.value : "";
-          const autoStart = autoStartEl ? autoStartEl.checked : true;
-          if (autoStartEl) {
-            window.__TAURI__
-              .invoke("set_autostart", { enabled: autoStart })
-              .catch(function (e) {
-                window.showToast("Autostart failed: " + (e && e.message ? e.message : e), "error");
-              });
-          }
-          await window.__TAURI__
-            .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor } })
-            .catch(function (e) {
-              window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
-            });
+           const termChoice = termEl ? termEl.value : "cmd";
+           const accentColor = accentEl ? accentEl.value : "";
+           const autoStart = autoStartEl ? autoStartEl.checked : true;
+            const confirmDelete = confirmDelEl ? confirmDelEl.checked : true;
+            const welcomeStarUrl = starUrlEl ? starUrlEl.value : "";
+            const welcomeForkUrl = forkUrlEl ? forkUrlEl.value : "";
+            const welcomeStoreUrl = storeUrlEl ? storeUrlEl.value : "";
+            if (autoStartEl) {
+              window.__TAURI__
+                .invoke("set_autostart", { enabled: autoStart })
+                .catch(function (e) {
+                  window.showToast("Autostart failed: " + (e && e.message ? e.message : e), "error");
+                });
+            }
+            await window.__TAURI__
+              .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor, confirm_delete: confirmDelete, welcome_star_url: welcomeStarUrl, welcome_fork_url: welcomeForkUrl, welcome_store_url: welcomeStoreUrl } })
+             .catch(function (e) {
+               window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
+             });
           if (selTheme === "light") document.body.classList.add("light-theme");
           else if (selTheme === "dark") document.body.classList.remove("light-theme");
           else {

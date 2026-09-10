@@ -2,7 +2,18 @@
   "use strict";
   window.app = window.app || {};
 
-  window.app.initTools = function (refs) {
+  /**
+ * Initialize the tools module: wire the tools dropdown and all tool
+ * actions (open-current, scan-downloads, scan-trash, clear-scan,
+ * reset-view, settings, duplicates, empty-folders, export-html,
+ * find-files, cleanup-downloads, smart-tools, browser-tools,
+ * apfs-snapshots, trash, exit).
+ * @param {Object} refs - Module references.
+ * @param {HTMLInputElement} refs.scanPath - The scan path input element.
+ * @param {HTMLButtonElement} refs.btnScan - The scan button element.
+ * @param {Function} refs.showWelcome - Function to show the welcome page.
+ */
+window.app.initTools = function (refs) {
     const state = window.app.state;
     const { scanPath, btnScan, showWelcome } = refs;
 
@@ -252,15 +263,14 @@
           const ok = await window.confirmDialog(
             window.__ ? window.__("tools.empty_folders_delete_confirm").replace("{n}", paths.length) : "Move " + paths.length + " empty folder(s) to Trash?",
           );
-          if (!ok) { btn.disabled = false; btn.textContent = "\uD83D\uDDD1 " + _t("tools.delete_selected"); return; }
-          let done = 0, failed = 0, skipped = 0;
-          for (let ei = 0; ei < paths.length; ei++) {
-            btn.textContent = _t("status.deleting_progress").replace("{n}", ei + 1).replace("{total}", paths.length);
-            try {
-              const st = await window.__TAURI__.invoke("get_dir_stats", { path: paths[ei] });
-              const d = st && st.data ? st.data : (st || {});
-              if ((d.files === undefined && d.dirs === undefined) || (Number(d.files || 0) === 0 && Number(d.dirs || 0) === 0)) {
-                const r = await window.__TAURI__.invoke("delete_path", { path: paths[ei] });
+           let done = 0, failed = 0, skipped = 0;
+           for (let ei = 0; ei < paths.length; ei++) {
+             btn.textContent = _t("status.deleting_progress").replace("{n}", ei + 1).replace("{total}", paths.length);
+             try {
+               const st = await window.__TAURI__.invoke("get_dir_stats", { path: paths[ei] });
+               const d = st && st.data ? st.data : (st || {});
+               if ((d.files === undefined && d.dirs === undefined) || (Number(d.files || 0) === 0 && Number(d.dirs || 0) === 0)) {
+                 const r = await window.app.deletePath(paths[ei]);
                 if (r && r.success === false) failed++;
                 else done++;
               } else {
@@ -713,14 +723,13 @@
       const ok = await window.confirmDialog(
         window.__ ? window.__("tools.cleanup_confirm").replace("{n}", sel.length).replace("{size}", fmtBytes(totalSel)) : "Move " + sel.length + " file(s) to Trash?",
       );
-      if (!ok) return;
-      cleanBtn.disabled = true;
-      cleanBtn.textContent = "\u23F3 Moving\u2026";
-      let done = 0, failed = 0;
-      for (let si = 0; si < sel.length; si++) {
-        cleanBtn.textContent = "\u23F3 Moving " + (si + 1) + "/" + sel.length + "...";
-        try {
-          const r = await window.__TAURI__.invoke("delete_path", { path: sel[si].path });
+       cleanBtn.disabled = true;
+       cleanBtn.textContent = "\u23F3 Moving\u2026";
+       let done = 0, failed = 0;
+       for (let si = 0; si < sel.length; si++) {
+         cleanBtn.textContent = "\u23F3 Moving " + (si + 1) + "/" + sel.length + "...";
+         try {
+           const r = await window.app.deletePath(sel[si].path);
           if (r && r.success === false) failed++;
           else done++;
         } catch (e) { failed++; }
@@ -849,7 +858,11 @@
     return "Unknown";
   }
 
-  function openSmartTools(autoScanId) {
+  /**
+ * Open the S.M.A.R.T. tools overlay, optionally auto-scanning a drive.
+ * @param {string} [autoScanId] - Drive ID to auto-scan after loading.
+ */
+function openSmartTools(autoScanId) {
     const t = window.__ || function (s) { return s; };
     const old = document.getElementById("smart-overlay");
     if (old) old.remove();
@@ -1357,33 +1370,41 @@
         '<span class="browser-size">\uD83D\uDCBE Cache</span>' +
         '<span class="browser-total">Total</span>' +
         "</div>";
-      for (let i = 0; i < browsers.length; i++) {
-        const b = browsers[i];
-        const emoji = BROWSER_EMOJI[b.name] || "\uD83C\uDF10";
-        const cookiePaths = Array.isArray(b.cookie_paths) ? b.cookie_paths : [];
-        const cachePaths = Array.isArray(b.cache_paths) ? b.cache_paths : [];
-        const pathTitle = (cookiePaths.concat(cachePaths)).map(function (p) { return p; }).join("\n") || "";
-        html +=
-          '<div class="browser-row" data-name="' + esc(b.name) + '" title="' + esc(pathTitle) + '">' +
-          '<span class="browser-name">' +
-          '<input type="checkbox" class="browser-row-check" title="Select all for ' + esc(b.name) + '" />' +
-          '<span class="browser-icon-wrap">' +
-          '<span class="browser-emoji">' + emoji + "</span>" +
-          '<img class="browser-icon" data-exe="' + esc(b.exe || "") + '" alt="" style="display:none;" />' +
-          "</span>" +
-          '<span class="browser-name-text">' + esc(b.name) + "</span>" +
-          "</span>" +
-          '<label class="browser-part" title="Clean cookies for ' + esc(b.name) + '">' +
-          '<input type="checkbox" class="browser-check" data-name="' + esc(b.name) + '" data-part="cookies" />' +
-          '<span class="browser-size cookie">' + fmtSize(b.cookie_size) + (cookiePaths.length > 0 ? '<span class="browser-fcount"> \u00B7 ' + cookiePaths.length + "</span>" : "") + "</span>" +
-          "</label>" +
-          '<label class="browser-part" title="Clean cache for ' + esc(b.name) + '">' +
-          '<input type="checkbox" class="browser-check" data-name="' + esc(b.name) + '" data-part="cache" />' +
-          '<span class="browser-size cache">' + fmtSize(b.cache_size) + (cachePaths.length > 0 ? '<span class="browser-fcount"> \u00B7 ' + cachePaths.length + "</span>" : "") + "</span>" +
-          "</label>" +
-          '<span class="browser-total">' + fmtSize(b.total_size || (b.cookie_size + b.cache_size)) + "</span>" +
-          "</div>";
-      }
+for (let i = 0; i < browsers.length; i++) {
+         const b = browsers[i];
+         const emoji = BROWSER_EMOJI[b.name] || "\uD83C\uDF10";
+         const cookiePaths = Array.isArray(b.cookie_paths) ? b.cookie_paths : [];
+         const cachePaths = Array.isArray(b.cache_paths) ? b.cache_paths : [];
+         const pathTitle = (cookiePaths.concat(cachePaths)).map(function (p) { return p; }).join("\n") || "";
+         const profiles = Array.isArray(b.profiles) ? b.profiles : [];
+         const profileHtml = profiles.length > 1
+           ? '<select class="browser-profile" data-name="' + esc(b.name) + '">'
+             + '<option value="">' + (window.__ || function (s) { return s; })("browser.all_profiles") + '</option>'
+             + profiles.map(function (p) { return '<option value="' + esc(p) + '">' + esc(p) + '</option>'; }).join("")
+             + '</select>'
+           : '';
+         html +=
+           '<div class="browser-row" data-name="' + esc(b.name) + '" title="' + esc(pathTitle) + '">' +
+           '<span class="browser-name">' +
+           '<input type="checkbox" class="browser-row-check" title="Select all for ' + esc(b.name) + '" />' +
+           '<span class="browser-icon-wrap">' +
+           '<span class="browser-emoji">' + emoji + "</span>" +
+           '<img class="browser-icon" data-exe="' + esc(b.exe || "") + '" alt="" style="display:none;" />' +
+           "</span>" +
+           '<span class="browser-name-text">' + esc(b.name) + "</span>" +
+           "</span>" +
+           '<label class="browser-part" title="Clean cookies for ' + esc(b.name) + '">' +
+           '<input type="checkbox" class="browser-check" data-name="' + esc(b.name) + '" data-part="cookies" />' +
+           '<span class="browser-size cookie">' + fmtSize(b.cookie_size) + (cookiePaths.length > 0 ? '<span class="browser-fcount"> \u00B7 ' + cookiePaths.length + "</span>" : "") + "</span>" +
+           "</label>" +
+           '<label class="browser-part" title="Clean cache for ' + esc(b.name) + '">' +
+           '<input type="checkbox" class="browser-check" data-name="' + esc(b.name) + '" data-part="cache" />' +
+           '<span class="browser-size cache">' + fmtSize(b.cache_size) + (cachePaths.length > 0 ? '<span class="browser-fcount"> \u00B7 ' + cachePaths.length + "</span>" : "") + "</span>" +
+           "</label>" +
+           profileHtml +
+           '<span class="browser-total">' + fmtSize(b.total_size || (b.cookie_size + b.cache_size)) + "</span>" +
+           "</div>";
+       }
       listEl.innerHTML = html;
       // Per-browser row select: checks both parts.
       listEl.querySelectorAll(".browser-row-check").forEach(function (rc) {
@@ -1437,56 +1458,59 @@
           .forEach(function (c) { c.checked = true; });
       });
 
-    cleanBtn.addEventListener("click", async function () {
-      const byName = {};
-      listEl.querySelectorAll(".browser-check:checked").forEach(function (c) {
-        const n = c.dataset.name;
-        const part = c.dataset.part;
-        if (!byName[n]) byName[n] = { cookies: false, cache: false };
-        byName[n][part] = true;
-      });
-      const names = Object.keys(byName);
-      if (names.length === 0) {
-        statusEl.className = "smart-status";
-        statusEl.textContent = (window.__ || function (s) { return s; })("browser.nothing_selected");
-        return;
-      }
-      const selCount = names.reduce(function (s, n) {
-        return s + (byName[n].cookies ? 1 : 0) + (byName[n].cache ? 1 : 0);
-      }, 0);
-      const ok = await window.confirmDialog(
-        "Clean " + selCount + " selection(s) in " + names.length + " browser(s)?\n\nCleaning cookies will sign you out of websites in those browsers.",
-      );
-      if (!ok) return;
-      cleanBtn.disabled = true;
-      let freed = 0;
-      let failed = 0;
-      for (let i = 0; i < names.length; i++) {
-        const n = names[i];
-        statusEl.innerHTML =
-          '<span class="smart-spinner"></span>Cleaning ' + (i + 1) + "/" + names.length + ": " + esc(n) + "\u2026";
-        try {
-          const r = await window.__TAURI__.invoke("clean_browser", {
-            name: n,
-            cookies: byName[n].cookies,
-            cache: byName[n].cache,
-          });
-          freed += (r && r.freed) || 0;
-        } catch (e) {
-          failed++;
-          console.warn("Clean failed:", n, e);
-        }
-      }
-      statusEl.className = "smart-status";
-      if (failed > 0) {
-        statusEl.textContent =
-          "Cleaned " + (names.length - failed) + " browser(s), " + failed + " failed. Freed " + fmtSize(freed) + ".";
-      } else {
-        statusEl.textContent =
-          "Cleaned " + names.length + " browser(s). Freed " + fmtSize(freed) + ".";
-      }
-      load();
-    });
+cleanBtn.addEventListener("click", async function () {
+       const byName = {};
+       listEl.querySelectorAll(".browser-check:checked").forEach(function (c) {
+         const n = c.dataset.name;
+         const part = c.dataset.part;
+         if (!byName[n]) byName[n] = { cookies: false, cache: false };
+         byName[n][part] = true;
+       });
+       const names = Object.keys(byName);
+       if (names.length === 0) {
+         statusEl.className = "smart-status";
+         statusEl.textContent = (window.__ || function (s) { return s; })("browser.nothing_selected");
+         return;
+       }
+       const selCount = names.reduce(function (s, n) {
+         return s + (byName[n].cookies ? 1 : 0) + (byName[n].cache ? 1 : 0);
+       }, 0);
+       const ok = await window.confirmDialog(
+         "Clean " + selCount + " selection(s) in " + names.length + " browser(s)?\n\nCleaning cookies will sign you out of websites in those browsers.",
+       );
+       if (!ok) return;
+       cleanBtn.disabled = true;
+       let freed = 0;
+       let failed = 0;
+       for (let i = 0; i < names.length; i++) {
+         const n = names[i];
+         statusEl.innerHTML =
+           '<span class="smart-spinner"></span>Cleaning ' + (i + 1) + "/" + names.length + ": " + esc(n) + "\u2026";
+         try {
+           const profEl = listEl.querySelector('.browser-profile[data-name="' + esc(n) + '"]');
+           const prof = profEl && profEl.value ? profEl.value : null;
+           const r = await window.__TAURI__.invoke("clean_browser", {
+             name: n,
+             cookies: byName[n].cookies,
+             cache: byName[n].cache,
+             profile: prof,
+           });
+           freed += (r && r.freed) || 0;
+         } catch (e) {
+           failed++;
+           console.warn("Clean failed:", n, e);
+         }
+       }
+       statusEl.className = "smart-status";
+       if (failed > 0) {
+         statusEl.textContent =
+           "Cleaned " + (names.length - failed) + " browser(s), " + failed + " failed. Freed " + fmtSize(freed) + ".";
+       } else {
+         statusEl.textContent =
+           "Cleaned " + names.length + " browser(s). Freed " + fmtSize(freed) + ".";
+       }
+       load();
+     });
 
     load();
   }

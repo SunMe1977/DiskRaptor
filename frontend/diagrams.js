@@ -120,7 +120,7 @@ class DiagramRenderer {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    const t = window.__ || function (s) { return s; };
+    const t = window.t;
     const explorerLabel = this._isMac ? t("action.finder") : this._isLinux ? t("action.file_manager") : t("action.explorer");
     this.contextMenu.innerHTML =
       '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
@@ -130,7 +130,7 @@ class DiagramRenderer {
       '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F ' + t("action.properties") + '</div>' +
       '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} ' + t("action.copy_path") + '</div>' +
       '<div class="diag-ctx-sep"></div>' +
-      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + (window.__ ? window.__("action.move_to_trash") : "Move to Trash") + '</div>';
+      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + window.t("action.move_to_trash") + '</div>';
     document.body.appendChild(this.contextMenu);
 
     // Context menu styles
@@ -1090,11 +1090,11 @@ class DiagramRenderer {
     switch (action) {
       case "explorer":
         this._invoke("open_explorer", { path: filePath }).catch(() => {});
-        if (sb) sb.textContent = (window.__ || function(s){return s;})("status.opened").replace("{path}", filePath);
+        if (sb) sb.textContent = window.t("status.opened").replace("{path}", filePath);
         break;
       case "terminal":
         this._invoke("open_terminal", { path: filePath }).catch(() => {});
-        if (sb) sb.textContent = (window.__ || function(s){return s;})("status.opened").replace("{path}", filePath);
+        if (sb) sb.textContent = window.t("status.opened").replace("{path}", filePath);
         break;
       case "tree":
         window.dispatchEvent(new CustomEvent("diagram-jump-to-path", { detail: { path: filePath } }));
@@ -1104,24 +1104,21 @@ class DiagramRenderer {
         break;
       case "copy":
         navigator.clipboard.writeText(filePath).then(() => {
-          if (sb) sb.textContent = (window.__ || function(s){return s;})("status.copied").replace("{path}", filePath);
+          if (sb) sb.textContent = window.t("status.copied").replace("{path}", filePath);
         });
         break;
       case "delete":
-        if (!filePath) break;
-        const t = window.__ || function(s){return s;};
-        const self = this;
-        window.confirmDialog(t("confirm.move_trash_file") + filePath).then(function (ok) {
-          if (!ok) return;
-          self._invoke("delete_path", { path: filePath }).then((ok2) => {
+         if (!filePath) break;
+         const t = window.t;
+         const self = this;
+         self._invoke("delete_path", { path: filePath }).then((ok2) => {
             if (ok2 && ok2.success !== false) {
               self.files = self.files.filter((f) => f.path !== filePath);
               self._draw();
               if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
             }
-          });
-        });
-        break;
+           });
+         break;
     }
     this.contextMenu.style.display = "none";
   }

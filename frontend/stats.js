@@ -65,7 +65,7 @@ class StatsPanel {
         "max-height:220px;overflow-y:auto;overscroll-behavior:contain;";
       content.appendChild(this.wrap);
     }
-    const t = window.__ || function (s) { return s; };
+    const t = window.t;
     const topDirs = (insights && insights.top_dirs) || [];
     const ages = (insights && insights.ages) || [];
     const old = (insights && insights.old_files) || { count: 0, size: 0 };

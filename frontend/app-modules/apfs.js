@@ -37,7 +37,10 @@
     return "var(--accent-green)";
   }
 
-  function openApfsPanel() {
+  /**
+ * Opens the APFS volumes &amp; purgeable-space overlay panel.
+ */
+function openApfsPanel() {
     const old = document.getElementById("apfs-overlay");
     if (old) old.remove();
 
@@ -55,6 +58,22 @@
       '<button class="apfs-close smart-close" aria-label="Close" title="Close" data-i18n-title="welcome.close" data-i18n-aria-label="welcome.close">\u2715</button>' +
       "</span></div>" +
       '<div class="smart-body apfs-body"></div>' +
+      '<div class="apfs-scheduler" style="padding:12px 22px;border-top:1px solid rgba(255,255,255,0.08);">' +
+      '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">\u23F0 APFS Snapshot Scheduler</div>' +
+      '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">' +
+      '<input type="checkbox" id="apfs-sched-enabled" style="accent-color:var(--accent-green);" />' +
+      'Enable automatic cleanup</label>' +
+      '<div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text-secondary);">' +
+      '<select id="apfs-sched-freq" style="background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:12px;">' +
+      '<option value="daily">Daily</option>' +
+      '<option value="weekly">Weekly</option>' +
+      '</select>' +
+      'Retention:' +
+      '<input type="number" id="apfs-sched-days" value="7" min="1" max="90" style="width:50px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:12px;text-align:center;" /> days' +
+      '<button id="apfs-sched-save" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">Save</button>' +
+      '<span id="apfs-sched-status" style="font-size:11px;color:var(--text-muted);"></span>' +
+      "</div>" +
+      "</div>" +
       '<div style="padding:12px 22px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:#9aa4b2;line-height:1.6;">' +
       "Snapshots are copy-on-write reserves that share blocks with live files, so their reclaimable size is an estimate. " +
       "Purgeable space is space macOS can reclaim itself." +
@@ -210,6 +229,53 @@
       );
     }
 
+    function loadSchedule() {
+      window.__TAURI__
+        .invoke("get_apfs_schedule", {})
+        .then(function (res) {
+          const sched = res && res.data ? res.data : res;
+          const enabled = sched && sched.enabled;
+          const freq = sched && sched.frequency ? sched.frequency : "daily";
+          const days = sched && sched.retention_days ? sched.retention_days : 7;
+          const chk = document.getElementById("apfs-sched-enabled");
+          const freqEl = document.getElementById("apfs-sched-freq");
+          const daysEl = document.getElementById("apfs-sched-days");
+          const statusEl = document.getElementById("apfs-sched-status");
+          if (chk) chk.checked = !!enabled;
+          if (freqEl) freqEl.value = freq;
+          if (daysEl) daysEl.value = days;
+          if (statusEl) statusEl.textContent = "";
+        })
+        .catch(function () {});
+    }
+
+    function saveSchedule() {
+      const chk = document.getElementById("apfs-sched-enabled");
+      const freqEl = document.getElementById("apfs-sched-freq");
+      const daysEl = document.getElementById("apfs-sched-days");
+      const statusEl = document.getElementById("apfs-sched-status");
+      const schedule = {
+        enabled: chk ? chk.checked : false,
+        frequency: freqEl ? freqEl.value : "daily",
+        retention_days: daysEl ? parseInt(daysEl.value) || 7 : 7,
+        last_run: null,
+      };
+      window.__TAURI__
+        .invoke("set_apfs_schedule", { schedule: schedule })
+        .then(function () {
+          if (statusEl) statusEl.textContent = "Saved";
+        })
+        .catch(function (e) {
+          if (statusEl) statusEl.textContent = "Error: " + (e && e.message ? e.message : e);
+        });
+    }
+
+    const saveBtn = card.querySelector("#apfs-sched-save");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", saveSchedule);
+    }
+
+    loadSchedule();
     load();
   }
 

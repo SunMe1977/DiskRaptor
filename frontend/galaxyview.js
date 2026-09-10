@@ -1112,7 +1112,7 @@ _getVisibleObjects() {
         boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
       });
       const gxt = function (key, fb) {
-        const f = window.__ || function (k) { return k; };
+        const f = window.t;
         const s = f(key);
         return s === key ? fb : s;
       };
@@ -1200,7 +1200,7 @@ _getVisibleObjects() {
       const menu = this._contextMenu;
       const obj = menu ? menu._obj : null;
       const path = this._contextObjPath(obj);
-      const t = window.__ || function (s) { return s; };
+      const t = window.t;
       const sb = document.getElementById("tree-status") || document.querySelector(".status-bar");
 
       switch (action) {
@@ -1211,19 +1211,16 @@ _getVisibleObjects() {
           if (path) window.__TAURI__.invoke("open_explorer", { path }).catch(() => {});
           break;
         case "delete":
-          if (!path) break;
-          const self = this;
-          window.confirmDialog(t("confirm.move_trash_file") + path).then(function (ok) {
-            if (!ok) return;
-            window.__TAURI__.invoke("delete_path", { path }).then(function (res) {
+           if (!path) break;
+           const self = this;
+           window.__TAURI__.invoke("delete_path", { path }).then(function (res) {
               if (res && res.success !== false) {
                 self.objects = self.objects.filter((o) => o !== obj);
                 if (self.selectedObject === obj) self.selectedObject = null;
                 if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
               }
-            }).catch(function () {});
-          });
-          break;
+             }).catch(function () {});
+           break;
       }
       this._hideContextMenu();
     }

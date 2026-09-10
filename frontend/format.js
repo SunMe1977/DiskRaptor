@@ -10,6 +10,11 @@
     window.__ = function (s) { return s; };
   }
 
+  /**
+   * Format a byte count as a human-readable size string.
+   * @param {number} bytes - The byte count
+   * @returns {string} Formatted size string (e.g. "1.50 MB")
+   */
   function fmtSize(bytes) {
     if (!bytes || bytes <= 0) return "0 B";
     const units = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -21,6 +26,11 @@
     return i === 0 ? Math.round(bytes) + " B" : v.toFixed(2) + " " + units[i];
   }
 
+  /**
+   * Format a bytes-per-second rate as a human-readable speed string.
+   * @param {number} bps - The bytes-per-second rate
+   * @returns {string} Formatted speed string (e.g. "1.50 MB/s")
+   */
   function fmtSpeed(bps) {
     if (!bps || bps <= 0) return "0 B/s";
     const units = ["B/s", "KB/s", "MB/s", "GB/s"];
@@ -34,6 +44,12 @@
 
   // Shared debounce for search/filter inputs — avoids re-running the whole
   // render on every keystroke.
+  /**
+   * Create a debounced version of a function.
+   * @param {function} fn - The function to debounce
+   * @param {number} ms - The debounce delay in milliseconds
+   * @returns {function} The debounced function
+   */
   function debounce(fn, ms) {
     let timer = null;
     return function () {
@@ -46,6 +62,11 @@
   }
 
   // Shared HTML-escaping (was duplicated in several modules).
+  /**
+   * Escape HTML special characters in a string.
+   * @param {string} s - The input string
+   * @returns {string} The escaped string
+   */
   function escHtml(s) {
     return String(s)
       .replace(/&/g, "&amp;")

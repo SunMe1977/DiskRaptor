@@ -1,3 +1,7 @@
+/**
+ * TrashRecovery — Recover deleted files from the system trash (Windows Recycle Bin, macOS Trash, Linux Trash).
+ * Supports restore and permanent delete with confirmation dialogs.
+ */
 class TrashRecovery {
   constructor() {
     this._items = [];
@@ -9,7 +13,7 @@ class TrashRecovery {
     this._createUI();
   }
 
-  _t(key) { return (window.__ || function(s){return s;})(key); }
+  _t(key) { return window.t(key); }
 
   _createUI() {
     this.panel = document.createElement("div");
@@ -233,13 +237,12 @@ class TrashRecovery {
   async _deleteSelected() {
     const t = this._t.bind(this);
     const idxs = this._selectedIndices();
-    if (idxs.length === 0) { window.alertDialog(t("trash.no_selection")); return; }
-    if (!(await window.confirmDialog(t("trash.delete_confirm").replace("{n}", idxs.length)))) return;
-    for (let ci = 0; ci < idxs.length; ci++) {
-      const item = this._items[idxs[ci]];
-      if (!item) continue;
-      try {
-        await window.__TAURI__.invoke("delete_permanent", { path: item.path });
+     if (idxs.length === 0) { window.alertDialog(t("trash.no_selection")); return; }
+     for (let ci = 0; ci < idxs.length; ci++) {
+       const item = this._items[idxs[ci]];
+       if (!item) continue;
+       try {
+         await window.app.deletePermanent(item.path);
         delete this._selected[idxs[ci]];
       } catch(e) { window.alertDialog(t("trash.delete_failed").replace("{name}", item.name || "?") + "\n" + e); }
     }

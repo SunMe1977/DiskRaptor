@@ -1,4 +1,21 @@
 // DiskRaptor Rust Scanner - C FFI for Qt integration
+//
+// ⚠ DEPRECATED: This module is vestigial. The Tauri app (main.rs) is now the
+// primary frontend. The Qt legacy app is no longer maintained.
+//
+// Keep this module source-compatible so the old Qt build does not break, but
+// do NOT add new features here. If the Qt path is dropped entirely, remove
+// this file and the `ffi` feature flag from Cargo.toml.
+//
+// Public API surface (all prefixed with `dr_`):
+//   dr_start_scan  – launches a scan thread, returns JSON with scan_id
+//   dr_get_progress – poll for counters + errors
+//   dr_get_result   – finished scan result (arena chunks + stats)
+//   dr_cancel_scan  – signal cancellation
+//   dr_is_running   – query running state
+//   dr_get_chunk    – retrieve a single TreeChunk by index
+//   dr_free_string  – free a CString returned by any dr_* function
+//   dr_find_duplicates – synchronous duplicate scan (blocking)
 #![allow(clippy::missing_safety_doc)]
 use crate::scanner::tree::{format_size, ScanStats, TreeChunk, TreeNodeArena};
 use crate::scanner::walker;

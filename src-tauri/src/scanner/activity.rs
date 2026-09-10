@@ -110,6 +110,7 @@ pub fn record_error(errors: &Mutex<Vec<String>>, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use std::time::Duration;
 
     #[test]
@@ -141,5 +142,48 @@ mod tests {
         assert_eq!(errors.len(), 100);
         assert_eq!(errors[0], "OS error 10");
         assert_eq!(errors[99], "OS error 109");
+    }
+
+    #[test]
+    fn timeout_zero_disables_watchdog() {
+        let activity = ScanActivity::default();
+        // Zero timeout means never time out, regardless of staleness.
+        assert!(activity.timeout_message(0, "root").is_none());
+    }
+
+    #[test]
+    fn progress_resets_watchdog() {
+        let activity = Arc::new(ScanActivity::default());
+        let start = activity.base;
+        // Simulate 5 seconds of inactivity.
+        activity.progress();
+        // Should not time out with a 10s threshold right after progress.
+        assert!(activity.timeout_at(10, "root", start + Duration::from_secs(5)).is_none());
+    }
+
+    #[test]
+    fn error_count_is_bounded_at_capacity() {
+        let errors = Mutex::new(Vec::new());
+        for n in 0..ERROR_CAP + 50 {
+            record_error(&errors, format!("error {n}"));
+        }
+        let errors = errors.lock();
+        assert_eq!(errors.len(), ERROR_CAP);
+        // The oldest 50 errors should have been evicted.
+        assert_eq!(errors[0], format!("error 50"));
+        assert_eq!(errors[ERROR_CAP - 1], format!("error {}", ERROR_CAP + 50 - 1));
+    }
+
+    #[test]
+    fn error_messages_are_retained_in_order() {
+        let errors = Mutex::new(Vec::new());
+        record_error(&errors, "first".into());
+        record_error(&errors, "second".into());
+        record_error(&errors, "third".into());
+        let errors = errors.lock();
+        assert_eq!(errors.len(), 3);
+        assert_eq!(errors[0], "first");
+        assert_eq!(errors[1], "second");
+        assert_eq!(errors[2], "third");
     }
 }

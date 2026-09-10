@@ -239,6 +239,7 @@
     ready: null, // resolved once the initial locale data is loaded (set below)
   };
   window.__ = t; // shorthand
+  window.t = window.__ || ((s) => s);
 
   // Auto-detect and apply on load. The locale data loads asynchronously; the
   // UI shows English (or the last selected language) until it arrives.

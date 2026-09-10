@@ -86,7 +86,7 @@ class DupScanner {
         const stats = await window.__TAURI__.invoke("get_dup_stats", {});
         if (stats) {
           self._updateProgress(stats);
-          if (stats.phase === 3) {
+          if (stats.phase >= 4) {
             clearInterval(poll);
             self.overlay.style.display = "none";
             try {
@@ -142,7 +142,7 @@ class DupScanner {
     if (wasted) wasted.textContent = this._fmtSize(stats.wastedBytes || 0);
     if (file) file.textContent = stats.currentFile || "";
     if (status) {
-      const t = window.__ || function(s){return s;};
+      const t = window.t;
       if (stats.phase === 3) status.textContent = t("dup.processing");
       else if (stats.phase === 2) status.textContent = t("dup.hashing");
       else status.textContent = t("dup.scanning");
@@ -165,7 +165,7 @@ class DupScanner {
     list.innerHTML = "";
 
     const groups = data.groups || [];
-    const t = window.__ || function(s){return s;};
+    const t = window.t;
     let headerText = groups.length + " groups \u00B7 " + this._fmtSize(data.wastedBytes || 0) + " reclaimable";
     if (cancelled && groups.length > 0) {
       headerText = "⚠ " + t("dup.cancelled") + " \u2014 " + headerText + " (partial)";
@@ -383,6 +383,38 @@ class DupScanner {
 
     updateSelectedCount();
 
+    // Render duplicate groups in pages.  A directory with tens of thousands
+    // of matching groups must not create an equally large DOM in one frame.
+    if (data.hasMore) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.textContent = "Load more duplicate groups";
+      more.style.cssText = "display:block;margin:12px auto;padding:7px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;";
+      more.onclick = async function () {
+        more.disabled = true;
+        more.textContent = "Loading…";
+        try {
+          const next = await window.__TAURI__.invoke("get_dup_result", {
+            offset: (data.offset || 0) + groups.length,
+            limit: 100,
+          });
+          if (!next || !Array.isArray(next.groups)) throw new Error("Invalid duplicate result page");
+          self._showResults({
+            groups: groups.concat(next.groups),
+            offset: data.offset || 0,
+            totalGroups: next.totalGroups,
+            hasMore: next.hasMore,
+            wastedBytes: next.wastedBytes || data.wastedBytes,
+          }, cancelled);
+        } catch (e) {
+          more.disabled = false;
+          more.textContent = "Retry loading duplicate groups";
+          console.error("Failed to load duplicate result page:", e);
+        }
+      };
+      list.appendChild(more);
+    }
+
     // Delete button handler
     document.getElementById("dup-delete-btn").onclick = async function() {
       const toDelete = [];
@@ -394,20 +426,15 @@ class DupScanner {
         });
       });
 
-      if (toDelete.length === 0) {
-        window.alertDialog("No files selected.");
-        return;
-      }
-
-      const ok = await window.confirmDialog(
-        "Move " + toDelete.length + " duplicate files to Trash?",
-      );
-      if (!ok) return;
+       if (toDelete.length === 0) {
+         window.alertDialog("No files selected.");
+         return;
+       }
 
       // Move in parallel batches with status updates
       const delBtn = document.getElementById("dup-delete-btn");
       delBtn.disabled = true;
-      const _t = window.__ || function (s) { return s; };
+      const _t = window.t;
       delBtn.textContent = _t("status.moving_to_trash");
       const progWrap = document.getElementById("dup-delete-progress");
       const progFill = document.getElementById("dup-delete-progress-fill");
@@ -420,8 +447,8 @@ class DupScanner {
         if (start >= toDelete.length) return;
         const batch = toDelete.slice(start, start + BATCH);
         const results = await Promise.allSettled(
-          batch.map(function (p) {
-            return window.__TAURI__.invoke("delete_path", { path: p });
+           batch.map(function (p) {
+             return window.app.deletePath(p);
           }),
         );
         results.forEach(function (r) {

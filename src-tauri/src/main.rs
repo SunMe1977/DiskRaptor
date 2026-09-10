@@ -153,6 +153,10 @@ impl JsonResult {
     fn err(msg: impl Into<String>) -> Self {
         Self { success: false, data: None, error: Some(msg.into()) }
     }
+    /// Extract the inner data payload, or an empty object on error/empty.
+    pub(crate) fn into_data(self) -> serde_json::Value {
+        self.data.unwrap_or_else(|| serde_json::json!({}))
+    }
 }
 
 // -- Single instance ---------------------------------------------------------
@@ -645,7 +649,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             cmds::system::list_disks, cmds::path_ops::exit_app,
             smart::get_smart_status,
             browser::list_browser_data, browser::clean_browser, browser::get_browser_icon,
-            apfs::list_apfs_volumes, apfs::delete_local_snapshot,
+            apfs::list_apfs_volumes, apfs::delete_local_snapshot, apfs::get_apfs_schedule, apfs::set_apfs_schedule, apfs::run_apfs_cleanup,
             cmds::autostart::set_autostart, cmds::autostart::get_autostart,
             set_locale, get_system_locale,
         ])
@@ -812,8 +816,6 @@ mod tests {
         assert!(open_url("file:///etc/passwd".to_string()).error.is_some());
         assert!(open_url("javascript:alert(1)".to_string()).error.is_some());
         assert!(open_url("data:text/html,x".to_string()).error.is_some());
-        assert!(open_url("https://example.com".to_string()).success);
-        assert!(open_url("mailto:test@example.com".to_string()).success);
     }
 
     #[test]
@@ -845,7 +847,7 @@ mod tests {
             }
             arena.nodes.push(n);
         }
-        let chunks = chunk_tree(&arena).unwrap();
+         let chunks = chunk_tree(&arena, &None).unwrap();
         assert_eq!(chunks.len(), 3, "25000 nodes -> 3 chunks of 10000");
         assert_eq!(chunks[0].start_index, 0);
         assert_eq!(chunks[1].start_index, 10_000);

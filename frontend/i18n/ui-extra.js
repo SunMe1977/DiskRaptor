@@ -126,3 +126,4 @@ window.I18N_DATA.de = Object.assign(window.I18N_DATA.de || {}, {
   ,"tree.custom_prompt": "Endungen eingeben (kommagetrennt, z. B. md,tsx,toml):"
 });
 window.I18N_DATA.__uiExtra = true;
+

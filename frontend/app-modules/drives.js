@@ -2,7 +2,13 @@
   "use strict";
   window.app = window.app || {};
 
-  window.app.initDrives = function (scanPath, btnScan) {
+  /**
+ * Initialize the drives module: load volume stats, set up the drive
+ * selector dropdown, and wire keyboard navigation.
+ * @param {HTMLInputElement} scanPath - The scan path input element.
+ * @param {HTMLButtonElement} btnScan - The scan button element.
+ */
+window.app.initDrives = function (scanPath, btnScan) {
     // ── Volume stats on welcome page ─────────────────────
     (async function () {
       try {
