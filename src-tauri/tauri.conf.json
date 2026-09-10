@@ -45,7 +45,7 @@
     },
     "windows": {
       "webviewInstallMode": {
-        "type": "skip"
+        "type": "downloadBootstrapper"
       },
       "wix": {
         "language": "en-US"

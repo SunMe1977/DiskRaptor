@@ -73,8 +73,8 @@ jobs:
         shell: pwsh
         run: |
           # makensis comes from the NSIS that the Tauri bundler already downloaded.
-          # WebView2 is assumed present (bundled with Windows 10+ / Windows 11),
-          # so no runtime is embedded and the installer stays small.
+          # No WebView2 runtime is embedded; the installer downloads Microsoft's
+          # small bootstrapper only when the runtime is missing.
           powershell -ExecutionPolicy Bypass -File installer\nsis\build-silent.ps1
       - name: Stage release assets
         shell: pwsh

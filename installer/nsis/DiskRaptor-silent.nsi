@@ -11,6 +11,7 @@ ManifestDPIAware true
 !ifndef PAYLOAD_DIR
   !define PAYLOAD_DIR "..\..\src-tauri\target\release"
 !endif
+!define WEBVIEW2APPGUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 !define /date CURRENT_YEAR "%Y"
 
 !define COPYRIGHT_TEXT   "(c) 2025-${CURRENT_YEAR} ${PRODUCT_PUBLISHER}"
@@ -74,6 +75,8 @@ Section "Install"
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "EstimatedSize" "$0"
+
+  Call EnsureWebView2
 SectionEnd
 
 Section "Uninstall"
@@ -84,3 +87,32 @@ Section "Uninstall"
   DeleteRegKey HKLM "${PRODUCT_UNINSTALL_KEY}"
   DeleteRegKey HKCU "Software\${PRODUCT_PUBLISHER}\${PRODUCT_NAME}"
 SectionEnd
+
+# Fallback: the WebView2 runtime is normally already present (bundled with
+# Windows 10+ / Windows 11), so nothing is shipped inside this installer. Only
+# when it is missing do we download Microsoft's small Evergreen bootstrapper and
+# run it silently. Best-effort: a failed download never blocks the install.
+Function EnsureWebView2
+  ClearErrors
+  ReadRegStr $0 HKLM "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
+  IfErrors 0 wv2_done
+  ReadRegStr $0 HKLM "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
+  IfErrors 0 wv2_done
+  ReadRegStr $0 HKCU "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
+  IfErrors 0 wv2_done
+
+  DetailPrint "WebView2 runtime missing - downloading bootstrapper..."
+  Delete "$TEMP\MicrosoftEdgeWebview2Setup.exe"
+  NSISdl::download "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$TEMP\MicrosoftEdgeWebview2Setup.exe"
+  Pop $0
+  StrCmp $0 "success" 0 wv2_failed
+
+  DetailPrint "Installing WebView2 runtime..."
+  ExecWait '"$TEMP\MicrosoftEdgeWebview2Setup.exe" /silent /install' $1
+  Delete "$TEMP\MicrosoftEdgeWebview2Setup.exe"
+  StrCmp $1 0 wv2_done
+
+wv2_failed:
+  DetailPrint "WebView2 runtime could not be installed automatically; continuing."
+wv2_done:
+FunctionEnd
