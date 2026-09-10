@@ -59,13 +59,26 @@
         if (ov) ov.classList.add("active");
       });
     }
-    // Auto-hide the onboarding banner when the user dismissed it before —
-    // done here (not only inside async init) so it never comes back.
-    if (window.__TAURI__ && window.__TAURI__.invoke) {
-      window.__TAURI__.invoke("load_settings", {}).then(function (s) {
-        if (s && s.welcome_dismissed) hideOnboarding();
-      }).catch(function () {});
-    }
+     // Auto-hide the onboarding banner when the user dismissed it before —
+     // done here (not only inside async init) so it never comes back.
+     if (window.__TAURI__ && window.__TAURI__.invoke) {
+       window.__TAURI__.invoke("load_settings", {}).then(function (s) {
+         if (s && s.welcome_dismissed) hideOnboarding();
+         // Apply configurable welcome-page URLs from settings.
+         const urlKeys = [
+           { key: "welcome_star_url", sel: '[data-i18n="welcome.star"]' },
+           { key: "welcome_fork_url", sel: '[data-i18n="welcome.fork"]' },
+           { key: "welcome_store_url", sel: '[data-i18n="welcome.store"]' },
+         ];
+         urlKeys.forEach(function (item) {
+           if (s && s[item.key]) {
+             document.querySelectorAll(item.sel).forEach(function (el) {
+               el.setAttribute("data-open-url", s[item.key]);
+             });
+           }
+         });
+       }).catch(function () {});
+     }
     // Deferred external links ([data-open-url]) — welcome star/fork/store,
     // About-screen links, etc.
     function openDataUrl(t) {
@@ -205,25 +218,60 @@
       lastDirsFound: 0,
     };
 
-    // ── Settings helpers ───────────────────────────────────
-    window.app.getSetting = async function (key, fallback) {
-      try {
-        const r = await window.__TAURI__.invoke("load_settings");
-        if (r && r[key] !== undefined) return r[key];
-      } catch (e) {
-        console.warn("load_settings failed:", e && e.message ? e.message : e);
-      }
-      return fallback;
-    };
-    window.app.setSetting = async function (key, val) {
-      try {
-        const o = {};
-        o[key] = val;
-        await window.__TAURI__.invoke("save_settings", { settings: o });
-      } catch (e) {
-        console.warn("save_settings failed:", e && e.message ? e.message : e);
-      }
-    };
+     // ── Settings helpers ───────────────────────────────────
+     window.app.getSetting = async function (key, fallback) {
+       try {
+         const r = await window.__TAURI__.invoke("load_settings");
+         if (r && r[key] !== undefined) return r[key];
+       } catch (e) {
+         console.warn("load_settings failed:", e && e.message ? e.message : e);
+       }
+       return fallback;
+     };
+     window.app.setSetting = async function (key, val) {
+       try {
+         const o = {};
+         o[key] = val;
+         await window.__TAURI__.invoke("save_settings", { settings: o });
+       } catch (e) {
+         console.warn("save_settings failed:", e && e.message ? e.message : e);
+       }
+      };
+
+     // ── Delete helper: honors confirm_delete setting ─────
+     window.app.deletePath = async function (path) {
+       try {
+         const s = await window.__TAURI__.invoke("load_settings", {});
+         if (s && s.confirm_delete === false) {
+           // Confirmation disabled by user – proceed directly.
+           return window.__TAURI__.invoke("delete_path", { path });
+         }
+       } catch (_) {}
+       if (!window.confirmDialog) {
+         return window.__TAURI__.invoke("delete_path", { path });
+       }
+       const ok = await window.confirmDialog(
+         (window.__ || function (k) { return k; })("confirm.move_trash_file") + path,
+       );
+        if (!ok) return { success: false, error: "cancelled" };
+        return window.__TAURI__.invoke("delete_path", { path });
+      };
+      window.app.deletePermanent = async function (path) {
+        try {
+          const s = await window.__TAURI__.invoke("load_settings", {});
+          if (s && s.confirm_delete === false) {
+            return window.__TAURI__.invoke("delete_permanent", { path });
+          }
+        } catch (_) {}
+        if (!window.confirmDialog) {
+          return window.__TAURI__.invoke("delete_permanent", { path });
+        }
+        const ok = await window.confirmDialog(
+          (window.__ || function (k) { return k; })("trash.delete_confirm"),
+        );
+        if (!ok) return { success: false, error: "cancelled" };
+        return window.__TAURI__.invoke("delete_permanent", { path });
+      };
     const getSetting = window.app.getSetting;
     const setSetting = window.app.setSetting;
 
@@ -649,8 +697,31 @@
       });
     }
 
-    // ── Low disk space warning (emitted by the backend) ─────────
-    if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
+     // ── Auto-update check on startup (after bridge ready) ──────
+     (async function () {
+       try {
+         const doCheck = async function () {
+           try {
+             const res = await window.__TAURI__.invoke("check_for_updates");
+             const data = res && res.data ? res.data : res;
+             const latest = data && data.latest ? String(data.latest) : "";
+             if (latest && latest !== _currentVersion) {
+               if (window.showToast) {
+                 window.showToast("Update available: v" + latest, "info");
+               }
+             }
+           } catch (_) { /* silent */ }
+         };
+         // Wait for UI to settle, then check (throttled: once per session).
+         await sleep(5000);
+         if (window.__TAURI__ && window.__TAURI__.invoke) {
+           await doCheck();
+         }
+       } catch (_) {}
+     })();
+
+     // ── Low disk space warning (emitted by the backend) ─────────
+     if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
       window.__TAURI__.event
         .listen("low-disk-space", function (ev) {
           const msg = (ev && ev.payload) || "";
@@ -843,6 +914,22 @@
     const galaxyContainer = document.getElementById("galaxy-container");
     const diagramContainer = document.getElementById("diagram-container");
 
+    // A launch at Windows sign-in must always land on the normal scanner
+    // screen.  In particular, do not let a Galaxy selection from an older
+    // version (or a WebView session restore) cover the empty diagram panel
+    // before there is scan data to display.
+    function resetStartupDiagramView() {
+      if (galaxyContainer) {
+        galaxyContainer.style.display = "none";
+        galaxyContainer.replaceChildren();
+      }
+      if (diagramContainer) diagramContainer.style.display = "block";
+      document.querySelectorAll(".diagram-mode").forEach(function (button) {
+        button.classList.toggle("active", button.dataset.mode === "pie");
+      });
+    }
+    resetStartupDiagramView();
+
     function loadGalaxyScripts(callback) {
       if (window.GalaxyView && window.GalaxyView.GalaxyView) {
         callback();
@@ -1003,7 +1090,12 @@
     // it must never open by itself, only when the user clicks it after a scan.
     window.__TAURI__.invoke("load_settings", {}).then(function (s) {
       const saved = s && s.diagram_mode;
-      if (saved && saved !== "galaxy") {
+      if (saved === "galaxy") {
+        // Migrate the old persisted selection away. This makes the protection
+        // survive a restart even if the WebView restores prior page state.
+        window.__TAURI__.invoke("save_settings", { settings: { diagram_mode: "pie" } }).catch(function () {});
+        resetStartupDiagramView();
+      } else if (saved) {
         const target = Array.prototype.find.call(diagramModes, function (b) {
           return b.dataset.mode === saved;
         });
