@@ -11,9 +11,6 @@ ManifestDPIAware true
 !ifndef PAYLOAD_DIR
   !define PAYLOAD_DIR "..\..\src-tauri\target\release"
 !endif
-!define WEBVIEW2_INSTALLER "..\webview2\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
-!define WEBVIEW2_CLIENT_GUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
-
 !define /date CURRENT_YEAR "%Y"
 
 !define COPYRIGHT_TEXT   "(c) 2025-${CURRENT_YEAR} ${PRODUCT_PUBLISHER}"
@@ -59,10 +56,6 @@ Section "Install"
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  # Embed the WebView2 Evergreen Runtime so the install works fully offline.
-  SetOutPath "$PLUGINSDIR"
-  File "${WEBVIEW2_INSTALLER}"
-
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\diskraptor.exe"
 
@@ -81,8 +74,6 @@ Section "Install"
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "EstimatedSize" "$0"
-
-  Call EnsureWebView2
 SectionEnd
 
 Section "Uninstall"
@@ -93,17 +84,3 @@ Section "Uninstall"
   DeleteRegKey HKLM "${PRODUCT_UNINSTALL_KEY}"
   DeleteRegKey HKCU "Software\${PRODUCT_PUBLISHER}\${PRODUCT_NAME}"
 SectionEnd
-
-# Install the bundled Evergreen WebView2 Runtime silently, but only if it is
-# missing. The runtime ships inside this installer, so no network is needed.
-Function EnsureWebView2
-  ClearErrors
-  ReadRegStr $0 HKLM "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\${WEBVIEW2_CLIENT_GUID}" "pv"
-  IfErrors 0 wv2_ok
-  ReadRegStr $0 HKLM "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2_CLIENT_GUID}" "pv"
-  IfErrors 0 wv2_ok
-  ReadRegStr $0 HKCU "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2_CLIENT_GUID}" "pv"
-  IfErrors 0 wv2_ok
-  ExecWait '"$PLUGINSDIR\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" /install'
-wv2_ok:
-FunctionEnd

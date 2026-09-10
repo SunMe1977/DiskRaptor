@@ -6,9 +6,8 @@
   Compiles installer\nsis\DiskRaptor-silent.nsi with makensis. The installer
   payload (diskraptor.exe + diskraptor_scanner.dll + _up_\frontend) is taken
   from the freshly built silent MSI, so the EXE ships exactly the same files
-  as the package that gets submitted to the Store. The WebView2 Evergreen
-  Standalone installer is downloaded automatically if missing and embedded,
-  so the install never needs network access.
+  as the package that gets submitted to the Store. WebView2 is assumed to be
+  present (bundled with Windows 10+ / Windows 11), so no runtime is embedded.
 
   Prerequisites: silent MSI built (npx tauri build --bundles msi
   --config src-tauri/tauri.silent.conf.json --ci), makensis on disk.
@@ -25,14 +24,6 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (-not $Version) { $Version = (Get-Content (Join-Path $repoRoot "package.json") | ConvertFrom-Json).version }
 if (-not $MsiPath) { $MsiPath = Join-Path $repoRoot "src-tauri\target\release\bundle\msi\DiskRaptor_${Version}_x64_en-US.msi" }
 $MsiPath = (Resolve-Path $MsiPath -ErrorAction Stop).Path
-
-$wv2Dir = Join-Path $repoRoot "installer\webview2"
-$wv2 = Join-Path $wv2Dir "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
-if (-not (Test-Path $wv2)) {
-  New-Item -ItemType Directory -Force -Path $wv2Dir | Out-Null
-  Write-Host "Downloading WebView2 Evergreen Standalone (x64)..."
-  Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124701" -OutFile $wv2 -UseBasicParsing
-}
 
 $msi = $MsiPath
 if (-not (Test-Path $msi)) {
