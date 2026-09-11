@@ -57,6 +57,7 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       ...NOISY_WARN_RULES,
+      "no-undef": "warn",
     },
   },
   {
