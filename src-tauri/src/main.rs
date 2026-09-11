@@ -5,7 +5,6 @@ mod browser;
 mod cmds;
 mod ipc;
 mod lifecycle;
-mod log;
 mod menu;
 mod menu_i18n;
 mod scanner;
@@ -53,10 +52,6 @@ pub(crate) use cmds::native_browser_icon;
 // -- Main -------------------------------------------------------------------
 
 fn main() {
-    if let Err(e) = log::init() {
-        eprintln!("Failed to initialize logging: {}", e);
-    }
-
     if lifecycle::is_second_instance() {
         lifecycle::focus_existing_and_exit();
     }

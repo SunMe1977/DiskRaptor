@@ -2,7 +2,9 @@
 use tauri::{AppHandle, Manager, Window};
 use tracing::debug;
 
-use crate::{state::AppState, menu};
+use crate::state::AppState;
+#[cfg(target_os = "windows")]
+use crate::menu;
 
 /// Persist the window size/position into settings.json so the next launch
 /// restores it. Best-effort; failures are ignored.

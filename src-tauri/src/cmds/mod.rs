@@ -3,26 +3,37 @@
 //! shell/icon interop (`path_ops`), system/info/update commands (`system`),
 //! scan streaming (`scan`), duplicate scanning (`dups`) and settings (`settings`).
 
+#[allow(unused_imports)]
 pub(crate) mod dups;
+#[allow(unused_imports)]
 pub(crate) mod path_ops;
+#[allow(unused_imports)]
 pub(crate) mod scan;
+#[allow(unused_imports)]
 pub(crate) mod settings;
+#[allow(unused_imports)]
 pub(crate) mod system;
+#[allow(unused_imports)]
 pub(crate) mod autostart;
 
 // Re-exports keep the crate-root API (invoke_handler, integration tests,
 // sibling modules such as smart/trash/browser) source-compatible after the
 // split.
+#[allow(unused_imports)]
 pub(crate) use dups::{cancel_dup_scan, find_duplicates, get_dup_result, get_dup_stats};
+#[allow(unused_imports)]
 pub(crate) use path_ops::{
     delete_path, delete_permanent, exit_app, get_icon, open_explorer, open_properties,
     open_terminal, open_url, sanitize_delete_path, validate_system_path,
 };
+#[allow(unused_imports)]
 pub(crate) use scan::{
     cancel_scan, get_children, get_chunk, get_scan_progress, get_scan_result, get_stats,
     release_scan, start_scan,
 };
+#[allow(unused_imports)]
 pub(crate) use settings::{load_settings, save_settings};
+#[allow(unused_imports)]
 pub(crate) use system::{
     check_admin_needed, check_for_updates, classify_download, get_app_data_dir, get_app_info,
     get_app_version, get_dir_stats, get_home_dir, get_memory_info, get_process_memory,
@@ -31,6 +42,8 @@ pub(crate) use system::{
     request_permissions, restart_as_admin,
 };
 #[cfg(not(target_os = "windows"))]
+#[allow(unused_imports)]
 pub(crate) use system::run_output;
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)]
 pub(crate) use path_ops::native_browser_icon;

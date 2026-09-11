@@ -2,6 +2,7 @@
 //! Keeping every `unsafe` platform call and every path-validation rule in one
 //! module makes this the single, reviewable security boundary of the app.
 use crate::JsonResult;
+#[cfg(target_os = "macos")]
 use crate::cmds::system::in_mac_sandbox;
 
 /// Windows `canonicalize` returns `\\?\C:\...` (or `\\?\UNC\server\share` for
