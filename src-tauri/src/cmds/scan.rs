@@ -2,17 +2,17 @@
 //! per-chunk children. State lives in `AppState` (declared in main.rs); these
 //! commands are kept separate so the concurrency-heavy walker glue is isolated
 //! from the rest of the command surface.
-use crate::{AppState, JsonResult, LiveEntries, ScanResultData};
+use crate::{AppState, JsonResult, ScanResultData, state::LiveEntries, scanner};
 use anyhow::Result;
-use diskraptor_scanner::scanner;
-use diskraptor_scanner::scanner::tree::format_size;
-use diskraptor_scanner::scanner::tree::{NodeType, TreeNodeArena};
-use diskraptor_scanner::streaming::chunker::chunk_size;
+use crate::scanner::tree::format_size;
+use crate::scanner::tree::{NodeType, TreeNodeArena};
+use crate::streaming::chunker::chunk_size;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, State};
+use tracing::error;
 
 /// Build a scan config whose walker-error list the caller can read after the
 /// walk finishes (the walkers push "Access denied" / timeout entries into it).
@@ -189,7 +189,7 @@ fn finalize_scan(
             *s.scan.cached_result.lock() = Some((active_id, json));
         }
         Some(Err(e)) => {
-            eprintln!("[scan] error: {}", e);
+            error!(scan_id, error = %e, "Scan failed");
             s.scan.errors.lock().extend(scan_errors.lock().clone());
             s.scan.errors.lock().push(e.to_string());
             let _ = result_handle.emit("scan:error", serde_json::json!({ "scan_id": scan_id, "error": e.to_string() }));
@@ -558,7 +558,7 @@ pub(crate) fn compute_scan_insights(arena: &TreeNodeArena, root_path: &str) -> s
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diskraptor_scanner::scanner::tree::TreeNode;
+    use crate::scanner::tree::TreeNode;
 
     #[test]
     fn cancellation_grace_allows_a_second_poll_but_has_a_fixed_deadline() {

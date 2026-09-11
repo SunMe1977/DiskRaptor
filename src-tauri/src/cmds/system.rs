@@ -6,7 +6,7 @@ use crate::cmds::path_ops::validate_system_path;
 use crate::JsonResult;
 #[cfg(target_os = "windows")]
 use crate::trash;
-use diskraptor_scanner::scanner::tree::format_size;
+use crate::scanner::tree::format_size;
 
 /// Build a `Command` without flashing a console window. Windows GUI apps show
 /// a brief DOS box whenever powershell/cmd/curl/smartctl are launched from

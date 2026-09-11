@@ -306,7 +306,7 @@ pub fn get_browser_icon(exe: String) -> JsonResult {
             }
         }
         // Native shell icon extraction (SHGetFileInfoW) — no PowerShell.
-        if let Some(data_url) = crate::native_browser_icon(&exe) {
+        if let Some(data_url) = crate::cmds::native_browser_icon(&exe) {
             let _ = std::fs::create_dir_all(&cache_dir);
             let _ = std::fs::write(&cache_file, &data_url);
             return JsonResult::ok(serde_json::Value::String(data_url));

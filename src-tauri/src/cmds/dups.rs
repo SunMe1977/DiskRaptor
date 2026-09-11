@@ -1,9 +1,8 @@
 //! Duplicate-file scanner commands. The heavy lifting (size-grouping â†’ head
 //! hash â†’ full-hash verification) lives in `scanner::duplicates`; these commands
 //! drive it with progress phases and cancellation.
-use crate::{AppState, JsonResult};
-use diskraptor_scanner::scanner;
-use diskraptor_scanner::scanner::tree::format_size;
+use crate::{AppState, JsonResult, scanner};
+use crate::scanner::tree::format_size;
 use rayon::prelude::*;
 use std::sync::atomic::Ordering;
 use tauri::{Manager, State};

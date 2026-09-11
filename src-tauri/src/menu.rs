@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tauri::Manager;
 
-use crate::AppState;
+use crate::state::AppState;
 
 const MENU_LANGUAGES: &[(&str, &str)] = &[
     ("lang_en", "English"),

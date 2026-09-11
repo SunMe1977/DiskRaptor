@@ -40,6 +40,10 @@ required-features = ["ffi"]
 name = "clean_testdata"
 required-features = ["ffi"]
 
+[[bench]]
+name = "scanner_bench"
+required-features = ["ffi"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -47,6 +51,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "webview-data-url"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-log = "2"
 sys-locale = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -65,6 +70,9 @@ tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.30", optional = true }
 futures-util = { version = "0.3", optional = true }
 http = { version = "1", optional = true }
+tracing = { version = "0.1", features = ["std"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+tracing-appender = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
@@ -77,6 +85,7 @@ windows = { version = "0.39", features = ["Win32_Storage_FileSystem", "Win32_Fou
 
 [dev-dependencies]
 libloading = "0.9"
+criterion = "0.5"
 
 # Smaller, faster release binary. Note: panic=abort is intentionally NOT used
 # because the scanner relies on catch_unwind to fall back to walkdir.

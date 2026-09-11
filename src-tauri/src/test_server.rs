@@ -10,6 +10,7 @@ use tauri::Manager;
 use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_tungstenite::accept_async;
+use tracing::{info, debug, error};
 
 static CDP_RESULTS: LazyLock<StdMutex<std::collections::HashMap<String, String>>> =
     LazyLock::new(|| StdMutex::new(std::collections::HashMap::new()));
@@ -113,20 +114,20 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
         }
     }
     let prepend = PrependReader { buf, pos: 0, stream };
-    eprintln!("[CDP] WS handshaking with {}...", addr);
+    info!(addr = %addr, "CDP WS handshaking");
     let ws = match accept_async(prepend).await {
-        Ok(ws) => { eprintln!("[CDP] WS handshake OK"); ws }
-        Err(e) => { eprintln!("[CDP] WS error on {}: {}", addr, e); return; }
+        Ok(ws) => { info!("CDP WS handshake OK"); ws }
+        Err(e) => { error!(addr = %addr, error = %e, "CDP WS error"); return; }
     };
-    eprintln!("[CDP] WS connected: {}", addr);
+    info!(addr = %addr, "CDP WS connected");
     let (write, mut read) = ws.split();
     let write = Arc::new(AsyncMutex::new(write));
 
-    eprintln!("[CDP] WS entering message loop");
+    info!("CDP WS entering message loop");
     while let Some(msg) = read.next().await {
         match msg {
             Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                eprintln!("[CDP] WS text msg: {} bytes", text.len());
+                debug!(bytes = text.len(), "CDP WS text msg");
                 if let Ok(req) = serde_json::from_str::<serde_json::Value>(text.as_str()) {
                     let id = req.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
                     let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -179,15 +180,15 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
             _ => {}
         }
     }
-    eprintln!("[CDP] WS disconnected: {}", addr);
+    info!(addr = %addr, "CDP WS disconnected");
 }
 
 pub async fn cdp_server(port: u16, app: tauri::AppHandle) {
     let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await {
         Ok(l) => l,
-        Err(e) => { eprintln!("[CDP] Failed to listen: {}", e); return; }
+        Err(e) => { error!(error = %e, "CDP Failed to listen"); return; }
     };
-    eprintln!("[CDP] Listening on ws://127.0.0.1:{}/", port);
+    info!(port, "CDP Listening on ws://127.0.0.1");
 
     loop {
         let (mut stream, addr) = match listener.accept().await {

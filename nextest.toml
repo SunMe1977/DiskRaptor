@@ -1,0 +1,13 @@
+[tool.nextest]
+# Profile to use
+profile = "ci"
+
+[profile.ci]
+# Test timeout
+timeout = { period = 60, terminate_after = 5 }
+
+# Retry flaky tests
+retries = 2
+
+# Show output for slow tests
+slow-timeout = { period = 30, terminate_after = 10 }

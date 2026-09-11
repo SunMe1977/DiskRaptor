@@ -18,6 +18,7 @@
 //   dr_find_duplicates – synchronous duplicate scan (blocking)
 #![allow(clippy::missing_safety_doc)]
 use crate::scanner::tree::{format_size, ScanStats, TreeChunk, TreeNodeArena};
+use tracing::{info, error};
 use crate::scanner::walker;
 
 use std::ffi::{CStr, CString};
@@ -128,7 +129,7 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
     let spawn_result = std::thread::Builder::new()
         .name("scan".into())
         .spawn(move || {
-            eprintln!("[scan] starting scan of: {}", path_clone);
+            info!(path = %path_clone, "Starting scan");
             struct Guard;
             impl Drop for Guard {
                 fn drop(&mut self) {
@@ -164,10 +165,7 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
 
             match walker::scan_directory_with_progress(config, progress) {
                 Ok(sr) => {
-                    eprintln!(
-                        "[scan] completed: {} files, {} dirs",
-                        sr.stats.total_files, sr.stats.total_dirs
-                    );
+                    info!(files = sr.stats.total_files, dirs = sr.stats.total_dirs, "Scan completed");
                     let elapsed = sr.stats.scan_time_ms;
                     let chunks = crate::streaming::chunker::chunk_tree(&sr.arena)
                         .unwrap_or_else(|_| crate::streaming::chunker::make_root_chunk(&sr.arena));
@@ -183,8 +181,8 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
                     });
                 }
                 Err(e) => {
-                    let err_msg = format!("[scan] error: {}", e);
-                    eprintln!("{}", err_msg);
+                    let err_msg = format!("Scan error: {}", e);
+                    error!(error = %e, "Scan failed");
                     let _ = std::fs::write(
                         std::env::temp_dir().join("diskraptor_scan_error.txt"),
                         &err_msg,

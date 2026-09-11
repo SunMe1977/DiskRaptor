@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use tracing::{warn, error};
 
 pub type ScanProgressCallback = Box<dyn Fn(u64, u64, u64, &str) + Send + Sync>;
 
@@ -511,14 +512,14 @@ pub(crate) fn finish_scan(
         top_files: match Arc::try_unwrap(top_files) {
             Ok(t) => t.into_inner(),
             Err(arc) => {
-                eprintln!("[warn] top_files Arc still referenced; cloning");
+                warn!("top_files Arc still referenced; cloning");
                 arc.files.lock().clone()
             }
         },
         file_type_breakdown: match Arc::try_unwrap(file_types) {
             Ok(t) => t.into_sorted(),
             Err(arc) => {
-                eprintln!("[warn] file_types Arc still referenced; cloning");
+                warn!("file_types Arc still referenced; cloning");
                 arc.sorted_clone()
             }
         },
@@ -648,7 +649,7 @@ fn log_panic(context: &str, panic: Box<dyn std::any::Any + Send>) {
         .map(|s| s.to_string())
         .or_else(|| panic.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "unknown".to_string());
-    eprintln!("[walker] {} panicked: {}, falling back", context, msg);
+    error!(context, panic = %msg, "Scanner panic, falling back");
 }
 
 pub fn scan_directory_with_progress(
@@ -671,7 +672,7 @@ pub fn scan_directory_with_progress(
         match fast {
             Ok(Ok(scan_result)) => return Ok(scan_result),
             Ok(Err(e)) => {
-                eprintln!("[walker] ntfs_fast scan error: {}, falling back to jwalk", e);
+                warn!(error = %e, "ntfs_fast scan error, falling back to jwalk");
             }
             Err(panic) => log_panic("ntfs_fast scanner", panic),
         }
@@ -686,7 +687,7 @@ pub fn scan_directory_with_progress(
         match fast {
             Ok(Ok(scan_result)) => return Ok(scan_result),
             Ok(Err(e)) => {
-                eprintln!("[walker] macos_fast scan error: {}, falling back to jwalk", e);
+                warn!(error = %e, "macos_fast scan error, falling back to jwalk");
             }
             Err(panic) => log_panic("macos_fast scanner", panic),
         }
@@ -710,7 +711,7 @@ fn try_fallback_jwalk_walkdir(
     match result {
         Ok(Ok(scan_result)) => Ok(scan_result),
         Ok(Err(e)) => {
-            eprintln!("[walker] {} scan error: {}, falling back to walkdir", context, e);
+            warn!(context, error = %e, "jwalk scan error, falling back to walkdir");
             scan_simple(config, progress, root_path)
         }
         Err(panic) => {
