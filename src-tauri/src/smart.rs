@@ -2,10 +2,7 @@
 
 use crate::{AppState, JsonResult};
 use tauri::Manager;
-#[cfg(target_os = "macos")]
-use crate::in_mac_sandbox;
-#[cfg(not(target_os = "windows"))]
-use crate::run_output;
+use crate::cmds::system::{in_mac_sandbox, run_output};
 
 #[cfg(target_os = "linux")]
 fn run_smartctl_linux(device_id: &str) -> Option<String> {

@@ -1,8 +1,7 @@
 ﻿//! Trash listing / empty / restore commands.
 
 use crate::JsonResult;
-#[cfg(target_os = "macos")]
-use crate::in_mac_sandbox;
+use crate::cmds::system::in_mac_sandbox;
 
 #[tauri::command]
 pub async fn empty_trash() -> JsonResult {
