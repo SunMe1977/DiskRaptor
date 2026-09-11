@@ -564,12 +564,17 @@ class DiagramRenderer {
         sliceColor = this._blendColors(color, this._highlightColor(), 0.5);
       }
 
-      // Specular-inspired coloring
-      const grad = ctx.createRadialGradient(sliceCx, sliceCy, 0, sliceCx, sliceCy, r);
-      grad.addColorStop(0, this._lightenColor(sliceColor, isHov ? 20 : 5));
-      grad.addColorStop(0.7, sliceColor);
-      grad.addColorStop(1, this._darkenColor(sliceColor, 10));
-      ctx.fillStyle = grad;
+      // Specular-inspired coloring — flat fill for non-hovered slices so
+      // there is no "shadow" appearance unless the user actually hovers.
+      if (isHov || isSel) {
+        const grad = ctx.createRadialGradient(sliceCx, sliceCy, 0, sliceCx, sliceCy, r);
+        grad.addColorStop(0, this._lightenColor(sliceColor, isHov ? 20 : 5));
+        grad.addColorStop(0.7, sliceColor);
+        grad.addColorStop(1, this._darkenColor(sliceColor, 10));
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle = sliceColor;
+      }
 
       // Shadow for depth - use highlight color glow for hovered
       if (isHov || isSel) {
@@ -579,9 +584,12 @@ class DiagramRenderer {
       } else {
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
       }
       ctx.fill();
       ctx.shadowBlur = 0;
+      ctx.shadowColor = "transparent";
 
       // Selection outline
       if (isSel) {
@@ -786,16 +794,21 @@ class DiagramRenderer {
       // Selective glow for selected item
       const isSel = r.index === this._selectedIndex;
 
-      // Premium gradient: solarize hover/select with highlight color
+      // Premium gradient — flat fill for non-hovered rects so there is no
+      // "shadow" appearance unless the user actually hovers.
       let treemapColor = (isHov || isSel) ? this._highlightColor() : color;
       if (isSel && !isHov) {
         treemapColor = this._blendColors(color, this._highlightColor(), 0.5);
       }
-      const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, Math.max(rw, rh) * 0.8);
-      grad.addColorStop(0, this._lightenColor(treemapColor, isHov ? 18 : 8));
-      grad.addColorStop(0.6, treemapColor);
-      grad.addColorStop(1, this._darkenColor(treemapColor, 12));
-      ctx.fillStyle = grad;
+      if (isHov || isSel) {
+        const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, Math.max(rw, rh) * 0.8);
+        grad.addColorStop(0, this._lightenColor(treemapColor, isHov ? 18 : 8));
+        grad.addColorStop(0.6, treemapColor);
+        grad.addColorStop(1, this._darkenColor(treemapColor, 12));
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle = treemapColor;
+      }
 
       // Shadow for depth - golden glow on hover/select
       if (isHov || isSel) {
@@ -804,9 +817,12 @@ class DiagramRenderer {
       } else {
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
       }
       ctx.fillRect(rx, ry, rw, rh);
       ctx.shadowBlur = 0;
+      ctx.shadowColor = "transparent";
 
       // Selection outline - golden
       if (isSel) {
