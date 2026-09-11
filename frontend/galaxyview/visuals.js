@@ -572,7 +572,7 @@
       ctx.save();
       ctx.fillStyle = "#000";
       ctx.shadowColor = "rgba(0,0,0,0.95)";
-      ctx.shadowBlur = r * 1.6;
+      ctx.shadowBlur = window.canvasShadowBlur ? window.canvasShadowBlur(r * 1.6) : r * 1.6;
       ctx.beginPath(); ctx.arc(x0, y0, r * 0.62, 0, TAU); ctx.fill();
       ctx.shadowBlur = 0;
       ctx.globalCompositeOperation = "lighter";

@@ -307,7 +307,7 @@ window.app.initScan = function (refs) {
         ctx.globalAlpha = 1;
 
         ctx.shadowColor = "rgba(0,0,0,0.4)";
-        ctx.shadowBlur = 3;
+        ctx.shadowBlur = window.canvasShadowBlur ? window.canvasShadowBlur(3) : 3;
         ctx.lineWidth = 3;
         ctx.lineJoin = "round";
         for (let si = 0; si < speedSamples.length - 1; si++) {
@@ -342,13 +342,13 @@ window.app.initScan = function (refs) {
                 : "#e6edf3";
           ctx.fillStyle = mbColor;
           ctx.shadowColor = "rgba(0,0,0,0.7)";
-          ctx.shadowBlur = 6;
+          ctx.shadowBlur = window.canvasShadowBlur ? window.canvasShadowBlur(6) : 6;
           ctx.font = "bold 28px monospace";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(formatBytesPerSec(current.bps), cx, cy - 8);
           ctx.fillStyle = "#e6edf3";
-          ctx.shadowBlur = 3;
+          ctx.shadowBlur = window.canvasShadowBlur ? window.canvasShadowBlur(3) : 3;
           ctx.font = "bold 11px monospace";
           ctx.fillText(
             Math.round(current.fps).toLocaleString() + " files/sec",
@@ -358,7 +358,7 @@ window.app.initScan = function (refs) {
           ctx.shadowBlur = 0;
         }
 
-        ctx.shadowBlur = 3;
+        ctx.shadowBlur = window.canvasShadowBlur ? window.canvasShadowBlur(3) : 3;
         ctx.fillStyle = "#f85149";
         ctx.font = "10px monospace";
         ctx.textAlign = "right";

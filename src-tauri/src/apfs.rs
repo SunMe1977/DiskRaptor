@@ -5,6 +5,8 @@
 //! often the real cause of "Other" in the Storage settings. On non-macOS
 //! platforms the commands return an error so the UI can degrade gracefully.
 
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 use crate::{cmds::settings::save_settings, cmds::settings::load_settings, JsonResult};
 
 #[tauri::command]
@@ -331,7 +333,7 @@ pub(crate) async fn run_apfs_cleanup(app: tauri::AppHandle) -> JsonResult {
             }
             let mut updated = schedule.clone();
             updated["last_run"] = serde_json::Value::Number(serde_json::Number::from(now));
-            let _ = save_settings(state, serde_json::json!({ "apfs_schedule": updated }));
+            let _ = save_settings(app.state::<crate::AppState>(), serde_json::json!({ "apfs_schedule": updated }));
             JsonResult::ok(serde_json::json!({ "status": "ok", "deleted": deleted }))
         })
         .await
@@ -360,6 +362,7 @@ fn parse_tm_date(s: &str) -> Option<u64> {
     let min = time[2..4].parse::<u32>().ok()?;
     let sec = time[4..6].parse::<u32>().ok()?;
     let days = (year - 1970) * 365 + (month as i64 - 1) * 30 + (day as i64 - 1);
-    Some((days * 86400 + (hour as u64) * 3600 + (min as u64) * 60 + (sec as u64)).max(0))
+    let secs = days * 86400 + (hour as i64) * 3600 + (min as i64) * 60 + (sec as i64);
+    Some(secs.max(0) as u64)
 }
 

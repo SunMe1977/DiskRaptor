@@ -415,6 +415,12 @@ class DiagramRenderer {
     if (this.onZoomChanged) this.onZoomChanged(this._zoom);
   }
 
+  // Normalise a canvas shadow blur for the current rendering engine so the
+  // depth/glow looks the same on macOS (WebKit) and Windows (Chromium).
+  _shadow(px) {
+    return window.canvasShadowBlur ? window.canvasShadowBlur(px) : px;
+  }
+
   _resize() {
     if (!this.canvas || !this.container) return;
     const rect = this.container.getBoundingClientRect();
@@ -474,7 +480,8 @@ class DiagramRenderer {
     const w = this.canvas.width / dpr;
     const h = this.canvas.height / dpr;
 
-    this.ctx.clearRect(0, 0, w, h);
+    this.ctx.fillStyle = this._bgColor();
+    this.ctx.fillRect(0, 0, w, h);
     this.hitRegions = [];
 
     if (this.files.length === 0) {
@@ -568,7 +575,7 @@ class DiagramRenderer {
       if (isHov || isSel) {
         const glowColor = isHov ? "rgba(255,215,0,0.5)" : "rgba(88,166,255,0.25)";
         ctx.shadowColor = glowColor;
-        ctx.shadowBlur = isHov ? 24 : 12;
+        ctx.shadowBlur = this._shadow(isHov ? 24 : 12);
       } else {
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
@@ -793,7 +800,7 @@ class DiagramRenderer {
       // Shadow for depth - golden glow on hover/select
       if (isHov || isSel) {
         ctx.shadowColor = isHov ? "rgba(255,215,0,0.5)" : "rgba(255,215,0,0.25)";
-        ctx.shadowBlur = isHov ? 24 : 12;
+        ctx.shadowBlur = this._shadow(isHov ? 24 : 12);
       } else {
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
@@ -916,7 +923,7 @@ class DiagramRenderer {
       // Glow on hover/select
       if (isHov || isSel) {
         ctx.shadowColor = "rgba(255,215,0,0.3)";
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = this._shadow(8);
         ctx.beginPath();
         this._roundRect(ctx, padding, y, barW, barH, 2);
         ctx.fill();
@@ -932,8 +939,10 @@ class DiagramRenderer {
       ctx.font = (barH > 24 ? "12px bold" : barH > 10 ? "9px bold" : "7px bold") + " sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.shadowColor = "rgba(0,0,0,0.5)";
-      ctx.shadowBlur = 2;
+      if (!this._isMac) {
+        ctx.shadowColor = "rgba(0,0,0,0.5)";
+        ctx.shadowBlur = this._shadow(2);
+      }
       ctx.fillText(label, Math.max(padding + 4, labelX), y + barH / 2);
       ctx.shadowBlur = 0;
 
@@ -1262,5 +1271,8 @@ class DiagramRenderer {
     if (hov) return this._isLight() ? "#9a6700" : "#ffd700";
     if (first) return this._isLight() ? "#953800" : "#f8c87a";
     return this._fg();
+  }
+  _bgColor() {
+    return this._isLight() ? "#ffffff" : "#0d1117";
   }
 }

@@ -228,6 +228,12 @@
       if (this.visuals) this.visuals.resize(this.canvas.width, this.canvas.height);
     }
 
+    // Normalise a canvas shadow blur for the current rendering engine so the
+    // glow/depth looks the same on macOS (WebKit) and Windows (Chromium).
+    _shadow(px) {
+      return window.canvasShadowBlur ? window.canvasShadowBlur(px) : px;
+    }
+
     _createUI() {
       // Toolbar actions
       const toolbar = document.createElement("div");
@@ -539,7 +545,7 @@ _startRenderLoop() {
         ctx.strokeStyle = "rgba(255,215,0,0.6)";
         ctx.lineWidth = 2;
         ctx.shadowColor = "rgba(255,215,0,0.4)";
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = this._shadow(12);
         ctx.beginPath();
         ctx.arc(hx, hy, hr, 0, Math.PI * 2);
         ctx.stroke();
@@ -678,7 +684,7 @@ _startRenderLoop() {
       // Star body
       ctx.save();
       ctx.shadowColor = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},${glow})`;
-      ctx.shadowBlur = r * 2;
+      ctx.shadowBlur = this._shadow(r * 2);
       ctx.fillStyle = `rgb(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0})`;
       ctx.beginPath();
       ctx.arc(screen.x, screen.y, r, 0, Math.PI * 2);
@@ -716,7 +722,7 @@ _startRenderLoop() {
        ctx.save();
       if (state.glow > 0.1) {
         ctx.shadowColor = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},${state.glow * 0.4})`;
-        ctx.shadowBlur = r * 3;
+        ctx.shadowBlur = this._shadow(r * 3);
       }
 
       // Planet body
@@ -764,7 +770,7 @@ _startRenderLoop() {
       // Sparkle (if recently modified)
       if (moon.sparkle && state.sparkle > 0.3) {
         ctx.shadowColor = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},${state.sparkle * 0.5})`;
-        ctx.shadowBlur = r * 4;
+        ctx.shadowBlur = this._shadow(r * 4);
       }
 
       ctx.fillStyle = `rgb(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0})`;
@@ -798,7 +804,7 @@ _startRenderLoop() {
       // Event horizon (black disk)
       ctx.save();
       ctx.shadowColor = "rgba(0,0,0,0.8)";
-      ctx.shadowBlur = r * 2;
+      ctx.shadowBlur = this._shadow(r * 2);
       ctx.fillStyle = "#000";
       ctx.beginPath();
       ctx.arc(screen.x, screen.y, r * 0.6, 0, Math.PI * 2);
@@ -894,7 +900,7 @@ _startRenderLoop() {
 
       // Head
       ctx.shadowColor = `rgba(255,255,255,${alpha * 0.5})`;
-      ctx.shadowBlur = r * 4;
+      ctx.shadowBlur = this._shadow(r * 4);
       ctx.fillStyle = `rgba(255,255,255,${alpha})`;
       ctx.beginPath();
       ctx.arc(screen.x, screen.y, r, 0, Math.PI * 2);
@@ -909,7 +915,7 @@ _startRenderLoop() {
       ctx.save();
       // Strong glow
       ctx.shadowColor = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},${0.5 + state.shimmer * 0.3})`;
-      ctx.shadowBlur = r * 8;
+      ctx.shadowBlur = this._shadow(r * 8);
 
       // Diamond shape
       ctx.fillStyle = `rgb(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0})`;

@@ -61,6 +61,24 @@
     };
   }
 
+  // Canvas shadows render differently in the two webview engines: WebKit
+  // (macOS WKWebView) draws them noticeably larger and heavier than Chromium
+  // (Windows WebView2) for the same `shadowBlur` value, which makes the
+  // diagrams look dark and shadowy on macOS. Route every canvas shadow through
+  // this helper so both platforms match. Tune WEBKIT_SHADOW_SCALE if needed.
+  const WEBKIT_SHADOW_SCALE = 0.3;
+  /**
+   * Normalise a canvas shadow blur for the current rendering engine.
+   * @param {number} px - Desired blur radius
+   * @returns {number} Blur value to assign to `ctx.shadowBlur`
+   */
+  function canvasShadowBlur(px) {
+    if (!px) return 0;
+    const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+    const isWebKit = /AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg\//.test(ua);
+    return isWebKit ? px * WEBKIT_SHADOW_SCALE : px;
+  }
+
   // Shared HTML-escaping (was duplicated in several modules).
   /**
    * Escape HTML special characters in a string.
@@ -79,4 +97,5 @@
   window.fmtSpeed = fmtSpeed;
   window.debounce = debounce;
   window.escHtml = escHtml;
+  window.canvasShadowBlur = canvasShadowBlur;
 })();

@@ -2655,14 +2655,6 @@ button:not(:disabled):active {
   transform: translateX(3px);
 }
 
-/* Diagram canvas subtle glow on hover */
-#diagram-container canvas {
-  transition: filter 0.3s ease;
-}
-#diagram-container canvas:hover {
-  filter: brightness(1.05) drop-shadow(0 0 8px rgba(56,139,253,0.15));
-}
-
 /* Top files table rows */
 #topfiles-table tbody tr {
   transition: transform 0.15s ease, background 0.15s ease;
