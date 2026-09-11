@@ -18,14 +18,23 @@ mod trash;
 mod window;
 
 use crate::state::{AppState, JsonResult, ScanResultData};
+#[allow(unused_imports)]
 use std::sync::atomic::{AtomicBool, AtomicU64};
+#[allow(unused_imports)]
 use std::sync::Arc;
+#[allow(unused_imports)]
 use parking_lot::Mutex;
+#[allow(unused_imports)]
 use std::time::Instant;
+#[allow(unused_imports)]
 use tauri::Manager;
+#[allow(unused_imports)]
 use tauri::Emitter;
+#[allow(unused_imports)]
 use tauri_plugin_autostart::MacosLauncher;
+#[allow(unused_imports)]
 use serde::Serialize;
+#[allow(unused_imports)]
 use tracing::{info, error};
 
 // Re-export the command domains so the crate-root API (integration tests,

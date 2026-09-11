@@ -69,6 +69,7 @@ pub struct TreeNode {
 }
 
 impl TreeNode {
+    #[allow(dead_code)]
     pub fn is_directory(&self) -> bool {
         self.node_type == NodeType::Directory
     }
@@ -78,6 +79,7 @@ impl TreeNode {
     }
 
     /// Human‑readable size string
+    #[allow(dead_code)]
     pub fn size_human(&self) -> String {
         format_size(self.size)
     }
@@ -95,6 +97,7 @@ impl TreeNodeArena {
         Self { nodes: Vec::new() }
     }
 
+    #[allow(dead_code)]
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             nodes: Vec::with_capacity(cap),
@@ -115,15 +118,18 @@ impl TreeNodeArena {
         idx
     }
 
+    #[allow(dead_code)]
     /// Borrow a node by index.
     pub fn get(&self, idx: u32) -> &TreeNode {
         &self.nodes[idx as usize]
     }
 
+    #[allow(dead_code)]
     pub fn get_mut(&mut self, idx: u32) -> &mut TreeNode {
         &mut self.nodes[idx as usize]
     }
 
+    #[allow(dead_code)]
     /// Total capacity in bytes (approximate)
     pub fn approx_heap_bytes(&self) -> usize {
         self.nodes.capacity() * std::mem::size_of::<TreeNode>()
@@ -134,6 +140,7 @@ impl TreeNodeArena {
         self.nodes.len()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
@@ -198,6 +205,7 @@ pub fn format_size(bytes: u64) -> String {
 
 /// A chunk of tree data sent to the UI.
 /// The UI can insert these nodes into its own virtual tree.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeChunk {
     pub chunk_id: u32,

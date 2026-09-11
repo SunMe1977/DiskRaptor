@@ -35,6 +35,7 @@ pub fn chunk_size(settings: &Option<serde_json::Value>) -> u32 {
 ///
 /// # Returns
 /// A vector of `TreeChunk` objects, each containing up to the configured chunk size.
+#[allow(dead_code)]
 pub fn chunk_tree(arena: &TreeNodeArena, settings: &Option<serde_json::Value>) -> Result<Vec<TreeChunk>> {
     let size = chunk_size(settings);
     let total = arena.nodes.len() as u32;
@@ -66,6 +67,7 @@ pub fn chunk_tree(arena: &TreeNodeArena, settings: &Option<serde_json::Value>) -
 }
 
 /// Root node info sent to the UI immediately (before any chunk).
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ScanRootInfo {
     pub root_index: u32,
@@ -74,6 +76,7 @@ pub struct ScanRootInfo {
 }
 
 /// Get the root info for a scan result.
+#[allow(dead_code)]
 pub fn get_root_info(arena: &TreeNodeArena, settings: &Option<serde_json::Value>) -> ScanRootInfo {
     let total = arena.nodes.len() as u32;
     let size = chunk_size(settings);
@@ -86,6 +89,7 @@ pub fn get_root_info(arena: &TreeNodeArena, settings: &Option<serde_json::Value>
 
 /// Safe chunk generator for large trees — only creates root + first-level children.
 /// Returns a single TreeChunk that fits on the stack.
+#[allow(dead_code)]
 pub fn make_root_chunk(arena: &TreeNodeArena) -> Vec<TreeChunk> {
     let total = arena.nodes.len() as u32;
     let mut nodes = Vec::new();

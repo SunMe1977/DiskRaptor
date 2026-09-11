@@ -83,6 +83,7 @@ pub struct ActiveOperation {
 }
 
 impl ActiveOperation {
+    #[allow(dead_code)]
     pub fn set(&self, operation: &'static str) {
         let mut active = self.activity.active.lock();
         if let Some((_, op, since)) = active.get_mut(&self.id) {

@@ -15,13 +15,14 @@ pub struct ScanConfig {
     pub activity: Arc<super::activity::ScanActivity>,
     pub root_path: String,
     pub skip_dirs: Vec<String>,
+    #[allow(dead_code)]
     pub top_file_min_size: u64,
     pub top_files_count: usize,
     pub follow_symlinks: bool,
     /// No-progress limit; zero disables it. The app's outer watchdog can also
     /// detach a blocked worker, whereas cooperative checks cannot interrupt I/O.
     pub scan_timeout_secs: u64,
-    /// Shared error list â€” scanner pushes inaccessible paths here
+    /// Shared error list — scanner pushes inaccessible paths here
     pub errors: std::sync::Arc<parking_lot::Mutex<Vec<String>>>,
     /// When set to true, scanner should stop as soon as possible
     pub cancelled: Option<std::sync::Arc<AtomicBool>>,

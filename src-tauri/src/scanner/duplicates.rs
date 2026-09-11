@@ -76,6 +76,7 @@ pub fn hash_file_full(path: &Path) -> (u64, u64, bool) {
 
 /// Synchronous duplicate scan: groups files by size, then hashes same-sized
 /// candidates. Returns `(groups, total_files_scanned, wasted_bytes)`.
+#[allow(dead_code)]
 pub fn find_duplicate_groups(root: &str) -> (Vec<serde_json::Value>, u64, u64) {
     use std::collections::HashMap;
 

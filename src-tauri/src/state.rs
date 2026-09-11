@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::scanner;
 
 /// Keeps the system-tray icon alive for the app's lifetime.
+#[allow(dead_code)]
 pub struct Tray {
     pub _tray: tauri::tray::TrayIcon,
 }
