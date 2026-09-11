@@ -74,11 +74,11 @@ fn cancellation_grace_expired(cancel_since: &mut Option<Instant>, now: Instant) 
 #[tauri::command]
 fn prepare_scan_state(
     scan: &AppState,
+    scan_id: u64,
     path: &str,
     live: std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque<String>>>,
 ) {
     scan.scan.running.swap(true, Ordering::Acquire);
-    let scan_id = scan.scan_counter.fetch_add(1, Ordering::Relaxed) + 1;
     scan.scan.active_scan_id.store(scan_id, Ordering::Release);
     scan.scan.cancelled.store(false, Ordering::Release);
     scan.scan.files_found.store(0, Ordering::Relaxed);
@@ -219,7 +219,7 @@ pub(crate) fn start_scan(path: String, follow_symlinks: Option<bool>, timeout_se
     let p = path.clone();
     let fs = follow_symlinks.unwrap_or(false);
     let ts = timeout_secs.unwrap_or(scanner::activity::DEFAULT_TIMEOUT_SECS);
-    prepare_scan_state(&scan, &p, live.clone());
+    prepare_scan_state(&scan, scan_id, &p, live.clone());
 
     let result_handle = app.clone();
     let spawned = std::thread::Builder::new().name("scan".into()).spawn(move || {

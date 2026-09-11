@@ -98,7 +98,7 @@ fn push_live(live: &std::sync::Arc<parking_lot::Mutex<std::collections::VecDeque
 pub(crate) fn file_ext_lower(path: &str) -> String {
     let p = Path::new(path);
     let mut parts = Vec::new();
-    let mut ext = match p.extension().and_then(|e| e.to_str()) {
+    let ext = match p.extension().and_then(|e| e.to_str()) {
         Some(e) => e.to_string(),
         None => return "(none)".into(),
     };
@@ -302,9 +302,6 @@ fn alloc_directory(
         chunk_id: 0,
         mtime: 0,
     });
-    if parent != u32::MAX {
-        arena.get_mut(parent).first_child = idx;
-    }
     idx
 }
 
@@ -1029,7 +1026,7 @@ mod tests {
 
     #[test]
     fn test_alloc_root() {
-        use super::super::tree::{NodeType, TreeNodeArena};
+        use super::super::tree::TreeNodeArena;
         let mut arena = TreeNodeArena::new();
         let idx = super::alloc_root(&mut arena, "/home/user");
         assert_eq!(idx, 0);
@@ -1052,6 +1049,8 @@ mod tests {
         assert_eq!(child, 1);
         assert!(arena.nodes[child as usize].is_directory());
         assert_eq!(arena.nodes[child as usize].depth, 1);
+        assert_eq!(arena.nodes[root as usize].first_child, u32::MAX);
+        super::link_child(&mut arena, &mut std::collections::HashMap::new(), root, child);
         assert_eq!(arena.nodes[root as usize].first_child, child);
     }
 
