@@ -4,6 +4,7 @@ use crate::{AppState, JsonResult};
 use tauri::Manager;
 #[cfg(target_os = "macos")]
 use crate::cmds::system::in_mac_sandbox;
+#[cfg(not(target_os = "windows"))]
 use crate::cmds::system::run_output;
 
 #[cfg(target_os = "linux")]

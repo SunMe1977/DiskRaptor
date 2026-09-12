@@ -11,6 +11,8 @@ mod scanner;
 mod smart;
 mod state;
 mod streaming;
+#[cfg(feature = "test-server")]
+mod test_server;
 mod tray;
 mod trash;
 mod window;
@@ -55,6 +57,7 @@ pub(crate) use cmds::{
 #[allow(unused_imports)]
 pub(crate) use cmds::run_output;
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)]
 pub(crate) use cmds::native_browser_icon;
 
 // -- Main -------------------------------------------------------------------

@@ -23,6 +23,7 @@ ffi = []
 [[bin]]
 name = "diskraptor"
 path = "src/main.rs"
+required-features = ["test-server"]
 
 [[example]]
 name = "dll_test"
