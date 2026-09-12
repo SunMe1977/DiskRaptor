@@ -53,6 +53,8 @@ jobs:
         run: node scripts/check-version.mjs
       - name: IPC contract self-test
         run: node tests/contract_self_test.mjs
+      - name: i18n hardcoded string audit
+        run: node scripts/i18n-hardcoded-audit.mjs
 
   lint:
     runs-on: ubuntu-latest
