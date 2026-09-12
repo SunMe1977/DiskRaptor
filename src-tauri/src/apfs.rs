@@ -319,9 +319,10 @@ pub(crate) async fn run_apfs_cleanup(app: tauri::AppHandle) -> JsonResult {
                     if let Some(date) = snap.get("date").and_then(|v| v.as_str()) {
                         if let Some(ts) = parse_tm_date(date) {
                             if ts < cutoff {
-                                if let Ok(_) = std::process::Command::new("tmutil")
+                                if std::process::Command::new("tmutil")
                                     .args(["deletelocalsnapshots", &mount])
                                     .status()
+                                    .is_ok()
                                 {
                                     deleted += 1;
                                 }
