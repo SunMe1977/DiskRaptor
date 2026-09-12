@@ -206,6 +206,7 @@ fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std:
 }
 
 #[allow(clippy::needless_return)]
+#[allow(clippy::type_complexity)]
 pub(crate) fn browser_paths(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, Vec<String>)> {
     #[cfg(target_os = "windows")]
     { return browser_paths_windows(def); }
