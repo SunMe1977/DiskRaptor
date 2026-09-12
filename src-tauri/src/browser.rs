@@ -127,6 +127,7 @@ fn browser_paths_windows(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<st
  }
 
 #[cfg(target_os = "linux")]
+#[allow(clippy::type_complexity)]
 fn browser_paths_linux(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, Vec<String>)> {
     let home = std::env::var("HOME").ok()?;
     let cfg = |p: &str| std::path::PathBuf::from(&home).join(".config").join(p);
@@ -157,6 +158,7 @@ fn browser_paths_linux(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std:
 }
 
 #[cfg(target_os = "macos")]
+#[allow(clippy::type_complexity)]
 fn browser_paths_macos(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, Vec<String>)> {
     let home = std::env::var("HOME").ok()?;
     let support = |p: &str| std::path::PathBuf::from(&home).join("Library/Application Support").join(p);

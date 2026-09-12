@@ -92,6 +92,7 @@ fn prepare_scan_state(
     *scan.scan.live_entries.lock() = Some(live);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_watchdog(
     config: scanner::walker::ScanConfig,
     progress: scanner::walker::ScanProgressCallback,

@@ -285,6 +285,7 @@ fn child_depth(arena: &TreeNodeArena, parent: u32, root_idx: u32) -> u16 {
     }
 }
 
+#[allow(clippy::let_and_return)]
 fn alloc_directory(
     arena: &mut TreeNodeArena,
     name: String,
