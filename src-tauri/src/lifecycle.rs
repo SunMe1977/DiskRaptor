@@ -114,7 +114,7 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
             }
         }
 
-        let handle = app.handle().clone();
+        let handle = app.app_handle().clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(crate::test_server::cdp_server(port, handle));

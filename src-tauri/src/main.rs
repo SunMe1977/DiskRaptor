@@ -11,8 +11,6 @@ mod scanner;
 mod smart;
 mod state;
 mod streaming;
-#[cfg(feature = "test-server")]
-mod test_server;
 mod tray;
 mod trash;
 mod window;
