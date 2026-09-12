@@ -54,6 +54,7 @@ pub(crate) use cmds::{
     start_scan, validate_system_path,
 };
 #[cfg(not(target_os = "windows"))]
+#[allow(unused_imports)]
 pub(crate) use cmds::run_output;
 #[cfg(target_os = "windows")]
 pub(crate) use cmds::native_browser_icon;
