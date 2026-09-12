@@ -77,6 +77,7 @@ pub(crate) fn browser_defs() -> Vec<BrowserDef> {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(clippy::type_complexity)]
 fn browser_paths_windows(def: &BrowserDef) -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, Vec<String>)> {
     let local = std::env::var("LOCALAPPDATA").ok()?;
     let appdata = std::env::var("APPDATA").ok()?;

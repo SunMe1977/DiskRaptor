@@ -171,7 +171,7 @@ mod tests {
         let errors = errors.lock();
         assert_eq!(errors.len(), ERROR_CAP);
         // The oldest 50 errors should have been evicted.
-        assert_eq!(errors[0], format!("error 50"));
+        assert_eq!(errors[0], "error 50".to_string());
         assert_eq!(errors[ERROR_CAP - 1], format!("error {}", ERROR_CAP + 50 - 1));
     }
 
