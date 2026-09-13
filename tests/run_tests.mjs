@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execSync, spawn } from "child_process";
+import { spawn } from "child_process";
 import * as fs from "fs";
 import * as http from "http";
 import * as path from "path";
@@ -10,7 +10,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLATFORM = process.platform;
 const IS_WIN = PLATFORM === "win32";
 const IS_MAC = PLATFORM === "darwin";
-const IS_LINUX = PLATFORM === "linux";
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const DIST_DIR = path.join(PROJECT_ROOT, "dist");
@@ -190,10 +189,23 @@ async function main() {
     }
   }
 
-  const timeoutArg = args.find(a => a.startsWith("--timeout="));
-  const perTestTimeout = timeoutArg
-    ? parseInt(timeoutArg.split("=")[1]) * 1000
+  const eqArg = args.find(a => a.startsWith("--timeout="));
+  const spIdx = args.indexOf("--timeout");
+  const spArg = spIdx !== -1 ? args[spIdx + 1] : undefined;
+  const timeoutSecs = eqArg
+    ? parseInt(eqArg.split("=")[1], 10)
+    : spArg && !spArg.startsWith("--")
+      ? parseInt(spArg, 10)
+      : NaN;
+  const perTestTimeout = Number.isFinite(timeoutSecs) && timeoutSecs > 0
+    ? timeoutSecs * 1000
     : (args.includes("--quick") ? 90000 : 180000);
+
+  if (args.includes("--parallel")) {
+    // Documented for forward compatibility, but the runner is sequential:
+    // say so instead of silently ignoring the flag.
+    console.log("Note: --parallel is not implemented yet; running tests sequentially.");
+  }
 
   let passed = 0;
   let failed = 0;

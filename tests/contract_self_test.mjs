@@ -16,7 +16,8 @@ const CONTRACTS_PATH = path.resolve(__dirname, "..", "frontend", "contracts.js")
 const fakeWindow = {};
 const source = fs.readFileSync(CONTRACTS_PATH, "utf8");
 // Evaluate the browser script in-process with stubbed globals.
-// eslint-disable-next-line no-new-func
+// (`no-new-func` is not in the flat-config recommended set, so no disable
+// comment is needed here.)
 new Function("window", "console", source)(fakeWindow, console);
 
 const contract = fakeWindow.__contract;

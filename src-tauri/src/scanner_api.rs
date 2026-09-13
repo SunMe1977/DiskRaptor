@@ -167,7 +167,7 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
                 Ok(sr) => {
                     info!(files = sr.stats.total_files, dirs = sr.stats.total_dirs, "Scan completed");
                     let elapsed = sr.stats.scan_time_ms;
-                    let chunks = crate::streaming::chunker::chunk_tree(&sr.arena)
+                    let chunks = crate::streaming::chunker::chunk_tree(&sr.arena, &None)
                         .unwrap_or_else(|_| crate::streaming::chunker::make_root_chunk(&sr.arena));
                     let errs = errors.lock().clone();
                     *state.errors.lock() = errs.clone();

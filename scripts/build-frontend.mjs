@@ -99,7 +99,8 @@ for (const src of otherFiles) {
   }
 }
 
-// Galaxy bundle (best effort — the app falls back to individual modules).
+// Galaxy bundle (required — the runtime fallback is for dev only, so a broken
+// bundle must fail the build instead of shipping frontend-dist/ without it).
 try {
   const parts = galaxy
     .map((g) => fs.readFileSync(path.join(SRC, g), "utf8"))
@@ -108,7 +109,8 @@ try {
   fs.writeFileSync(path.join(DST, "galaxyview", "bundle.js"), r.code);
   console.log("[build-frontend] galaxy bundle written");
 } catch (e) {
-  console.warn("[build-frontend] galaxy bundle failed:", e.message);
+  console.error("[build-frontend] galaxy bundle FAILED:", (e && e.message) || e);
+  process.exit(1);
 }
 
 console.log(`[build-frontend] done -> ${DST}`);

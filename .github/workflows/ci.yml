@@ -11,12 +11,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -39,10 +42,11 @@ jobs:
   js:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
       - run: for f in frontend/*.js; do node --check "$f"; done
       - run: for f in frontend/app-modules/*.js; do node --check "$f"; done
       - run: for f in frontend/galaxyview/*.js; do node --check "$f"; done
@@ -59,10 +63,11 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npx eslint frontend/ frontend/app-modules/ frontend/galaxyview/ frontend/i18n/ tests/ scripts/
 
@@ -74,10 +79,11 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -138,11 +144,29 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: cmd /c test.bat --quick
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            *.log
+            out.log
+            err.log
+            stdout.log
+            stderr.log
 
   security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: npm audit (JS dependencies)
+        run: npm audit --audit-level=high
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable

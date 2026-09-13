@@ -3,10 +3,9 @@
  * Usage: node test_ui.mjs
  */
 import WebSocket from "ws";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import * as path from "path";
 import * as http from "http";
-import * as os from "os";
 
 const CDP_PORT = 9229;
 const APP = path.resolve("dist/DiskRaptor.app/Contents/MacOS/DiskRaptor");

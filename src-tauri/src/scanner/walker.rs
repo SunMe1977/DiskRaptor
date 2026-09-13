@@ -124,7 +124,9 @@ pub(crate) fn file_ext_lower(path: &str) -> String {
     }
 }
 
-pub(crate) struct TopFilesAccum {
+/// Accumulates the largest files seen during a scan. Public so benches and
+/// external harnesses can measure it without going through a full scan.
+pub struct TopFilesAccum {
     files: Mutex<Vec<TopFileEntry>>,
     min_size: AtomicU64,
 }
@@ -137,7 +139,7 @@ impl Default for TopFilesAccum {
     }
 }
 impl TopFilesAccum {
-    pub(crate) fn insert(&self, path: &str, size: u64, max_count: usize) {
+    pub fn insert(&self, path: &str, size: u64, max_count: usize) {
         // Fast reject without taking the files lock: once the list is full,
         // anything at or below the current minimum can never enter.
         if size <= self.min_size.load(Ordering::Relaxed) {
@@ -167,12 +169,12 @@ impl TopFilesAccum {
         }
         self.min_size.store(files.last().map(|f| f.size).unwrap_or(0), Ordering::Relaxed);
     }
-    fn into_inner(self) -> Vec<TopFileEntry> {
+    pub fn into_inner(self) -> Vec<TopFileEntry> {
         self.files.into_inner()
     }
 }
 
-pub(crate) struct FileTypeAccum {
+pub struct FileTypeAccum {
     map: Mutex<HashMap<String, (u64, u64)>>,
 }
 impl Default for FileTypeAccum {
@@ -183,7 +185,7 @@ impl Default for FileTypeAccum {
     }
 }
 impl FileTypeAccum {
-    pub(crate) fn add(&self, path: &str, size: u64) {
+    pub fn add(&self, path: &str, size: u64) {
         let ext = file_ext_lower(path);
         let mut map = self.map.lock();
         let entry = map.entry(ext).or_insert((0, 0));
@@ -206,7 +208,7 @@ impl FileTypeAccum {
             e.1 += s;
         }
     }
-    fn into_sorted(self) -> Vec<FileTypeCount> {
+    pub fn into_sorted(self) -> Vec<FileTypeCount> {
         let map = self.map.into_inner();
         let mut r: Vec<FileTypeCount> = map
             .into_iter()

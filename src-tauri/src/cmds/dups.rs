@@ -31,6 +31,40 @@ type Candidate = (std::path::PathBuf, u64, Option<std::time::SystemTime>);
 /// A hashed candidate: `((bytes_read, hash), path, length, mtime)`.
 type HashedCandidate = ((u64, u64), std::path::PathBuf, u64, Option<std::time::SystemTime>);
 
+/// Verify one head-hash candidate against its full content.
+/// Returns the full-hash grouping key `(file_size, full_hash)`, or `None` when
+/// the file changed mid-scan or can no longer be read, so we never suggest
+/// deleting a file whose content we did not fully verify.
+///
+/// `len0` is the length recorded for this path in phase 1 (size grouping).
+/// It — not the head-hash byte count — is the reference the full re-read must
+/// agree with; otherwise files larger than `HEAD_HASH_BYTES` could never be
+/// confirmed as duplicates.
+fn verify_candidate(
+    bytes_read: u64,
+    head_hash: u64,
+    path: &std::path::Path,
+    len0: u64,
+    mtime0: Option<std::time::SystemTime>,
+) -> Option<(u64, u64)> {
+    if bytes_read == len0 {
+        // The head read covered the entire file, so its digest
+        // *is* the full hash. Re-stat instead of re-reading the
+        // bytes to confirm the file did not change meanwhile.
+        let m = std::fs::metadata(path).ok()?;
+        if m.len() != len0 || m.modified().ok() != mtime0 {
+            return None;
+        }
+        Some((bytes_read, head_hash))
+    } else {
+        let (fsize, fhash, changed) = scanner::duplicates::hash_file_full(path);
+        if changed || fsize != len0 {
+            return None;
+        }
+        Some((fsize, fhash))
+    }
+}
+
 /// Clears `dup.running` when the duplicate-scan thread exits — including on a
 /// panic or an early return — so a wedged flag can't block future scans.
 struct ResetDupRunning {
@@ -158,22 +192,8 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
                     if cancelled.load(Ordering::Relaxed) {
                         return None;
                     }
-                    if bytes_read == len0 {
-                        // The head read covered the entire file, so its digest
-                        // *is* the full hash. Re-stat instead of re-reading the
-                        // bytes to confirm the file did not change meanwhile.
-                        let m = std::fs::metadata(&p).ok()?;
-                        if m.len() != len0 || m.modified().ok() != mtime0 {
-                            return None;
-                        }
-                        Some((p, (bytes_read, head_hash)))
-                    } else {
-                        let (fsize, fhash, changed) = scanner::duplicates::hash_file_full(&p);
-                        if changed || fsize != bytes_read {
-                            return None;
-                        }
-                        Some((p, (fsize, fhash)))
-                    }
+                    let key = verify_candidate(bytes_read, head_hash, &p, len0, mtime0)?;
+                    Some((p, key))
                 })
                 .collect());
             let mut by_full: std::collections::HashMap<(u64, u64), Vec<std::path::PathBuf>> =
@@ -195,8 +215,8 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
                     .collect();
                 groups.push(serde_json::json!({
                     "count": dup_files.len(),
-                    "size": bytes_read,
-                    "sizeHuman": format_size(bytes_read),
+                    "size": file_size,
+                    "sizeHuman": format_size(file_size),
                     "wasted": wasted_g,
                     "wastedHuman": format_size(wasted_g),
                     "files": paths,
@@ -264,4 +284,88 @@ pub(crate) fn get_dup_result(
 pub(crate) fn cancel_dup_scan(state: State<AppState>) -> JsonResult {
     state.dup.cancelled.store(true, Ordering::Release);
     JsonResult::ok_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn fixture_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir()
+            .join("diskraptor_dup_cmd_test")
+            .join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn fixture_file(dir: &std::path::Path, name: &str, content: &[u8]) -> std::path::PathBuf {
+        let p = dir.join(name);
+        let mut f = std::fs::File::create(&p).unwrap();
+        f.write_all(content).unwrap();
+        f.sync_all().ok();
+        p
+    }
+
+    fn head_of(p: &std::path::Path) -> (u64, u64) {
+        scanner::duplicates::hash_file_head(p, scanner::duplicates::HEAD_HASH_BYTES)
+    }
+
+    #[test]
+    fn large_duplicates_verify_with_full_size() {
+        // Regression test: files larger than HEAD_HASH_BYTES must still verify,
+        // and the grouping key must carry the real file size (not the head
+        // byte count). Previously `fsize != bytes_read` rejected every large
+        // file, so no large duplicates were ever reported.
+        let dir = fixture_dir("large");
+        let size = scanner::duplicates::HEAD_HASH_BYTES as u64 + 1024;
+        let content: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+        let a = fixture_file(&dir, "a.bin", &content);
+        let b = fixture_file(&dir, "b.bin", &content);
+        for p in [&a, &b] {
+            let meta = std::fs::metadata(p).unwrap();
+            let (bytes_read, head_hash) = head_of(p);
+            assert!(bytes_read < meta.len());
+            let key = verify_candidate(
+                bytes_read,
+                head_hash,
+                p,
+                meta.len(),
+                meta.modified().ok(),
+            );
+            assert_eq!(key, {
+                let (fsize, fhash, changed) = scanner::duplicates::hash_file_full(p);
+                assert!(!changed);
+                assert_eq!(fsize, size);
+                Some((fsize, fhash))
+            });
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn small_files_take_stat_fast_path() {
+        let dir = fixture_dir("small");
+        let p = fixture_file(&dir, "s.txt", b"tiny and identical");
+        let meta = std::fs::metadata(&p).unwrap();
+        let (bytes_read, head_hash) = head_of(&p);
+        assert_eq!(bytes_read, meta.len());
+        let key = verify_candidate(bytes_read, head_hash, &p, meta.len(), meta.modified().ok());
+        assert_eq!(key, Some((meta.len(), head_hash)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn changed_or_missing_files_do_not_verify() {
+        let dir = fixture_dir("changed");
+        let p = fixture_file(&dir, "c.bin", &vec![7u8; 2048]);
+        let (bytes_read, head_hash) = head_of(&p);
+        // Stale length snapshot (file grew after phase 1): must be rejected.
+        assert!(verify_candidate(bytes_read, head_hash, &p, 1, None).is_none());
+        // Unreadable path: must be rejected, never suggested for delete.
+        let missing = dir.join("gone.bin");
+        assert!(verify_candidate(0, 0, &missing, 100, None).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

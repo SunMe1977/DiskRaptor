@@ -3,7 +3,7 @@
 #![cfg(feature = "ffi")]
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use diskraptor_scanner::scanner::walker::{ScanConfig, scan_directory_with_progress};
+use diskraptor_scanner::scanner::walker::{ScanConfig, ScanProgressCallback, scan_directory_with_progress};
 
 fn bench_scan_empty(c: &mut Criterion) {
     let temp_dir = std::env::temp_dir().join("diskraptor_bench_empty");
@@ -16,7 +16,7 @@ fn bench_scan_empty(c: &mut Criterion) {
                 root_path: temp_dir.to_string_lossy().to_string(),
                 ..Default::default()
             };
-            let progress = Box::new(|_, _, _, _| {});
+            let progress: ScanProgressCallback = Box::new(|_, _, _, _| {});
             let _ = scan_directory_with_progress(config, progress);
         });
     });
@@ -34,7 +34,7 @@ fn bench_scan_small(c: &mut Criterion) {
     for i in 0..1000 {
         let subdir = temp_dir.join(format!("dir_{}", i / 100));
         std::fs::create_dir_all(&subdir).unwrap();
-        std::fs::write(sub_dir.join(format!("file_{}.txt", i)), vec![0u8; 1024]).unwrap();
+        std::fs::write(subdir.join(format!("file_{}.txt", i)), vec![0u8; 1024]).unwrap();
     }
     
     let mut group = c.benchmark_group("scan_small");
@@ -44,7 +44,7 @@ fn bench_scan_small(c: &mut Criterion) {
                 root_path: temp_dir.to_string_lossy().to_string(),
                 ..Default::default()
             };
-            let progress = Box::new(|_, _, _, _| {});
+            let progress: ScanProgressCallback = Box::new(|_, _, _, _| {});
             let _ = scan_directory_with_progress(config, progress);
         });
     });

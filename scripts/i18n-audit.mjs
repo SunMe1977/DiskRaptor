@@ -44,7 +44,7 @@ function dotGet(obj, dotted) {
   return cur;
 }
 
-const { keys: enKeys, raw: enRaw } = loadKeys(EN_FILE);
+const { keys: enKeys } = loadKeys(EN_FILE);
 const langFiles = fs.readdirSync(I18N_DIR).filter((f) => f.endsWith(".js") && f !== "en.js" && f !== "ui-extra.js");
 
 let totalIssues = 0;

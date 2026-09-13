@@ -15,7 +15,7 @@ for (const file of files) {
   const match = content.match(pattern);
   if (!match) { console.log(file + ': parse error'); continue; }
   const obj = JSON.parse(match[1]);
-  const missing = [...enKeys].filter(k => !obj.hasOwnProperty(k));
+  const missing = [...enKeys].filter(k => !Object.hasOwn(obj, k));
   if (missing.length) {
     for (const key of missing) obj[key] = enObj[key];
     writeFileSync(I18N_DIR + '/' + file, content.replace(match[1], JSON.stringify(obj)));
