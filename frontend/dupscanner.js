@@ -2,6 +2,7 @@
  * Duplicate File Scanner — progress overlay + results UI
  * Same animated popup style as the main tree scanner.
  */
+/* eslint-disable no-redeclare */
 class DupScanner {
   constructor() {
     this.overlay = null;
@@ -281,7 +282,7 @@ class DupScanner {
       const header = document.createElement("div");
       header.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg-tertiary);cursor:pointer;user-select:none;";
       header.innerHTML = `
-        <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-primary);font-weight:500;"><input type="checkbox" id="selall-${gi}" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent-red);"> \uD83D\uDCC1 ${g.count} copies \u00B7 ${g.sizeHuman || self._fmtSize(g.size)} each</span>
+        <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-primary);font-weight:500;"><input type="checkbox" id="selall-${gi}" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent-red);"> \uD83D\uDCC1 ${g.count} ${window.t("duplicates.copies")} \u00B7 ${g.sizeHuman || self._fmtSize(g.size)} each</span>
         <span style="font-size:12px;color:var(--text-muted);">\u267B ${g.wastedHuman || self._fmtSize(g.wasted)} <span style="color:var(--accent-red);">reclaimable</span></span>
       `;
       card.appendChild(header);
@@ -326,7 +327,7 @@ class DupScanner {
         cb.checked = checked;
         cb.style.cssText = "width:15px;height:15px;cursor:pointer;accent-color:var(--accent-red);flex-shrink:0;";
         const kindSpan = document.createElement("span");
-        kindSpan.textContent = fi === 0 ? "\uD83D\uDD19 keep" : "\uD83D\uDDD1";
+        kindSpan.textContent = fi === 0 ? "\uD83D\uDD19 " + window.t("duplicates.keep") : "\uD83D\uDDD1";
         kindSpan.style.cssText = "color:var(--text-muted);font-size:10px;width:20px;flex-shrink:0;";
         const pathSpan = document.createElement("span");
         pathSpan.textContent = fp;
@@ -367,7 +368,7 @@ class DupScanner {
       header.onclick = function() {
         expanded = !expanded;
         body.style.display = expanded ? "block" : "none";
-        header.querySelector('span:first-child').textContent = (expanded ? '\u25BC' : '\u25B6') + ' ' + g.count + ' copies';
+        header.querySelector('span:first-child').textContent = (expanded ? '\u25BC' : '\u25B6') + ' ' + g.count + ' ' + window.t("duplicates.copies");
       };
 
       list.appendChild(card);
@@ -388,11 +389,11 @@ class DupScanner {
     if (data.hasMore) {
       const more = document.createElement("button");
       more.type = "button";
-      more.textContent = "Load more duplicate groups";
+      more.textContent = window.t("duplicates.load_more");
       more.style.cssText = "display:block;margin:12px auto;padding:7px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;";
       more.onclick = async function () {
         more.disabled = true;
-        more.textContent = "Loading…";
+        more.textContent = window.t("duplicates.loading");
         try {
           const next = await window.__TAURI__.invoke("get_dup_result", {
             offset: (data.offset || 0) + groups.length,
@@ -408,7 +409,7 @@ class DupScanner {
           }, cancelled);
         } catch (e) {
           more.disabled = false;
-          more.textContent = "Retry loading duplicate groups";
+          more.textContent = window.t("duplicates.retry");
           console.error("Failed to load duplicate result page:", e);
         }
       };
@@ -465,9 +466,9 @@ class DupScanner {
       deleteBatch(0).then(function () {
         if (progWrap) { progWrap.style.display = "none"; if (progFill) progFill.style.width = "0%"; }
         if (failed > 0) {
-          delBtn.textContent = "\u26A0 " + done + " moved, " + failed + " failed";
+          delBtn.textContent = "\u26A0 " + window.t("duplicates.delete_warning").replace("{n}", done).replace("{m}", failed);
         } else {
-          delBtn.textContent = "\u2705 " + done + " files moved to Trash";
+          delBtn.textContent = "\u2705 " + window.t("duplicates.delete_success").replace("{n}", done);
           delBtn.style.background = "var(--accent-green)";
         }
       });

@@ -76,8 +76,9 @@
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "toast-close";
-    closeBtn.title = "Close";
-    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.title = window.t("dialog.close");
+    closeBtn.setAttribute("aria-label", window.t("dialog.close"));
+    closeBtn.setAttribute("data-i18n", "dialog.close");
     closeBtn.innerHTML = "&times;";
     closeBtn.addEventListener("click", function () {
       dismiss(toast);

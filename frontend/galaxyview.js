@@ -1216,7 +1216,7 @@ _getVisibleObjects() {
         case "open":
           if (path) window.__TAURI__.invoke("open_explorer", { path }).catch(() => {});
           break;
-        case "delete":
+case "delete": {
            if (!path) break;
            const self = this;
            window.__TAURI__.invoke("delete_path", { path }).then(function (res) {
@@ -1227,6 +1227,7 @@ _getVisibleObjects() {
               }
              }).catch(function () {});
            break;
+         }
       }
       this._hideContextMenu();
     }
@@ -1359,7 +1360,7 @@ _getVisibleObjects() {
 
     _updateFpsDisplay() {
       const el = document.getElementById("g-fps-display");
-      if (el) el.textContent = this.fps + " FPS";
+      if (el) el.textContent = window.t("galaxy.fps").replace("{n}", this.fps);
     }
 
     // ── Lifecycle ─────────────────────────────────────────────

@@ -2,6 +2,7 @@
  * TopFiles — Renders the top 50 files table with right-click context menu.
  * Context menu matches the diagram menu: Explorer, Terminal, Properties, Copy, Delete.
  */
+/* eslint-disable no-redeclare */
 class TopFilesPanel {
   constructor() {
     this.tbody = document.getElementById("topfiles-body");
@@ -292,7 +293,7 @@ class TopFilesPanel {
         delBtn.textContent = "\uD83D\uDDD1";
         delBtn.style.cssText =
           "padding:1px 6px;font-size:12px;background:transparent;border:1px solid var(--border);border-radius:3px;cursor:pointer";
-        delBtn.title = "Move to Trash: " + (entry.path || "");
+        delBtn.title = window.t("topfiles.move_to_trash") + (entry.path || "");
          delBtn.onclick = function (p, row) {
            const self = this;
            return function () {

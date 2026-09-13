@@ -720,12 +720,10 @@ window.app.initScan = function (refs) {
             errDisplay.style.display = "none";
           }
 
-          let dirInfo = "";
           if (p.current_dir || p.currentDir) {
             const dir = p.current_dir || p.currentDir;
             const parts = dir.split("\\");
-            dirInfo = parts[parts.length - 1];
-            progressDirEl.textContent = "\uD83D\uDCC2 " + dirInfo;
+            progressDirEl.textContent = "\uD83D\uDCC2 " + parts[parts.length - 1];
           }
 
           const isRunning =
@@ -758,9 +756,12 @@ window.app.initScan = function (refs) {
             }
           }
 
-         if (unlistenProgress) { try { unlistenProgress(); } catch (_) {} unlistenProgress = null; }
-         if (unlistenError) { try { unlistenError(); } catch (_) {} unlistenError = null; }
-         if (unlistenComplete) { try { unlistenComplete(); } catch (_) {} unlistenComplete = null; }
+// eslint-disable-next-line no-empty
+          if (unlistenProgress) { try { unlistenProgress(); } catch (_) {} unlistenProgress = null; }
+          // eslint-disable-next-line no-empty
+          if (unlistenError) { try { unlistenError(); } catch (_) {} unlistenError = null; }
+          // eslint-disable-next-line no-empty
+          if (unlistenComplete) { try { unlistenComplete(); } catch (_) {} unlistenComplete = null; }
 
          progressActive = false;
          if (uiRaf !== null) cancelAnimationFrame(uiRaf);

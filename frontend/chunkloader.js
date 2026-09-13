@@ -3,21 +3,23 @@
  *
  * NOTE: Tauri v1 uses snake_case parameter names matching Rust function params.
  */
+/* eslint-disable no-redeclare */
 class ChunkLoader {
   /**
    * Create a new ChunkLoader for loading tree data from the Tauri backend.
    */
-  constructor() {
-    this.scanId = null;
-    this.totalNodes = 0;
-    this.totalChunks = 0;
-    this.allNodes = [];
-    this.parentMap = new Map();
-    this.nameIndex = new Map();
-    this.loadedChunks = new Set();
-    this.loadedCount = 0;
-    this.onProgress = null;
-  }
+constructor() {
+     this.scanId = null;
+     this.totalNodes = 0;
+     this.totalChunks = 0;
+     this.allNodes = [];
+     this.parentMap = new Map();
+     this.nameIndex = new Map();
+     this.loadedChunks = new Set();
+     this.loadedCount = 0;
+     this.onProgress = null;
+     this._cancelled = false;
+   }
 
   /**
    * Reset state for a new scan's tree. CRITICAL: clears loadedChunks/parentMap
@@ -41,8 +43,9 @@ class ChunkLoader {
    * Load a single chunk of nodes from the backend.
    * @param {number} chunkIndex - The chunk index to load
    */
-  async loadChunk(chunkIndex) {
-    if (this.loadedChunks.has(chunkIndex)) return;
+async loadChunk(chunkIndex) {
+     if (this._cancelled) return;
+     if (this.loadedChunks.has(chunkIndex)) return;
     if (chunkIndex < 0 || chunkIndex >= this.totalChunks) {
       console.warn("loadChunk: index out of range", chunkIndex, "total", this.totalChunks);
       return;
@@ -148,8 +151,9 @@ class ChunkLoader {
     * @param {number} arenaIndex - The parent node's arena index
     * @returns {Promise<Array>} Array of child node indices or objects
     */
-   async fetchChildren(arenaIndex) {
-    if (arenaIndex === 4294967295) return [];
+async fetchChildren(arenaIndex) {
+     if (this._cancelled) return [];
+     if (arenaIndex === 4294967295) return [];
     // Use the locally-built parentMap first (populated by loadChunk)
     const cached = this.getChildrenIndices(arenaIndex);
     if (cached && cached.length > 0) {
@@ -202,8 +206,9 @@ class ChunkLoader {
     * @param {number} endChunk - One past the last chunk index to load
     * @returns {Promise<void>}
     */
-   async ensureChunks(startChunk, endChunk) {
-    const promises = [];
+async ensureChunks(startChunk, endChunk) {
+     if (this._cancelled) return;
+     const promises = [];
     for (let i = startChunk; i < endChunk && i < this.totalChunks; i++) {
       if (!this.loadedChunks.has(i)) {
         promises.push(this.loadChunk(i));
@@ -224,13 +229,15 @@ class ChunkLoader {
    * Release the current scan and reset the loader state.
    * @returns {Promise<void>}
    */
-  async release() {
-    const scanId = this.scanId;
-    this._reset();
-    if (scanId) {
-      await this._invoke("release_scan", { scanId: scanId });
-    }
-  }
+async release() {
+     this._cancelled = true;
+     const scanId = this.scanId;
+     this._reset();
+     if (scanId) {
+       await this._invoke("release_scan", { scanId: scanId });
+     }
+     this._cancelled = false;
+   }
 
   async _invoke(cmd, args) {
     try {

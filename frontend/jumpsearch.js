@@ -85,7 +85,7 @@
       listEl.innerHTML = '<div style="padding:18px;text-align:center;color:var(--text-muted);font-size:12px;">Type at least 2 characters…</div>';
       return;
     }
-    hintEl.textContent = "Searching…";
+    hintEl.textContent = window.t("jumpsearch.searching");
     try {
       const res = await window.__TAURI__.invoke("search_tree", { query: q, limit: 60 });
       if (mySeq !== seq) return; // stale response

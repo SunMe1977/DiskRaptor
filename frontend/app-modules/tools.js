@@ -101,12 +101,12 @@ window.app.initTools = function (refs) {
       const action = item.dataset.action;
       toolsMenu.classList.remove("active");
 
-      if (action === "open-current") {
-        const current = (scanPath.value || "").trim();
-        if (!current) {
-          window.showToast("Enter or select a folder first", "info");
-          return;
-        }
+if (action === "open-current") {
+         const current = (scanPath.value || "").trim();
+         if (!current) {
+           window.showToast(window.t("toast.select_folder_first"), "info");
+           return;
+         }
         window.__TAURI__.invoke("get_dir_stats", { path: current }).then(function (res) {
           const st = res && res.data ? res.data : (res || {});
           const sizeStr = fmtBytes(st.total_bytes);
@@ -135,11 +135,11 @@ window.app.initTools = function (refs) {
           })
           .catch(function () {});
       } else if (action === "clear-scan" || action === "reset-view") {
-        resetAllState(
-          action === "clear-scan"
-            ? (window.__ || function (s) { return s; })("status.clear_scan")
-            : "View reset",
-        );
+resetAllState(
+           action === "clear-scan"
+             ? (window.__ || function (s) { return s; })("status.clear_scan")
+             : window.t("status.reset_view"),
+         );
       } else if (action === "settings") {
         const so = document.getElementById("settings-overlay");
         if (so) {
@@ -263,7 +263,8 @@ window.app.initTools = function (refs) {
           const ok = await window.confirmDialog(
             window.__ ? window.__("tools.empty_folders_delete_confirm").replace("{n}", paths.length) : "Move " + paths.length + " empty folder(s) to Trash?",
           );
-           let done = 0, failed = 0, skipped = 0;
+          if (!ok) return;
+          let done = 0, failed = 0, skipped = 0;
            for (let ei = 0; ei < paths.length; ei++) {
              btn.textContent = _t("status.deleting_progress").replace("{n}", ei + 1).replace("{total}", paths.length);
              try {
@@ -311,9 +312,9 @@ window.app.initTools = function (refs) {
         const svg = document.querySelector(
           "#diagram-container canvas",
         );
-        let chartData = "";
-        try {
-          chartData = svg ? svg.toDataURL() : "";
+let chartData;
+         try {
+           chartData = svg ? svg.toDataURL() : "";
         } catch (e) {
           console.warn("Chart export failed (tainted canvas):", e);
           chartData = "";
@@ -534,7 +535,7 @@ window.app.initTools = function (refs) {
         openBrowserTools();
       } else if (action === "apfs-snapshots") {
         if (window.openApfsPanel) window.openApfsPanel();
-        else window.showToast("APFS & Purgeable is only available on macOS", "info");
+        else window.showToast(window.t("apfs.mac_only"), "info");
       } else if (action === "trash") {
         const t = window.__ || function (s) { return s; };
         let trashInfo = "";
@@ -564,7 +565,7 @@ window.app.initTools = function (refs) {
           window.showToast(t0("toast.failed").replace("{err}", e), "error");
         }
         setTimeout(function () {
-          item.textContent = "\uD83D\uDDD1\uFE0F Empty Trash";
+          item.textContent = "\uD83D\uDDD1\uFE0F " + window.t("tools.empty_trash");
         }, 3000);
       } else if (action === "exit") {
         try {
@@ -677,7 +678,7 @@ window.app.initTools = function (refs) {
     }
 
     function load() {
-      statusEl.textContent = "\u23F3 Scanning Downloads\u2026";
+      statusEl.textContent = "\u23F3 " + window.t("tools.scan_downloads") + "\u2026";
       window.__TAURI__
         .invoke("list_downloads_candidates")
         .then(function (res) {
@@ -723,11 +724,12 @@ window.app.initTools = function (refs) {
       const ok = await window.confirmDialog(
         window.__ ? window.__("tools.cleanup_confirm").replace("{n}", sel.length).replace("{size}", fmtBytes(totalSel)) : "Move " + sel.length + " file(s) to Trash?",
       );
+      if (!ok) return;
        cleanBtn.disabled = true;
-       cleanBtn.textContent = "\u23F3 Moving\u2026";
+       cleanBtn.textContent = window.t("tools.cleaning");
        let done = 0, failed = 0;
        for (let si = 0; si < sel.length; si++) {
-         cleanBtn.textContent = "\u23F3 Moving " + (si + 1) + "/" + sel.length + "...";
+         cleanBtn.textContent = window.t("tools.moving_progress").replace("{n}", si + 1).replace("{total}", sel.length) + "...";
          try {
            const r = await window.app.deletePath(sel[si].path);
           if (r && r.success === false) failed++;
@@ -738,7 +740,7 @@ window.app.initTools = function (refs) {
         done + " file(s) moved to trash, freed " + fmtBytes(totalSel) + (failed ? " (" + failed + " failed)" : ""),
         failed ? "warning" : "success",
       );
-      cleanBtn.textContent = "\uD83D\uDDD1 Move Selected to Trash";
+      cleanBtn.textContent = "\uD83D\uDDD1 " + window.t("action.move_selected_to_trash");
       cleanBtn.disabled = false;
       load();
       // Remove the trashed files from the tree so it reflects the deletion
@@ -1432,7 +1434,7 @@ for (let i = 0; i < browsers.length; i++) {
         })
         .catch(function (e) {
           statusEl.className = "smart-status err";
-          statusEl.textContent = "Error: " + (e && e.message ? e.message : e);
+          statusEl.textContent = window.t("status.error_prefix") + (e && e.message ? e.message : e);
         });
     }
 

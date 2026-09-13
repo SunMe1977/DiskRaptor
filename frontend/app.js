@@ -1,13 +1,15 @@
-﻿/**
+/**
  * DiskRaptor - Main application controller.
  */
+/* eslint-disable no-empty */
 (function () {
   "use strict";
 
-  // ── Welcome buttons + deferred external links ───────────
-  // Wired at the top level (not inside the async init) so the welcome screen
-  // stays interactive even if the backend bridge is slow or init() is cut
-  // short. Handlers look elements up lazily on each click.
+// -- Welcome buttons + deferred external links -----------
+// Wired at the top level (not inside the async init) so the welcome screen
+// stays interactive even if the backend bridge is slow or init() is cut
+// short. Handlers look elements up lazily on each click.
+window.__checkUpdateId = 0;
   (function wireWelcome() {
     function hideOnboarding() {
       const ob = document.getElementById("welcome-onboarding");
@@ -16,7 +18,7 @@
     const closeBtn = document.getElementById("welcome-close");
     if (closeBtn) {
       closeBtn.addEventListener("click", function () {
-        // Closing the onboarding always dismisses it permanently — no need for
+        // Closing the onboarding always dismisses it permanently � no need for
         // a separate "Don't show again" checkbox on the main screen.
         if (window.__TAURI__ && window.__TAURI__.invoke) {
           window.__TAURI__
@@ -59,7 +61,7 @@
         if (ov) ov.classList.add("active");
       });
     }
-     // Auto-hide the onboarding banner when the user dismissed it before —
+     // Auto-hide the onboarding banner when the user dismissed it before �
      // done here (not only inside async init) so it never comes back.
      if (window.__TAURI__ && window.__TAURI__.invoke) {
        window.__TAURI__.invoke("load_settings", {}).then(function (s) {
@@ -79,7 +81,7 @@
          });
        }).catch(function () {});
      }
-    // Deferred external links ([data-open-url]) — welcome star/fork/store,
+    // Deferred external links ([data-open-url]) � welcome star/fork/store,
     // About-screen links, etc.
     function openDataUrl(t) {
       const url = t && t.getAttribute ? t.getAttribute("data-open-url") : "";
@@ -144,8 +146,8 @@
       if (statusBar) statusBar.textContent = window.t("status.connected");
       try {
         const w = window.__TAURI__.window.getCurrentWindow();
-        await w.maximize();
-      } catch (_) {}
+await w.maximize();
+       } catch (_) { /* intentional */ }
     } catch (err) {
       console.error("Tauri backend not connected:", err);
       if (statusBar)
@@ -158,16 +160,20 @@
       return;
     }
 
+    // -- APFS cleanup on startup
+    let __apfsCleanupCancelled = false;
     (async function () {
+      if (__apfsCleanupCancelled) return;
       try {
         const res = await window.__TAURI__.invoke("run_apfs_cleanup", {});
+        if (__apfsCleanupCancelled) return;
         if (res && res.status === "ok" && res.deleted > 0) {
           window.showToast("APFS cleanup: removed " + res.deleted + " old snapshot(s)", "success");
         }
-      } catch (_) {}
+      } catch (_) { /* intentional */ }
     })();
 
-    // ── IPC contract guard ────────────────────────────────────────────────
+    // -- IPC contract guard ------------------------------------------------
     // Wrap invoke so every response is validated against the documented shapes
     // in contracts.js. Log-only: a violation logs a console warning but never
     // throws, so a contract drift can never break the running app.
@@ -194,7 +200,7 @@
         try {
           const desc = Object.getOwnPropertyDescriptor(owner, key);
           if (desc && !desc.writable) {
-            if (!desc.configurable) return; // cannot redefine → skip
+            if (!desc.configurable) return; // cannot redefine ? skip
             Object.defineProperty(owner, key, {
               value: wrap(owner[key].bind(owner)),
               writable: true,
@@ -204,7 +210,7 @@
           }
           owner[key] = wrap(owner[key].bind(owner));
         } catch (e) {
-          /* best-effort only — never break the running app */
+          /* best-effort only � never break the running app */
         }
       };
       const api = window.__TAURI__;
@@ -216,7 +222,7 @@
 
     console.debug("DiskRaptor initializing...");
 
-    // ── Shared state ────────────────────────────────────
+    // -- Shared state ------------------------------------
     window.app = window.app || {};
     const state = window.app.state = {
       isScanning: false,
@@ -227,7 +233,7 @@
       lastDirsFound: 0,
     };
 
-     // ── Settings helpers ───────────────────────────────────
+     // -- Settings helpers -----------------------------------
      window.app.getSetting = async function (key, fallback) {
        try {
          const r = await window.__TAURI__.invoke("load_settings");
@@ -247,15 +253,15 @@
        }
       };
 
-     // ── Delete helper: honors confirm_delete setting ─────
+     // -- Delete helper: honors confirm_delete setting -----
      window.app.deletePath = async function (path) {
        try {
          const s = await window.__TAURI__.invoke("load_settings", {});
-         if (s && s.confirm_delete === false) {
-           // Confirmation disabled by user – proceed directly.
-           return window.__TAURI__.invoke("delete_path", { path });
-         }
-       } catch (_) {}
+if (s && s.confirm_delete === false) {
+            // Confirmation disabled by user � proceed directly.
+            return window.__TAURI__.invoke("delete_path", { path });
+          }
+        } catch (_) { /* intentional */ }
        if (!window.confirmDialog) {
          return window.__TAURI__.invoke("delete_path", { path });
        }
@@ -269,10 +275,10 @@
         try {
           const s = await window.__TAURI__.invoke("load_settings", {});
           if (s && s.confirm_delete === false) {
-            return window.__TAURI__.invoke("delete_permanent", { path });
-          }
-        } catch (_) {}
-        if (!window.confirmDialog) {
+return window.__TAURI__.invoke("delete_permanent", { path });
+           }
+} catch (_) {}
+         if (!window.confirmDialog) {
           return window.__TAURI__.invoke("delete_permanent", { path });
         }
         const ok = await window.confirmDialog(
@@ -284,10 +290,10 @@
     const getSetting = window.app.getSetting;
     const setSetting = window.app.setSetting;
 
-    // ── Theme toggle ───────────────────────────────────────
+    // -- Theme toggle ---------------------------------------
     await window.app.initTheme(getSetting, setSetting);
 
-    // ── Sandbox notice (macOS App Store build) ─────────────
+    // -- Sandbox notice (macOS App Store build) -------------
     (async function () {
       try {
         const r = await window.__TAURI__.invoke("is_sandboxed");
@@ -315,7 +321,7 @@
     const treeView = new TreeView("tree-viewport", loader);
     window.__treeView = treeView;
 
-    // ── Column resize ────────────────────────────────────
+    // -- Column resize ------------------------------------
     (function () {
       let dragCol = null,
         startX = 0,
@@ -420,10 +426,10 @@
       });
     });
 
-    // ── Welcome placeholder ──────────────────────────────
+    // -- Welcome placeholder ------------------------------
     const welcomeEl = document.getElementById("welcome-placeholder");
 
-    // ── Exit button (toolbar) ────────────────────────────
+    // -- Exit button (toolbar) ----------------------------
     const btnExit = document.getElementById("btn-exit");
     if (btnExit) {
       btnExit.addEventListener("click", function () {
@@ -441,7 +447,7 @@
       if (welcomeEl) welcomeEl.classList.remove("hidden");
     }
 
-    // "Don't show again" only collapses the onboarding banner (🚀/title/star),
+    // "Don't show again" only collapses the onboarding banner (??/title/star),
     // keeping the start page (drives, scan history, quick scan) visible.
     function hideOnboarding() {
       const ob = document.getElementById("welcome-onboarding");
@@ -455,10 +461,12 @@
       } catch (e) { console.debug("[DiskRaptor]", e); }
     })();
 
-    // ── Rating prompt: ask for a store rating on the 5th, 10th, 50th and
-    //    100th launch. "No" only closes the dialog — it reappears at the next
+// -- Rating prompt: ask for a store rating on the 5th, 10th, 50th and
+    //    100th launch. "No" only closes the dialog -- it reappears at the next
     //    milestone; "Yes" opens the store page. After launch #100 it stops.
+let __ratingPromptCancelled = false;
     (async function maybeShowRatingPrompt() {
+      if (__ratingPromptCancelled) return;
       try {
         const s = await window.__TAURI__.invoke("load_settings", {});
         const count = (s && typeof s.rating_launch_count === "number")
@@ -471,11 +479,11 @@
         if (next !== 5 && next !== 10 && next !== 50 && next !== 100) return;
         if (!window.yesNoDialog) return;
         // Make sure the translation tables are loaded before building the
-        // dialog (they load asynchronously at startup) — otherwise t() would
+        // dialog (they load asynchronously at startup) � otherwise t() would
         // return raw key names.
         try {
           if (window.I18N && window.I18N.ready) await window.I18N.ready;
-        } catch (_) {}
+        } catch (_) { /* intentional */ }
         const platform = (navigator.platform || "").toLowerCase();
         const isMac = platform.indexOf("mac") === 0;
         const storeUrl = isMac
@@ -484,7 +492,7 @@
         const storeName = isMac ? "Mac App Store" : "Microsoft Store";
         const tr = function (key, vars, fallback) {
           let s = (window.__ || function () { return fallback || key; })(key);
-          if (s === key && fallback) s = fallback; // not translated yet → inline text
+          if (s === key && fallback) s = fallback; // not translated yet ? inline text
           Object.keys(vars || {}).forEach(function (k) {
             s = s.replace("{" + k + "}", vars[k]);
           });
@@ -492,7 +500,7 @@
         };
         const ok = await window.yesNoDialog(
           tr("rating.message", { store: storeName, times: next },
-            "You've started DiskRaptor {times} times. I'm a solo developer — a 5-star rating would help me a lot ⭐⭐⭐⭐⭐. Thank you!") + "\n\n" +
+            "You've started DiskRaptor {times} times. I'm a solo developer � a 5-star rating would help me a lot ?????. Thank you!") + "\n\n" +
             tr("rating.question", { store: storeName }, "Rate in the {store}?"),
           tr("rating.yes", {}, "Yes, I'll rate it"),
           tr("rating.no", {}, "No, thanks"),
@@ -503,8 +511,8 @@
       } catch (e) { console.debug("[DiskRaptor]", e); }
     })();
 
-    // ── Accessibility: keep aria-expanded in sync with each dropdown's
-    //    .active class (menus are shown/hidden purely via that class). ──
+    // -- Accessibility: keep aria-expanded in sync with each dropdown's
+    //    .active class (menus are shown/hidden purely via that class). --
     (function syncDropdownAria() {
       const triggers = {
         "drive-menu": "btn-drive",
@@ -530,7 +538,7 @@
       });
     })();
 
-    // ── Focus trap for the about + settings modals ─────────
+    // -- Focus trap for the about + settings modals ---------
     // Activates whenever the overlay becomes visible (class .active or display
     // flex), so Tab/Shift+Tab stays inside the modal.
     (function initModalFocusTraps() {
@@ -567,8 +575,8 @@
       check();
     })();
 
-    // ── Collapsible detail cards ─────────────────────────
-    // Toggleable with the mouse AND the keyboard (Enter/Space) — the header
+    // -- Collapsible detail cards -------------------------
+    // Toggleable with the mouse AND the keyboard (Enter/Space) � the header
     // becomes a real button for assistive tech.
     document.querySelectorAll(".collapsible .card-header").forEach(function (
       h,
@@ -623,7 +631,7 @@
       }
     };
 
-    // ── Global keyboard shortcuts ─────────────────────────────
+    // -- Global keyboard shortcuts -----------------------------
     document.addEventListener("keydown", function (e) {
       if (!e.ctrlKey && !e.metaKey || e.altKey) return;
       const tag = (e.target && e.target.tagName) || "";
@@ -651,7 +659,7 @@
       }
     });
 
-    // ── Keyboard shortcut help dialog ("?") ────────────────────
+    // -- Keyboard shortcut help dialog ("?") --------------------
     function showShortcutHelp() {
       if (document.getElementById("shortcut-help-overlay")) return;
       const overlay = document.createElement("div");
@@ -668,37 +676,39 @@
       head.style.cssText =
         "padding:12px 18px;font-size:14px;font-weight:600;color:var(--text-primary);" +
         "border-bottom:1px solid var(--border,#30363d);";
-      head.textContent = "⌨ " + window.t("shortcut.title");
-      const body = document.createElement("div");
-      body.style.cssText = "padding:14px 18px;font-size:13px;line-height:2;color:var(--text-primary);";
-      const rows = [
-        ["Ctrl+L", "Focus scan path"],
-        ["Ctrl+S", "Start scan"],
-        ["Ctrl+R", "Rescan same directory"],
-        ["Ctrl+E", "Export results"],
-        ["Ctrl+F", "Filter tree"],
-        ["Ctrl+Enter", "Start scan"],
-        ["Esc", "Close dialogs / menus"],
-        ["?", "Show this help"],
-      ];
-      rows.forEach(function (r) {
-        const line = document.createElement("div");
-        line.style.cssText = "display:flex;justify-content:space-between;gap:16px;";
-        const k = document.createElement("kbd");
-        k.textContent = r[0];
-        k.style.cssText =
-          "font-family:var(--font-mono);font-size:12px;background:var(--bg-tertiary);" +
-          "border:1px solid var(--border);border-radius:4px;padding:1px 6px;white-space:nowrap;";
-        const d = document.createElement("span");
-        d.textContent = window.t(r[1]);
-        line.appendChild(k);
-        line.appendChild(d);
-        body.appendChild(line);
-      });
-      card.appendChild(head);
-      card.appendChild(body);
-      overlay.appendChild(card);
-      document.body.appendChild(overlay);
+head.textContent = "? " + window.t("shortcut.title");
+       head.setAttribute("data-i18n", "shortcut.title");
+       const body = document.createElement("div");
+       body.style.cssText = "padding:14px 18px;font-size:13px;line-height:2;color:var(--text-primary);";
+       const rows = [
+         ["Ctrl+L", "Focus scan path"],
+         ["Ctrl+S", "Start scan"],
+         ["Ctrl+R", "Rescan same directory"],
+         ["Ctrl+E", "Export results"],
+         ["Ctrl+F", "Filter tree"],
+         ["Ctrl+Enter", "Start scan"],
+         ["Esc", "Close dialogs / menus"],
+         ["?", "Show this help"],
+       ];
+       rows.forEach(function (r) {
+         const line = document.createElement("div");
+         line.style.cssText = "display:flex;justify-content:space-between;gap:16px;";
+         const k = document.createElement("kbd");
+         k.textContent = r[0];
+         k.style.cssText =
+           "font-family:var(--font-mono);font-size:12px;background:var(--bg-tertiary);" +
+           "border:1px solid var(--border);border-radius:4px;padding:1px 6px;white-space:nowrap;";
+         const d = document.createElement("span");
+         d.textContent = window.t(r[1]);
+         d.setAttribute("data-i18n", r[1]);
+         line.appendChild(k);
+         line.appendChild(d);
+         body.appendChild(line);
+       });
+       card.appendChild(head);
+       card.appendChild(body);
+       overlay.appendChild(card);
+       document.body.appendChild(overlay);
       function close() {
         document.removeEventListener("keydown", onKey);
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
@@ -710,7 +720,7 @@
       });
     }
 
-     // ── Auto-update check on startup (after bridge ready) ──────
+     // -- Auto-update check on startup (after bridge ready) ------
      (async function () {
        try {
          const doCheck = async function () {
@@ -728,18 +738,18 @@
          // Wait for UI to settle, then check (throttled: once per session).
          await sleep(5000);
          if (window.__TAURI__ && window.__TAURI__.invoke) {
-           await doCheck();
-         }
-       } catch (_) {}
+await doCheck();
+          }
+        } catch (_) { /* intentional */ }
      })();
 
-     // ── Low disk space warning (emitted by the backend) ─────────
+     // -- Low disk space warning (emitted by the backend) ---------
      if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
       window.__TAURI__.event
         .listen("low-disk-space", function (ev) {
           const msg = (ev && ev.payload) || "";
           if (msg && window.showToast) {
-            window.showToast("⚠ Low disk space: " + msg, "warning");
+            window.showToast("? Low disk space: " + msg, "warning");
           }
         })
         .catch(function () {});
@@ -786,20 +796,23 @@
       console.warn("get_home_dir failed:", e && e.message ? e.message : e);
     }
 
-    // ── Favorites/Bookmarked directories ─────────────────
+    // -- Favorites/Bookmarked directories -----------------
     window.app.initFavorites(scanPath, btnFav);
 
-    // ── Drive Selector ──────────────────────────────────
+    // -- Drive Selector ----------------------------------
     window.app.initDrives(scanPath, btnScan);
 
-    // ── Scan history on the start page ──────────────────
+    // -- Scan history on the start page ------------------
+    let __renderStartHistoryCancelled = false;
     (async function renderStartHistory() {
+      if (__renderStartHistoryCancelled) return;
       const wrap = document.getElementById("start-history");
       if (!wrap) return;
       const t = window.t;
       let showAll = false;
 
       async function load() {
+        if (__renderStartHistoryCancelled) return;
         try {
           const s = await window.__TAURI__.invoke("load_settings", {});
           const hist = Array.isArray(s && s.scan_history) ? s.scan_history : [];
@@ -1030,7 +1043,7 @@
     }
 
     // Diagram mode switcher (in detail panel)
-    // ── Diagram labels toggle ─────────────────────────────
+    // -- Diagram labels toggle -----------------------------
     const labelsBtn = document.getElementById("diagram-labels");
     if (labelsBtn && window.__diagram) {
       labelsBtn.addEventListener("click", function () {
@@ -1116,7 +1129,7 @@
       }
     }).catch(function () {});
 
-    // ── Duplicate Scanner ───────────────────────────────
+    // -- Duplicate Scanner -------------------------------
     const dupScanner = new DupScanner();
 
     const btnDup = document.createElement("button");
@@ -1164,7 +1177,7 @@
       if (ver) {
         const el = document.querySelector(".about-version");
         if (el) {
-          // Only fill the version placeholder — keeps the already-localized
+          // Only fill the version placeholder � keeps the already-localized
           // "Version" label from the HTML intact.
           const num = el.querySelector(".about-version-num");
           if (num) num.textContent = ver;
@@ -1173,7 +1186,7 @@
         if (wsub) {
           const sep = document.createElement("span");
           sep.style.cssText = "color:var(--text-muted);margin:0 6px;";
-          sep.textContent = "·";
+          sep.textContent = "�";
           const vspan = document.createElement("span");
           vspan.style.color = "var(--text-muted)";
           vspan.textContent = "v" + ver;
@@ -1192,14 +1205,18 @@
     }
 
     // Load real GitHub release notes into the Changelog tab.
+    let __releaseNotesCancelled = false;
     (async function loadReleaseNotes() {
       const changelog = document.querySelector("#about-tab-changelog > div");
       if (!changelog) return;
       try {
+        if (__releaseNotesCancelled) return;
         const res = await fetch(
           "https://api.github.com/repos/SunMe1977/DiskRaptor/releases?per_page=15",
         );
+        if (__releaseNotesCancelled) return;
         const releases = await res.json();
+        if (__releaseNotesCancelled) return;
         if (!Array.isArray(releases) || releases.length === 0) return;
         let html = "";
         for (let ri = 0; ri < releases.length; ri++) {
@@ -1314,7 +1331,7 @@
       // becomes a button that opens the DiskRaptor page in the Mac App Store
       // app (macOS routes apps.apple.com URLs to the App Store app).
       if (updateCheckEl.getAttribute("data-store") === "true") {
-        updateCheckEl.textContent = "\u{1F3EC} Open in Mac App Store";
+        updateCheckEl.textContent = "\u{1F3EC} " + window.__("about.open_mac_app_store");
         updateCheckEl.style.color = "var(--accent-green)";
         updateCheckEl.style.cursor = "pointer";
         updateCheckEl.style.textDecoration = "underline";
@@ -1334,6 +1351,8 @@
      * Shows a popup with the latest version or a "no updates" message.
      */
     window.__checkUpdate = async function () {
+       const checkId = ++window.__checkUpdateId;
+       const cancelled = () => checkId !== window.__checkUpdateId;
       const el = document.getElementById("about-update-check");
       const openPopup = function (contentHtml, clickHandler) {
         const overlay = document.createElement("div");
@@ -1354,16 +1373,18 @@
         footer.style.cssText =
           "padding:10px 16px;border-top:1px solid var(--border,#30363d);" +
           "display:flex;justify-content:flex-end;gap:8px;";
-        const btnClose = document.createElement("button");
-        btnClose.textContent = "Close";
-        btnClose.style.cssText =
+const btnClose = document.createElement("button");
+         btnClose.textContent = window.t("dialog.close");
+         btnClose.setAttribute("data-i18n", "dialog.close");
+         btnClose.style.cssText =
           "padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;" +
           "border:1px solid var(--border,#30363d);background:var(--bg-tertiary,#161b22);color:var(--text-primary);";
         btnClose.addEventListener("click", close);
         footer.appendChild(btnClose);
         if (clickHandler) {
-          const btnAction = document.createElement("button");
-          btnAction.textContent = "⬇ Download";
+const btnAction = document.createElement("button");
+           btnAction.textContent = window.t("about.download");
+           btnAction.setAttribute("data-i18n", "about.download");
           btnAction.style.cssText =
             "padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid var(--border,#30363d);" +
             "background:linear-gradient(135deg,#238636,var(--accent-green,#2ea043));color:#fff;font-weight:600;";
@@ -1398,9 +1419,9 @@
       // Show a popup with live status instead of only inline text.
       const popup = openPopup(
         "<div id='upd-status' style='font-size:14px;'>" +
-          "<div style='font-size:18px;margin-bottom:6px;'>🔍</div>" +
-          "<b>Checking for updates…</b>" +
-          "<div id='upd-sub' style='margin-top:6px;color:var(--text-secondary);font-size:12px;'>Contacting GitHub…</div>" +
+          "<div style='font-size:18px;margin-bottom:6px;'>??</div>" +
+          "<b>Checking for updates�</b>" +
+          "<div id='upd-sub' style='margin-top:6px;color:var(--text-secondary);font-size:12px;'>Contacting GitHub�</div>" +
           "</div>",
       );
       const setStatus = function (icon, title, sub, isSuccess) {
@@ -1412,13 +1433,15 @@
           (sub ? "<div style='margin-top:6px;color:var(--text-secondary);font-size:12px;'>" + sub + "</div>" : "");
       };
 
-      const current = _currentVersion || "0.0.0";
-      try {
-        // Prefer the native check (knows installed version, does the network call off the UI thread).
-        const res = await window.__TAURI__.invoke("check_for_updates");
-        const data = res && res.data ? res.data : res;
-        const latest = data && data.latest ? String(data.latest) : "";
-        if (latest && latest !== current) {
+const current = _currentVersion || "0.0.0";
+       try {
+         if (cancelled()) return;
+         // Prefer the native check (knows installed version, does the network call off the UI thread).
+         const res = await window.__TAURI__.invoke("check_for_updates");
+         if (cancelled()) return;
+         const data = res && res.data ? res.data : res;
+         const latest = data && data.latest ? String(data.latest) : "";
+         if (latest && latest !== current) {
           const platform = (navigator.platform || "").toLowerCase();
           const isMac = platform.indexOf("mac") === 0;
           const isWin = platform.indexOf("win") === 0;
@@ -1434,13 +1457,13 @@
             "/" +
             asset;
           setStatus(
-            "⬇️",
+            "??",
             "Update available: v" + latest,
             "You are on v" + current + ". Download the latest version below.",
             true,
           );
           const btn = document.createElement("button");
-          btn.textContent = "⬇ Download v" + latest;
+          btn.textContent = window.t("about.download_version").replace("{version}", latest);
           btn.style.cssText =
             "margin-top:14px;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:none;" +
             "background:linear-gradient(135deg,#238636,var(--accent-green,#2ea043));color:#fff;font-weight:600;";
@@ -1449,7 +1472,7 @@
           });
           popup.body.appendChild(btn);
           if (el) {
-            el.textContent = "\u2B07\uFE0F Install v" + latest;
+            el.textContent = "\u2B07\uFE0F " + window.__("about.install_update").replace("{version}", latest);
             el.style.color = "var(--accent-orange)";
             el.style.cursor = "pointer";
             el.style.textDecoration = "underline";
@@ -1459,28 +1482,30 @@
           }
         } else {
           setStatus(
-            "✅",
+            "?",
             "No update needed",
             "You are on the latest version (v" + current + ").",
             true,
           );
           if (el) {
-            el.textContent = "\u2705 No update available (v" + current + ")";
+            el.textContent = "\u2705 " + window.__("about.no_update_available").replace("{version}", current);
             el.style.color = "var(--accent-green)";
             el.style.cursor = "default";
             el.style.textDecoration = "none";
             el.onclick = null;
           }
         }
-      } catch (e) {
-        // Fallback: query GitHub directly from the frontend.
-        try {
-          const r = await fetch(
-            "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
-          );
-          const d2 = await r.json();
-          const latest2 = (d2.tag_name || "").replace(/^v/, "");
-          if (latest2 && latest2 !== current) {
+} catch (e) {
+         // Fallback: query GitHub directly from the frontend.
+         try {
+           if (cancelled()) return;
+           const r = await fetch(
+             "https://api.github.com/repos/SunMe1977/DiskRaptor/releases/latest",
+           );
+           if (cancelled()) return;
+           const d2 = await r.json();
+           const latest2 = (d2.tag_name || "").replace(/^v/, "");
+           if (latest2 && latest2 !== current) {
             const platform = (navigator.platform || "").toLowerCase();
             const isMac = platform.indexOf("mac") === 0;
             const isWin = platform.indexOf("win") === 0;
@@ -1496,13 +1521,13 @@
               "/" +
               asset;
             setStatus(
-              "⬇️",
+              "??",
               "Update available: v" + latest2,
               "You are on v" + current + ". Download the latest version below.",
               true,
             );
             const btn = document.createElement("button");
-            btn.textContent = "⬇ Download v" + latest2;
+            btn.textContent = window.t("about.download_version").replace("{version}", latest2);
             btn.style.cssText =
               "margin-top:14px;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:none;" +
               "background:linear-gradient(135deg,#238636,var(--accent-green,#2ea043));color:#fff;font-weight:600;";
@@ -1512,7 +1537,7 @@
             popup.body.appendChild(btn);
           } else {
             setStatus(
-              "✅",
+              "?",
               "No update needed",
               "You are on the latest version (v" + current + ").",
               true,
@@ -1520,7 +1545,7 @@
           }
         } catch (e2) {
           setStatus(
-            "⚠️",
+            "??",
             "Update check failed",
             "Could not reach GitHub. Check your internet connection.",
             false,
@@ -1529,7 +1554,7 @@
       }
     };
 
-    // ── Language Switcher ──────────────────────────────────
+    // -- Language Switcher ----------------------------------
     (function initLangSwitcher() {
       const btnLang = document.getElementById("btn-lang");
       const langMenu = document.getElementById("lang-menu");
@@ -1562,15 +1587,15 @@
             current === lang.code ? ' class="lang-item active"' : "";
           html +=
             '<button data-lang="' +
-            lang.code +
+            window.escHtml(lang.code) +
             '"' +
             active +
             ' class="lang-item"><span class="lang-flag">' +
-            lang.flag +
+            window.escHtml(lang.flag) +
             '</span> <span>' +
-            lang.label +
+            window.escHtml(lang.label) +
             '</span> <span class="lang-code">' +
-            lang.code +
+            window.escHtml(lang.code) +
             "</span></button>";
         });
         langList.innerHTML = html;
@@ -1672,7 +1697,7 @@
       }
     });
 
-    // ── Follow symlinks toggle ──
+    // -- Follow symlinks toggle --
     let chkFollow = document.getElementById("chk-follow-symlinks");
     if (!chkFollow) {
       chkFollow = document.createElement("label");
@@ -1683,7 +1708,7 @@
       btnScan.parentNode.insertBefore(chkFollow, btnScan);
     }
 
-    // ── Error display ──
+    // -- Error display --
     let errDisplay = document.getElementById("scan-errors");
     if (!errDisplay) {
       errDisplay = document.createElement("div");
@@ -1693,7 +1718,7 @@
       document.getElementById("progress-overlay").appendChild(errDisplay);
     }
 
-    // ── Scan ────────────────────────────────────────────
+    // -- Scan --------------------------------------------
     window.app.initScan({
       loader: loader,
       treeView: treeView,
@@ -1715,14 +1740,14 @@
       sleep: sleep,
     });
 
-    // ── Export ──────────────────────────────────────────
+    // -- Export ------------------------------------------
     window.app.initExport({
       scanPath: scanPath,
       btnExport: btnExport,
       loader: loader,
     });
 
-    // ── Drag & drop from Finder ─────────────────────────
+    // -- Drag & drop from Finder -------------------------
     document.addEventListener("dragover", function (e) {
       e.preventDefault();
     });
@@ -1743,14 +1768,14 @@
       }
     });
 
-    // ── Settings ────────────────────────────────────────
+    // -- Settings ----------------------------------------
     window.app.initSettings({
       scanPath: scanPath,
       btnScan: btnScan,
       btnBrowse: btnBrowse,
     });
 
-    // ── Tools dropdown ──────────────────────────────────
+    // -- Tools dropdown ----------------------------------
     window.app.initTools({
       scanPath: scanPath,
       btnScan: btnScan,
@@ -1771,7 +1796,7 @@
       console.error("DiskRaptor init failed:", err);
       const sb = document.querySelector(".status-bar");
       if (sb) {
-        sb.textContent = "Init error: " + (err && err.message ? err.message : err);
+        sb.textContent = window.__("status.init_error") + (err && err.message ? err.message : err);
         sb.style.color = "var(--accent-red)";
       }
       // Offer a retry dialog so the user isn't left staring at a dead window.

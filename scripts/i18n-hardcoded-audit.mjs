@@ -6,6 +6,7 @@ const I18N_DIR = path.join(process.cwd(), "frontend", "i18n");
 const EN_FILE = path.join(I18N_DIR, "en.js");
 const FRONTEND_DIR = path.join(process.cwd(), "frontend");
 const APP_MODULES_DIR = path.join(FRONTEND_DIR, "app-modules");
+const GALAXY_DIR = path.join(FRONTEND_DIR, "galaxyview");
 
 const SKIP_KEYS = new Set(["toolbar.title"]);
 const COMMON_NON_TRANSLATABLE = new Set([
@@ -48,10 +49,12 @@ function dotGet(obj, dotted) {
 function isTranslated(context) {
   if (/\b__\s*\(/.test(context)) return true;
   if (/\bt\s*\(/.test(context)) return true;
+  if (/\btr\s*\(/.test(context)) return true;
   if (/\bI18N\.t\s*\(/.test(context)) return true;
   if (/\.replace\s*\(/.test(context)) return true;
   if (/\$\{.*__\s*\(/.test(context)) return true;
   if (/\$\{.*t\s*\(/.test(context)) return true;
+  if (/\$\{.*tr\s*\(/.test(context)) return true;
   if (/data-i18n-title=/.test(context)) return true;
   if (/data-i18n=/.test(context)) return true;
   return false;
@@ -62,12 +65,18 @@ function checkHardcodedStrings() {
   const jsFiles = [
     ...fs.readdirSync(FRONTEND_DIR).filter((f) => f.endsWith(".js")),
     ...fs.readdirSync(APP_MODULES_DIR).filter((f) => f.endsWith(".js")),
+    ...fs.readdirSync(GALAXY_DIR).filter((f) => f.endsWith(".js")),
   ];
 
   for (const file of jsFiles) {
-    const filePath = file.includes("/") || file.includes("\\")
-      ? path.join(APP_MODULES_DIR, file)
-      : path.join(FRONTEND_DIR, file);
+    let filePath;
+    if (file.includes("/") || file.includes("\\")) {
+      filePath = path.join(APP_MODULES_DIR, file);
+    } else if (fs.existsSync(path.join(GALAXY_DIR, file))) {
+      filePath = path.join(GALAXY_DIR, file);
+    } else {
+      filePath = path.join(FRONTEND_DIR, file);
+    }
     if (!fs.existsSync(filePath)) continue;
     const content = fs.readFileSync(filePath, "utf8");
     const lines = content.split("\n");
@@ -90,11 +99,10 @@ function checkHardcodedStrings() {
             inStr = false;
             if (str.length >= 2
               && !/^(http|https|data|chrome-extension|about|javascript|#|\.)/.test(str)
-              && !/^[\d\s.,:;%$€£¥()[\]{}<>!@#$%^&*|\\\/`~=?+-]+$/.test(str)
-              && !/^(const|let|var|function|return|if|else|for|while|switch|case|break|continue|try|catch|throw|new|this|class|extends|import|export|default|from|async|await|yield|delete|typeof|instanceof|in|of|true|false|null|undefined|NaN|Infinity)$/.test(str)
-              && !COMMON_NON_TRANSLATABLE.has(str)
-              && !str.includes(".")
-              && !/^[a-z][a-z0-9_-]+$/i.test(str)
+              && !/^[\d\s.,:;%$€£¥()[\]{}<>!@#$%^&*|\\/`~=?+-]+$/.test(str)
+&& !/^(const|let|var|function|return|if|else|for|while|switch|case|break|continue|try|catch|throw|new|this|class|extends|import|export|default|from|async|await|yield|delete|typeof|instanceof|in|of|true|false|null|undefined|NaN|Infinity)$/.test(str)
+               && !COMMON_NON_TRANSLATABLE.has(str)
+               && !str.includes(".")
             ) {
               const beforeCtx = line.slice(Math.max(0, i - str.length - 40), i);
               const afterCtx = line.slice(i + 1, i + str.length + 40);
@@ -110,9 +118,14 @@ function checkHardcodedStrings() {
               if (/<div|<span|<button|<input|<a\s/i.test(str)) continue;
               if (/padding|font-size|border|border-radius|background|color|var\(--/i.test(str)) continue;
               if (/^span:|^div:|^button:|^input:/i.test(str)) continue;
-              if (/^\\u[0-9a-fA-F]{4}/.test(str)) continue;
-              if (/^&[a-z]+;$/i.test(str)) continue;
-              if (/^\s*[\u25B6\u25BC\u25C0\u25FB\u25A0\u25CF\u25C6\u25B2\u25BE\u25CE★●✓✅⬇⬆💡⏱✖⟲]/.test(str)) continue;
+               if (/^\\u[0-9a-fA-F]{4}/.test(str)) continue;
+               if (/^[0-9a-fA-F]{4}$/.test(str)) continue;
+               if (/^[0-9a-fA-F]{8}$/.test(str)) continue;
+               if (/^&[a-z]+;$/i.test(str)) continue;
+               if (/^\s*[\u25B6\u25BC\u25C0\u25FB\u25A0\u25CF\u25C6\u25B2\u25BE\u25CE★●✓✅⬇⬆💡⏱✖⟲]/u.test(str)) continue;
+               // skip strings inside HTML attribute values (e.g. class="gbtn", id="foo")
+               const charBeforeStr = line[i - str.length - 1];
+               if (charBeforeStr === '"' || charBeforeStr === "'") continue;
 
               const isDomContext =
                 /textContent\s*=/.test(fullCtx) || /innerHTML\s*=/.test(fullCtx) ||

@@ -1,4 +1,4 @@
-window.I18N_DATA = window.I18N_DATA || {};
+window.I18N_DATA = window.I18N_DATA || {"apfs.mac_only":"APFS & Purgeable is only available on macOS"};
 window.I18N_DATA.en = Object.assign(window.I18N_DATA.en || {}, {
   "settings.scan_timeout": "Scan idle timeout (seconds)",
   "settings.scan_timeout_help": "Stop only when no work completes, not after a total scan duration. Default: 120 seconds. 0 disables the timeout; Cancel remains available.",

@@ -14,6 +14,7 @@
  * - Center ripple pulse
  * - Animated numbers with spring easing
  */
+/* eslint-disable no-redeclare */
 class DiagramRenderer {
   constructor(containerId) {
     this.container = document.getElementById(containerId);
@@ -1132,18 +1133,19 @@ class DiagramRenderer {
           if (sb) sb.textContent = window.t("status.copied").replace("{path}", filePath);
         });
         break;
-      case "delete":
-         if (!filePath) break;
-         const t = window.t;
-         const self = this;
-         self._invoke("delete_path", { path: filePath }).then((ok2) => {
-            if (ok2 && ok2.success !== false) {
-              self.files = self.files.filter((f) => f.path !== filePath);
-              self._draw();
-              if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
-            }
-           });
-         break;
+      case "delete": {
+          if (!filePath) break;
+          const t = window.t;
+          const self = this;
+          self._invoke("delete_path", { path: filePath }).then((ok2) => {
+             if (ok2 && ok2.success !== false) {
+               self.files = self.files.filter((f) => f.path !== filePath);
+               self._draw();
+               if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
+             }
+            });
+          break;
+        }
     }
     this.contextMenu.style.display = "none";
   }

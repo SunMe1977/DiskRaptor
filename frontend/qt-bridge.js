@@ -97,7 +97,7 @@
 
     try {
       var parsed = JSON.parse(resultJson);
-      if (parsed && typeof parsed === "object" && parsed.hasOwnProperty("data")) {
+      if (parsed && typeof parsed === "object" && Object.prototype.hasOwnProperty.call(parsed, "data")) {
         call.resolve(parsed.data);
       } else {
         call.resolve(parsed);

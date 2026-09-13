@@ -3,15 +3,16 @@
  * Supports restore and permanent delete with confirmation dialogs.
  */
 class TrashRecovery {
-  constructor() {
-    this._items = [];
-    this._selected = {};
-    this._filter = "";
-    this._type = "all";
-    this._sort = "name";
-    this._shownCount = 200;
-    this._createUI();
-  }
+constructor() {
+     this._items = [];
+     this._selected = {};
+     this._filter = "";
+     this._type = "all";
+     this._sort = "name";
+     this._shownCount = 200;
+     this._cancelled = false;
+     this._createUI();
+   }
 
   _t(key) { return window.t(key); }
 
@@ -66,18 +67,22 @@ class TrashRecovery {
     };
   }
 
-  async open() {
-    this.panel.style.display = "block";
-    document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">' + this._t("trash.loading") + '</div>';
-    try {
-      const items = await window.__TAURI__.invoke("list_trash", {});
-      this._items = items || [];
-      this._selected = {};
-      this._render();
-    } catch(e) {
-      document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--accent-red);">' + this._t("trash.failed") + '</div>';
-    }
-  }
+async open() {
+     this._cancelled = false;
+     this.panel.style.display = "block";
+     document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">' + this._t("trash.loading") + '</div>';
+     try {
+       if (this._cancelled) return;
+       const items = await window.__TAURI__.invoke("list_trash", {});
+       if (this._cancelled) return;
+       this._items = items || [];
+       this._selected = {};
+       this._render();
+     } catch(e) {
+       if (this._cancelled) return;
+       document.getElementById("trash-list").innerHTML = '<div style="padding:20px;text-align:center;color:var(--accent-red);">' + this._t("trash.failed") + '</div>';
+     }
+   }
 
   _visible() {
     let items = this._items.map(function (it, i) { return { item: it, idx: i }; });
@@ -107,7 +112,7 @@ class TrashRecovery {
     const visible = this._visible();
     if (visible.length === 0) {
       list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px;">🗑️ ' + t("trash.empty") + '</div>';
-      if (summary) summary.textContent = this._items.length + " items";
+      if (summary) summary.textContent = this._t("trash.items").replace("{n}", this._items.length);
       return;
     }
     let totalSize = 0;
@@ -119,7 +124,7 @@ class TrashRecovery {
       const checked = this._selected[idx] || false;
       totalSize += item.size || 0;
       const origPath = item.original_path || "";
-      html += '<div class="trash-item" data-idx="' + idx + '" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);transition:background 0.15s;" title="' + (origPath ? "Original: " + trashEscHtml(origPath) : "") + '">';
+      html += '<div class="trash-item" data-idx="' + idx + '" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);transition:background 0.15s;" title="' + (origPath ? this._t("trash.original") + trashEscHtml(origPath) : "") + '">';
       html += '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" data-idx="' + idx + '">';
       html += '<span>' + (item.is_dir ? "📁" : "📄") + '</span>';
       html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + trashEscHtml(item.name || "?") + '</span>';
@@ -160,7 +165,7 @@ class TrashRecovery {
       row.onmouseleave = function() { this.style.background = "transparent"; };
     });
     if (summary) {
-      summary.textContent = visible.length + " shown · " + fmtTrash(totalSize) + (this._items.length !== visible.length ? " · " + this._items.length + " total" : "");
+      summary.textContent = this._t(this._items.length !== visible.length ? "trash.summary_all_total" : "trash.summary_all").replace("{n}", visible.length).replace("{size}", fmtTrash(totalSize)).replace("{total}", this._items.length);
     }
   }
 
@@ -173,7 +178,7 @@ class TrashRecovery {
       if (this._selected[i]) { sel++; selSize += (this._items[Number(i)] || {}).size || 0; }
     }.bind(this));
     if (summary) {
-      summary.textContent = shownCount + " shown · " + fmtTrash(selSize) + " selected (" + sel + ")";
+      summary.textContent = this._t("trash.summary_selected").replace("{n}", shownCount).replace("{size}", fmtTrash(selSize)).replace("{count}", sel);
     }
   }
 
@@ -190,40 +195,42 @@ class TrashRecovery {
     return Object.keys(this._selected).map(Number).filter(function(i) { return !isNaN(i) && this._selected[i]; }.bind(this));
   }
 
-  async _restoreIndices(idxs) {
-    const t = this._t.bind(this);
-    if (idxs.length === 0) { window.alertDialog(t("trash.no_selection")); return; }
-    if (!(await window.confirmDialog(t("trash.restore_confirm").replace("{n}", idxs.length)))) return;
-    const BATCH = 10;
-    let restored = 0, failed = 0;
-    const self = this;
-    for (let start = 0; start < idxs.length; start += BATCH) {
-      const batch = idxs.slice(start, start + BATCH);
-      const results = await Promise.allSettled(batch.map(function (i) {
-        const item = self._items[i];
-        return window.__TAURI__.invoke("restore_trash", {
-          trash_path: item.path,
-          original_path: item.original_path || "",
-        });
-      }));
-      results.forEach(function (r, ri) {
-        const item = self._items[batch[ri]];
-        if (r.status === "fulfilled" && r.value && r.value.restored_to) {
-          restored++;
-          delete self._selected[batch[ri]];
-        } else {
-          failed++;
-          if (item) console.warn("Restore failed:", item.name, r.reason || r.value);
-        }
-      });
-    }
-    if (failed > 0) {
-      window.showToast(restored + "/" + idxs.length + " restored, " + failed + " failed", "warning");
-    } else {
-      window.showToast(restored + "/" + idxs.length + " restored", "success");
-    }
-    await this.open();
-  }
+async _restoreIndices(idxs) {
+     const t = this._t.bind(this);
+     if (idxs.length === 0) { window.alertDialog(t("trash.no_selection")); return; }
+     if (!(await window.confirmDialog(t("trash.restore_confirm").replace("{n}", idxs.length)))) return;
+     const BATCH = 10;
+     let restored = 0, failed = 0;
+     const self = this;
+     for (let start = 0; start < idxs.length; start += BATCH) {
+       if (self._cancelled) return;
+       const batch = idxs.slice(start, start + BATCH);
+       const results = await Promise.allSettled(batch.map(function (i) {
+         const item = self._items[i];
+         return window.__TAURI__.invoke("restore_trash", {
+           trash_path: item.path,
+           original_path: item.original_path || "",
+         });
+       }));
+       results.forEach(function (r, ri) {
+         const item = self._items[batch[ri]];
+         if (r.status === "fulfilled" && r.value && r.value.restored_to) {
+           restored++;
+           delete self._selected[batch[ri]];
+         } else {
+           failed++;
+           if (item) console.warn("Restore failed:", item.name, r.reason || r.value);
+         }
+       });
+     }
+     if (self._cancelled) return;
+     if (failed > 0) {
+       window.showToast(restored + "/" + idxs.length + " restored, " + failed + " failed", "warning");
+     } else {
+       window.showToast(restored + "/" + idxs.length + " restored", "success");
+     }
+     await this.open();
+   }
 
   async _restoreSelected() { await this._restoreIndices(this._selectedIndices()); }
 
@@ -234,20 +241,23 @@ class TrashRecovery {
     await this._restoreIndices(all);
   }
 
-  async _deleteSelected() {
-    const t = this._t.bind(this);
-    const idxs = this._selectedIndices();
-     if (idxs.length === 0) { window.alertDialog(t("trash.no_selection")); return; }
-     for (let ci = 0; ci < idxs.length; ci++) {
-       const item = this._items[idxs[ci]];
-       if (!item) continue;
-       try {
-         await window.app.deletePermanent(item.path);
-        delete this._selected[idxs[ci]];
-      } catch(e) { window.alertDialog(t("trash.delete_failed").replace("{name}", item.name || "?") + "\n" + e); }
-    }
-    await this.open();
-  }
+async _deleteSelected() {
+     const t = this._t.bind(this);
+     const idxs = this._selectedIndices();
+      if (idxs.length === 0) { window.alertDialog(t("trash.no_selection")); return; }
+      if (this._cancelled) return;
+      for (let ci = 0; ci < idxs.length; ci++) {
+        if (this._cancelled) return;
+        const item = this._items[idxs[ci]];
+        if (!item) continue;
+        try {
+          await window.app.deletePermanent(item.path);
+         delete this._selected[idxs[ci]];
+       } catch(e) { window.alertDialog(t("trash.delete_failed").replace("{name}", item.name || "?") + "\n" + e); }
+     }
+     if (this._cancelled) return;
+     await this.open();
+   }
 }
 
 function trashEscHtml(s) {

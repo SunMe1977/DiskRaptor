@@ -13,6 +13,7 @@
  *     }
  *   });
  */
+/* eslint-disable no-redeclare */
 class VirtualScroll {
   constructor(container, options = {}) {
     this.container = container;

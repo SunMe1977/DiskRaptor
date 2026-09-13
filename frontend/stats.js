@@ -1,6 +1,7 @@
 /**
  * StatsPanel — Renders scan summary statistics.
  */
+/* eslint-disable no-redeclare */
 class StatsPanel {
   constructor() {
     this.filesEl = document.getElementById("stat-files");

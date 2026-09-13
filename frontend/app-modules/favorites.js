@@ -42,7 +42,7 @@ window.app.initFavorites = function (scanPath, btnFav) {
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;");
+        .replace(/"/g, "&quot;");
     }
 
     async function loadFavorites() {

@@ -75,7 +75,7 @@
   /** Planet color based on type and index — each planet gets a unique shade */
   function getFileTypeColor(type, index) {
     const hue = ((index + 1) * 0.618033988749895) % 1.0;
-    let sat = 0.65, lit = 0.5;
+    let sat, lit;
     switch (type) {
       case "code": sat = 0.7; lit = 0.55; break;
       case "docs": sat = 0.5; lit = 0.6; break;

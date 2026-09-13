@@ -25,6 +25,7 @@ window.app.initSettings = function (config) {
         // Wait for translations to be ready (OS language resolved) so the tip
         // overlay never flashes in English.
         if (window.I18N && window.I18N.ready) await window.I18N.ready;
+      // eslint-disable-next-line no-empty
       } catch (_) {}
       try {
         const s = await window.__TAURI__.invoke("load_settings", {});

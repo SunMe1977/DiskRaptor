@@ -2,6 +2,7 @@
  * TreeView — Virtual tree view for the directory hierarchy.
  * With right-click context menu matching the diagram menu.
  */
+/* eslint-disable no-redeclare */
 class TreeView {
   /**
    * Create a virtual tree view for the directory hierarchy.
@@ -392,10 +393,8 @@ class TreeView {
     if (!node) return;
     const path = this._buildPath(arenaIdx);
      if (!path) return;
-     const name = node.name || "?";
-     const isDir = node.node_type === "Directory" || node.node_type === 0;
-     const t = window.t;
-     const sizeTxt = this._formatSize(node.size);
+const name = node.name || "?";
+      const t = window.t;
       const res = await window.app.deletePath(path);
       try {
       if (res && res.success === false) {
@@ -771,7 +770,7 @@ class TreeView {
           const na = this.loader.getNode(a);
           const nb = this.loader.getNode(b);
           if (!na || !nb) return 0;
-          let cmp = 0;
+          let cmp;
           if (this.sortBy === "name") {
             cmp = (na.name || "").localeCompare(nb.name || "");
           } else if (this.sortBy === "pct") {
@@ -988,12 +987,7 @@ class TreeView {
       const p = this._buildPath(idx);
       if (p) paths.push(p);
     }
-    const t = window.t;
-    let totalSize = 0;
-    for (const idx of idxs) {
-      const n = this.loader.getNode(idx);
-      if (n) totalSize += n.size || 0;
-    }
+const t = window.t;
      let ok = 0;
      for (const p of paths) {
        try {
@@ -1038,7 +1032,7 @@ class TreeView {
         {
           label: t("action.undo") || "Undo",
           onClick: async function () {
-            let ok = 0;
+let ok = 0;
             for (const r of toRestore) {
               try {
                 const res = await window.__TAURI__.invoke("restore_trash", {
@@ -1188,7 +1182,7 @@ class TreeView {
       "%;background:" +
       pctBg +
       '"></span></span>' +
-      '<span class="node-name">' + window.escHtml(node.name || "(root)") + "</span>" +
+      '<span class="node-name">' + window.escHtml(node.name || window.t("tree.root")) + "</span>" +
       '<span class="node-pct">' + pct.toFixed(1) + "%</span>" +
       '<span class="node-size">' + window.escHtml(this._formatSize(node.size)) + "</span>" +
       '<span class="node-files">' + (isDir ? (node.file_count || 0).toLocaleString() : "\u2014") + "</span>" +
@@ -1245,7 +1239,7 @@ class TreeView {
       });
       return;
     }
-    document.getElementById("sel-name").textContent = node.name || "(root)";
+    document.getElementById("sel-name").textContent = node.name || window.t("tree.root");
     document.getElementById("sel-size").textContent = this._formatSize(
       node.size,
     );

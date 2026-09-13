@@ -231,14 +231,14 @@
         el.className = "galaxy-perf-monitor";
         el.style.cssText =
           "position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.5);font-size:11px;font-family:monospace;pointer-events:none;z-index:100";
-        el.textContent = "FPS: -- | Objects: --";
+        el.textContent = window.t("galaxy.perf_monitor").replace("{fps}", "--").replace("{count}", "--");
         if (gv && gv.container) gv.container.appendChild(el);
         pluginApi._perfEl = el;
       },
       hooks: {
         afterRender: (fps, objectCount) => {
           const el = PluginAPI._perfEl;
-          if (el) el.textContent = `FPS: ${fps || "--"} | Objects: ${objectCount || "--"}`;
+          if (el) el.textContent = window.t("galaxy.perf_monitor").replace("{fps}", fps || "--").replace("{count}", objectCount || "--");
         },
       },
       dispose: (gv, pluginApi) => {

@@ -45,12 +45,21 @@ const galaxy = [
 ];
 
 const files = walk(SRC);
-for (const src of files) {
-  const rel = path.relative(SRC, src);
-  const dest = path.join(DST, rel);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
+const jsFiles = files.filter((src) => {
   const ext = path.extname(src).toLowerCase();
-  if (ext === ".js" || ext === ".mjs") {
+  return ext === ".js" || ext === ".mjs";
+});
+const otherFiles = files.filter((src) => {
+  const ext = path.extname(src).toLowerCase();
+  return ext !== ".js" && ext !== ".mjs";
+});
+
+// Parallel minification of all JS files
+await Promise.all(
+  jsFiles.map(async (src) => {
+    const rel = path.relative(SRC, src);
+    const dest = path.join(DST, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
     try {
       await esbuild.build({
         entryPoints: [src],
@@ -60,13 +69,20 @@ for (const src of files) {
         logLevel: "silent",
       });
     } catch (e) {
-      // A file that cannot be minified would otherwise silently ship verbatim
-      // (and the build would still "pass" in CI). Fail hard instead.
       console.error("[build-frontend] minify FAILED for", rel);
       console.error(String((e && e.message) || e));
       process.exit(1);
     }
-  } else if (ext === ".css") {
+  }),
+);
+
+// Copy non-JS files (CSS, HTML, etc.)
+for (const src of otherFiles) {
+  const rel = path.relative(SRC, src);
+  const dest = path.join(DST, rel);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const ext = path.extname(src).toLowerCase();
+  if (ext === ".css") {
     try {
       const r = await esbuild.transform(fs.readFileSync(src, "utf8"), {
         loader: "css",

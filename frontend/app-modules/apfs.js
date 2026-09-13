@@ -263,10 +263,10 @@ function openApfsPanel() {
       window.__TAURI__
         .invoke("set_apfs_schedule", { schedule: schedule })
         .then(function () {
-          if (statusEl) statusEl.textContent = "Saved";
+          if (statusEl) statusEl.textContent = window.t("status.saved");
         })
         .catch(function (e) {
-          if (statusEl) statusEl.textContent = "Error: " + (e && e.message ? e.message : e);
+          if (statusEl) statusEl.textContent = window.t("status.error_prefix") + (e && e.message ? e.message : e);
         });
     }
 

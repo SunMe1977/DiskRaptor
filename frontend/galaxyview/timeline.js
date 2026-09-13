@@ -126,7 +126,7 @@
 
     _onTimelineChange() {
       const pos = this.timelinePosition;
-      let label = "today";
+      let label;
       if (pos < 0.2) label = "today";
       else if (pos < 0.5) label = "7days";
       else if (pos < 0.8) label = "30days";

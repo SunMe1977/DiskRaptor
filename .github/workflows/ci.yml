@@ -87,11 +87,9 @@ jobs:
           workspaces: src-tauri
       - name: Install JS dependencies
         run: npm ci --no-audit --no-fund
-      - name: Rust tests (Windows/macOS paths)
-        if: runner.os != 'Linux'
+      - name: Rust tests (all platforms)
         run: cargo test --manifest-path src-tauri/Cargo.toml
-      - name: Rust clippy (Windows/macOS paths)
-        if: runner.os != 'Linux'
+      - name: Rust clippy (all platforms)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Build minified frontend (frontend-dist)
         run: node scripts/build-frontend.mjs
