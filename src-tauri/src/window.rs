@@ -91,3 +91,15 @@ pub fn setup_window(app: &AppHandle) {
         }
     }
 }
+
+/// Bring the main window back on screen (used by the Window menu, the
+/// tray icon and the macOS Dock click). Required for Mac App Store
+/// Guideline 4 (Design): closing the main window hides it, so there must
+/// always be a discoverable way to reopen it.
+pub fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
+}

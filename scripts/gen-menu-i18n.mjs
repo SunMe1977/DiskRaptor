@@ -21,7 +21,7 @@ const MENU_KEYS = [
   "menu.empty_folders", "menu.cleanup_downloads", "smart.title", "menu.browser_tools",
   "menu.apfs_snapshots", "tools.find_duplicates", "menu.export_html",
   "menu.preferences", "menu.clear_scan", "tools.empty_trash", "menu.exit",
-  "menu.tools", "menu.window", "menu.check_updates", "menu.help",
+  "menu.tools", "menu.window", "menu.show_main_window", "menu.check_updates", "menu.help",
   "menu.tray_open", "menu.tray_last_scan",
 ];
 
@@ -35,7 +35,9 @@ function loadLocale(code) {
 const codes = [];
 const tables = {};
 for (const f of fs.readdirSync(I18N_DIR).filter((f) => f.endsWith(".js"))) {
+  if (f === "ui-extra.js") continue;
   const code = f.slice(0, -3);
+  if (!/^[a-z]{2}(-[a-z]{2})?$|^[a-z]{2,3}$/i.test(code)) continue;
   codes.push(code);
   tables[code] = loadLocale(code);
 }

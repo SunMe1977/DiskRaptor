@@ -24,20 +24,15 @@ pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray_open" => {
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.unminimize();
-                    let _ = win.set_focus();
-                }
+                crate::window::show_main_window(app);
             }
             "tray_lastscan" => {
                 let st = app.state::<AppState>();
                 let path = st.last_scan_path.lock().clone();
                 if let Some(p) = path {
                     open_in_explorer(&p);
-                } else if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.set_focus();
+                } else {
+                    crate::window::show_main_window(app);
                 }
             }
             "tray_exit" => app.exit(0),

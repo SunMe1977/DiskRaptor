@@ -74,7 +74,7 @@ fn main() {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_log::Builder::default().build())
@@ -111,8 +111,19 @@ fn main() {
         .menu(menu::build_native_menu)
         .on_menu_event(|app, event| menu::handle_menu_event(app, event.id().as_ref()))
         .invoke_handler(ipc::register_commands())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(|app_handle, event| {
+        // macOS: clicking the Dock icon while the main window is hidden
+        // (close hides to tray) must bring the window back. Required for
+        // Mac App Store Guideline 4 (Design).
+        #[cfg(target_os = "macos")]
+        if matches!(event, tauri::RunEvent::Reopen { .. }) {
+            crate::window::show_main_window(app_handle);
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = (app_handle, event);
+    });
 }
 
 

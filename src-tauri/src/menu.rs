@@ -62,7 +62,10 @@ fn current_strings<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> HashMap<Stri
 pub fn build_native_menu<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+    use tauri::menu::{
+        IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
+        WINDOW_SUBMENU_ID,
+    };
 
     let s = current_strings(app);
 
@@ -171,13 +174,29 @@ pub fn build_native_menu<R: tauri::Runtime>(
         ],
     )?;
 
-    let window_submenu = Submenu::with_items(
+    // Window menu: use the native macOS Window submenu id so the OS treats
+    // it as the standard Window menu. The first item reopens the main
+    // window after it was closed (close hides to tray, see main.rs), which
+    // is required by Mac App Store Guideline 4 (Design).
+    let show_main = MenuItem::with_id(
         app,
+        "show_main_window",
+        tr(&s, "menu.show_main_window", "Show Main Window"),
+        true,
+        Some("CmdOrCtrl+0"),
+    )?;
+    let window_submenu = Submenu::with_id_and_items(
+        app,
+        WINDOW_SUBMENU_ID,
         tr(&s, "menu.window", "Window"),
         true,
         &[
+            &show_main as &dyn IsMenuItem<R>,
+            &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::minimize(app, None)? as &dyn IsMenuItem<R>,
             &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::bring_all_to_front(app, None)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, None)?,
         ],
@@ -186,8 +205,9 @@ pub fn build_native_menu<R: tauri::Runtime>(
     let check_updates =
         MenuItem::with_id(app, "check_updates", tr(&s, "menu.check_updates", "Check for Updates…"), true, None::<&str>)?;
     let help_about = MenuItem::with_id(app, "about_help", tr(&s, "about.title", "About DiskRaptor"), true, Some("CmdOrCtrl+I"))?;
-    let help_submenu = Submenu::with_items(
+    let help_submenu = Submenu::with_id_and_items(
         app,
+        HELP_SUBMENU_ID,
         tr(&s, "menu.help", "Help"),
         true,
         &[
@@ -232,6 +252,9 @@ pub fn handle_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str)
     };
     let click = |sel: &str| run(&format!("var e=document.querySelector(\"{sel}\");if(e)e.click();"));
     match id {
+        "show_main_window" => {
+            crate::window::show_main_window(app);
+        }
         "view_pie" => click(".diagram-mode[data-mode='pie']"),
         "view_galaxy" => click(".diagram-mode[data-mode='galaxy']"),
         "view_treemap" => click(".diagram-mode[data-mode='treemap']"),
