@@ -2,7 +2,8 @@
 //! Run with: cargo bench --features ffi
 #![cfg(feature = "ffi")]
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 use diskraptor_scanner::scanner::walker::{ScanConfig, ScanProgressCallback, scan_directory_with_progress};
 
 fn bench_scan_empty(c: &mut Criterion) {
