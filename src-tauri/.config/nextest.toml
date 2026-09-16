@@ -1,0 +1,10 @@
+# Nextest configuration (workspace root is src-tauri/, so the config must live
+# here — a nextest.toml at the repo root is never loaded). The CI `rust` job
+# runs `cargo nextest run --profile ci`.
+[profile.ci]
+# Retry flaky tests (CDP-adjacent timing, filesystem races).
+retries = 2
+# Kill a hung test binary instead of hanging CI.
+test-timeout = { period = "60s", terminate-after = 5 }
+# Show output for slow tests.
+slow-timeout = { period = "30s", terminate-after = 10 }

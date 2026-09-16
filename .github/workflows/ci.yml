@@ -81,7 +81,7 @@ jobs:
       - name: Version consistency
         run: node scripts/check-version.mjs
       - name: Frontend perf budget
-        run: node scripts/build-frontend.mjs && node scripts/check-budget.mjs
+        run: npm ci --no-audit --no-fund && node scripts/build-frontend.mjs && node scripts/check-budget.mjs
       - name: IPC contract self-test
         run: node tests/contract_self_test.mjs
       - name: i18n hardcoded string audit
