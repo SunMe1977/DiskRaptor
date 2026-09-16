@@ -94,6 +94,6 @@
     "esbuild": "^0.28.2",
     "eslint": "^10.10.0",
     "globals": "^17.12.0",
-    "playwright": "^1.62.0"
+    "playwright": "^1.63.0"
   }
 }
