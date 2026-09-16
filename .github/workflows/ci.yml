@@ -29,15 +29,40 @@ jobs:
         with:
           toolchain: stable
           cache: false
+      # Shared compilation cache across jobs/runs (big win: the 3-OS matrix
+      # below reuses the dependency build instead of recompiling everything).
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
       - name: Install system dependencies
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libglib2.0-dev libwebkit2gtk-4.1-dev librsvg2-dev pkg-config
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
       - run: cargo check --manifest-path src-tauri/Cargo.toml
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
       - run: cargo check --manifest-path src-tauri/Cargo.toml --features test-server
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+      # The FFI module (scanner_api) and benches/examples are feature-gated;
+      # lint them too so cfg(ffi) code can't rot silently.
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features ffi -- -D warnings
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
 
   js:
     runs-on: ubuntu-latest
@@ -55,6 +80,8 @@ jobs:
       - run: for f in scripts/*.mjs; do node --check "$f"; done
       - name: Version consistency
         run: node scripts/check-version.mjs
+      - name: Frontend perf budget
+        run: node scripts/build-frontend.mjs && node scripts/check-budget.mjs
       - name: IPC contract self-test
         run: node tests/contract_self_test.mjs
       - name: i18n hardcoded string audit
@@ -88,6 +115,7 @@ jobs:
         with:
           toolchain: stable
           cache: false
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -103,14 +131,24 @@ jobs:
         run: |
           brew install pkg-config
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
-      - name: Rust tests (all platforms)
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-      - name: Rust clippy (all platforms)
+      # NOTE: Rust unit tests + clippy run once on ubuntu in the `rust` job
+      # (cargo nextest, sccache-backed). This matrix validates the release
+      # build and the UI suite on each OS — it intentionally does not repeat
+      # `cargo test` per platform. One exception: Windows-only clippy, so
+      # `cfg(windows)` code (unreachable on ubuntu) stays lint-clean.
+      - name: Clippy (Windows-only code)
+        if: runner.os == 'Windows'
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Build minified frontend (frontend-dist)
         run: node scripts/build-frontend.mjs
       - name: Build Tauri app (test-server)
         shell: bash
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: cargo build --release --manifest-path src-tauri/Cargo.toml --features test-server
       - name: Install built app
         shell: bash

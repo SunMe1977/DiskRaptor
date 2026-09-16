@@ -104,7 +104,12 @@ fn run_watchdog(
     progress_rx: std::sync::mpsc::Receiver<(u64, u64, u64, String)>,
 ) -> Option<Result<scanner::walker::ScanResult>> {
     let activity = config.activity.clone();
-    let cancel_flag = config.cancelled.clone().unwrap();
+    // A missing cancel flag must not panic the watchdog thread: fall back to
+    // a fresh (never-cancelled) flag so the scan still runs to completion.
+    let cancel_flag = config
+        .cancelled
+        .clone()
+        .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
     {
         let s = result_handle.state::<AppState>();
         *s.scan.cancel_flag.lock() = Some(cancel_flag.clone());
@@ -304,8 +309,7 @@ pub(crate) fn scan_progress_data(state: &AppState) -> serde_json::Value {
     let is_running = state.scan.running.load(Ordering::Acquire);
     let rg = state.scan.result.lock();
     let has_result = rg.is_some();
-    let (files, dirs, bytes) = if has_result {
-        let r = rg.as_ref().unwrap();
+    let (files, dirs, bytes) = if let Some(r) = rg.as_ref() {
         (r.stats.total_files, r.stats.total_dirs, r.stats.total_size)
     } else {
         (state.scan.files_found.load(Ordering::Relaxed), state.scan.dirs_found.load(Ordering::Relaxed), state.scan.bytes_found.load(Ordering::Relaxed))

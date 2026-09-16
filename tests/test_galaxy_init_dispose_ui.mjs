@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
 
 runTest("DiskRaptor Galaxy Init Dispose Test", 9275, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);

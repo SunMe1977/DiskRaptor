@@ -130,7 +130,10 @@ fn read_dir(
             };
             guard = Some(FindHandleGuard(handle));
         } else {
-            let h = HANDLE(guard.as_ref().unwrap().0.0);
+            let Some(g) = guard.as_ref() else {
+                return Err(std::io::Error::other("directory enumeration handle missing"));
+            };
+            let h = HANDLE(g.0.0);
             if !unsafe { FindNextFileW(h, &mut find_data) }.as_bool() {
                 // GetLastError must be captured immediately, before any other calls.
                 let code = unsafe { GetLastError() };

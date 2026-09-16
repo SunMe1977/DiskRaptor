@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, sleep, waitForOverlay, setValue } from "./test_shared.mjs";
 
 runTest("DiskRaptor Follow Symlinks Toggle Test", 9272, async (cdp, scanPath) => {
   const chkFollow = await jsExpr(cdp, `document.getElementById('chk-follow-symlinks') ? 'found' : 'not-found'`);

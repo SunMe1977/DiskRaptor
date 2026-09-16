@@ -9,9 +9,8 @@ import * as path from "path";
 import * as fs from "fs";
 import * as http from "http";
 
-const CDP_PORT = 9237;
-const SCAN_PATH = "/tmp";
-const DIST_DIR = path.resolve("dist");
+    const CDP_PORT = 9237;
+    const DIST_DIR = path.resolve("dist");
 const BIN_PATH = path.join(DIST_DIR, "DiskRaptor");
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -19,12 +18,12 @@ function cdpFetch(url) { return new Promise((resolve, reject) => { http.get(url,
 async function connectCDP(wsUrl) {
   const ws = new WebSocket(wsUrl);
   const pending = new Map(); let msgId = 0;
-  ws.on("message", (raw) => { try { const m = JSON.parse(raw.toString()); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); } } catch {} });
+  ws.on("message", (raw) => { try { const m = JSON.parse(raw.toString()); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); } } catch { /* best-effort: ignore */ } });
   await new Promise((r, f) => { ws.on("open", r); ws.on("error", f); setTimeout(() => f(new Error("WS timeout")), 10000); });
   return { send(method, params = {}) { return new Promise((resolve, reject) => { const id = ++msgId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); setTimeout(() => reject(new Error(`CDP timeout: ${method}`)), 60000); }); }, close() { ws.close(); } };
 }
 function cdpVal(r) { return r?.result?.result?.value; }
-function killAll() { try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch {} try { execSync("pkill -9 QtWebEngineProcess 2>/dev/null", { stdio: "ignore" }); } catch {} }
+function killAll() { try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ } try { execSync("pkill -9 QtWebEngineProcess 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ } }
 async function jsExpr(cdp, expr) { const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }); return cdpVal(r); }
 
 async function main() {
@@ -43,7 +42,7 @@ async function main() {
   let wsUrl = null;
   for (let i = 0; i < 60; i++) {
     await sleep(500);
-    try { const pages = await cdpFetch(`http://127.0.0.1:${CDP_PORT}/json/list`); if (Array.isArray(pages) && pages.length > 0 && pages[0].webSocketDebuggerUrl) { wsUrl = pages[0].webSocketDebuggerUrl; break; } } catch {}
+    try { const pages = await cdpFetch(`http://127.0.0.1:${CDP_PORT}/json/list`); if (Array.isArray(pages) && pages.length > 0 && pages[0].webSocketDebuggerUrl) { wsUrl = pages[0].webSocketDebuggerUrl; break; } } catch { /* best-effort: ignore */ }
   }
   if (!wsUrl) throw new Error("Could not find page WebSocket URL");
   console.log(`✓ Page WS ready`);

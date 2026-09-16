@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, clickById, sleep } from "./test_shared.mjs";
+import {runTest, jsExpr, jsInvoke, assert, clickById, sleep, setValue} from "./test_shared.mjs";
 
 runTest("DiskRaptor Error Handling Test", 9239, async (cdp) => {
   await setValue(cdp, "scan-path", "/nonexistent/path/that/does/not/exist/12345");

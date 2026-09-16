@@ -26,7 +26,7 @@ async function connectCDP(wsUrl) {
     try {
       const m = JSON.parse(raw.toString());
       if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   });
   await new Promise((r, f) => { ws.on("open", r); ws.on("error", f); setTimeout(() => f(new Error("WS timeout")), 10000); });
   return {
@@ -47,16 +47,12 @@ async function jsExpr(cdp, expr) {
   return r?.result?.result?.value;
 }
 
-async function getText(cdp, selector) {
-  return await jsExpr(cdp, `document.querySelector('${selector}')?.textContent || ''`);
-}
-
 async function click(cdp, selector) {
   return await jsExpr(cdp, `document.querySelector('${selector}')?.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))`);
 }
 
 function killApp() {
-  try { process.kill(appPID); } catch {}
+  try { process.kill(appPID); } catch { /* best-effort: ignore */ }
 }
 
 let appPID = null;
@@ -68,7 +64,7 @@ async function main() {
   console.log("\n=== DiskRaptor macOS UI Test ===\n");
 
   // Kill any existing instance
-  try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch {}
+  try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
 
   // Launch app with CDP
   console.log("  Launching app...");
@@ -79,7 +75,7 @@ async function main() {
     try {
       const wsUrl = await cdpFetch(`http://127.0.0.1:${CDP_PORT}/json`);
       if (wsUrl && wsUrl[0]?.webSocketDebuggerUrl) break;
-    } catch {}
+    } catch { /* best-effort: ignore */ }
     await sleep(1000);
   }
 

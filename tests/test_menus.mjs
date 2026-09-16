@@ -26,7 +26,7 @@ async function connectCDP(wsUrl) {
     try {
       const m = JSON.parse(raw.toString());
       if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   });
   await new Promise((r, f) => { ws.on("open", r); ws.on("error", f); setTimeout(() => f(new Error("WS timeout")), 10000); });
   return {
@@ -43,8 +43,8 @@ async function connectCDP(wsUrl) {
 }
 function cdpVal(r) { return r?.result?.result?.value; }
 function killAll() {
-  try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore", shell: true }); } catch {}
-  try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore", shell: true }); } catch {}
+  try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
+  try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
 }
 async function jsExpr(cdp, expr) {
   const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true });
@@ -91,7 +91,7 @@ async function main() {
     try {
       const pages = await cdpFetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
       if (Array.isArray(pages) && pages.length > 0 && pages[0].webSocketDebuggerUrl) { wsUrl = pages[0].webSocketDebuggerUrl; break; }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!wsUrl) throw new Error("CDP not available");
   const cdp = await connectCDP(wsUrl);

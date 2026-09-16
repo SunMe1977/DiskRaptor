@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, sleep, waitForOverlay, waitForScanComplete, waitForStatsPopulated, setValue } from "./test_shared.mjs";
 
 runTest("DiskRaptor Status Bar Updates Test", 9257, async (cdp, scanPath) => {
   const initialStatus = await jsExpr(cdp, `document.querySelector('.status-bar')?.textContent?.trim() || ''`);

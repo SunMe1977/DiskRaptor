@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady } from "./test_shared.mjs";
 
 runTest("DiskRaptor Scan Test", 9200, async (cdp, scanPath) => {
   const homeDir = await jsExpr(cdp, `typeof window.__TAURI__ !== 'undefined' ? 'bridge-ok' : 'bridge-missing'`);

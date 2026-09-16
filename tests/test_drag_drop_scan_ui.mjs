@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, sleep, waitForOverlay } from "./test_shared.mjs";
 
 runTest("DiskRaptor Drag Drop Scan Path Test", 9271, async (cdp, scanPath) => {
   const scanPathInput = await jsExpr(cdp, `document.getElementById('scan-path') ? 'found' : 'not-found'`);
@@ -31,8 +31,8 @@ runTest("DiskRaptor Drag Drop Scan Path Test", 9271, async (cdp, scanPath) => {
   const afterDrop = await jsExpr(cdp, `document.getElementById('scan-path')?.value || ''`);
   assert("Scan path after drop", true, `path="${afterDrop.slice(0, 60)}"`);
 
-  const scanBtn = document.getElementById("btn-scan");
-  if (scanBtn && !scanBtn.disabled) {
+  const scanBtnEnabled = await jsExpr(cdp, `!!document.getElementById("btn-scan") && !document.getElementById("btn-scan").disabled`);
+  if (scanBtnEnabled) {
     await clickById(cdp, "btn-scan", 200);
     const overlay = await waitForOverlay(cdp, 5000);
     assert("Scan starts after path change", overlay);

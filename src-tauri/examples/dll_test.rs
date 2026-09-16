@@ -92,7 +92,7 @@ fn main() {
             let elapsed = prog["elapsed_secs"].as_u64().unwrap_or(0);
 
             if i % 10 == 0 || !running || phase == 3 {
-                let rate = if elapsed > 0 { files / elapsed } else { 0 };
+                let rate = files.checked_div(elapsed).unwrap_or(0);
                 println!(
                     "  [{:3}] files={:>9} dirs={:>6} running={} phase={} elapsed={}s rate={}/s",
                     i, files, dir_count, running, phase, elapsed, rate

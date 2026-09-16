@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady } from "./test_shared.mjs";
 
 runTest("DiskRaptor Chunk Loading Progress Test", 9277, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);

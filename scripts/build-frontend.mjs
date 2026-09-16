@@ -45,13 +45,32 @@ const galaxy = [
 ];
 
 const files = walk(SRC);
+
+// Core bundle: the classic <script defer> files are concatenated in index.html
+// tag order and minified as ONE unit (cross-file name mangling), then loaded
+// via a single tag. Semantics match sequential deferred scripts exactly
+// (same order, same shared global scope); galaxyview stays separate because
+// it is lazy-loaded on demand at runtime.
+const indexHtml = fs.readFileSync(path.join(SRC, "index.html"), "utf8");
+const bundledRels = [...indexHtml.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)]
+  .map((m) => m[1])
+  .filter((s) => !s.startsWith("galaxyview/"));
+if (bundledRels.length === 0) {
+  console.error("[build-frontend] no deferred scripts found in index.html");
+  process.exit(1);
+}
+const bundledSet = new Set(bundledRels.map((r) => path.join(SRC, ...r.split("/"))));
+
 const jsFiles = files.filter((src) => {
   const ext = path.extname(src).toLowerCase();
-  return ext === ".js" || ext === ".mjs";
+  if (ext !== ".js" && ext !== ".mjs") return false;
+  // Bundled core files ship only inside core.bundle.js (keeps dist lean);
+  // galaxyview individuals are kept as the lazy-loader fallback.
+  return !bundledSet.has(src);
 });
 const otherFiles = files.filter((src) => {
   const ext = path.extname(src).toLowerCase();
-  return ext !== ".js" && ext !== ".mjs";
+  return ext !== ".js" && ext !== ".mjs" && path.basename(src) !== "index.html";
 });
 
 // Parallel minification of all JS files
@@ -77,8 +96,14 @@ await Promise.all(
 );
 
 // Copy non-JS files (CSS, HTML, etc.)
+// Source-only assets (e.g. the full-res logo) are excluded from dist — the
+// About dialog uses the pre-scaled logo6_about.png (256px) instead.
+const DIST_EXCLUDE = new Set([
+  "images/logo6_original.png",
+]);
 for (const src of otherFiles) {
   const rel = path.relative(SRC, src);
+  if (DIST_EXCLUDE.has(rel.split(path.sep).join("/"))) continue;
   const dest = path.join(DST, rel);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const ext = path.extname(src).toLowerCase();
@@ -110,6 +135,30 @@ try {
   console.log("[build-frontend] galaxy bundle written");
 } catch (e) {
   console.error("[build-frontend] galaxy bundle FAILED:", (e && e.message) || e);
+  process.exit(1);
+}
+
+// Core bundle: concat in tag order, minify once, rewrite dist index.html to
+// a single script tag.
+try {
+  const parts = bundledRels.map((r) => {
+    const p = path.join(SRC, ...r.split("/"));
+    if (!fs.existsSync(p)) throw new Error(`script tag references missing file: ${r}`);
+    return fs.readFileSync(p, "utf8");
+  });
+  const r = await esbuild.transform(parts.join("\n;\n"), { minify: true });
+  fs.writeFileSync(path.join(DST, "core.bundle.js"), r.code);
+  const rewritten = indexHtml.replace(
+    /([ \t]*<script\s+defer\s+src="[^"]+"\s*><\/script>\r?\n)+/,
+    '        <script defer src="core.bundle.js"></script>\n',
+  );
+  if (rewritten === indexHtml) {
+    throw new Error("could not locate deferred script block in index.html");
+  }
+  fs.writeFileSync(path.join(DST, "index.html"), rewritten);
+  console.log(`[build-frontend] core bundle written (${bundledRels.length} files)`);
+} catch (e) {
+  console.error("[build-frontend] core bundle FAILED:", (e && e.message) || e);
   process.exit(1);
 }
 

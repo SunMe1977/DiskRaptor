@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById } from "./test_shared.mjs";
 
 runTest("DiskRaptor Theme Flow Test", 9236, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);

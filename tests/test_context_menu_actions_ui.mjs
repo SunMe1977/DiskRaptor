@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady } from "./test_shared.mjs";
 
 runTest("DiskRaptor Context Menu Actions Test", 9268, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);

@@ -492,14 +492,16 @@ pub(crate) fn hicon_to_rgba(hicon: windows::Win32::UI::WindowsAndMessaging::HICO
     // fully initialized `BITMAPINFO`; `bits` is a valid pointer-to-ptr; `HANDLE::default()`
     // (NULL) means no file mapping.
     let hbitmap = unsafe { CreateDIBSection(dc, &bmi, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0) };
-    if hbitmap.is_err() || bits.is_null() {
-        unsafe {
-            let _ = DeleteDC(dc);
-            let _ = DestroyIcon(hicon);
+    let hbitmap = match hbitmap {
+        Ok(h) if !bits.is_null() => h,
+        _ => {
+            unsafe {
+                let _ = DeleteDC(dc);
+                let _ = DestroyIcon(hicon);
+            }
+            return None;
         }
-        return None;
-    }
-    let hbitmap = hbitmap.unwrap();
+    };
     // SAFETY: `dc` is a valid DC with a DIB selected; `hbitmap` is a valid
     // HBITMAP from `CreateDIBSection`. The previous bitmap (if any) is saved in
     // `_old` and will be restored implicitly when the DC is destroyed.

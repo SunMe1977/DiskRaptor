@@ -75,4 +75,19 @@ export default [
       "no-undef": "warn",
     },
   },
+  {
+    // Playwright browser-context tests: page.evaluate() callbacks execute in
+    // the page, so window/document/localStorage are genuinely defined there.
+    files: ["tests/test_*_mock.mjs", "tests/*.spec.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: { ...globals.node, ...globals.browser },
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      ...NOISY_WARN_RULES,
+      "no-undef": "warn",
+    },
+  },
 ];

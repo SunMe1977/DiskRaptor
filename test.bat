@@ -39,7 +39,8 @@ if !errorlevel! neq 0 exit /b !errorlevel!
 goto :eof
 
 :quick
-node tests/run_tests.mjs --quick
+shift
+node tests/run_tests.mjs --quick --parallel 3 %*
 exit /b
 
 :list

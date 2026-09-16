@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, jsInvoke, assert, clickById, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Settings Persistence Test", 9235, async (cdp) => {
   const settingsBtn = await jsExpr(cdp, `document.querySelector('[data-action="settings"], #btn-settings, #settings-overlay') ? 'found' : 'not-found'`);

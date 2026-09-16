@@ -43,7 +43,7 @@ async function connectCDP(wsUrl) {
         pending.get(m.id).resolve(m);
         pending.delete(m.id);
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   });
   await new Promise((r, f) => {
     ws.on("open", r);
@@ -68,8 +68,8 @@ function cdpVal(r) {
 }
 
 function killAll() {
-  try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch {}
-  try { execSync("pkill -9 QtWebEngineProcess 2>/dev/null", { stdio: "ignore" }); } catch {}
+  try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
+  try { execSync("pkill -9 QtWebEngineProcess 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
 }
 
 async function jsExpr(cdp, expr) {
@@ -114,7 +114,7 @@ async function main() {
         wsUrl = pages[0].webSocketDebuggerUrl;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!wsUrl) throw new Error("Could not find page WebSocket URL");
   console.log(`✓ Page WS ready (${Date.now() - startTime}ms)`);
@@ -167,7 +167,7 @@ async function main() {
       const files = parseInt(m.files) || 0;
       if (files > maxFiles) maxFiles = files;
       if (!m.ov && maxFiles > 0) { completed = true; break; }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   assert("Scan completed", completed, `maxFiles=${maxFiles}`);
   await sleep(2000);

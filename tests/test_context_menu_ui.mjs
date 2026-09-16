@@ -11,11 +11,8 @@ runTest("DiskRaptor Context Menu Test", 9206, async (cdp, scanPath) => {
   const hasTreeNode = treeReady ? 'found' : await jsExpr(cdp, `document.querySelector('.tree-row') ? 'found' : 'not-found'`);
   assert("Tree node exists for context menu", hasTreeNode === "found");
 
-  if (hasTreeNode === "found") {
-    const treeScroll = await jsExpr(cdp, `document.getElementById('tree-scroll')`);
-    const ctxBefore = await jsExpr(cdp, `document.getElementById('tree-context-menu')?.style?.display !== 'none' ? 'visible' : 'hidden'`);
-
-    await jsExpr(cdp, `
+    if (hasTreeNode === "found") {
+      await jsExpr(cdp, `
       (function() {
         const el = document.querySelector('.tree-row');
         if (!el) return 'no-element';

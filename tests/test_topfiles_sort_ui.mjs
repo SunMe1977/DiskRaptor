@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
 
 runTest("DiskRaptor Top Files Interaction Test", 9238, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);

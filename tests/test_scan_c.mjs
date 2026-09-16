@@ -27,7 +27,7 @@ async function connectCDP(wsUrl) {
   const pending = new Map();
   let id = 0;
   ws.on("message", raw => {
-    try { const m = JSON.parse(raw.toString()); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); } } catch {}
+    try { const m = JSON.parse(raw.toString()); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); } } catch { /* best-effort: ignore */ }
   });
   await new Promise((r, f) => { ws.on("open", r); ws.on("error", f); setTimeout(() => f(new Error("WS timeout")), 10000); });
   return {
@@ -44,8 +44,8 @@ async function connectCDP(wsUrl) {
 }
 function cdpVal(r) { return r?.result?.result?.value; }
 function killAll() {
-  try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore", shell: true }); } catch {}
-  try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore", shell: true }); } catch {}
+  try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
+  try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
 }
 async function jsExpr(cdp, expr) {
   const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true });
@@ -80,7 +80,7 @@ async function main() {
         wsUrl = pages[0].webSocketDebuggerUrl;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!wsUrl) throw new Error("CDP not available");
   console.log(`\u2713 App launched (${Date.now() - startTime}ms)`);
@@ -134,7 +134,7 @@ async function main() {
         completed = true;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!completed) throw new Error("Scan did not complete");
 

@@ -24,7 +24,7 @@ runTest("DiskRaptor Duplicate Scanner Flow Test", 9269, async (cdp, scanPath) =>
   assert("Duplicates tool clicked", clickedDup === "clicked", `${clickedDup}`);
   await sleep(300);
 
-  const dupBtn = document.getElementById("btn-duplicates");
+  const dupBtn = await jsExpr(cdp, `!!document.getElementById("btn-duplicates")`);
   if (dupBtn) {
     await clickById(cdp, "btn-duplicates", 200);
   }

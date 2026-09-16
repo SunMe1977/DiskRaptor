@@ -57,7 +57,7 @@ async function connectCDP(wsUrl) {
         pending.get(m.id).resolve(m);
         pending.delete(m.id);
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   });
 
   await new Promise((resolve, reject) => {
@@ -88,10 +88,10 @@ function cdpVal(r) {
 function killAll() {
   try {
     execSync("taskkill /F /IM DiskRaptor.exe", { stdio: "ignore", shell: true });
-  } catch {}
+  } catch { /* best-effort: ignore */ }
   try {
     execSync("taskkill /F /IM QtWebEngineProcess.exe", { stdio: "ignore", shell: true });
-  } catch {}
+  } catch { /* best-effort: ignore */ }
 }
 
 async function jsExpr(cdp, expr) {
@@ -138,7 +138,7 @@ async function main() {
         wsUrl = pages[0].webSocketDebuggerUrl;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!wsUrl) throw new Error("Could not find page WebSocket URL");
   console.log(`✓ Page WS ready (${Date.now() - startTime}ms)`);
@@ -222,7 +222,7 @@ async function main() {
         completed = true;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!completed) throw new Error("Scan did not complete");
   console.log("✓ Scan complete");

@@ -44,7 +44,7 @@ async function connectCDP(wsUrl) {
         pending.get(m.id).resolve(m);
         pending.delete(m.id);
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   });
   await new Promise((r, f) => {
     ws.on("open", r);
@@ -69,8 +69,8 @@ function cdpVal(r) {
 }
 
 function killAll() {
-  try { execSync("taskkill /F /IM DiskRaptor.exe", { stdio: "ignore" }); } catch {}
-  try { execSync("taskkill /F /IM QtWebEngineProcess.exe", { stdio: "ignore" }); } catch {}
+  try { execSync("taskkill /F /IM DiskRaptor.exe", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
+  try { execSync("taskkill /F /IM QtWebEngineProcess.exe", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
 }
 
 async function jsExpr(cdp, expr) {
@@ -113,7 +113,7 @@ async function main() {
         wsUrl = pages[0].webSocketDebuggerUrl;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!wsUrl) throw new Error("Could not find page WebSocket URL");
   console.log(`✓ Page WS ready (${Date.now() - startTime}ms)`);
@@ -217,7 +217,7 @@ async function main() {
       if (m.st?.includes("Error")) { console.warn(`\n✗ ${m.st}`); break; }
 
       lastFiles = files;
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
 
   // Verify stats panel and result data

@@ -62,6 +62,7 @@ parking_lot = "0.12"
 rayon = "1"
 anyhow = "1"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+memmap2 = "0.9"
 dirs = "7"
 sysinfo = "0.39"
 trash = "5"

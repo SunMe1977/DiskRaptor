@@ -16,7 +16,7 @@
     "test:lint": "eslint frontend frontend/app-modules frontend/galaxyview frontend/i18n tests scripts",
     "test:syntax": "node tests/check_syntax.mjs",
     "test": "node tests/run_tests.mjs",
-    "test:quick": "node tests/run_tests.mjs --quick",
+    "test:quick": "node tests/run_tests.mjs --quick --parallel 3",
     "test:list": "node tests/run_tests.mjs --list",
     "test:scan": "node tests/test_scan_ui.mjs",
     "test:scan-timeout": "node tests/test_scan_timeout_mock.mjs",

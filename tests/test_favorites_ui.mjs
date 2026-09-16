@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, sleep, clickById } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById } from "./test_shared.mjs";
 
 runTest("DiskRaptor Favorites Test", 9210, async (cdp, scanPath) => {
   const favBtn = await jsExpr(cdp, `

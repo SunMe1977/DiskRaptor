@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Welcome Dismissal Persistence Test", 9266, async (cdp) => {
   const welcomeVisible = await jsExpr(cdp, `document.getElementById('welcome-placeholder') ? 'found' : 'not-found'`);

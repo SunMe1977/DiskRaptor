@@ -116,8 +116,10 @@ if(wc)wc.onclick=function(){document.getElementById('welcome-placeholder').class
 
         let handle = app.app_handle().clone();
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(crate::test_server::cdp_server(port, handle));
+            match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt.block_on(crate::test_server::cdp_server(port, handle)),
+                Err(e) => tracing::error!("CDP test server: cannot start tokio runtime: {e}"),
+            }
         });
         info!("CDP test server started on port {}", port);
     }

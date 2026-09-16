@@ -28,6 +28,11 @@ export const BIN_PATH = fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
 export const DEFAULT_SCAN_PATH = IS_WIN ? os.homedir() : "/tmp";
 export const DEFAULT_CDP_PORT = parseInt(process.env.DISKraptor_CDP_PORT) || 9222;
 
+// Parallel-run mode (`DISKRAPTOR_NO_KILL=1`, set by run_tests.mjs --parallel):
+// several app instances coexist on distinct CDP ports, so tests must NOT
+// kill each other's processes. Each test then cleans up only its own child.
+export const NO_KILL = process.env.DISKRAPTOR_NO_KILL === "1";
+
 export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -69,7 +74,7 @@ export async function connectCDP(wsUrl) {
         pending.get(m.id).resolve(m);
         pending.delete(m.id);
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   });
   await new Promise((r, f) => {
     ws.on("open", r);
@@ -101,13 +106,13 @@ export function cdpVal(r) {
 
 export function killAll() {
   if (IS_WIN) {
-    try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore" }); } catch {}
-    try { execSync("taskkill /F /IM diskraptor.exe 2>nul", { stdio: "ignore" }); } catch {}
-    try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore" }); } catch {}
+    try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
+    try { execSync("taskkill /F /IM diskraptor.exe 2>nul", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
+    try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
   } else {
-    try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch {}
-    try { execSync("pkill -9 QtWebEngineProcess 2>/dev/null", { stdio: "ignore" }); } catch {}
-    try { execSync("pkill -9 diskraptor 2>/dev/null", { stdio: "ignore" }); } catch {}
+    try { execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
+    try { execSync("pkill -9 QtWebEngineProcess 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
+    try { execSync("pkill -9 diskraptor 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
   }
 }
 
@@ -166,8 +171,10 @@ export function getExtraEnv(port) {
 }
 
 export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAULT_SCAN_PATH) {
-  killAll();
-  await sleep(2000);
+  if (!NO_KILL) {
+    killAll();
+    await sleep(2000);
+  }
 
   if (!fs.existsSync(BIN_PATH)) throw new Error(`Missing binary: ${BIN_PATH}`);
   console.log(`  Binary: ${BIN_PATH}`);
@@ -190,7 +197,7 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
         wsUrl = pages[0].webSocketDebuggerUrl;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!wsUrl) throw new Error("Could not find page WebSocket URL");
   console.log("  Page WS ready");
@@ -201,30 +208,29 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
   await cdp.send("Console.enable");
   console.log("  CDP connected");
 
-  let bridgeOk = false;
   if (isTauri) {
-    // Tauri mode: __TAURI__ is injected by Tauri's preload, ready immediately
-    bridgeOk = true;
+    // Tauri mode: __TAURI__ is injected by Tauri's preload, ready immediately.
     console.log("  Tauri mode: bridge ready");
-  } else {
-    for (let i = 0; i < 60; i++) {
-      const val = await jsExpr(cdp, `!!(window.__TAURI__ && typeof window.__TAURI__.invoke === 'function' && window.__TAURI__.__qtBridgeReady)`);
-      if (val === true) { bridgeOk = true; break; }
-      await sleep(200);
-    }
-    if (!bridgeOk) {
-      const state = await jsExpr(cdp, `JSON.stringify({
-        title: document.title,
-        url: document.location?.href || '',
-        hasTauri: typeof window.__TAURI__ !== 'undefined',
-        hasInvoke: typeof window.__TAURI__?.invoke === 'function',
-        ready: window.__TAURI__?.__qtBridgeReady || false
-      })`);
-      console.log(`  Bridge state: ${state}`);
-      throw new Error("Bridge not ready");
-    }
-    console.log("  Bridge ready");
+    return { cdp, child };
   }
+  let bridgeOk = false;
+  for (let i = 0; i < 60; i++) {
+    const val = await jsExpr(cdp, `!!(window.__TAURI__ && typeof window.__TAURI__.invoke === 'function' && window.__TAURI__.__qtBridgeReady)`);
+    if (val === true) { bridgeOk = true; break; }
+    await sleep(200);
+  }
+  if (!bridgeOk) {
+    const state = await jsExpr(cdp, `JSON.stringify({
+      title: document.title,
+      url: document.location?.href || '',
+      hasTauri: typeof window.__TAURI__ !== 'undefined',
+      hasInvoke: typeof window.__TAURI__?.invoke === 'function',
+      ready: window.__TAURI__?.__qtBridgeReady || false
+    })`);
+    console.log(`  Bridge state: ${state}`);
+    throw new Error("Bridge not ready");
+  }
+  console.log("  Bridge ready");
 
   return { cdp, child };
 }
@@ -323,14 +329,28 @@ export async function waitForScanComplete(cdp, timeoutMs = 120000) {
         return { completed: true, maxFiles: lastFiles };
       if (m.st?.includes("Complete")) return { completed: true, maxFiles: lastFiles };
       if (m.st?.includes("Error")) return { completed: false, maxFiles: lastFiles, error: m.st };
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   return { completed: false, maxFiles: lastFiles > 0 ? lastFiles : 0 };
 }
 
-export async function cleanup(cdp, exitCode = 0) {
-  try { await cdp.send("Close"); } catch {}
-  setTimeout(() => { killAll(); process.exit(exitCode); }, 500);
+export function killChild(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  try {
+    if (IS_WIN) child.kill();
+    else child.kill("SIGKILL");
+  } catch { /* best-effort: ignore */ }
+}
+
+export async function cleanup(cdp, exitCode = 0, child = null) {
+  try { await cdp.send("Close"); } catch { /* best-effort: ignore */ }
+  if (NO_KILL) {
+    killChild(child);
+    // Give the process a moment to exit, then force-kill survivors.
+    setTimeout(() => { killChild(child); process.exit(exitCode); }, 1500);
+  } else {
+    setTimeout(() => { killAll(); process.exit(exitCode); }, 500);
+  }
 }
 
 export async function runTest(name, port, fn) {
@@ -338,25 +358,29 @@ export async function runTest(name, port, fn) {
   console.log(` ${name}`);
   console.log(`${"=".repeat(40)}\n`);
   resetAssert();
-  killAll();
+  if (!NO_KILL) killAll();
 
   const cdpPort = port || parseInt(process.env.DISKraptor_TEST_PORT) || DEFAULT_CDP_PORT + Math.floor(Math.random() * 100);
   const scanPath = process.argv[2] || DEFAULT_SCAN_PATH;
 
+  let child = null;
   try {
-    const { cdp } = await launchAndConnect(cdpPort, scanPath);
+    const conn = await launchAndConnect(cdpPort, scanPath);
+    child = conn.child || null;
+    const { cdp } = conn;
     await fn(cdp, scanPath);
     const { passed, failed } = getAssertCounts();
     console.log(`\n  Passed: ${passed}  Failed: ${failed}`);
     if (failed > 0) {
-      console.log("  \u2717 FAIL");
-      await cleanup(cdp, 1);
+      console.log("  ✗ FAIL");
+      await cleanup(cdp, 1, child);
     } else {
-      console.log("  \u2713 PASS");
-      await cleanup(cdp, 0);
+      console.log("  ✓ PASS");
+      await cleanup(cdp, 0, child);
     }
   } catch (err) {
     console.error(`\nError: ${err.message}`);
+    if (NO_KILL) { killChild(child); process.exit(1); }
     killAll();
     process.exit(1);
   }

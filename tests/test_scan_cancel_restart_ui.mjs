@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, sleep, waitForOverlay, setValue } from "./test_shared.mjs";
 
 runTest("DiskRaptor Scan Cancel Restart Cycle Test", 9254, async (cdp, scanPath) => {
   await setValue(cdp, "scan-path", scanPath);
@@ -6,7 +6,6 @@ runTest("DiskRaptor Scan Cancel Restart Cycle Test", 9254, async (cdp, scanPath)
   const overlayShown = await waitForOverlay(cdp, 5000);
   assert("First scan started", overlayShown);
 
-  const filesBeforeCancel = await jsExpr(cdp, `parseInt((document.getElementById('progress-files')?.textContent || '0').replace(/,/g, ''))`);
   await sleep(500);
 
   await jsExpr(cdp, `window.__TAURI__.invoke('cancel_scan', {}).catch(() => {}); 'cancelling'`);

@@ -33,6 +33,18 @@ pub fn hash_file_head(path: &Path, read_len: usize) -> (u64, u64) {
 /// Stream-hash an entire file. Returns `(size, full_hash, changed_during_scan)`;
 /// `changed_during_scan` is true when the file's metadata changed while we were
 /// reading it (or it could not be read at all), so its hash is not trustworthy.
+///
+/// Files of at least `MMAP_THRESHOLD_BYTES` take the memory-mapped fast path:
+/// a single `xxh3` pass over the mapping instead of thousands of `read`
+/// syscalls + copies. Smaller files stay on the buffered path (mmap setup
+/// costs more than it saves there). Any mmap failure falls back to streaming.
+///
+/// NOTE: like all file mappers (ripgrep, fd, …), the mapped view can observe
+/// a concurrent writer. The before/after metadata check below still excludes
+/// such files from the results, so a race can only waste work, never produce
+/// a wrong duplicate group.
+pub const MMAP_THRESHOLD_BYTES: u64 = 16 << 20;
+
 pub fn hash_file_full(path: &Path) -> (u64, u64, bool) {
     use std::io::Read;
     thread_local! {
@@ -41,26 +53,48 @@ pub fn hash_file_full(path: &Path) -> (u64, u64, bool) {
     let before = std::fs::metadata(path)
         .ok()
         .map(|m| (m.len(), m.modified().ok()));
+    let file_len = before.map(|(len, _)| len).unwrap_or(0);
     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
     let mut total = 0u64;
-    let read_ok = BUF.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        if let Ok(mut f) = std::fs::File::open(path) {
-            loop {
-                match f.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        hasher.update(&buf[..n]);
-                        total += n as u64;
+    // Memory-mapped fast path for large files.
+    let mapped = file_len >= MMAP_THRESHOLD_BYTES
+        && std::fs::File::open(path)
+            .ok()
+            .and_then(|f| {
+                // SAFETY: the file is opened read-only and never written
+                // through this mapping; a concurrent truncation may surface
+                // stale/torn bytes, but those are rejected by the metadata
+                // comparison below before any result is used.
+                unsafe { memmap2::Mmap::map(&f).ok() }
+            })
+            .map(|m| {
+                hasher.update(&m);
+                total = m.len() as u64;
+                true
+            })
+            .unwrap_or(false);
+    let read_ok = if mapped {
+        true
+    } else {
+        BUF.with(|cell| {
+            let mut buf = cell.borrow_mut();
+            if let Ok(mut f) = std::fs::File::open(path) {
+                loop {
+                    match f.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            hasher.update(&buf[..n]);
+                            total += n as u64;
+                        }
+                        Err(_) => return false,
                     }
-                    Err(_) => return false,
                 }
+                true
+            } else {
+                false
             }
-            true
-        } else {
-            false
-        }
-    });
+        })
+    };
     if !read_ok {
         return (0, 0, true);
     }
@@ -173,6 +207,24 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(a.0, b"DiskRaptor".len() as u64);
         assert_ne!(a.1, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_hash_file_full_mmap_matches_streaming() {
+        // File above MMAP_THRESHOLD_BYTES must take the mapped path and still
+        // produce the exact xxh3 of its bytes.
+        let dir = fixture_dir("mmap");
+        let size = (MMAP_THRESHOLD_BYTES + 4096) as usize;
+        let mut content = Vec::with_capacity(size);
+        for i in 0..size {
+            content.push((i.wrapping_mul(2654435761) >> 16) as u8);
+        }
+        let p = fixture_file(&dir, "big.bin", &content);
+        let (total, hash, changed) = hash_file_full(&p);
+        assert!(!changed);
+        assert_eq!(total, size as u64);
+        assert_eq!(hash, xxhash_rust::xxh3::xxh3_64(&content));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -20,7 +20,10 @@ fi
 
 case "${1:-}" in
   --quick)
-    node tests/run_tests.mjs --quick
+    # Smoke tests run concurrently (3 workers, isolated app instances on
+    # distinct CDP ports) — roughly 3x faster than sequential.
+    shift
+    node tests/run_tests.mjs --quick --parallel 3 "$@"
     exit $?
     ;;
   --list)

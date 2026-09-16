@@ -26,20 +26,6 @@ function testSettings() {
   return ok;
 }
 
-// Test delete_path via the trash crate (we can't test via IPC from outside)
-function testTrash() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diskraptor-test-"));
-  const testFile = path.join(tmpDir, "test.txt");
-  fs.writeFileSync(testFile, "hello");
-  
-  // Use the trash crate directly (same as what the Tauri command does)
-  const trash = require("child_process").spawnSync(TAURI_BIN, ["--help"], { timeout: 2000 });
-  // Can't invoke IPC from outside - test the Rust library directly instead
-  
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-  return true;
-}
-
 // Test file operations and system info via Rust commands
 // We'll spawn the app and test via the CDP /json/list endpoint
 import { spawn } from "child_process";
@@ -79,8 +65,8 @@ async function main() {
     const { execSync } = require("child_process");
     // Use python to test os.trash (macOS)
     if (process.platform === "darwin") {
-      const pyResult = execSync(
-        `python3 -c "import os; os.system('osascript -e \\\"tell app \\\\\\\"Finder\\\\\\\" to delete POSIX file \\\\\\\"${tmpDir}/${testFiles[0]}\\\\\\\"\\\"')"`,
+      execSync(
+        `python3 -c "import os; os.system('osascript -e \\"tell app \\\\\\"Finder\\\\\\" to delete POSIX file \\\\\\"${tmpDir}/${testFiles[0]}\\\\\\"\\"')"`,
         { timeout: 5000 }
       );
       const fileGone = !fs.existsSync(path.join(tmpDir, testFiles[0]));
@@ -133,8 +119,8 @@ async function main() {
   assert("CDP endpoint responds with page list", cdpOk);
 
   // Kill app
-  try { process.kill(-app.pid); } catch {}
-  try { process.kill(app.pid); } catch {}
+  try { process.kill(-app.pid); } catch { /* best-effort: ignore */ }
+  try { process.kill(app.pid); } catch { /* best-effort: ignore */ }
 
   // Summary
   console.log(`\n=== RESULTS ===`);

@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete } from "./test_shared.mjs";
 
 runTest("DiskRaptor Progress Overlay Test", 9216, async (cdp, scanPath) => {
   await jsExpr(cdp, `document.getElementById('scan-path').value = ${JSON.stringify(scanPath)}; 'set'`);

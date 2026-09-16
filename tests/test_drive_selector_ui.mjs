@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete } from "./test_shared.mjs";
+import { runTest, jsExpr, jsInvoke, assert, clickById, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Drive Selector Test", 9243, async (cdp) => {
   const driveBtn = await jsExpr(cdp, `document.getElementById('btn-drive') ? 'found' : 'not-found'`);

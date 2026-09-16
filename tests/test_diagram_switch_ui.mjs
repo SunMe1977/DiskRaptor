@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Diagram Mode Switch Test", 9232, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);

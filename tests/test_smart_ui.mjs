@@ -146,7 +146,7 @@ runTest("DiskRaptor S.M.A.R.T. real-value check", 9255, async (cdp) => {
     assert("S.M.A.R.T. overlay opens (real UI)", opened === true);
 
     await jsExpr(cdp, `document.getElementById('smart-scan').click(); 'ok'`);
-    const rendered = await waitFor(() => renderedState(cdp), { timeout: 30000, label: "smart render" });
+    assert("S.M.A.R.T. results rendered", await waitFor(() => renderedState(cdp), { timeout: 30000, label: "smart render" }));
 
     // Verify the banner/tiles mirror the backend's real values.
     const ui = JSON.parse(await jsExpr(cdp, `(function(){

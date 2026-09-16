@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, sleep, startScan, waitForOverlay, waitForScanComplete } from "./test_shared.mjs";
 
 runTest("DiskRaptor Speed Chart Rendering Test", 9273, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);

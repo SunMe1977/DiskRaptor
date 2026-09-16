@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady, sleep, clickById, setValue } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Tree Interactions Test", 9231, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);

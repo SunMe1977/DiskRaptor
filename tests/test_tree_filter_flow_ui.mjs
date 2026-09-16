@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady, sleep, clickById } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, waitForTreeReady, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Tree Filter Flow Test", 9234, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
@@ -11,7 +11,7 @@ runTest("DiskRaptor Tree Filter Flow Test", 9234, async (cdp, scanPath) => {
   const allRows = await jsExpr(cdp, `document.querySelectorAll('.tree-row').length`);
   assert("Tree populated before filter", allRows > 0, `rows=${allRows}`);
 
-  const treeFilter = document.getElementById("tree-filter");
+  const treeFilter = await jsExpr(cdp, `!!document.getElementById("tree-filter")`);
   if (treeFilter) {
     await jsExpr(cdp, `document.getElementById('tree-filter').value = 'README'; 'set'`);
     await jsExpr(cdp, `document.getElementById('tree-filter').dispatchEvent(new Event('input', {bubbles:true})); 'input'`);

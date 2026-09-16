@@ -17,7 +17,8 @@
 //   dr_free_string  – free a CString returned by any dr_* function
 //   dr_find_duplicates – synchronous duplicate scan (blocking)
 #![allow(clippy::missing_safety_doc)]
-use crate::scanner::tree::{format_size, ScanStats, TreeChunk, TreeNodeArena};
+use crate::scanner::tree::{format_size, BorrowedChunk, ScanStats, TreeNodeArena};
+use crate::streaming::chunker::chunk_size;
 use tracing::{info, error};
 use crate::scanner::walker;
 
@@ -45,7 +46,11 @@ struct ScanResultData {
     arena: TreeNodeArena,
     stats: ScanStats,
     scan_time_ms: u64,
-    chunks: Vec<TreeChunk>,
+    /// Chunk count for the default chunk size (see `dr_get_chunk`). Stored
+    /// instead of a pre-materialized `Vec<TreeChunk>`: chunks are built
+    /// on demand from the arena, so a million-node scan no longer pays a
+    /// full second copy of every node up front.
+    total_chunks: u32,
     errors: Vec<String>,
 }
 
@@ -167,8 +172,10 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
                 Ok(sr) => {
                     info!(files = sr.stats.total_files, dirs = sr.stats.total_dirs, "Scan completed");
                     let elapsed = sr.stats.scan_time_ms;
-                    let chunks = crate::streaming::chunker::chunk_tree(&sr.arena, &None)
-                        .unwrap_or_else(|_| crate::streaming::chunker::make_root_chunk(&sr.arena));
+                    // Chunk count only — chunk payloads are sliced from the
+                    // arena on demand in `dr_get_chunk` (clone-free).
+                    let size = chunk_size(&None);
+                    let total_chunks = (sr.arena.len() as u32).div_ceil(size);
                     let errs = errors.lock().clone();
                     *state.errors.lock() = errs.clone();
                     *state.result.lock() = Some(ScanResultData {
@@ -176,7 +183,7 @@ pub unsafe extern "C" fn dr_start_scan(json_config: *const c_char) -> *mut c_cha
                         arena: sr.arena,
                         stats: sr.stats,
                         scan_time_ms: elapsed,
-                        chunks,
+                        total_chunks,
                         errors: errs,
                     });
                 }
@@ -209,8 +216,7 @@ pub unsafe extern "C" fn dr_get_progress() -> *mut c_char {
     let is_running = state.running.load(Ordering::Acquire);
     let rg = state.result.lock();
     let has_result = rg.is_some();
-    let (files, dirs, bytes) = if has_result {
-        let r = rg.as_ref().unwrap();
+    let (files, dirs, bytes) = if let Some(r) = rg.as_ref() {
         (r.stats.total_files, r.stats.total_dirs, r.stats.total_size)
     } else {
         (
@@ -253,7 +259,7 @@ pub unsafe extern "C" fn dr_get_result() -> *mut c_char {
         let sid = d.scan_id;
         let sj = serde_json::json!({"total_files":d.stats.total_files,"total_dirs":d.stats.total_dirs,"total_size":d.stats.total_size,"scan_time_ms":d.scan_time_ms,"top_files":d.stats.top_files,"file_type_breakdown":d.stats.file_type_breakdown,"size_human":format_size(d.stats.total_size),"time_human":format!("{:.2}s",d.scan_time_ms as f64/1000.0)});
         let tn = d.arena.len() as u32;
-        let tc = d.chunks.len() as u32;
+        let tc = d.total_chunks;
         let ri = serde_json::json!({"root_index":0,"total_nodes":tn,"total_chunks":tc});
         let errs: Vec<String> = d.errors.clone();
         drop(g);
@@ -288,8 +294,17 @@ pub unsafe extern "C" fn dr_get_chunk(c: u32) -> *mut c_char {
     let s = &*STATE;
     let g = s.result.lock();
     if let Some(ref d) = *g {
-        if (c as usize) < d.chunks.len() {
-            if let Ok(json) = serde_json::to_string(&d.chunks[c as usize]) {
+        // Slice the requested window straight from the arena and serialize
+        // the clone-free borrowed view (same JSON shape as the old owned
+        // chunk, plus `arena_index` per node — benign extra field the
+        // Tauri frontend already consumes).
+        if c < d.total_chunks {
+            let size = chunk_size(&None) as u64;
+            let total = d.arena.len() as u64;
+            let start = (c as u64 * size) as usize;
+            let end = ((c as u64 + 1) * size).min(total) as usize;
+            let chunk = BorrowedChunk::new(c, d.total_chunks, total as u32, start as u32, &d.arena.nodes[start..end]);
+            if let Ok(json) = serde_json::to_string(&chunk) {
                 drop(g);
                 return to_c_string(&json);
             }

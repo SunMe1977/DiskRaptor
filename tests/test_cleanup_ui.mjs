@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, sleep, clickById, waitFor } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, waitFor } from "./test_shared.mjs";
 
 runTest("DiskRaptor Downloads Cleanup Test", 9222, async (cdp) => {
   await clickById(cdp, "btn-tools", 200);
@@ -7,10 +7,10 @@ runTest("DiskRaptor Downloads Cleanup Test", 9222, async (cdp) => {
   const scanPathAfter = await jsExpr(cdp, "document.getElementById('scan-path')?.value || ''");
   assert("Auto-set scan path to Downloads folder", scanPathAfter.toLowerCase().includes("download"), `path="${scanPathAfter}"`);
 
-  const cleanupFound = await waitFor(async () => {
+  assert("Cleanup overlay appeared", await waitFor(async () => {
     const ov = await jsExpr(cdp, `document.getElementById('cleanup-overlay')?.style?.display === 'flex'`);
     return ov;
-  }, { timeout: 30000, label: "cleanup overlay" });
+  }, { timeout: 30000, label: "cleanup overlay" }));
 
   const overlayFound = await jsExpr(cdp, "document.getElementById('cleanup-overlay')?.style?.display === 'flex'");
   const stbText = await jsExpr(cdp, "document.querySelector('.status-bar')?.textContent || ''");

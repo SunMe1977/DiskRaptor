@@ -21,17 +21,17 @@ fn main() {
     )
     .join("diskraptor-test");
 
-    let dir_count = (count / 1000).max(100).min(10_000) as usize;
+    let dir_count = (count / 1000).clamp(100, 10_000) as usize;
     let files_per_dir = (count / dir_count as u64).max(1);
 
     println!("============================================");
     println!("  DiskRaptor Test Data Generator (Rust)");
     println!("============================================");
-    println!("");
+    println!();
     println!("Path:  {}", base.display());
     println!("Files: {}", count);
     println!("Dirs:  {}", dir_count);
-    println!("");
+    println!();
 
     // Clean & create root
     let _ = fs::remove_dir_all(&base);
@@ -58,7 +58,7 @@ fn main() {
     let mut last_report = Instant::now();
     let mut file_count_in_dir: u64;
 
-    for di in 0..dirs.len() {
+    for dir in &dirs {
         if total >= count {
             break;
         }
@@ -66,7 +66,7 @@ fn main() {
         file_count_in_dir = files_per_dir.min(remaining);
 
         for _fi in 0..file_count_in_dir {
-            let file_path = dirs[di].join(format!("f_{}.dat", total));
+            let file_path = dir.join(format!("f_{}.dat", total));
             let _ = fs::File::create(&file_path);
             total += 1;
         }
@@ -81,7 +81,7 @@ fn main() {
 
     let elapsed = start.elapsed().as_secs_f64().max(0.1);
     let rate = (total as f64 / elapsed) as u64;
-    println!("");
+    println!();
     println!("============================================");
     println!("  COMPLETE");
     println!("  Files:  {}", total);
@@ -89,9 +89,9 @@ fn main() {
     println!("  Time:   {:.1}s", elapsed);
     println!("  Speed:  {} files/sec", rate);
     println!("============================================");
-    println!("");
+    println!();
     println!("Scan path: {}", base.display());
-    println!("");
+    println!();
     println!("Delete with:");
     println!("  rm -rf '{}'", base.display());
     println!("  Remove-Item -Recurse -Force '{}'", base.display());

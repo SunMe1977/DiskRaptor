@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as http from "http";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { killAll, sleep } from "./test_shared.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -132,7 +133,8 @@ function printUsage() {
   console.log("  --list        List all available tests");
   console.log("  --quick       Run a quick subset (scan, welcome, menus)");
   console.log("  --timeout N   Per-test timeout in seconds (default: 180)");
-  console.log("  --parallel    Run tests in parallel (experimental)");
+  console.log("  --parallel [N] Run tests concurrently with N workers (default 4).");
+  console.log("                 Each test uses its own app instance + CDP port.");
   console.log();
   console.log("Examples:");
   console.log("  node run_tests.mjs                         # Run all tests");
@@ -201,18 +203,42 @@ async function main() {
     ? timeoutSecs * 1000
     : (args.includes("--quick") ? 90000 : 180000);
 
-  if (args.includes("--parallel")) {
-    // Documented for forward compatibility, but the runner is sequential:
-    // say so instead of silently ignoring the flag.
-    console.log("Note: --parallel is not implemented yet; running tests sequentially.");
+  const parIdx = args.indexOf("--parallel");
+  const parArg = parIdx !== -1 ? args[parIdx + 1] : undefined;
+  const parEq = args.find(a => a.startsWith("--parallel="));
+  const parallelism = parIdx !== -1
+    ? (parEq ? parseInt(parEq.split("=")[1], 10)
+       : (parArg && !parArg.startsWith("--") ? parseInt(parArg, 10) : 4))
+    : 1;
+  const workers = Number.isFinite(parallelism) && parallelism > 1 ? Math.floor(parallelism) : 1;
+  if (parIdx !== -1 && workers < 2) {
+    console.log("Note: --parallel needs N >= 2; running tests sequentially.");
   }
 
-  let passed = 0;
-  let failed = 0;
-  let skipped = 0;
-  let results = [];
+  // One test-file execution (spawned node process). Shared by sequential and
+  // parallel modes; the only difference is the environment (NO_KILL) and
+  // whether the caller waits for the CDP port to free afterwards.
+  const runOnce = (test, extraEnv = {}) => {
+    const testPath = path.resolve(__dirname, test.file);
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const child = spawn("node", [testPath], {
+        stdio: ["ignore", "inherit", "inherit"],
+        env: { ...process.env, DISKraptor_TEST_PORT: String(test.port), ...extraEnv },
+        shell: IS_WIN,
+        timeout: perTestTimeout,
+      });
+      child.on("close", (code) => {
+        resolve({ code, elapsed: ((Date.now() - startTime) / 1000).toFixed(1) });
+      });
+      child.on("error", (err) => {
+        console.error(`  Spawn error: ${err.message}`);
+        resolve({ code: -1, elapsed: ((Date.now() - startTime) / 1000).toFixed(1) });
+      });
+    });
+  };
 
-  for (const test of testList) {
+  const runOne = async (test, extraEnv = {}) => {
     const testPath = path.resolve(__dirname, test.file);
     console.log("-".repeat(50));
     console.log(`  Running: ${test.file} (${test.name})`);
@@ -220,61 +246,80 @@ async function main() {
 
     if (!fs.existsSync(testPath)) {
       console.log(`  SKIPPED: ${test.file} not found`);
-      skipped++;
-      results.push({ name: test.name, file: test.file, status: "SKIP" });
-      continue;
+      return { name: test.name, file: test.file, status: "SKIP" };
     }
 
-    const runOnce = async () => {
-      const startTime = Date.now();
-      const child = spawn("node", [testPath], {
-        stdio: ["ignore", "inherit", "inherit"],
-        env: { ...process.env, DISKraptor_TEST_PORT: String(test.port) },
-        shell: IS_WIN,
-        timeout: perTestTimeout,
-      });
-      const code = await new Promise((resolve) => {
-        child.on("close", resolve);
-        child.on("error", (err) => {
-          console.error(`  Spawn error: ${err.message}`);
-          resolve(-1);
-        });
-      });
-      return { code, elapsed: ((Date.now() - startTime) / 1000).toFixed(1) };
-    };
-
     try {
-      let { code, elapsed } = await runOnce();
+      let { code, elapsed } = await runOnce(test, extraEnv);
       // Flaky CDP (WebKitGTK/WKWebView) can stall on a fresh launch — retry
       // once before giving up on a timeout.
       if (code === null) {
         console.log(`  TIMEOUT on first attempt, retrying once...`);
-        const retry = await runOnce();
+        const retry = await runOnce(test, extraEnv);
         code = retry.code;
         elapsed = retry.elapsed;
       }
 
       if (code === 0) {
-        console.log(`  \u2713 PASSED: ${test.file} (${elapsed}s)`);
-        passed++;
-        results.push({ name: test.name, file: test.file, status: "PASS", time: elapsed });
+        console.log(`  PASSED: ${test.file} (${elapsed}s)`);
+        return { name: test.name, file: test.file, status: "PASS", time: elapsed };
       } else if (code === null) {
         console.log(`  SKIPPED: ${test.file} (timeout)`);
-        skipped++;
-        results.push({ name: test.name, file: test.file, status: "TIMEOUT" });
+        return { name: test.name, file: test.file, status: "TIMEOUT" };
       } else {
-        console.log(`  \u2717 FAILED: ${test.file} exit=${code} (${elapsed}s)`);
-        failed++;
-        results.push({ name: test.name, file: test.file, status: "FAIL", time: elapsed });
+        console.log(`  FAILED: ${test.file} exit=${code} (${elapsed}s)`);
+        return { name: test.name, file: test.file, status: "FAIL", time: elapsed };
       }
     } catch (err) {
-      console.error(`  \u2717 FAILED: ${test.file} -- ${err.message}`);
-      failed++;
-      results.push({ name: test.name, file: test.file, status: "FAIL" });
+      console.error(`  FAILED: ${test.file} -- ${err.message}`);
+      return { name: test.name, file: test.file, status: "FAIL" };
     }
+  };
 
-    await waitForPortFree(test.port, 5000);
+  // Stale instances are killed synchronously (execSync inside killAll).
+  const killStaleApps = async () => {
+    killAll();
+    await sleep(1500);
+  };
+
+  let results = [];
+  if (workers >= 2) {
+    // Parallel mode: each test drives its own app instance on its own CDP
+    // port. DISKRAPTOR_NO_KILL stops tests from killing each other; the
+    // runner kills stale instances once before and once after the run.
+    console.log(`Parallel mode: ${workers} workers, ${testList.length} tests\n`);
+    await killStaleApps();
+    const extraEnv = { DISKRAPTOR_NO_KILL: "1" };
+    const queue = [...testList];
+    const runWorker = async () => {
+      const out = [];
+      while (queue.length > 0) {
+        const test = queue.shift();
+        out.push(await runOne(test, extraEnv));
+      }
+      return out;
+    };
+    const settled = await Promise.all(
+      Array.from({ length: Math.min(workers, testList.length) }, runWorker),
+    );
+    results = settled.flat();
+    await killStaleApps();
+  } else {
+    for (const test of testList) {
+      results.push(await runOne(test));
+      await waitForPortFree(test.port, 5000);
+    }
   }
+
+  let passed = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const r of results) {
+    if (r.status === "PASS") passed++;
+    else if (r.status === "FAIL") failed++;
+    else skipped++;
+  }
+
 
   console.log();
   console.log("=".repeat(50));

@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, sleep } from "./test_shared.mjs";
 
 runTest("DiskRaptor Language Switch Test", 9241, async (cdp) => {
   const langBtn = await jsExpr(cdp, `document.getElementById('btn-lang') ? 'found' : 'not-found'`);

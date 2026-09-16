@@ -7,13 +7,11 @@ import { spawn, execSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import * as http from "http";
-import * as os from "os";
 
 const CDP_PORT = 9225;
 const DIST_DIR = path.resolve("dist");
-const EXE_PATH = path.join(DIST_DIR, "DiskRaptor.exe");
-const HOME_DIR = os.homedir();
-const TEST_DIR = process.cwd();
+    const EXE_PATH = path.join(DIST_DIR, "DiskRaptor.exe");
+    const TEST_DIR = process.cwd();
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function cdpFetch(url) {
@@ -26,7 +24,7 @@ async function connectCDP(wsUrl) {
   const pending = new Map();
   let id = 0;
   ws.on("message", raw => {
-    try { const m = JSON.parse(raw.toString()); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); } } catch {}
+    try { const m = JSON.parse(raw.toString()); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id).resolve(m); pending.delete(m.id); } } catch { /* best-effort: ignore */ }
   });
   await new Promise((r, f) => { ws.on("open", r); ws.on("error", f); setTimeout(() => f(new Error("WS timeout")), 10000); });
   return {
@@ -43,8 +41,8 @@ async function connectCDP(wsUrl) {
 }
 function cdpVal(r) { return r?.result?.result?.value; }
 function killAll() {
-  try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore", shell: true }); } catch {}
-  try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore", shell: true }); } catch {}
+  try { execSync("taskkill /F /IM DiskRaptor.exe 2>nul", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
+  try { execSync("taskkill /F /IM QtWebEngineProcess.exe 2>nul", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
 }
 async function jsExpr(cdp, expr) {
   const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true });
@@ -79,7 +77,7 @@ async function main() {
         wsUrl = pages[0].webSocketDebuggerUrl;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   if (!wsUrl) throw new Error("CDP not available");
   const cdp = await connectCDP(wsUrl);
@@ -148,7 +146,7 @@ async function main() {
           if (dirs > maxDirs) maxDirs = dirs;
           if (m.ov === false && maxFiles > 0) { completed = true; break; }
           if ((m.st || "").includes("Complete")) { completed = true; break; }
-        } catch {}
+        } catch { /* best-effort: ignore */ }
       }
 
       if (completed && maxFiles > 0) {

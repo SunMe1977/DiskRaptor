@@ -71,7 +71,7 @@ fn main() {
         let _current_dir = prog["current_dir"].as_str().unwrap_or("");
 
         if i % 10 == 0 || !is_running || phase == 3 {
-            let rate = if elapsed > 0 { files / elapsed } else { 0 };
+            let rate = files.checked_div(elapsed).unwrap_or(0);
             println!(
                 "  [{:3}] files={:>9} dirs={:>6} running={} phase={} elapsed={}s rate={}/s",
                 i, files, dirs, is_running, phase, elapsed, rate

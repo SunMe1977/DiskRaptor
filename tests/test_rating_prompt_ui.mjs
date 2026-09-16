@@ -127,7 +127,7 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
 
   // ── Scenario C: an immediate relaunch (count 6, not a milestone) asks again
   //    neither on launch 5's dialog nor on the next start ──
-  try { await cdp.send("Close"); } catch {}
+  try { await cdp.send("Close"); } catch { /* best-effort: ignore */ }
   await sleep(500);
   const second = await launchAndConnect(9271);
   await sleep(4000); // startup prompt logic would have fired by now if not suppressed
@@ -139,7 +139,7 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
   );
 
   // ── Scenario D: the 10th launch prompts again; "Yes" opens the store page ──
-  try { await second.cdp.send("Close"); } catch {}
+  try { await second.cdp.send("Close"); } catch { /* best-effort: ignore */ }
   await sleep(500);
   setRatingState(9);
   const third = await launchAndConnect(9272);
@@ -199,7 +199,7 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
   assert("rating_dismissed not set after Yes", s2.rating_dismissed !== true, JSON.stringify(s2));
   assert("launch count advanced to 10", s2.rating_launch_count === 10, "count=" + s2.rating_launch_count);
 
-  try { await third.cdp.send("Close"); } catch {}
+  try { await third.cdp.send("Close"); } catch { /* best-effort: ignore */ }
   await sleep(500);
 
   // ── Scenario E: the 50th launch asks again after repeated "No" ──
@@ -220,7 +220,7 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
   assert("rating_dismissed not persisted at 50", s50.rating_dismissed !== true, JSON.stringify(s50));
   assert("launch count advanced to 50", s50.rating_launch_count === 50, "count=" + s50.rating_launch_count);
 
-  try { await fourth.cdp.send("Close"); } catch {}
+  try { await fourth.cdp.send("Close"); } catch { /* best-effort: ignore */ }
   await sleep(500);
 
   // ── Scenario F: the 100th launch asks one last time ──
@@ -241,7 +241,7 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
   assert("rating_dismissed not persisted at 100", s100.rating_dismissed !== true, JSON.stringify(s100));
   assert("launch count advanced to 100", s100.rating_launch_count === 100, "count=" + s100.rating_launch_count);
 
-  try { await fifth.cdp.send("Close"); } catch {}
+  try { await fifth.cdp.send("Close"); } catch { /* best-effort: ignore */ }
   await sleep(500);
 
   // ── Scenario G: past launch #100 the milestone series is exhausted and the
@@ -256,5 +256,5 @@ runTest("DiskRaptor Rating Prompt Test", 9270, async (cdp) => {
     String(exhaustedProbe),
   );
 
-  try { await sixth.cdp.send("Close"); } catch {}
+  try { await sixth.cdp.send("Close"); } catch { /* best-effort: ignore */ }
 });

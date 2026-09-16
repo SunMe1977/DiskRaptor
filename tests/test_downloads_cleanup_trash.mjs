@@ -18,7 +18,6 @@ runTest("DiskRaptor Downloads Cleanup Test", 9230, async (cdp) => {
   const OLD_DAYS = 70;
   const OLD_MS = OLD_DAYS * 24 * 60 * 60 * 1000;
   const oldTime = new Date(Date.now() - OLD_MS);
-  const testDirs = ["subfolder"];
   const dirFile = "subfolder/extra_installer.pkg";
 
   fs.mkdirSync(path.join(tmpDir, "subfolder"));

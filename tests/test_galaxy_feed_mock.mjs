@@ -1,7 +1,8 @@
 // Browser-only reproduction: full app.js + real index.html + galaxy bundle,
 // with a mocked Tauri bridge. Verifies that clicking Galaxy after a scan feeds
 // scan data (empty state hidden, canvas + shaded planets present).
-/* global window, document, getComputedStyle */
+// (Browser globals for page.evaluate callbacks come from the eslint
+// Playwright override in eslint.config.mjs.)
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';

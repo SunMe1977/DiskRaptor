@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsInvoke, assert } from "./test_shared.mjs";
 
 runTest("DiskRaptor System Info Test", 9253, async (cdp) => {
   const memoryInfo = await jsInvoke(cdp,

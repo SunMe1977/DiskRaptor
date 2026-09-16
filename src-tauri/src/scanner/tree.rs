@@ -159,7 +159,7 @@ pub fn available_memory_bytes() -> u64 {
     let cache = CACHE.get_or_init(|| {
         std::sync::Mutex::new((Instant::now() - Duration::from_secs(11), 0))
     });
-    let mut guard = cache.lock().unwrap();
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
     if guard.0.elapsed() >= Duration::from_secs(10) {
         let mut sys = sysinfo::System::new();
         sys.refresh_memory();

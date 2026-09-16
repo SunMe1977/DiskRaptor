@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, waitForOverlay, clickById, sleep, setValue } from "./test_shared.mjs";
 
 runTest("DiskRaptor Cancel Scan Flow Test", 9233, async (cdp, scanPath) => {
   assert("Scan button enabled initially", await jsExpr(cdp, `document.getElementById('btn-scan')?.disabled !== true`));

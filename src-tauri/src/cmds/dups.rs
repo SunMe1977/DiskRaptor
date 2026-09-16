@@ -11,7 +11,10 @@ use tauri::{Manager, State};
 /// global Rayon pool may use every logical CPU, which turns random reads into
 /// seek contention and can starve the UI/scanner.  Four workers is enough to
 /// saturate typical storage while leaving capacity for the app.
-fn duplicate_hash_pool() -> rayon::ThreadPool {
+///
+/// Pool construction validates the config up front; a failure returns an
+/// error instead of panicking the duplicate-scan thread.
+fn duplicate_hash_pool() -> Result<rayon::ThreadPool, String> {
     let workers = std::thread::available_parallelism()
         .map(|n| n.get().saturating_sub(1).clamp(1, 4))
         .unwrap_or(2);
@@ -19,7 +22,21 @@ fn duplicate_hash_pool() -> rayon::ThreadPool {
         .num_threads(workers)
         .thread_name(|i| format!("dup-hash-{i}"))
         .build()
-        .expect("valid duplicate hash pool configuration")
+        .map_err(|e| format!("duplicate hash pool: {e}"))
+}
+
+/// Run `op` on the dedicated pool, falling back to the global Rayon pool when
+/// the dedicated pool could not be built. The fallback still hashes in
+/// parallel (via the global pool) instead of panicking the scan thread.
+fn install_on<T, F>(pool: Option<&rayon::ThreadPool>, op: F) -> T
+where
+    T: Send,
+    F: FnOnce() -> T + Send,
+{
+    match pool {
+        Some(p) => p.install(op),
+        None => op(),
+    }
 }
 
 /// A same-size candidate awaiting hashing: `(path, length, mtime)`. The length
@@ -152,8 +169,8 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
             .filter(|g| g.len() >= 2)
             .flatten()
             .collect();
-        let hash_pool = duplicate_hash_pool();
-        let hashed: Vec<HashedCandidate> = hash_pool.install(|| candidates
+        let hash_pool = duplicate_hash_pool().ok();
+        let hashed: Vec<HashedCandidate> = install_on(hash_pool.as_ref(), || candidates
                 .into_par_iter()
                 .filter_map(|(p, len0, mtime0)| {
                     if cancelled.load(Ordering::Relaxed) {
@@ -186,7 +203,7 @@ pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult
             // Full stream-hash each candidate in parallel: only files with
             // identical full content are true duplicates. Files that changed
             // while scanning are excluded so we never suggest deleting them.
-            let verified: Vec<(std::path::PathBuf, (u64, u64))> = hash_pool.install(|| files
+            let verified: Vec<(std::path::PathBuf, (u64, u64))> = install_on(hash_pool.as_ref(), || files
                 .into_par_iter()
                 .filter_map(|(p, len0, mtime0)| {
                     if cancelled.load(Ordering::Relaxed) {

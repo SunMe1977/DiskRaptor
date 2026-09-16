@@ -1,4 +1,4 @@
-import { runTest, jsExpr, jsInvoke, assert, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
 
 runTest("DiskRaptor Backend Roundtrip Test", 9259, async (cdp, scanPath) => {
   const commands = [

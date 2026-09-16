@@ -171,9 +171,11 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
                     let mut w = write.lock().await;
                     // tungstenite 0.30: Message::Text takes Utf8Bytes; use the
                     // Message::text() constructor which accepts &str/String.
-                    let _ = w.send(tokio_tungstenite::tungstenite::Message::text(
-                        serde_json::to_string(&resp).unwrap()
-                    )).await;
+                    // Serialization of a json! value cannot realistically fail,
+                    // but never panic the test server over it — skip the reply.
+                    if let Ok(text) = serde_json::to_string(&resp) {
+                        let _ = w.send(tokio_tungstenite::tungstenite::Message::text(text)).await;
+                    }
                 }
             }
             Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,

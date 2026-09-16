@@ -4,9 +4,8 @@
  */
 import WebSocket from "ws";
 import http from "http";
-import { execSync, spawn } from "child_process";
-import path from "path";
-import fs from "fs";
+    import { execSync, spawn } from "child_process";
+    import path from "path";
 
 const CDP_PORT = 9228;
 const SCAN_PATH = path.resolve("raw");
@@ -21,7 +20,7 @@ function fetch(u) {
 }
 async function connect(wsUrl) {
   const ws = new WebSocket(wsUrl), p = new Map(); let id = 0;
-  ws.on("message", r => { try { const m = JSON.parse(r.toString()); if (m.id !== undefined && p.has(m.id)) { p.get(m.id).resolve(m); p.delete(m.id); } } catch {} });
+  ws.on("message", r => { try { const m = JSON.parse(r.toString()); if (m.id !== undefined && p.has(m.id)) { p.get(m.id).resolve(m); p.delete(m.id); } } catch { /* best-effort: ignore */ } });
   await new Promise((R, F) => { ws.on("open", R); ws.on("error", F); setTimeout(() => F(new Error("WS timeout")), 10000); });
   return {
     send(m, q = {}) { return new Promise((R, J) => { const n = ++id; p.set(n, { resolve: R, reject: J }); ws.send(JSON.stringify({ id: n, method: m, params: q })); setTimeout(() => J(new Error("CDP timeout")), 30000); }); },
@@ -31,8 +30,8 @@ async function connect(wsUrl) {
 async function js(c, expr) { const r = await c.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }); return r?.result?.result?.value; }
 
 // Kill existing
-try { execSync("taskkill /F /IM DiskRaptor.exe", { stdio: "ignore", shell: true }); } catch {}
-try { execSync("taskkill /F /IM QtWebEngineProcess.exe", { stdio: "ignore", shell: true }); } catch {}
+try { execSync("taskkill /F /IM DiskRaptor.exe", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
+try { execSync("taskkill /F /IM QtWebEngineProcess.exe", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
 await sleep(2000);
 
 // Launch
@@ -42,7 +41,7 @@ await sleep(5000);
 let wsUrl = null;
 for (let i = 0; i < 60; i++) {
   await sleep(500);
-  try { const pages = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`); if (Array.isArray(pages) && pages.length > 0 && pages[0].webSocketDebuggerUrl) { wsUrl = pages[0].webSocketDebuggerUrl; break; } } catch {}
+  try { const pages = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`); if (Array.isArray(pages) && pages.length > 0 && pages[0].webSocketDebuggerUrl) { wsUrl = pages[0].webSocketDebuggerUrl; break; } } catch { /* best-effort: ignore */ }
 }
 if (!wsUrl) throw new Error("CDP not found");
 
@@ -59,16 +58,15 @@ for (let i = 0; i < 30; i++) {
 
 // Collect console errors
 let consoleErrors = [];
-c.send("Console.enable").catch(() => {});
-const origOn = c.ws?.on || (() => {});
-c.ws?.on("message", (raw) => {
+    c.send("Console.enable").catch(() => {});
+    c.ws?.on("message", (raw) => {
   try {
     const m = JSON.parse(raw.toString());
     if (m.method === "Console.messageAdded") {
       const msg = m.params.message;
       if (msg.level === "error") consoleErrors.push(msg.text);
     }
-  } catch {}
+  } catch { /* best-effort: ignore */ }
 });
 
 // Do a scan
@@ -167,5 +165,5 @@ console.log(`  PASS: ${passed}  FAIL: ${failed}`);
 if (failed > 0) process.exit(1);
 
 c.close();
-try { execSync("taskkill /F /IM DiskRaptor.exe", { stdio: "ignore", shell: true }); } catch {}
-try { execSync("taskkill /F /IM QtWebEngineProcess.exe", { stdio: "ignore", shell: true }); } catch {}
+try { execSync("taskkill /F /IM DiskRaptor.exe", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }
+try { execSync("taskkill /F /IM QtWebEngineProcess.exe", { stdio: "ignore", shell: true }); } catch { /* best-effort: ignore */ }

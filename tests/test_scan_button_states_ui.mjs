@@ -1,12 +1,6 @@
-import { runTest, jsExpr, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, sleep, waitForOverlay, setValue } from "./test_shared.mjs";
 
 runTest("DiskRaptor Scan Button State Transitions Test", 9267, async (cdp, scanPath) => {
-  const scanBtn = document.getElementById("scan-path");
-  const btnScan = document.getElementById("btn-scan");
-  const btnRescan = document.getElementById("btn-rescan");
-  const btnCancel = document.getElementById("btn-cancel");
-  const btnExport = document.getElementById("btn-export");
-
   assert("Scan button enabled initially", await jsExpr(cdp, `document.getElementById('btn-scan')?.disabled !== true`));
   assert("Rescan disabled initially", await jsExpr(cdp, `document.getElementById('btn-rescan')?.disabled === true`));
   assert("Cancel disabled initially", await jsExpr(cdp, `document.getElementById('btn-cancel')?.disabled === true`));

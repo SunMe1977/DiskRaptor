@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert } from "./test_shared.mjs";
 
 runTest("DiskRaptor Duplicates Test", 9213, async (cdp) => {
   const toolsItems = await jsExpr(cdp, `Array.from(document.querySelectorAll('.tools-item')).map(i => i.getAttribute('data-action') || i.textContent.trim())`);

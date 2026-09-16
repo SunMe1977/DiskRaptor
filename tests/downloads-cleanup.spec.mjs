@@ -58,7 +58,7 @@ async function connectCDP(wsUrl) {
         pending.get(m.id).resolve(m);
         pending.delete(m.id);
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   });
   await new Promise((r, f) => {
     ws.on("open", r);
@@ -99,10 +99,10 @@ async function jsExpr(cdp, expr) {
 function killAll() {
   try {
     execSync("pkill -9 DiskRaptor 2>/dev/null", { stdio: "ignore" });
-  } catch {}
+  } catch { /* best-effort: ignore */ }
   try {
     execSync("pkill -9 QtWebEngineProcess 2>/dev/null", { stdio: "ignore" });
-  } catch {}
+  } catch { /* best-effort: ignore */ }
 }
 
 async function main() {
@@ -162,7 +162,7 @@ async function main() {
         wsUrl = pages[0].webSocketDebuggerUrl;
         break;
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
   assert("App launched with CDP", !!wsUrl, wsUrl ? "" : "CDP endpoint never appeared");
   if (!wsUrl) {
@@ -275,7 +275,7 @@ async function main() {
       if (i % 20 === 0 && maxFiles > 0) {
         console.log(`  files: ${maxFiles.toLocaleString()}`);
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
 
   await sleep(3000);
@@ -412,7 +412,7 @@ async function main() {
   }
 
   // Clean up temp directory
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort: ignore */ }
   console.log(`  Temp dir cleaned: ${tmpDir}`);
 
   // Summary
@@ -432,7 +432,7 @@ async function main() {
 
 main().catch((err) => {
   console.error(`\nError: ${err.message}`);
-  try { execSync("rm -rf /tmp/diskraptor-test-downloads-* 2>/dev/null", { stdio: "ignore" }); } catch {}
+  try { execSync("rm -rf /tmp/diskraptor-test-downloads-* 2>/dev/null", { stdio: "ignore" }); } catch { /* best-effort: ignore */ }
   killAll();
   process.exit(1);
 });

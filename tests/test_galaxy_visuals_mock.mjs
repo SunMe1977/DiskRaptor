@@ -1,6 +1,8 @@
 // Browser-only regression for planet shading and the real lazy-loader.
 // Run after npm run build:frontend to check both source modules and the bundle.
-/* global window, document, loadGalaxyScripts */
+// (Browser globals for page.evaluate callbacks come from the eslint
+// Playwright override in eslint.config.mjs.)
+/* global loadGalaxyScripts:readonly */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
