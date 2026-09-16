@@ -182,7 +182,16 @@ async function main() {
     console.log(`Quick mode: running ${testList.length} smoke tests\n`);
   }
 
-  const namedTests = args.filter(a => !a.startsWith("--"));
+  // Positional args name specific test files — but skip values consumed by
+  // --parallel/--timeout (e.g. the "3" in --parallel 3 is not a test file).
+  const valueIdx = new Set();
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === "--parallel" || args[i] === "--timeout") &&
+        i + 1 < args.length && !args[i + 1].startsWith("--")) {
+      valueIdx.add(i + 1);
+    }
+  }
+  const namedTests = args.filter((a, i) => !a.startsWith("--") && !valueIdx.has(i));
   if (namedTests.length > 0) {
     testList = ALL_TESTS.filter(t => namedTests.includes(t.file));
     if (testList.length === 0) {
