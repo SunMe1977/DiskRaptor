@@ -136,14 +136,17 @@ jobs:
       # build and the UI suite on each OS — it intentionally does not repeat
       # `cargo test` per platform. One exception: Windows-only clippy, so
       # `cfg(windows)` code (unreachable on ubuntu) stays lint-clean.
+      # NOTE: frontend-dist must exist before any Rust compile step: the
+      # generate_context!() proc macro panics when the configured
+      # frontendDist path is missing (frontend-dist/ is gitignored).
+      - name: Build minified frontend (frontend-dist)
+        run: node scripts/build-frontend.mjs
       - name: Clippy (Windows-only code)
         if: runner.os == 'Windows'
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: "sccache"
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - name: Build minified frontend (frontend-dist)
-        run: node scripts/build-frontend.mjs
       - name: Build Tauri app (test-server)
         shell: bash
         env:
