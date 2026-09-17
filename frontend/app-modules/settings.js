@@ -60,16 +60,6 @@ window.app.initSettings = function (config) {
           langSel.appendChild(opt);
         });
       }
-      // Show app data location
-      (async function () {
-        try {
-          const r = await window.__TAURI__.invoke("get_app_data_dir");
-          const p = r && r.path ? r.path : (r && r.data ? r.data.path : "");
-          const el = document.getElementById("settings-appdata");
-          if (el && p) el.textContent = p;
-        } catch (e) { console.debug("[DiskRaptor]", e); }
-      })();
-
       const isWin = /win/i.test(navigator.platform || "");
       const isMac = /mac/i.test(navigator.platform || "");
       const presets = isWin
@@ -150,17 +140,13 @@ window.app.initSettings = function (config) {
             .catch(function () {});
         }
 
-        // Welcome page URLs.
-        const starUrlEl = document.getElementById("settings-welcome-star");
-        const forkUrlEl = document.getElementById("settings-welcome-fork");
-        const storeUrlEl = document.getElementById("settings-welcome-store");
-        if (starUrlEl || forkUrlEl || storeUrlEl) {
+        // Disable system tray toggle.
+        const disableTrayEl = document.getElementById("settings-disable-tray");
+        if (disableTrayEl) {
           window.__TAURI__
             .invoke("load_settings", {})
             .then(function (s) {
-              if (s && s.welcome_star_url && starUrlEl) starUrlEl.value = s.welcome_star_url;
-              if (s && s.welcome_fork_url && forkUrlEl) forkUrlEl.value = s.welcome_fork_url;
-              if (s && s.welcome_store_url && storeUrlEl) storeUrlEl.value = s.welcome_store_url;
+              if (s && typeof s.disable_tray === "boolean") disableTrayEl.checked = s.disable_tray;
             })
             .catch(function () {});
         }
@@ -178,21 +164,26 @@ window.app.initSettings = function (config) {
           const selTheme = document.getElementById("settings-theme")?.value || "auto";
           const selLang = (document.getElementById("settings-language")?.value || "auto");
            const termChoice = termEl ? termEl.value : "cmd";
-           const accentColor = accentEl ? accentEl.value : "";
-           const autoStart = autoStartEl ? autoStartEl.checked : true;
-            const confirmDelete = confirmDelEl ? confirmDelEl.checked : true;
-            const welcomeStarUrl = starUrlEl ? starUrlEl.value : "";
-            const welcomeForkUrl = forkUrlEl ? forkUrlEl.value : "";
-            const welcomeStoreUrl = storeUrlEl ? storeUrlEl.value : "";
-            if (autoStartEl) {
+            const accentColor = accentEl ? accentEl.value : "";
+            const autoStart = autoStartEl ? autoStartEl.checked : true;
+             const confirmDelete = confirmDelEl ? confirmDelEl.checked : true;
+             const disableTray = disableTrayEl ? disableTrayEl.checked : false;
+             if (autoStartEl) {
               window.__TAURI__
                 .invoke("set_autostart", { enabled: autoStart })
                 .catch(function (e) {
                   window.showToast("Autostart failed: " + (e && e.message ? e.message : e), "error");
                 });
             }
+            if (disableTrayEl) {
+              window.__TAURI__
+                .invoke("set_tray_enabled", { enabled: !disableTray })
+                .catch(function (e) {
+                  window.showToast("Tray setting failed: " + (e && e.message ? e.message : e), "error");
+                });
+            }
             await window.__TAURI__
-              .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor, confirm_delete: confirmDelete, welcome_star_url: welcomeStarUrl, welcome_fork_url: welcomeForkUrl, welcome_store_url: welcomeStoreUrl } })
+              .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor, confirm_delete: confirmDelete, disable_tray: disableTray } })
              .catch(function (e) {
                window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
              });

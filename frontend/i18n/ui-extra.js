@@ -2,6 +2,7 @@ window.I18N_DATA = window.I18N_DATA || {"apfs.mac_only":"APFS & Purgeable is onl
 window.I18N_DATA.en = Object.assign(window.I18N_DATA.en || {}, {
   "settings.scan_timeout": "Scan idle timeout (seconds)",
   "settings.scan_timeout_help": "Stop only when no work completes, not after a total scan duration. Default: 120 seconds. 0 disables the timeout; Cancel remains available.",
+  "settings.disable_tray": "Disable system tray",
   "scan.timeout_help": "The scan stopped because no work completed within the idle timeout. Check the drive connection and any permission dialogs. Windows directory enumeration does not request UAC elevation; these diagnostics cannot detect a hidden prompt. A blocked OS call may remain pending. You can change the idle timeout in Preferences or retry this scan with the timeout below. Retrying starts from the beginning and does not change your saved preference.",
   "scan.retry_timeout": "Retry with {seconds}s timeout",
   "action.finder": "Open in Finder",
@@ -64,6 +65,7 @@ window.I18N_DATA.en = Object.assign(window.I18N_DATA.en || {}, {
 window.I18N_DATA.de = Object.assign(window.I18N_DATA.de || {}, {
   "settings.scan_timeout": "Scan-Leerlaufzeitlimit (Sekunden)",
   "settings.scan_timeout_help": "Abbruch nur, wenn keine Arbeit abgeschlossen wird, nicht nach einer festen Gesamtdauer. Standard: 120 Sekunden. 0 deaktiviert das Zeitlimit; Abbrechen bleibt verfügbar.",
+  "settings.disable_tray": "Systemleiste deaktivieren",
   "scan.timeout_help": "Der Scan wurde gestoppt, weil innerhalb des Leerlaufzeitlimits keine Arbeit abgeschlossen wurde. Prüfen Sie die Laufwerksverbindung und offene Berechtigungsdialoge. Die Windows-Verzeichnisabfrage fordert keine UAC-Erhöhung an; diese Diagnose kann keine versteckten Dialoge erkennen. Ein blockierter Betriebssystemaufruf kann weiter ausstehen. Sie können das Zeitlimit in den Einstellungen ändern oder den Scan mit dem unten angezeigten Zeitlimit erneut starten. Ein erneuter Scan beginnt von vorne und ändert die gespeicherte Einstellung nicht.",
   "scan.retry_timeout": "Erneut scannen mit {seconds}s Zeitlimit",
   "action.finder": "Im Finder öffnen",

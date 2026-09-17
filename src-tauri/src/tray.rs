@@ -10,6 +10,15 @@ pub struct Tray {
 }
 
 pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    // Load settings to check if tray should be disabled
+    let st = app.state::<AppState>();
+    let path = st.settings_path.lock().clone();
+    let disable_tray = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .and_then(|v| v.get("disable_tray").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+
     let menu = menu::build_tray_menu(app)?;
     let mut tray_builder = TrayIconBuilder::new();
     if let Some(icon) = app.default_window_icon() {
@@ -39,8 +48,11 @@ pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         })
         .build(app)?;
+    if disable_tray {
+        let _ = tray.set_visible(false);
+    }
     app.manage(Tray { _tray: tray });
-    info!("System tray initialized");
+    info!("System tray initialized (visible: {})", !disable_tray);
     Ok(())
 }
 

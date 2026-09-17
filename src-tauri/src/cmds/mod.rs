@@ -15,6 +15,8 @@ pub(crate) mod settings;
 pub(crate) mod system;
 #[allow(unused_imports)]
 pub(crate) mod autostart;
+#[allow(unused_imports)]
+pub(crate) mod tray;
 
 // Re-exports keep the crate-root API (invoke_handler, integration tests,
 // sibling modules such as smart/trash/browser) source-compatible after the
@@ -47,3 +49,5 @@ pub(crate) use system::run_output;
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
 pub(crate) use path_ops::native_browser_icon;
+#[allow(unused_imports)]
+pub(crate) use tray::{get_tray_enabled, set_tray_enabled};

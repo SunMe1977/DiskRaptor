@@ -61,6 +61,7 @@ pub fn register_commands() -> Box<tauri::ipc::InvokeHandler<tauri::Wry>> {
         browser::list_browser_data, browser::clean_browser, browser::get_browser_icon,
         apfs::list_apfs_volumes, apfs::delete_local_snapshot, apfs::get_apfs_schedule, apfs::set_apfs_schedule, apfs::run_apfs_cleanup,
         cmds::autostart::set_autostart, cmds::autostart::get_autostart,
+        cmds::tray::set_tray_enabled, cmds::tray::get_tray_enabled,
         set_locale, get_system_locale,
     ])
 }

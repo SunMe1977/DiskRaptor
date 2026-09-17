@@ -23,7 +23,6 @@ ffi = []
 [[bin]]
 name = "diskraptor"
 path = "src/main.rs"
-required-features = ["test-server"]
 
 [[example]]
 name = "dll_test"
@@ -49,7 +48,7 @@ required-features = ["ffi"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "webview-data-url"] }
+tauri = { version = "2", features = ["tray-icon", "webview-data-url", "custom-protocol"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-log = "2"
