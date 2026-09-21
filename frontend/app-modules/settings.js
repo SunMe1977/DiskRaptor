@@ -151,6 +151,34 @@ window.app.initSettings = function (config) {
             .catch(function () {});
         }
 
+        // Follow symlinks toggle.
+        const followSymlinksEl = document.getElementById("settings-follow-symlinks");
+        if (followSymlinksEl) {
+          window.__TAURI__
+            .invoke("load_settings", {})
+            .then(function (s) {
+              if (s && typeof s.follow_symlinks === "boolean") {
+                followSymlinksEl.checked = s.follow_symlinks;
+              } else {
+                const tb = document.querySelector("#chk-follow-symlinks input");
+                if (tb) followSymlinksEl.checked = tb.checked;
+              }
+            })
+            .catch(function () {});
+        }
+
+        // Diagram default: load saved mode into the dropdown.
+        const diagramEl = document.getElementById("settings-diagram");
+        if (diagramEl) {
+          window.__TAURI__
+            .invoke("load_settings", {})
+            .then(function (s) {
+              const m = s && s.diagram_mode;
+              if (m === "pie" || m === "treemap" || m === "bar") diagramEl.value = m;
+            })
+            .catch(function () {});
+        }
+
       document
         .getElementById("settings-close")
         ?.addEventListener("click", function () { so.style.display = "none"; });
@@ -168,6 +196,8 @@ window.app.initSettings = function (config) {
             const autoStart = autoStartEl ? autoStartEl.checked : true;
              const confirmDelete = confirmDelEl ? confirmDelEl.checked : true;
              const disableTray = disableTrayEl ? disableTrayEl.checked : false;
+             const followSymlinks = followSymlinksEl ? followSymlinksEl.checked : false;
+             const diagramMode = diagramEl ? diagramEl.value : "";
              if (autoStartEl) {
               window.__TAURI__
                 .invoke("set_autostart", { enabled: autoStart })
@@ -183,10 +213,18 @@ window.app.initSettings = function (config) {
                 });
             }
             await window.__TAURI__
-              .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor, confirm_delete: confirmDelete, disable_tray: disableTray } })
+              .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor, confirm_delete: confirmDelete, disable_tray: disableTray, follow_symlinks: followSymlinks, diagram_mode: diagramMode } })
              .catch(function (e) {
                window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
              });
+          // Sync toolbar toggle so next scan uses the saved value.
+          const tbFollow = document.querySelector("#chk-follow-symlinks input");
+          if (tbFollow && followSymlinksEl) tbFollow.checked = followSymlinksEl.checked;
+          // Apply diagram mode immediately.
+          if (diagramEl && (diagramMode === "pie" || diagramMode === "treemap" || diagramMode === "bar")) {
+            const target = document.querySelector('.diagram-mode[data-mode="' + diagramMode + '"]');
+            if (target) target.click();
+          }
           if (selTheme === "light") document.body.classList.add("light-theme");
           else if (selTheme === "dark") document.body.classList.remove("light-theme");
           else {

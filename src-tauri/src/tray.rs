@@ -20,7 +20,7 @@ pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(false);
 
     let menu = menu::build_tray_menu(app)?;
-    let mut tray_builder = TrayIconBuilder::new();
+    let mut tray_builder = TrayIconBuilder::with_id("main");
     if let Some(icon) = app.default_window_icon() {
         tray_builder = tray_builder.icon(icon.clone());
     }

@@ -1707,6 +1707,21 @@ const current = _currentVersion || "0.0.0";
         '<input type="checkbox"> Follow symlinks';
       btnScan.parentNode.insertBefore(chkFollow, btnScan);
     }
+    // Init from persisted settings + keep in sync when toggled in toolbar.
+    (function () {
+      const input = chkFollow.querySelector("input");
+      if (!input) return;
+      window.__TAURI__.invoke("load_settings", {})
+        .then(function (s) {
+          if (s && typeof s.follow_symlinks === "boolean") input.checked = s.follow_symlinks;
+        })
+        .catch(function () {});
+      input.addEventListener("change", function () {
+        window.__TAURI__.invoke("save_settings", { settings: { follow_symlinks: input.checked } }).catch(function () {});
+        const dlg = document.getElementById("settings-follow-symlinks");
+        if (dlg) dlg.checked = input.checked;
+      });
+    })();
 
     // -- Error display --
     let errDisplay = document.getElementById("scan-errors");

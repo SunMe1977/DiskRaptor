@@ -412,57 +412,77 @@
         </div>
 
         <div id="settings-overlay" class="overlay-base" style="display:none;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);">
-            <div class="overlay-card" style="max-width:360px;max-height:90vh;overflow-y:auto;box-sizing:border-box;">
-                <h3 style="margin:0 0 16px 0;font-size:16px;color:var(--text-primary);" data-i18n="settings.title">⚙️ Preferences</h3>
-                <div style="margin-bottom:12px;">
+            <div class="overlay-card" style="max-width:640px;width:min(640px,94vw);max-height:none;overflow:visible;box-sizing:border-box;padding:20px 24px;">
+                <h3 style="margin:0 0 12px 0;font-size:16px;color:var(--text-primary);" data-i18n="settings.title">⚙️ Preferences</h3>
+                <div style="margin-bottom:10px;">
                     <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.default_path">Default scan path</label>
                     <input id="settings-default-path" type="text" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;box-sizing:border-box;">
                 </div>
-                <div style="margin-bottom:16px;">
+                <div style="margin-bottom:10px;">
                     <label for="settings-scan-timeout" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.scan_timeout">Scan idle timeout (seconds)</label>
-                    <input id="settings-scan-timeout" type="number" min="0" max="3600" step="1" value="120" required aria-describedby="settings-scan-timeout-help" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);box-sizing:border-box;">
-                    <p id="settings-scan-timeout-help" style="font-size:11px;color:var(--text-muted);margin:4px 0 0;" data-i18n="settings.scan_timeout_help">Stop only when no work completes, not after a total scan duration. Default: 120 seconds. 0 disables the timeout; Cancel remains available.</p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;align-items:start;">
+                        <input id="settings-scan-timeout" type="number" min="0" max="3600" step="1" value="120" required aria-describedby="settings-scan-timeout-help" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);box-sizing:border-box;">
+                        <p id="settings-scan-timeout-help" style="font-size:11px;color:var(--text-muted);margin:0;line-height:1.4;" data-i18n="settings.scan_timeout_help">Stop only when no work completes, not after a total scan duration. Default: 120 seconds. 0 disables the timeout; Cancel remains available.</p>
+                    </div>
                 </div>
-                <div style="margin-bottom:16px;">
-                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.theme">Theme</label>
-                    <select id="settings-theme" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
-                        <option value="auto" data-i18n="settings.theme_auto">System</option>
-                        <option value="dark" data-i18n="settings.theme_dark">Dark</option>
-                        <option value="light" data-i18n="settings.theme_light">Light</option>
-                    </select>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-bottom:10px;">
+                    <div>
+                        <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.theme">Theme</label>
+                        <select id="settings-theme" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
+                            <option value="auto" data-i18n="settings.theme_auto">System</option>
+                            <option value="dark" data-i18n="settings.theme_dark">Dark</option>
+                            <option value="light" data-i18n="settings.theme_light">Light</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.language">Language</label>
+                        <select id="settings-language" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
+                            <option value="auto">🌐 Auto (System)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.quick_presets">Quick presets</label>
+                        <div id="settings-presets" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                    </div>
+                    <div>
+                        <label for="settings-terminal" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Terminal (Windows)</label>
+                        <select id="settings-terminal" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:12px;">
+                            <option value="cmd">Command Prompt (cmd)</option>
+                            <option value="powershell">PowerShell</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="settings-diagram" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.diagram">Diagram</label>
+                        <select id="settings-diagram" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:12px;">
+                            <option value="pie">🥧 Pie</option>
+                            <option value="treemap">🗺️ Treemap</option>
+                            <option value="bar">📊 Bar</option>
+                        </select>
+                    </div>
                 </div>
-                <div style="margin-bottom:16px;">
-                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.quick_presets">Quick presets</label>
-                    <div id="settings-presets" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 12px;margin-bottom:12px;align-items:center;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input id="settings-accent" type="color" value="#58a6ff" style="width:48px;height:28px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);cursor:pointer;padding:2px;flex-shrink:0;" />
+                        <label for="settings-accent" style="font-size:12px;color:var(--text-secondary);cursor:pointer;" data-i18n="settings.accent_color">Accent color</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input id="settings-confirm-delete" type="checkbox" checked style="width:15px;height:15px;cursor:pointer;flex-shrink:0;" />
+                        <label for="settings-confirm-delete" style="font-size:12px;color:var(--text-primary);cursor:pointer;">🗑️ Confirm before delete / move to trash</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input id="settings-disable-tray" type="checkbox" style="width:15px;height:15px;cursor:pointer;flex-shrink:0;" />
+                        <label for="settings-disable-tray" style="font-size:12px;color:var(--text-primary);cursor:pointer;" data-i18n="settings.disable_tray">🖥️ Disable system tray</label>
+                    </div>
                 </div>
-                <div style="margin-bottom:16px;">
-                    <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.language">Language</label>
-                    <select id="settings-language" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
-                        <option value="auto">🌐 Auto (System)</option>
-                    </select>
-                </div>
-<div style="margin-bottom:16px;">
-                    <label for="settings-accent" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.accent_color">Accent color</label>
-                    <input id="settings-accent" type="color" value="#58a6ff" style="width:48px;height:28px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);cursor:pointer;padding:2px;" />
-                </div>
-<div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;">
-                  <input id="settings-confirm-delete" type="checkbox" checked style="width:15px;height:15px;cursor:pointer;" />
-                  <label for="settings-confirm-delete" style="font-size:12px;color:var(--text-primary);cursor:pointer;">🗑️ Confirm before delete / move to trash</label>
-              </div>
-              <div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;">
-                  <input id="settings-disable-tray" type="checkbox" style="width:15px;height:15px;cursor:pointer;" />
-                  <label for="settings-disable-tray" style="font-size:12px;color:var(--text-primary);cursor:pointer;" data-i18n="settings.disable_tray">🖥️ Disable system tray</label>
-              </div>
-                <div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;">
-                    <input id="settings-autostart" type="checkbox" checked style="width:15px;height:15px;cursor:pointer;" />
-                    <label for="settings-autostart" style="font-size:12px;color:var(--text-primary);cursor:pointer;">🚀 Launch at login</label>
-                </div>
-                <div style="margin-bottom:16px;">
-                    <label for="settings-terminal" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Terminal (Windows)</label>
-                    <select id="settings-terminal" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:12px;">
-                        <option value="cmd">Command Prompt (cmd)</option>
-                        <option value="powershell">PowerShell</option>
-                    </select>
+                <div style="margin-bottom:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;align-items:center;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input id="settings-autostart" type="checkbox" checked style="width:15px;height:15px;cursor:pointer;" />
+                        <label for="settings-autostart" style="font-size:12px;color:var(--text-primary);cursor:pointer;">🚀 Launch at login</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input id="settings-follow-symlinks" type="checkbox" style="width:15px;height:15px;cursor:pointer;" />
+                        <label for="settings-follow-symlinks" style="font-size:12px;color:var(--text-primary);cursor:pointer;" data-i18n="settings.follow_symlinks">🔗 Follow symlinks</label>
+                    </div>
                 </div>
                 <div class="flex-row" style="gap:8px;justify-content:flex-end;">
                     <button id="settings-close" class="btn-secondary" data-i18n="settings.cancel">Cancel</button>
