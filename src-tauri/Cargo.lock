@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "diskraptor"
-version = "1.0.34"
+version = "1.0.35"
 dependencies = [
  "anyhow",
  "criterion",
