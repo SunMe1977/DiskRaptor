@@ -1167,9 +1167,28 @@ _getVisibleObjects() {
         this.selectedObject = nearest;
         this._onObjectSelected(nearest);
 
-        // Fly to the object
+        // Fly toward the object along the current view direction, stopping at
+        // a distance proportional to its size. Never flies AWAY: if already
+        // closer than the focus distance, keep the distance and just re-aim.
+        // (The old fixed +50z offset yanked the camera back out whenever you
+        // were already zoomed in close.)
         const target = nearest.position || this.camera.target;
-        const flyPos = [target[0], target[1] + 20, target[2] + 50];
+        const focusDist = Math.min(
+          Math.max((nearest.scale || 5) * 6, CFG.camera.minZoom),
+          CFG.camera.maxZoom
+        );
+        const dir = [
+          this.camera.position[0] - target[0],
+          this.camera.position[1] - target[1],
+          this.camera.position[2] - target[2],
+        ];
+        const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+        const newDist = Math.min(len, focusDist);
+        const flyPos = [
+          target[0] + (dir[0] / len) * newDist,
+          target[1] + (dir[1] / len) * newDist,
+          target[2] + (dir[2] / len) * newDist,
+        ];
         this.animation.flyTo(flyPos, [...target]);
       }
     }
