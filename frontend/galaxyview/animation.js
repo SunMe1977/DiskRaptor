@@ -30,6 +30,13 @@
       this.deltaTime = timestamp - (this.lastTimestamp || timestamp);
       this.lastTimestamp = timestamp;
 
+      // Clamp frame gaps (tab hidden, galaxy closed a while, first frame after
+      // show()): without this, one huge dt completes any camera transition
+      // instantly — the open zoom would snap instead of playing. Matches the
+      // render loop's own >100ms skip policy.
+      if (this.deltaTime > 100) this.deltaTime = 16;
+      if (this.deltaTime < 0) this.deltaTime = 0;
+
       const dt = this.deltaTime * this.speed;
 
       // Camera transitions always run — even while object animation is
