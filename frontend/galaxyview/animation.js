@@ -8,6 +8,12 @@
 
   const CFG = window.GalaxyViewConfig;
 
+  /** Global rotation/orbit tempo (0.5 = half speed). Pulses stay untouched. */
+  function rotScale() {
+    const s = CFG.animation && CFG.animation.rotationScale;
+    return (typeof s === "number" && isFinite(s) && s >= 0) ? s : 1;
+  }
+
   class AnimationEngine {
     constructor() {
       this.time = 0;
@@ -21,13 +27,19 @@
 
     /** Update all animations. Called every frame. */
     update(timestamp, objects, camera) {
-      if (this.paused) return;
-
       this.deltaTime = timestamp - (this.lastTimestamp || timestamp);
       this.lastTimestamp = timestamp;
-      this.time += this.deltaTime * this.speed;
 
       const dt = this.deltaTime * this.speed;
+
+      // Camera transitions always run — even while object animation is
+      // paused (e.g. hovering a planet must not freeze the open zoom).
+      this._updateTransitions(dt, camera);
+
+      if (this.paused) return;
+
+      this.time += this.deltaTime * this.speed;
+
       const t = this.time;
 
       // Update celestial object animations
@@ -65,24 +77,21 @@
         }
       }
 
-      // Update camera transitions
-      this._updateTransitions(dt, camera);
-
       // Advance time
       this.time += dt;
     }
 
     _animateStar(star, t) {
-      // Slow rotation pulse
-      star._rotation = (star._rotation || 0) + 0.0005;
+      // Slow rotation (scaled by global rotation tempo)
+      star._rotation = (star._rotation || 0) + 0.0005 * rotScale();
       // Subtle glow pulse based on usage
       const pulse = Math.sin(t * CFG.animation.glowPulseSpeed + (star.data?.totalFiles || 0) * 0.001) * 0.1 + 0.9;
       star._currentGlow = (star.glow || 0.5) * pulse;
     }
 
     _animatePlanet(planet, t) {
-      // Orbit motion
-      planet.orbitAngle = (planet.orbitAngle || 0) + (planet.orbitSpeed || CFG.animation.orbitSpeed) * t * 0.01;
+      // Orbit motion (scaled by global rotation tempo)
+      planet.orbitAngle = (planet.orbitAngle || 0) + (planet.orbitSpeed || CFG.animation.orbitSpeed) * t * 0.01 * rotScale();
       if (planet.position && planet.orbitRadius) {
         const rad = planet.orbitRadius + Math.sin(t * 0.0001) * 2; // slight eccentricity
         planet.position[0] = Math.cos(planet.orbitAngle) * rad;
@@ -96,14 +105,14 @@
         planet._pulse = pulse;
       }
 
-      // Rotation
-      planet._rotation = (planet._rotation || 0) + (planet.rotationSpeed || 0.001) * t * 0.01;
+      // Rotation (scaled by global rotation tempo)
+      planet._rotation = (planet._rotation || 0) + (planet.rotationSpeed || 0.001) * t * 0.01 * rotScale();
     }
 
     _animateMoon(moon, t) {
-      // Orbit around parent
+      // Orbit around parent (scaled by global rotation tempo)
       if (moon.parentPosition && moon.orbitRadius) {
-        moon.orbitAngle = (moon.orbitAngle || 0) + (moon.orbitSpeed || 0.003) * t * 0.01;
+        moon.orbitAngle = (moon.orbitAngle || 0) + (moon.orbitSpeed || 0.003) * t * 0.01 * rotScale();
         const rad = moon.orbitRadius;
         moon.position[0] = moon.parentPosition[0] + Math.cos(moon.orbitAngle) * rad;
         moon.position[2] = moon.parentPosition[2] + Math.sin(moon.orbitAngle) * rad;
@@ -116,8 +125,8 @@
     }
 
     _animateBlackHole(bh, t) {
-      // Slow rotation
-      bh._rotation = (bh._rotation || 0) + (bh.rotationSpeed || 0.0003) * t * 0.01;
+      // Slow rotation (scaled by global rotation tempo)
+      bh._rotation = (bh._rotation || 0) + (bh.rotationSpeed || 0.0003) * t * 0.01 * rotScale();
 
       // Event horizon pulse
       const pulse = Math.sin(t * 0.0005) * 0.1 + 0.9;
@@ -155,13 +164,13 @@
         diamond._shimmer = Math.sin(t * 0.003) * 0.3 + 0.7;
       }
 
-      // Rotation
-      diamond._rotation = (diamond._rotation || 0) + 0.01 * t * 0.01;
+      // Rotation (scaled by global rotation tempo)
+      diamond._rotation = (diamond._rotation || 0) + 0.01 * t * 0.01 * rotScale();
     }
 
     _animateSatellite(sat, t) {
-      // Fast orbit
-      sat.orbitAngle = (sat.orbitAngle || 0) + (sat.orbitSpeed || 0.005) * t * 0.01;
+      // Fast orbit (scaled by global rotation tempo)
+      sat.orbitAngle = (sat.orbitAngle || 0) + (sat.orbitSpeed || 0.005) * t * 0.01 * rotScale();
       if (sat.orbitRadius) {
         sat.position[0] = Math.cos(sat.orbitAngle) * sat.orbitRadius;
         sat.position[2] = Math.sin(sat.orbitAngle) * sat.orbitRadius;
@@ -206,6 +215,11 @@
       });
     }
 
+    /** Cancel any in-flight camera transition (e.g. user grabs control). */
+    cancelTransitions() {
+      this.transitions = [];
+    }
+
     _updateTransitions(dt, camera) {
       if (!this.transitions.length || !camera) return;
 
@@ -219,13 +233,26 @@
 
       transition.progress += dt / transition.duration;
       if (transition.progress >= 1) {
-        transition.progress = 1;
+        // Snap exactly onto the target — no float drift, clean lock
+        // (e.g. onto a planet) instead of floating nearby.
+        if (camera.position && transition.targetPosition) {
+          camera.position[0] = transition.targetPosition[0];
+          camera.position[1] = transition.targetPosition[1];
+          camera.position[2] = transition.targetPosition[2];
+        }
+        if (camera.target && transition.targetTarget) {
+          camera.target[0] = transition.targetTarget[0];
+          camera.target[1] = transition.targetTarget[1];
+          camera.target[2] = transition.targetTarget[2];
+        }
         this.transitions.shift(); // Complete
+        return;
       }
 
-      // Smooth interpolation (ease-in-out cubic)
+      // Smootherstep interpolation — zero velocity AND zero acceleration
+      // at both ends, so flights start and land without any jerk.
       const t = transition.progress;
-      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const ease = t * t * t * (t * (t * 6 - 15) + 10);
 
       if (camera.position && transition.startPosition && transition.targetPosition) {
         camera.position[0] = transition.startPosition[0] + (transition.targetPosition[0] - transition.startPosition[0]) * ease;

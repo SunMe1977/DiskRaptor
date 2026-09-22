@@ -46,6 +46,9 @@ window.GalaxyViewConfig = {
     flightAcceleration: 0.92,
     interpolationDamping: 0.08,
     cinematicTransitionDuration: 1200,
+    introDuration: 3400,
+    introStartMultiplier: 2.6,
+    introEndMultiplier: 0.42,
   },
 
   // ── Galaxy Layout ──────────────────────────────────────
@@ -72,6 +75,7 @@ window.GalaxyViewConfig = {
   // ── Animation ──────────────────────────────────────────
   animation: {
     enabled: true,
+    rotationScale: 0.5, // global orbit/rotation tempo (1.0 = normal, 0.5 = half speed)
     rotationSpeed: 0.001,
     orbitSpeed: 0.0005,
     pulseSpeed: 0.002,

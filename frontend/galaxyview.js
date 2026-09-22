@@ -344,9 +344,45 @@
       console.debug(`[GalaxyView] Galaxy created: ${this.objects.length} objects`);
     }
 
-    /** Auto-zoom camera to fit all objects in view */
-    _autoFitCamera() {
+    /** Auto-zoom camera to fit all objects in view.
+     * @param {boolean} animate - slowly fly in from far away (galaxy open) */
+    _autoFitCamera(animate) {
       if (!this.objects || this.objects.length === 0) return;
+      const view = this._computeFitView();
+      if (!view) return;
+      if (animate === false || !this._introEnabled()) {
+        this._applyFitView(view);
+        return;
+      }
+      // Start far outside, then slowly zoom deep into the planets.
+      const mult = (CFG.camera && CFG.camera.introStartMultiplier) || 2.6;
+      const endMult = (CFG.camera && CFG.camera.introEndMultiplier) || 0.42;
+      const duration = (CFG.camera && CFG.camera.introDuration) || 3400;
+      if (this.animation && typeof this.animation.cancelTransitions === "function") {
+        this.animation.cancelTransitions();
+      }
+      // Deep end position: well inside the planet orbits, clamped to minZoom.
+      const endDist = Math.max(view.dist * endMult, CFG.camera.minZoom);
+      const endPos = [0, endDist * 0.3, endDist];
+      this.camera.position[0] = view.position[0] * mult;
+      this.camera.position[1] = view.position[1] * mult;
+      this.camera.position[2] = view.position[2] * mult;
+      this.camera.target[0] = 0;
+      this.camera.target[1] = 0;
+      this.camera.target[2] = 0;
+      if (this.animation && typeof this.animation.flyTo === "function") {
+        this.animation.flyTo(endPos, view.target, duration);
+        this._armIntroCancel();
+      } else {
+        this.camera.position[0] = endPos[0];
+        this.camera.position[1] = endPos[1];
+        this.camera.position[2] = endPos[2];
+      }
+    }
+
+    /** Compute the fitted camera position/target without applying it. */
+    _computeFitView() {
+      if (!this.objects || this.objects.length === 0) return null;
       // Find bounding sphere centered on origin (where star is)
       let maxDist = 10;
       for (let di = 0; di < this.objects.length; di++) {
@@ -362,12 +398,50 @@
       let dist = maxDist / Math.sin(fovRad / 2) * 1.8;
       dist = Math.max(dist, CFG.camera.minZoom);
       dist = Math.min(dist, CFG.camera.maxZoom);
-      this.camera.position[0] = 0;
-      this.camera.position[1] = dist * 0.3;
-      this.camera.position[2] = dist;
-      this.camera.target[0] = 0;
-      this.camera.target[1] = 0;
-      this.camera.target[2] = 0;
+      return {
+        position: [0, dist * 0.3, dist],
+        target: [0, 0, 0],
+        dist: dist,
+      };
+    }
+
+    _applyFitView(view) {
+      this.camera.position[0] = view.position[0];
+      this.camera.position[1] = view.position[1];
+      this.camera.position[2] = view.position[2];
+      this.camera.target[0] = view.target[0];
+      this.camera.target[1] = view.target[1];
+      this.camera.target[2] = view.target[2];
+    }
+
+    _introEnabled() {
+      if (CFG.accessibility && CFG.accessibility.reducedMotion) return false;
+      if (CFG.animation && CFG.animation.enabled === false) return false;
+      if (CFG.animation && CFG.animation.cinematicTransitions === false) return false;
+      return true;
+    }
+
+    /** Replay the slow open zoom for an already-loaded galaxy. */
+    _playOpenZoom() {
+      if (!this.objects || this.objects.length === 0) return;
+      this._autoFitCamera(true);
+    }
+
+    /** Let the user interrupt the intro zoom by grabbing control. */
+    _armIntroCancel() {
+      if (!this.canvas || !this.animation) return;
+      const cancel = () => {
+        if (this.animation && typeof this.animation.cancelTransitions === "function") {
+          this.animation.cancelTransitions();
+        }
+      };
+      if (this._introCancelHandler && this.canvas) {
+        this.canvas.removeEventListener("wheel", this._introCancelHandler);
+        this.canvas.removeEventListener("mousedown", this._introCancelHandler);
+      }
+      this._introCancelHandler = cancel;
+      this.canvas.addEventListener("wheel", cancel, { once: true, passive: true });
+      this.canvas.addEventListener("mousedown", cancel, { once: true });
     }
 
     /** Update data during live scan */
@@ -1378,6 +1452,8 @@ case "delete": {
       this._resize();
       if (this.objects.length > 0) {
         this._startRenderLoop();
+        // Slow cinematic zoom into the planets on every open.
+        this._playOpenZoom();
       }
       // Don't hide main-layout - galaxy overlays on top with z-index
       // Just hide the toolbar for clean view
@@ -1390,6 +1466,9 @@ case "delete": {
 
     hide() {
       this.active = false;
+      if (this.animation && typeof this.animation.cancelTransitions === "function") {
+        this.animation.cancelTransitions();
+      }
       // The RAF loop stops scheduling itself while inactive. Reset the flag so
       // a later show() can start a fresh loop instead of finding it "running".
       this._renderLoopRunning = false;
