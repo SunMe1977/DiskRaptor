@@ -1310,15 +1310,30 @@ _getVisibleObjects() {
           if (path) window.__TAURI__.invoke("open_explorer", { path }).catch(() => {});
           break;
 case "delete": {
-           if (!path) break;
+           if (!path) {
+             const noPathMsg = gxt("galaxy.delete_no_path", "Kein Pfad für dieses Objekt — nichts zu löschen.");
+             if (sb) sb.textContent = noPathMsg;
+             if (window.showToast) window.showToast(noPathMsg, "error");
+             break;
+           }
            const self = this;
+           const failMsg = function (reason) {
+             const msg = gxt("galaxy.delete_failed", "Löschen fehlgeschlagen") + ": " + reason + " (" + path + ")";
+             if (sb) sb.textContent = msg;
+             if (window.showToast) window.showToast(msg, "error");
+             else console.error("[GalaxyView]", msg);
+           };
            window.__TAURI__.invoke("delete_path", { path }).then(function (res) {
               if (res && res.success !== false) {
                 self.objects = self.objects.filter((o) => o !== obj);
                 if (self.selectedObject === obj) self.selectedObject = null;
                 if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
+              } else {
+                failMsg((res && res.error) || "Unbekannter Fehler");
               }
-             }).catch(function () {});
+             }).catch(function (err) {
+               failMsg((err && (err.message || err)) || "Unbekannter Fehler");
+             });
            break;
          }
       }
