@@ -31,9 +31,9 @@
       this.lastTimestamp = timestamp;
 
       // Clamp frame gaps (tab hidden, galaxy closed a while, first frame after
-      // show()): without this, one huge dt completes any camera transition
-      // instantly — the open zoom would snap instead of playing. Matches the
-      // render loop's own >100ms skip policy.
+      // show()) for the object animations below. Camera transitions use
+      // wall-clock progress instead, so they can't snap or stall.
+      // Matches the render loop's own >100ms skip policy.
       if (this.deltaTime > 100) this.deltaTime = 16;
       if (this.deltaTime < 0) this.deltaTime = 0;
 
@@ -41,7 +41,9 @@
 
       // Camera transitions always run — even while object animation is
       // paused (e.g. hovering a planet must not freeze the open zoom).
-      this._updateTransitions(dt, camera);
+      // Progress is wall-clock based (see _updateTransitions) so flights
+      // always take `duration` ms even when frames are slow or skipped.
+      this._updateTransitions(dt, camera, timestamp);
 
       if (this.paused) return;
 
@@ -50,30 +52,32 @@
       const t = this.time;
 
       // Update celestial object animations
+      // (_followLocked objects are skipped: a selected planet stands still
+      // while the camera stays locked onto it.)
       for (const obj of objects) {
-        if (!obj || !obj.active) continue;
+        if (!obj || !obj.active || obj._followLocked) continue;
 
         switch (obj.type) {
           case "star":
             this._animateStar(obj, t);
             break;
           case "planet":
-            this._animatePlanet(obj, t);
+            this._animatePlanet(obj, t, dt);
             break;
           case "moon":
-            this._animateMoon(obj, t);
+            this._animateMoon(obj, t, dt);
             break;
           case "blackHole":
-            this._animateBlackHole(obj, t);
+            this._animateBlackHole(obj, t, dt);
             break;
           case "comet":
             this._animateComet(obj, t, dt);
             break;
           case "diamond":
-            this._animateDiamond(obj, t);
+            this._animateDiamond(obj, t, dt);
             break;
           case "satellite":
-            this._animateSatellite(obj, t);
+            this._animateSatellite(obj, t, dt);
             break;
           case "nebula":
             this._animateNebula(obj, t);
@@ -96,9 +100,12 @@
       star._currentGlow = (star.glow || 0.5) * pulse;
     }
 
-    _animatePlanet(planet, t) {
-      // Orbit motion (scaled by global rotation tempo)
-      planet.orbitAngle = (planet.orbitAngle || 0) + (planet.orbitSpeed || CFG.animation.orbitSpeed) * t * 0.01 * rotScale();
+    _animatePlanet(planet, t, dt) {
+      // Orbit motion at a CONSTANT angular velocity (scaled by global
+      // rotation tempo). Must integrate frame dt — the previous form used
+      // the absolute clock `t`, so orbits kept accelerating the longer the
+      // galaxy stayed open. Factor 0.6 keeps the original tempo.
+      planet.orbitAngle = (planet.orbitAngle || 0) + (planet.orbitSpeed || CFG.animation.orbitSpeed) * dt * 0.6 * rotScale();
       if (planet.position && planet.orbitRadius) {
         const rad = planet.orbitRadius + Math.sin(t * 0.0001) * 2; // slight eccentricity
         planet.position[0] = Math.cos(planet.orbitAngle) * rad;
@@ -112,14 +119,14 @@
         planet._pulse = pulse;
       }
 
-      // Rotation (scaled by global rotation tempo)
-      planet._rotation = (planet._rotation || 0) + (planet.rotationSpeed || 0.001) * t * 0.01 * rotScale();
+      // Rotation at constant velocity (scaled by global rotation tempo)
+      planet._rotation = (planet._rotation || 0) + (planet.rotationSpeed || 0.001) * dt * 0.6 * rotScale();
     }
 
-    _animateMoon(moon, t) {
-      // Orbit around parent (scaled by global rotation tempo)
+    _animateMoon(moon, t, dt) {
+      // Orbit around parent at constant velocity (scaled by global tempo)
       if (moon.parentPosition && moon.orbitRadius) {
-        moon.orbitAngle = (moon.orbitAngle || 0) + (moon.orbitSpeed || 0.003) * t * 0.01 * rotScale();
+        moon.orbitAngle = (moon.orbitAngle || 0) + (moon.orbitSpeed || 0.003) * dt * 0.6 * rotScale();
         const rad = moon.orbitRadius;
         moon.position[0] = moon.parentPosition[0] + Math.cos(moon.orbitAngle) * rad;
         moon.position[2] = moon.parentPosition[2] + Math.sin(moon.orbitAngle) * rad;
@@ -131,9 +138,9 @@
       }
     }
 
-    _animateBlackHole(bh, t) {
-      // Slow rotation (scaled by global rotation tempo)
-      bh._rotation = (bh._rotation || 0) + (bh.rotationSpeed || 0.0003) * t * 0.01 * rotScale();
+    _animateBlackHole(bh, t, dt) {
+      // Slow rotation at constant velocity (scaled by global tempo)
+      bh._rotation = (bh._rotation || 0) + (bh.rotationSpeed || 0.0003) * dt * 0.6 * rotScale();
 
       // Event horizon pulse
       const pulse = Math.sin(t * 0.0005) * 0.1 + 0.9;
@@ -160,7 +167,7 @@
       comet._currentScale = (comet.scale || 1) * (0.8 + remaining * 0.2);
     }
 
-    _animateDiamond(diamond, t) {
+    _animateDiamond(diamond, t, dt) {
       // Hovering motion
       if (diamond.position) {
         diamond.position[1] = 35 + Math.sin(t * 0.002) * 3;
@@ -171,13 +178,13 @@
         diamond._shimmer = Math.sin(t * 0.003) * 0.3 + 0.7;
       }
 
-      // Rotation (scaled by global rotation tempo)
-      diamond._rotation = (diamond._rotation || 0) + 0.01 * t * 0.01 * rotScale();
+      // Rotation at constant velocity (scaled by global rotation tempo)
+      diamond._rotation = (diamond._rotation || 0) + 0.01 * dt * 0.6 * rotScale();
     }
 
-    _animateSatellite(sat, t) {
-      // Fast orbit (scaled by global rotation tempo)
-      sat.orbitAngle = (sat.orbitAngle || 0) + (sat.orbitSpeed || 0.005) * t * 0.01 * rotScale();
+    _animateSatellite(sat, t, dt) {
+      // Fast orbit at constant velocity (scaled by global rotation tempo)
+      sat.orbitAngle = (sat.orbitAngle || 0) + (sat.orbitSpeed || 0.005) * dt * 0.6 * rotScale();
       if (sat.orbitRadius) {
         sat.position[0] = Math.cos(sat.orbitAngle) * sat.orbitRadius;
         sat.position[2] = Math.sin(sat.orbitAngle) * sat.orbitRadius;
@@ -216,7 +223,7 @@
         targetPosition: targetPosition,
         startTarget: null,
         targetTarget: targetTarget,
-        startTime: this.time,
+        startStamp: null,     // wall-clock start, captured on first update
         duration: duration,
         progress: 0,
       });
@@ -227,7 +234,7 @@
       this.transitions = [];
     }
 
-    _updateTransitions(dt, camera) {
+    _updateTransitions(dt, camera, timestamp) {
       if (!this.transitions.length || !camera) return;
 
       const transition = this.transitions[0];
@@ -237,8 +244,24 @@
         transition.startPosition = [...camera.position];
         transition.startTarget = camera.target ? [...camera.target] : [0, 0, 0];
       }
+      if (typeof transition.startStamp !== "number" && typeof timestamp === "number" && isFinite(timestamp)) {
+        transition.startStamp = timestamp;
+      }
 
-      transition.progress += dt / transition.duration;
+      // Wall-clock progress: elapsed real time since the flight started, so
+      // the camera always arrives after `duration` ms — even when frames are
+      // slow (>100ms in heavy scenes) or skipped by the render loop.
+      // (Accumulating clamped frame dt stretched the intro zoom into tens of
+      // seconds on large scans and made it look frozen.) Falls back to dt
+      // accumulation when no valid timestamp is available.
+      if (typeof timestamp === "number" && typeof transition.startStamp === "number" && transition.duration > 0) {
+        const elapsed = timestamp - transition.startStamp;
+        transition.progress = Math.min(Math.max(elapsed, 0) / transition.duration, 1);
+      } else if (!(transition.duration > 0)) {
+        transition.progress = 1;
+      } else {
+        transition.progress += dt / transition.duration;
+      }
       if (transition.progress >= 1) {
         // Snap exactly onto the target — no float drift, clean lock
         // (e.g. onto a planet) instead of floating nearby.

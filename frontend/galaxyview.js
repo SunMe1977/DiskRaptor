@@ -134,6 +134,11 @@
 
       // FPS tracking
       this._fpsValues = [];
+
+      // Follow-target tracking: after clicking a planet the camera stays
+      // glued to it (planets keep orbiting). Cleared on manual control.
+      this.followTarget = null;
+      this._followPrev = null;
     }
 
     /** Initialize the GalaxyView: canvas, UI, event handlers */
@@ -176,6 +181,14 @@
       if (this.interaction && typeof this.interaction.onContextMenu === "function") {
         this.interaction.onContextMenu((x, y, camera) => this._handleContextMenu(x, y));
       }
+
+      // Manual camera control releases an active follow-target lock.
+      // (A mousedown that turns into a planet click re-locks right after:
+      // mousedown fires before the click handler.)
+      this._followWheelHandler = () => this._clearFollow();
+      this._followDownHandler = () => this._clearFollow();
+      this.canvas.addEventListener("wheel", this._followWheelHandler, { passive: true });
+      this.canvas.addEventListener("mousedown", this._followDownHandler);
 
       // Build the right-click context menu (Info / Delete)
       this._createContextMenu();
@@ -307,6 +320,7 @@
      */
     loadData(scanResult, stats, topFiles, duplicates) {
       console.debug("[GalaxyView] Loading scan data...");
+      this._clearFollow();
 
       // Show canvas, hide empty state
       this.canvas.style.display = "block";
@@ -463,9 +477,10 @@ _startRenderLoop() {
      }
 
      /** Load a built-in demo scene (no filesystem scan needed) */
-     loadDemo() {
-       if (!GV.buildDemoScene) return;
-       console.debug("[GalaxyView] Loading demo galaxy...");
+      loadDemo() {
+        if (!GV.buildDemoScene) return;
+        console.debug("[GalaxyView] Loading demo galaxy...");
+        this._clearFollow();
        const scene = GV.buildDemoScene();
        this.canvas.style.display = "block";
        if (this.emptyState) this.emptyState.style.display = "none";
@@ -510,6 +525,10 @@ _startRenderLoop() {
 
       // Update interaction
       this.interaction.update(dt);
+
+      // Follow-target tracking: keep the camera glued to the selected
+      // planet (it keeps orbiting) until the user grabs control again.
+      this._updateFollow();
 
       // Update spatial index for visible objects
       this._updateVisibleObjects();
@@ -1189,7 +1208,76 @@ _getVisibleObjects() {
           target[1] + (dir[1] / len) * newDist,
           target[2] + (dir[2] / len) * newDist,
         ];
+        // Latest click wins: drop any in-flight transition, then lock the
+        // camera onto the planet so it stays there while it keeps orbiting.
+        if (this.animation && typeof this.animation.cancelTransitions === "function") {
+          this.animation.cancelTransitions();
+        }
+        this._setFollow(nearest);
         this.animation.flyTo(flyPos, [...target]);
+      } else {
+        // Clicked empty space: stay put, release the follow lock.
+        this._clearFollow();
+      }
+    }
+
+    /** Lock the camera onto an object; cleared on any manual control. */
+    _setFollow(obj) {
+      if (this.followTarget && this.followTarget !== obj) this.followTarget._followLocked = false;
+      this.followTarget = obj || null;
+      // The selected planet itself stands still (no orbit/spin) while locked.
+      if (this.followTarget) this.followTarget._followLocked = true;
+      this._followPrev = null;
+    }
+
+    _clearFollow() {
+      if (this.followTarget) this.followTarget._followLocked = false;
+      this.followTarget = null;
+      this._followPrev = null;
+    }
+
+    /**
+     * Keep the camera glued to the follow target. While a flight is active
+     * the flight's end point is moved along with the planet (homing), so the
+     * arrival snap lands on the live position; afterwards the camera is
+     * translated by the planet's per-frame delta with the aim hard-locked.
+     */
+    _updateFollow() {
+      const obj = this.followTarget;
+      if (!obj || !obj.position || !this.camera) return;
+      // Flying manually (WASD) releases the lock.
+      const k = this.interaction && this.interaction.keys;
+      if (k && (k["w"] || k["a"] || k["s"] || k["d"] || k["q"] || k["e"])) {
+        this._clearFollow();
+        return;
+      }
+      const p = obj.position;
+      if (!this._followPrev) this._followPrev = [p[0], p[1], p[2]];
+      const dx = p[0] - this._followPrev[0];
+      const dy = p[1] - this._followPrev[1];
+      const dz = p[2] - this._followPrev[2];
+      this._followPrev = [p[0], p[1], p[2]];
+      const tr = this.animation && this.animation.transitions && this.animation.transitions[0];
+      if (tr) {
+        if (tr.targetPosition) {
+          tr.targetPosition[0] += dx;
+          tr.targetPosition[1] += dy;
+          tr.targetPosition[2] += dz;
+        }
+        if (tr.targetTarget) {
+          tr.targetTarget[0] = p[0];
+          tr.targetTarget[1] = p[1];
+          tr.targetTarget[2] = p[2];
+        }
+      } else {
+        if (dx || dy || dz) {
+          this.camera.position[0] += dx;
+          this.camera.position[1] += dy;
+          this.camera.position[2] += dz;
+        }
+        this.camera.target[0] = p[0];
+        this.camera.target[1] = p[1];
+        this.camera.target[2] = p[2];
       }
     }
 
@@ -1300,6 +1388,10 @@ _getVisibleObjects() {
       const obj = menu ? menu._obj : null;
       const path = this._contextObjPath(obj);
       const t = window.t;
+      const gxt = function (key, fb) {
+        const s = t(key);
+        return s === key ? fb : s;
+      };
       const sb = document.getElementById("tree-status") || document.querySelector(".status-bar");
 
       switch (action) {
@@ -1324,9 +1416,10 @@ case "delete": {
              else console.error("[GalaxyView]", msg);
            };
            window.__TAURI__.invoke("delete_path", { path }).then(function (res) {
-              if (res && res.success !== false) {
-                self.objects = self.objects.filter((o) => o !== obj);
-                if (self.selectedObject === obj) self.selectedObject = null;
+               if (res && res.success !== false) {
+                 self.objects = self.objects.filter((o) => o !== obj);
+                 if (self.selectedObject === obj) self.selectedObject = null;
+                 if (self.followTarget === obj) self._clearFollow();
                 if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
               } else {
                 failMsg((res && res.error) || "Unbekannter Fehler");
@@ -1503,6 +1596,7 @@ case "delete": {
       if (this.animation && typeof this.animation.cancelTransitions === "function") {
         this.animation.cancelTransitions();
       }
+      this._clearFollow();
       // The RAF loop stops scheduling itself while inactive. Reset the flag so
       // a later show() can start a fresh loop instead of finding it "running".
       this._renderLoopRunning = false;
@@ -1532,7 +1626,12 @@ case "delete": {
 
     dispose() {
       this.active = false;
+      this._clearFollow();
       if (this._resizeHandler) window.removeEventListener("resize", this._resizeHandler);
+      if (this._followWheelHandler && this.canvas) this.canvas.removeEventListener("wheel", this._followWheelHandler);
+      if (this._followDownHandler && this.canvas) this.canvas.removeEventListener("mousedown", this._followDownHandler);
+      this._followWheelHandler = null;
+      this._followDownHandler = null;
       if (this.effects) this.effects.dispose();
       if (this.animation) this.animation.dispose();
       if (this.interaction) this.interaction.dispose();

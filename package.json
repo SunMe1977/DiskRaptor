@@ -1,6 +1,6 @@
 {
   "name": "diskraptor",
-  "version": "1.0.36",
+  "version": "1.0.37",
   "private": true,
   "description": "Ultra-fast disk space analyzer",
   "engines": {
@@ -34,6 +34,7 @@
     "test:galaxy": "node tests/test_galaxy_ui.mjs",
     "test:galaxy-visuals": "node tests/test_galaxy_visuals_mock.mjs",
     "test:galaxy-feed": "node tests/test_galaxy_feed_mock.mjs",
+    "test:galaxy-zoom": "node tests/test_galaxy_zoom_timing.mjs",
     "test:menus": "node tests/test_menus_ui.mjs",
     "test:export": "node tests/test_export_ui.mjs",
     "test:favorites": "node tests/test_favorites_ui.mjs",
