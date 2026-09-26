@@ -1,0 +1,43 @@
+name: Bug report
+description: Report a reproducible problem in DiskRaptor
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: DiskRaptor version
+      description: See About dialog or installer name (e.g. 1.0.38)
+      placeholder: 1.0.38
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what did you see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, ideally with a small test folder
+      placeholder: |
+        1. Scan C:\…
+        2. Click …
+        3. …
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Error dialog text, log excerpts, or a screenshot (no private paths if possible)

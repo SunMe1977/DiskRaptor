@@ -202,3 +202,31 @@ console.log('\nPASS: galaxy follow lock');
 }
 
 console.log('\nPASS: galaxy perspective');
+
+// 8. Rings only for the 10 largest planets.
+{
+  const gvSrc = await readFile(new URL('../frontend/galaxyview.js', import.meta.url), 'utf8');
+  const win = { GalaxyViewConfig: {}, GalaxyView: {} };
+  const sandbox = {
+    window: win,
+    CanvasRenderingContext2D: { prototype: {} },
+    console,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(gvSrc, sandbox, { filename: 'galaxyview.js' });
+  const assign = sandbox.window.GalaxyView.GalaxyView.prototype._assignRings;
+  const objects = [{ type: 'star', scale: 99 }];
+  for (let i = 0; i < 15; i++) objects.push({ type: 'planet', id: 'p' + i, scale: 5 + i });
+  assign.call({ objects });
+  const ringed = objects.filter((o) => o.hasRing);
+  assert.equal(ringed.length, 10, 'exactly 10 planets get rings');
+  assert.ok(ringed.every((o) => o.type === 'planet'), 'only planets get rings');
+  assert.ok(!objects.find((o) => o.id === 'p0').hasRing, 'smallest planet has no ring');
+  assert.ok(objects.find((o) => o.id === 'p14').hasRing, 'largest planet has a ring');
+  const few = [{ type: 'planet', scale: 3 }, { type: 'planet', scale: 7 }];
+  assign.call({ objects: few });
+  assert.ok(few.every((o) => o.hasRing), 'all get rings when fewer than 10');
+  console.log('PASS rings: top 10 only');
+}
+
+console.log('\nPASS: galaxy rings');

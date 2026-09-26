@@ -6,11 +6,13 @@
   <a href="https://www.diskraptor.com"><img src="https://img.shields.io/badge/Website-diskraptor.com-2ea043?style=for-the-badge" alt="DiskRaptor Website"></a>
   <a href="https://github.com/SunMe1977/DiskRaptor/releases"><img src="https://img.shields.io/github/v/release/SunMe1977/DiskRaptor?style=for-the-badge" alt="Latest Release"></a>
   <a href="https://github.com/SunMe1977/DiskRaptor/blob/main/LICENSE"><img src="https://img.shields.io/github/license/SunMe1977/DiskRaptor?style=for-the-badge" alt="License"></a>
+  <a href="https://apps.microsoft.com/detail/xpdf89vj02kvmm"><img src="https://img.shields.io/badge/Microsoft_Store-DiskRaptor-0078D4?style=for-the-badge&logo=microsoftstore&logoColor=white" alt="Microsoft Store"></a>
+  <a href="https://apps.apple.com/us/app/diskraptor/id6793462969?mt=12"><img src="https://img.shields.io/badge/Mac_App_Store-DiskRaptor-0D96F6?style=for-the-badge&logo=apple&logoColor=white" alt="Mac App Store"></a>
 </p>
 
 # DiskRaptor
 
-**Ultra-fast disk space analyzer** -- A modern, cross-platform successor to WinDirStat / DaisyDisk, built with **Rust + Tauri 2**.
+**Ultra-fast disk space analyzer** — find what's filling your SSD or hard drive in seconds. DiskRaptor is a free, open-source, cross-platform disk usage analyzer and storage cleaner for **Windows, macOS and Linux**, built with **Rust + Tauri 2**. A modern successor to WinDirStat / DaisyDisk: scan millions of files, visualize disk usage, find duplicates and free up space.
 
 Visit the official website: **[https://www.diskraptor.com](https://www.diskraptor.com)** — documentation, screenshots and download links.
 
@@ -19,6 +21,27 @@ Visit the official website: **[https://www.diskraptor.com](https://www.diskrapto
 </p>
 
 DiskRaptor scans directories using a **parallel jwalk engine** (macOS), **walkdir** (Windows/Linux) and renders results in a **virtual tree view** capable of handling **20+ million files** without UI lag.
+
+### Benchmark (sample scan)
+
+| Files | Directories | Total size | Scan time |
+|------:|------------:|-----------:|----------:|
+| 12,109,741 | 100,292 | 561.21 GB | 22.77 s |
+
+> Sample figures from a real large-drive scan (your drive will differ).
+
+### DiskRaptor vs other disk analyzers
+
+| | **DiskRaptor** | WinDirStat | WizTree | DaisyDisk | TreeSize Free |
+|---|---|---|---|---|---|
+| Price | Free, MIT open source | Free | Free for personal use | Paid | Free / paid Pro |
+| Windows / macOS / Linux | ✅ / ✅ / ✅ | Windows only | Windows only | macOS only | Windows only |
+| Duplicate file finder | ✅ (xxHash3) | ❌ | ✅ | ❌ | Partially (Pro) |
+| 3D galaxy view | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Handles 10M+ files | ✅ (virtual tree) | Slow | ✅ (MFT) | ✅ | ✅ |
+| No tracking / offline | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+WinDirStat hasn't seen a major release in years; WizTree is Windows-only and closed source. DiskRaptor is the free, open-source, cross-platform alternative.
 
 ---
 
@@ -105,6 +128,8 @@ The UI is **pure JavaScript** rendered in the system webview (no bundled Chromiu
 Pre-built binaries are available on the [Releases](https://github.com/SunMe1977/DiskRaptor/releases) page, or grab the latest version directly from the official website: **[https://www.diskraptor.com](https://www.diskraptor.com)**.
 
 **Microsoft Store:** [Install DiskRaptor from the Microsoft Store](https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr&hl=de-DE&gl=IT)
+
+**Mac App Store:** [Install DiskRaptor from the Mac App Store](https://apps.apple.com/us/app/diskraptor/id6793462969?mt=12)
 
 | Platform | Format |
 |----------|--------|
@@ -212,6 +237,25 @@ node tests/test_ui.mjs
 ├── test_*.mjs               # UI integration tests (CDP)
 └── .github/workflows/       # CI pipelines
 ```
+
+---
+
+## FAQ
+
+**What is DiskRaptor?**
+A free, open-source disk space analyzer that shows which folders and files consume your storage — with treemap, pie/bar charts and a 3D galaxy view.
+
+**Is DiskRaptor really free?**
+Yes — MIT licensed. No ads, no premium tiers, no data collection.
+
+**Which platforms are supported?**
+Windows (NSIS installer + Microsoft Store), macOS (DMG + Mac App Store, Intel + Apple Silicon) and Linux (DEB).
+
+**Does DiskRaptor upload my data?**
+No. Scanning is 100% local — no telemetry, no cloud, no tracking.
+
+**How is it different from WinDirStat / WizTree?**
+It's cross-platform, open source, handles 10M+ files smoothly, and adds duplicate finding, trash recovery, S.M.A.R.T. monitoring and a 3D view. See the comparison table above.
 
 ---
 

@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an idea for DiskRaptor
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today? (e.g. "I can't compare two scans…")
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? Similar tools that do this well?
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Relevant platforms
+      multiple: true
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - All / not platform-specific

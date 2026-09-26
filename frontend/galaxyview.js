@@ -336,6 +336,9 @@
       // Map data to galaxy objects
       this.objects = this.dataMapper.mapData(scanResult, stats, topFiles);
 
+      // Rings only for the 10 largest planets — keeps the view readable.
+      this._assignRings();
+
       // Build spatial index
       this.spatialIndex.clear();
       for (const obj of this.objects) {
@@ -380,7 +383,7 @@
       }
       // Deep end position: well inside the planet orbits, clamped to minZoom.
       const endDist = Math.max(view.dist * endMult, CFG.camera.minZoom);
-      const endPos = [0, endDist * 0.3, endDist];
+      const endPos = [0, endDist * 0.42, endDist];
       this.camera.position[0] = view.position[0] * mult;
       this.camera.position[1] = view.position[1] * mult;
       this.camera.position[2] = view.position[2] * mult;
@@ -416,7 +419,7 @@
       dist = Math.max(dist, CFG.camera.minZoom);
       dist = Math.min(dist, CFG.camera.maxZoom);
       return {
-        position: [0, dist * 0.3, dist],
+        position: [0, dist * 0.42, dist],
         target: [0, 0, 0],
         dist: dist,
       };
@@ -487,9 +490,10 @@ _startRenderLoop() {
        const scene = GV.buildDemoScene();
        this.canvas.style.display = "block";
        if (this.emptyState) this.emptyState.style.display = "none";
-       this.scanData = null;
-       this.stats = scene.stats;
-       this.objects = scene.objects;
+        this.scanData = null;
+        this.stats = scene.stats;
+        this.objects = scene.objects;
+        this._assignRings();
        this.spatialIndex.clear();
        for (const obj of this.objects) { obj.active = true; this.spatialIndex.insert(obj); }
        this._extent = 0;
@@ -850,8 +854,8 @@ _startRenderLoop() {
       ctx.arc(screen.x, screen.y, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Saturn-like rings (only for larger planets)
-      if (r > 6) {
+      // Saturn-like rings (only for larger planets; never on file dots)
+      if (r > 6 && planet.hasRing !== false) {
         const ringInner = r * 1.4;
         const ringOuter = r * 2.2;
         // Semi-transparent ring behind planet
@@ -1179,7 +1183,14 @@ _getVisibleObjects() {
        return this.objects.filter(o => o.active && o._visible !== false);
      }
 
-     /** Extent of the galaxy for dust/depth scaling */
+     /** Rings only for the 10 largest planets — keeps the view readable. */
+    _assignRings() {
+      const planets = (this.objects || []).filter((o) => o && o.type === "planet");
+      planets.sort((a, b) => (b.scale || 0) - (a.scale || 0));
+      for (let i = 0; i < planets.length; i++) planets[i].hasRing = i < 10;
+    }
+
+    /** Extent of the galaxy for dust/depth scaling */
      _galaxyExtent() {
        if (this._extent > 0) return this._extent;
        let max = 400;

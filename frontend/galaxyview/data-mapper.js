@@ -293,10 +293,13 @@
           if (idx >= 15) break;
           const dirName = dirPath.split("/").pop() || dirPath;
           const angle = (idx / 15) * Math.PI * 2;
-          // Orbit radius must be kept in the scene's scale (10..400) — the raw
+          // Orbit radius must be kept in the scene's scale (10..800) — the raw
           // dirSize is in bytes and would blow up the radius to millions.
+          // The per-index shell offset keeps similar-size folders from
+          // sharing one crowded orbit (giant planets need wide shells).
           const orbitRadius = CFG.galaxy.orbitBaseRadius +
-            (dirSize > 0 ? Math.log10(dirSize) : 0) * CFG.galaxy.orbitScale * 40;
+            (dirSize > 0 ? Math.log10(dirSize) : 0) * CFG.galaxy.orbitScale * 40 +
+            idx * 70;
           const isCode = [".js", ".ts", ".py", ".cpp", ".rs", ".go"].some(e => dirName.includes(e));
           this.planets.push({
             type: "planet",
@@ -305,7 +308,7 @@
             path: dirPath,
             position: [
               Math.cos(angle) * orbitRadius,
-              (Math.random() - 0.5) * 10,
+              (Math.random() - 0.5) * 24,
               Math.sin(angle) * orbitRadius,
             ],
             scale: sizeToRadius(dirSize, CFG.galaxy.planetMinRadius, CFG.galaxy.planetMaxRadius, dirRef),
@@ -328,14 +331,14 @@
       if (this.planets.length === 0) {
         for (let i = 0; i < 5; i++) {
           const angle = (i / 5) * Math.PI * 2;
-          const r = CFG.galaxy.orbitBaseRadius + i * 15;
+          const r = CFG.galaxy.orbitBaseRadius + i * 28;
           this.planets.push({
             type: "planet",
             id: "planet-" + i,
             name: "Folder " + (i + 1),
             position: [
               Math.cos(angle) * r,
-              (Math.random() - 0.5) * 5,
+              (Math.random() - 0.5) * 12,
               Math.sin(angle) * r,
             ],
             scale: 2 + Math.random() * 5,
@@ -365,8 +368,12 @@
         const fileSize = file.size || 0;
         const fileType = getFileType(fileName);
 
-        const angle = (i / maxPlanets) * Math.PI * 2 + Math.random() * 0.1;
-        const radius = 20 + (i / maxPlanets) * 80 + Math.random() * 10;
+        // Phyllotaxis disc (60..400): file dots spread evenly over an area
+        // instead of piling onto thin rings — maximal separation for the
+        // count. They keep orbiting on their circular paths.
+        const golden = Math.PI * (3 - Math.sqrt(5));
+        const angle = i * golden + Math.random() * 0.2;
+        const radius = 60 + 340 * Math.sqrt((i + 0.5) / maxPlanets) + Math.random() * 12;
 
         this.planets.push({
           type: "planet",
@@ -375,7 +382,7 @@
           path: filePath,
           position: [
             Math.cos(angle) * radius,
-            (Math.random() - 0.5) * 10,
+            (Math.random() - 0.5) * 30,
             Math.sin(angle) * radius,
           ],
           scale: sizeToRadius(fileSize, CFG.galaxy.moonMinRadius, CFG.galaxy.moonMaxRadius, this.maxRefSize),
@@ -385,6 +392,7 @@
           orbitRadius: radius,
           orbitAngle: angle,
           orbitSpeed: 0.0002 + Math.random() * 0.0003,
+          hasRing: false, // no Saturn rings on file dots: keeps them readable
           data: { size: fileSize, type: fileType, path: filePath },
           lodLevel: 0,
         });
