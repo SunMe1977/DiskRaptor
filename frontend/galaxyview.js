@@ -139,6 +139,9 @@
       // glued to it (planets keep orbiting). Cleared on manual control.
       this.followTarget = null;
       this._followPrev = null;
+      // While a planet is selected, ALL object motion freezes (inspection
+      // mode) — camera flights keep running. Cleared together with follow.
+      this._selectionFrozen = false;
     }
 
     /** Initialize the GalaxyView: canvas, UI, event handlers */
@@ -552,6 +555,14 @@ _startRenderLoop() {
       const h = this.canvas.height;
       const time = timestamp * 0.001;
 
+      // Perspective focal length (px per world unit at unit depth). Body
+      // radii are scaled by focal / camera-distance below, so approaching
+      // objects visibly grow and the zoom-in reads as a real fly-through
+      // (previously sizes were constant pixel values — the camera moved
+      // but the picture barely changed).
+      const fovRad = CFG.camera.fov * Math.PI / 180;
+      this._focal = (h * 0.5) / Math.max(Math.tan(fovRad / 2), 1e-3);
+
       ctx.clearRect(0, 0, w, h);
 
       // Backdrop (cached gradient + Milky Way + vignette) or flat fallback.
@@ -658,6 +669,19 @@ _startRenderLoop() {
 
     // ── 3D Math ─────────────────────────────────────────────────
 
+    /**
+     * Perspective size factor for world-scale radii: focal / distance,
+     * clamped so flying through an object can't blow up to an enormous
+     * radius. Falls back to 1 before the first frame (no focal yet).
+     */
+    _perspScale(obj) {
+      const focal = this._focal;
+      const dist = obj ? obj._distance : 0;
+      if (!(focal > 0) || !(dist > 0)) return 1;
+      const s = focal / dist;
+      return s > 10 ? 10 : s;
+    }
+
     _calculateViewMatrix() {
       const pos = this.camera.position;
       const target = this.camera.target;
@@ -751,11 +775,12 @@ _startRenderLoop() {
     // ── Rendering: Celestial Bodies ───────────────────────────
 
     _renderStar(ctx, screen, star, state, time) {
+      const r = star.scale * (1 + state.pulse * 0.1) * this._perspScale(star);
+      if (r < 0.5) return;
       if (this.visuals) {
-        this.visuals.drawStar(ctx, screen.x, screen.y, star.scale * (1 + state.pulse * 0.1), star.color, state.glow, time);
+        this.visuals.drawStar(ctx, screen.x, screen.y, r, star.color, state.glow, time);
         return;
       }
-      const r = star.scale * (1 + state.pulse * 0.1);
       const c = star.color;
       const glow = state.glow;
 
@@ -787,7 +812,8 @@ _startRenderLoop() {
 
      _renderPlanet(ctx, screen, planet, state, time) {
        const baseScale = Math.max(planet.scale || 1, 4);
-       const r = baseScale * state.pulse;
+       const r = baseScale * state.pulse * this._perspScale(planet);
+       if (r < 0.5) return;
        if (this.visuals) {
          if (planet.orbitRadius > 30 && planet.showOrbit && this._lightScreen) {
            const camDist = Math.max(1, Math.hypot(this.camera.position[0], this.camera.position[1], this.camera.position[2]));
@@ -849,7 +875,8 @@ _startRenderLoop() {
     }
 
     _renderMoon(ctx, screen, moon, state, time) {
-      const r = moon.scale * 0.8;
+      const r = moon.scale * 0.8 * this._perspScale(moon);
+      if (r < 0.35) return;
       if (this.visuals) {
         const lightAngle = this._lightScreen ? Math.atan2(this._lightScreen.y - screen.y, this._lightScreen.x - screen.x) : -Math.PI / 2;
         this.visuals.drawMoon(ctx, screen.x, screen.y, r, moon.color, lightAngle, state.sparkle);
@@ -874,7 +901,8 @@ _startRenderLoop() {
     }
 
     _renderBlackHole(ctx, screen, bh, state, time) {
-      const r = state.eventHorizonScale || bh.scale;
+      const r = (state.eventHorizonScale || bh.scale) * this._perspScale(bh);
+      if (r < 1) return;
       if (this.visuals) {
         this.visuals.drawBlackHole(ctx, screen.x, screen.y, r, time, state.lensing || 0);
         return;
@@ -917,7 +945,8 @@ _startRenderLoop() {
     }
 
     _renderNebula(ctx, screen, nebula, state, time) {
-      const r = nebula.scale * state.nebulaPulse;
+      const r = nebula.scale * state.nebulaPulse * this._perspScale(nebula);
+      if (r < 2) return;
       if (this.visuals) {
         this.visuals.drawNebula(ctx, screen.x, screen.y, r, nebula.color, nebula.alpha, time, nebula.id);
         return;
@@ -949,7 +978,7 @@ _startRenderLoop() {
     }
 
     _renderParticleCloud(ctx, screen, cloud, state) {
-      const r = cloud.scale * 0.3;
+      const r = cloud.scale * 0.3 * this._perspScale(cloud);
       if (r < 1) return;
       ctx.save();
       ctx.globalAlpha = cloud.alpha * 0.3;
@@ -962,17 +991,16 @@ _startRenderLoop() {
 
     _renderComet(ctx, screen, comet, state, time) {
       const alpha = state.alpha;
-      if (this.visuals && alpha > 0) {
-        const r = state.scale * 0.5;
+      const r = state.scale * 0.5 * this._perspScale(comet);
+      if (this.visuals && alpha > 0 && r > 0.4) {
         const tailLen = (comet.tailLength || 20) * (1 - alpha);
         const tailDx = comet.velocity ? -(comet.velocity[0] * tailLen) : tailLen;
         const tailDy = comet.velocity ? (comet.velocity[1] * tailLen) : 0;
         this.visuals.drawComet(ctx, screen.x, screen.y, r, alpha, tailDx, tailDy);
         return;
       }
-      if (alpha <= 0) return;
+      if (alpha <= 0 || r < 0.4) return;
 
-      const r = state.scale * 0.5;
       ctx.save();
       ctx.globalAlpha = alpha;
 
@@ -1002,7 +1030,8 @@ _startRenderLoop() {
     }
 
     _renderDiamond(ctx, screen, diamond, state, time) {
-      const r = diamond.scale * (0.8 + state.shimmer * 0.2);
+      const r = diamond.scale * (0.8 + state.shimmer * 0.2) * this._perspScale(diamond);
+      if (r < 0.5) return;
       const c = diamond.color;
 
       ctx.save();
@@ -1029,7 +1058,7 @@ _startRenderLoop() {
     }
 
     _renderSatellite(ctx, screen, sat, state, time) {
-      const r = sat.scale * 0.4;
+      const r = sat.scale * 0.4 * this._perspScale(sat);
       if (r < 0.3) return;
       ctx.save();
       ctx.globalAlpha = sat.alpha;
@@ -1053,7 +1082,8 @@ _startRenderLoop() {
     }
 
     _renderCluster(ctx, screen, cluster, state) {
-      const r = cluster.scale;
+      const r = cluster.scale * this._perspScale(cluster);
+      if (r < 1) return;
       ctx.save();
       ctx.globalAlpha = cluster.alpha || 0.6;
       ctx.fillStyle = `rgba(${cluster.color[0]*255|0},${cluster.color[1]*255|0},${cluster.color[2]*255|0},${cluster.alpha || 0.6})`;
@@ -1133,10 +1163,11 @@ _startRenderLoop() {
         const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
         obj._distance = dist;
 
-        // Hide objects too far away
+        // Hide objects too far away. Deliberately no tight distance
+        // culling: with perspective sizing, far bodies shrink to a few
+        // pixels and skip drawing via their radius guards — hiding them
+        // would pop the whole galaxy out during the intro zoom.
         if (dist > CFG.camera.far * 0.95) {
-          obj._visible = false;
-        } else if (obj.scale && dist > 3000 && obj.type !== 'star') {
           obj._visible = false;
         } else {
           obj._visible = true;
@@ -1228,12 +1259,26 @@ _getVisibleObjects() {
       // The selected planet itself stands still (no orbit/spin) while locked.
       if (this.followTarget) this.followTarget._followLocked = true;
       this._followPrev = null;
+      // Freeze the whole galaxy for calm inspection while selected.
+      this._selectionFrozen = !!this.followTarget;
+      this._updatePauseState();
     }
 
     _clearFollow() {
       if (this.followTarget) this.followTarget._followLocked = false;
       this.followTarget = null;
       this._followPrev = null;
+      this._selectionFrozen = false;
+      this._updatePauseState();
+    }
+
+    /**
+     * Object motion runs only when nothing is hovered and nothing is
+     * selected. Camera flights always keep running (wall-clock).
+     */
+    _updatePauseState() {
+      if (!this.animation) return;
+      this.animation.paused = !!(this.hoveredObject || this._selectionFrozen);
     }
 
     /**
@@ -1477,14 +1522,9 @@ case "delete": {
         }
       }
 
-      // Pause animation when hovering an object, resume when not
-      if (nearest && !this.hoveredObject) {
-        if (this.animation) this.animation.paused = true;
-      } else if (!nearest && this.hoveredObject) {
-        if (this.animation) this.animation.paused = false;
-      }
-
+      // Hovering pauses object motion (respects an active selection freeze).
       this.hoveredObject = nearest;
+      this._updatePauseState();
       this.canvas.style.cursor = nearest ? "pointer" : "grab";
     }
 
@@ -1596,6 +1636,7 @@ case "delete": {
       if (this.animation && typeof this.animation.cancelTransitions === "function") {
         this.animation.cancelTransitions();
       }
+      this.hoveredObject = null;
       this._clearFollow();
       // The RAF loop stops scheduling itself while inactive. Reset the flag so
       // a later show() can start a fresh loop instead of finding it "running".

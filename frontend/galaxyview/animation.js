@@ -279,10 +279,11 @@
         return;
       }
 
-      // Smootherstep interpolation — zero velocity AND zero acceleration
-      // at both ends, so flights start and land without any jerk.
+      // Ease-out cubic: immediate, clearly visible motion right at the
+      // start of the flight with a soft landing — so even short flights
+      // read as animation instead of standing still, then snapping.
       const t = transition.progress;
-      const ease = t * t * t * (t * (t * 6 - 15) + 10);
+      const ease = 1 - Math.pow(1 - t, 3);
 
       if (camera.position && transition.startPosition && transition.targetPosition) {
         camera.position[0] = transition.startPosition[0] + (transition.targetPosition[0] - transition.startPosition[0]) * ease;

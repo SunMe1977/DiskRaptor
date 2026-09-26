@@ -179,3 +179,26 @@ console.log('\nPASS: galaxy orbit constancy');
 }
 
 console.log('\nPASS: galaxy follow lock');
+
+// 7. Perspective sizing: bodies shrink with camera distance (this is what
+// makes the zoom-in visible — sizes used to be constant pixels).
+{
+  const gvSrc = await readFile(new URL('../frontend/galaxyview.js', import.meta.url), 'utf8');
+  const win = { GalaxyViewConfig: {}, GalaxyView: {} };
+  const sandbox = {
+    window: win,
+    CanvasRenderingContext2D: { prototype: {} },
+    console,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(gvSrc, sandbox, { filename: 'galaxyview.js' });
+  const persp = sandbox.window.GalaxyView.GalaxyView.prototype._perspScale;
+  assert.equal(persp.call({ _focal: 779 }, { _distance: 779 }), 1, 'unit factor at focal distance');
+  assert.ok(Math.abs(persp.call({ _focal: 779 }, { _distance: 7790 }) - 0.1) < 1e-9, '1/10th at 10x distance');
+  assert.equal(persp.call({ _focal: 779 }, { _distance: 0 }), 1, 'fallback without distance');
+  assert.equal(persp.call({}, { _distance: 100 }), 1, 'fallback without focal');
+  assert.equal(persp.call({ _focal: 779 }, { _distance: 1 }), 10, 'clamped when flying through');
+  console.log('PASS perspective: sizes attenuate with distance');
+}
+
+console.log('\nPASS: galaxy perspective');
