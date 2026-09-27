@@ -74,11 +74,21 @@ fn main() {
         let _ = std::fs::create_dir_all(parent);
     }
 
+    // The computed path must actually reach AppState — without this every
+    // settings command silently no-ops (save always fails, load always
+    // returns {}), so no preference ever persists (welcome dismissal,
+    // rating count, theme, favorites, ...).
+    let app_state = {
+        let state = AppState::default();
+        *state.settings_path.lock() = settings_path;
+        state
+    };
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_log::Builder::default().build())
-        .manage(AppState::default())
+        .manage(app_state)
         .setup(|app| {
             // System tray
             tray::build_tray(app.handle())?;
