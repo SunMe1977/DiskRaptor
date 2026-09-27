@@ -989,6 +989,7 @@ await doCheck();
           "galaxyview/live-scan.js",
           "galaxyview/insights.js",
           "galaxyview/plugin-api.js",
+          "galaxyview/camera.js",
           "galaxyview.js",
         ];
         let loaded = 0;

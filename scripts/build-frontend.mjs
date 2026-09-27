@@ -41,6 +41,7 @@ const galaxy = [
   "galaxyview/live-scan.js",
   "galaxyview/insights.js",
   "galaxyview/plugin-api.js",
+  "galaxyview/camera.js",
   "galaxyview.js",
 ];
 
