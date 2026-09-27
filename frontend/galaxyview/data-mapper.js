@@ -293,13 +293,15 @@
           if (idx >= 15) break;
           const dirName = dirPath.split("/").pop() || dirPath;
           const angle = (idx / 15) * Math.PI * 2;
-          // Orbit radius must be kept in the scene's scale (10..800) — the raw
+          // Orbit radius must be kept in the scene's scale (10..500) — the raw
           // dirSize is in bytes and would blow up the radius to millions.
           // The per-index shell offset keeps similar-size folders from
           // sharing one crowded orbit (giant planets need wide shells).
+          // Middle ground: 0 crowded everything, 70 pushed the outer
+          // planets out of view — 30 separates without scattering.
           const orbitRadius = CFG.galaxy.orbitBaseRadius +
             (dirSize > 0 ? Math.log10(dirSize) : 0) * CFG.galaxy.orbitScale * 40 +
-            idx * 70;
+            idx * 30;
           const isCode = [".js", ".ts", ".py", ".cpp", ".rs", ".go"].some(e => dirName.includes(e));
           this.planets.push({
             type: "planet",
@@ -308,7 +310,7 @@
             path: dirPath,
             position: [
               Math.cos(angle) * orbitRadius,
-              (Math.random() - 0.5) * 24,
+              (Math.random() - 0.5) * 16,
               Math.sin(angle) * orbitRadius,
             ],
             scale: sizeToRadius(dirSize, CFG.galaxy.planetMinRadius, CFG.galaxy.planetMaxRadius, dirRef),
