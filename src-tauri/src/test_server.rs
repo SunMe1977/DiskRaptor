@@ -20,6 +20,13 @@ fn get_cdp_result(key: &str) -> Option<String> {
 }
 
 fn parse_cdp_value(v: &str) -> serde_json::Value {
+    // Marker for JS `undefined` (see the eval wrapper below): it has no JSON
+    // encoding, so without this the POST would carry no `value` key, the
+    // lookup would never resolve, and every poll would burn the full 30 s
+    // wait. Respond with no value so the client sees `undefined` fast.
+    if v == "__undefined__" {
+        return serde_json::json!({"type": "undefined"});
+    }
     if let Some(inner) = v.strip_prefix("__err:") {
         return serde_json::json!({"type": "string", "value": inner});
     }
@@ -140,8 +147,12 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
                             let cdp_id = format!("__cdp_{}", id);
 
                             if let Some(w) = app.get_webview_window("main") {
+                                // NOTE: `undefined` has no JSON encoding, so it
+                                // is sent as an explicit marker (handled in
+                                // parse_cdp_value). Without this the POST would
+                                // omit `value` and never resolve.
                                 let ejs = format!(
-                                    "try{{var r=eval({});var s=JSON.stringify(r);var x=new XMLHttpRequest();x.open('POST','http://127.0.0.1:{}/cdp_result',true);x.setRequestHeader('Content-Type','text/plain');x.send(JSON.stringify({{id:'{}',value:s}}));}}catch(e){{}}",
+                                    "try{{var r=eval({});var s=(typeof r==='undefined')?'__undefined__':JSON.stringify(r);var x=new XMLHttpRequest();x.open('POST','http://127.0.0.1:{}/cdp_result',true);x.setRequestHeader('Content-Type','text/plain');x.send(JSON.stringify({{id:'{}',value:s}}));}}catch(e){{}}",
                                     serde_json::Value::String(expr.to_string()), _cdp_port, cdp_id
                                 );
                                 let _ = w.eval(&ejs).ok();
@@ -149,7 +160,12 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
 
                             let mut value = serde_json::Value::Null;
                             if await_promise {
-                                for _ in 0..300 {
+                                // Bounded wait for the page-side XHR POST. Kept
+                                // short on purpose: a lost POST (eval fired
+                                // mid-navigation) must fail fast so the client
+                                // can retry on the loaded page instead of
+                                // wedging the serial WS loop for 30 s.
+                                for _ in 0..150 {
                                     if let Some(v) = get_cdp_result(&cdp_id) {
                                         value = parse_cdp_value(&v);
                                         break;
@@ -200,12 +216,48 @@ pub async fn cdp_server(port: u16, app: tauri::AppHandle) {
 
         let app_clone = app.clone();
         tokio::spawn(async move {
-            let mut buf = vec![0u8; 8192];
-            let n = match stream.read(&mut buf).await {
-                Ok(n) if n > 0 => n,
-                _ => return,
-            };
-            let buf = buf[..n].to_vec();
+            // Read until the FULL HTTP request arrived: headers plus any
+            // Content-Length body. A single read() is not enough — localhost
+            // TCP splits larger POST bodies (e.g. array results), and parsing
+            // a partial body silently drops the CDP result (each dropped
+            // result burns the full 30 s wait downstream).
+            let mut acc: Vec<u8> = Vec::new();
+            loop {
+                let mut tmp = vec![0u8; 8192];
+                let n = match stream.read(&mut tmp).await {
+                    Ok(n) if n > 0 => n,
+                    _ => return,
+                };
+                acc.extend_from_slice(&tmp[..n]);
+                if acc.len() > 4_000_000 {
+                    return;
+                }
+                let req_str = String::from_utf8_lossy(&acc);
+                let hdr_end = match req_str.find("\r\n\r\n") {
+                    Some(i) => i,
+                    None => continue,
+                };
+                if req_str.starts_with("POST") {
+                    let want: usize = req_str[..hdr_end]
+                        .lines()
+                        .find_map(|l| {
+                            let mut parts = l.splitn(2, ':');
+                            let name = parts.next()?.trim();
+                            let val = parts.next()?.trim();
+                            if name.eq_ignore_ascii_case("content-length") {
+                                val.parse().ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(0);
+                    if acc.len() < hdr_end + 4 + want {
+                        continue;
+                    }
+                }
+                break;
+            }
+            let buf = acc;
 
             let req_str = String::from_utf8_lossy(&buf);
             if req_str.starts_with("GET /json") || req_str.starts_with("POST /cdp_result") {

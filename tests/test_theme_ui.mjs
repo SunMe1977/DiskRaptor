@@ -1,4 +1,4 @@
-import { runTest, jsExpr, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById } from "./test_shared.mjs";
+import { runTest, jsExpr, jsInvoke, assert, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated, clickById } from "./test_shared.mjs";
 
 runTest("DiskRaptor Theme Test", 9205, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
@@ -20,13 +20,11 @@ runTest("DiskRaptor Theme Test", 9205, async (cdp, scanPath) => {
   const bodyStyle = await jsExpr(cdp, `getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim()`);
   assert("Theme CSS custom property set", bodyStyle !== "", `--bg-primary=${bodyStyle}`);
 
-  const savedTheme = await jsExpr(cdp, `
-    (async () => {
-      try {
-        const r = await window.__TAURI__.invoke('load_settings', {});
-        return r?.theme || 'default';
-      } catch(e) { return 'err: ' + e.message; }
-    })()
-  `);
+  // Async invoke must go through jsInvoke: a bare jsExpr cannot await the
+  // promise (the CDP bridge serializes it to {}), so this always came back
+  // "[object Object]".
+  const savedTheme = await jsInvoke(cdp,
+    "window.__TAURI__.invoke('load_settings', {}).then(r => ((r && ((r.data && r.data.theme) || r.theme)) || 'default'))",
+  ).catch(() => 'error');
   assert("Load settings via Tauri", typeof savedTheme === "string", `theme=${savedTheme}`);
 });

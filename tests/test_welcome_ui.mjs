@@ -1,6 +1,13 @@
-import { runTest, jsExpr, assert, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, assert, clickById, sleep, waitFor } from "./test_shared.mjs";
 
 runTest("DiskRaptor Welcome Screen Test", 9201, async (cdp) => {
+  // The welcome screen renders async after app init; wait for it instead of
+  // racing the first paint (flaky "not-found" under load).
+  await waitFor(async () => {
+    const w = await jsExpr(cdp, `!!document.getElementById('welcome-placeholder')`);
+    return w === true;
+  }, { timeout: 10000, label: "welcome" });
+
   const welcomeVisible = await jsExpr(cdp, `
     (function() {
       const w = document.getElementById('welcome-placeholder');
@@ -38,6 +45,10 @@ runTest("DiskRaptor Welcome Screen Test", 9201, async (cdp) => {
 
   const welcomeHidden = await jsExpr(cdp, `
     (function() {
+      // Real app: welcome-close hides #welcome-onboarding (app.js
+      // hideOnboarding). Legacy injected DOM hid #welcome-placeholder.
+      const ob = document.getElementById('welcome-onboarding');
+      if (ob) return 'hidden=' + ob.classList.contains('hidden');
       const w = document.getElementById('welcome-placeholder');
       if (!w) return 'not-found';
       return 'hidden=' + w.classList.contains('hidden');
@@ -47,6 +58,8 @@ runTest("DiskRaptor Welcome Screen Test", 9201, async (cdp) => {
 
   await jsExpr(cdp, `
     (function() {
+      const ob = document.getElementById('welcome-onboarding');
+      if (ob) ob.classList.remove('hidden');
       const w = document.getElementById('welcome-placeholder');
       if (w) w.classList.remove('hidden');
       return 'reshown';

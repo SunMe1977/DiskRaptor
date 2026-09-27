@@ -22,7 +22,12 @@ const TAURI_RELEASE_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "re
 const TAURI_DEBUG_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "debug", TAURI_BIN_NAME);
 const TAURI_RELEASE_ALT_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "release", "diskraptor");
 const TAURI_DEBUG_ALT_PATH = path.resolve(PROJECT_ROOT, "src-tauri", "target", "debug", "diskraptor");
-const EXE_PATH = fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
+// DISKRAPTOR_BIN overrides binary selection — see tests/test_shared.mjs.
+// Must agree with test_shared.mjs or the banner prints a different binary
+// than the tests actually spawn.
+const _binOverride = process.env.DISKRAPTOR_BIN || "";
+const EXE_PATH = (_binOverride && fs.existsSync(_binOverride)) ? path.resolve(_binOverride) :
+                fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
                 fs.existsSync(TAURI_DEBUG_PATH) ? TAURI_DEBUG_PATH :
                 fs.existsSync(TAURI_RELEASE_ALT_PATH) ? TAURI_RELEASE_ALT_PATH :
                 fs.existsSync(TAURI_DEBUG_ALT_PATH) ? TAURI_DEBUG_ALT_PATH :

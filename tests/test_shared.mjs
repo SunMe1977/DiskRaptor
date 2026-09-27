@@ -20,7 +20,14 @@ export const TAURI_DEBUG_PATH = path.resolve("src-tauri", "target", "debug", TAU
 export const TAURI_RELEASE_PATH = path.resolve("src-tauri", "target", "release", TAURI_BIN_NAME);
 export const TAURI_DEBUG_ALT_PATH = path.resolve("src-tauri", "target", "debug", "diskraptor");
 export const TAURI_RELEASE_ALT_PATH = path.resolve("src-tauri", "target", "release", "diskraptor");
-export const BIN_PATH = fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
+// DISKRAPTOR_BIN overrides binary selection (e.g. a debug build with the
+// `test-server` feature from `npm run test:build`). The UI tests drive the
+// app through the embedded CDP test server, which is only compiled in with
+// `--features test-server` — a plain `build-local.ps1` binary has no CDP
+// endpoint and every test fails with "Could not find page WebSocket URL".
+const BIN_OVERRIDE = process.env.DISKRAPTOR_BIN || "";
+export const BIN_PATH = (BIN_OVERRIDE && fs.existsSync(BIN_OVERRIDE)) ? path.resolve(BIN_OVERRIDE) :
+                       fs.existsSync(TAURI_RELEASE_PATH) ? TAURI_RELEASE_PATH :
                        fs.existsSync(TAURI_DEBUG_PATH) ? TAURI_DEBUG_PATH :
                        fs.existsSync(TAURI_RELEASE_ALT_PATH) ? TAURI_RELEASE_ALT_PATH :
                        fs.existsSync(TAURI_DEBUG_ALT_PATH) ? TAURI_DEBUG_ALT_PATH :
@@ -85,10 +92,13 @@ export async function connectCDP(wsUrl) {
     send(method, params = {}) {
       return new Promise((resolve, reject) => {
         const id = ++msgId;
+        // Fail fast-ish: the server answers in ms when healthy; a lost
+        // round-trip must surface quickly so wait-loops can retry instead of
+        // sitting out the 90 s spawn budget on one wedged call.
         const timer = setTimeout(() => {
           pending.delete(id);
           reject(new Error(`CDP timeout: ${method}`));
-        }, 60000);
+        }, 30000);
         pending.set(id, {
           resolve: (m) => { clearTimeout(timer); resolve(m); },
           reject: (e) => { clearTimeout(timer); reject(e); },
@@ -141,17 +151,24 @@ let _invokeId = 0;
 
 export async function jsInvoke(cdp, expr) {
   const id = '__iv_' + (++_invokeId);
-  await cdp.send("Runtime.evaluate", {
+  const arm = () => cdp.send("Runtime.evaluate", {
     expression: `${expr}.then(r => { window['${id}'] = r; }).catch(e => { window['${id}'] = '__err:' + String(e.message || e); })`,
     returnByValue: false,
     awaitPromise: false,
   });
+  await arm();
+  // The fire-and-forget arm above can be dropped when the webview is busy
+  // (eval lost => key never appears, polls alone can't recover). Re-arm
+  // every ~2s so a lost arm is re-sent instead of timing out.
   for (let i = 0; i < 400; i++) { // up to ~20s: WMI/powershell fallbacks are slow
+    if (i > 0 && i % 40 === 0) await arm().catch(() => {});
     await sleep(50);
+    // NOTE: awaitPromise must be true here (like jsExpr): with false the
+    // server answers Null immediately and the poll can never observe the key.
     const r = await cdp.send("Runtime.evaluate", {
       expression: `window['${id}']`,
       returnByValue: true,
-      awaitPromise: false,
+      awaitPromise: true,
     });
     const val = cdpVal(r);
     if (val !== undefined && val !== null) {
@@ -179,7 +196,8 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
   if (!fs.existsSync(BIN_PATH)) throw new Error(`Missing binary: ${BIN_PATH}`);
   console.log(`  Binary: ${BIN_PATH}`);
 
-  const isTauri = BIN_PATH === TAURI_DEBUG_PATH || BIN_PATH === TAURI_RELEASE_PATH;
+  const isTauri = [TAURI_DEBUG_PATH, TAURI_RELEASE_PATH, TAURI_DEBUG_ALT_PATH, TAURI_RELEASE_ALT_PATH]
+    .some((p) => BIN_PATH === p || path.resolve(BIN_PATH) === path.resolve(p));
   const child = spawn(BIN_PATH, [], {
     cwd: isTauri ? path.resolve("src-tauri") : DIST_DIR,
     env: getExtraEnv(port),
@@ -199,7 +217,14 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
       }
     } catch { /* best-effort: ignore */ }
   }
-  if (!wsUrl) throw new Error("Could not find page WebSocket URL");
+  if (!wsUrl) {
+    killChild(child);
+    throw new Error(
+      `Could not find page WebSocket URL on port ${port} (binary: ${BIN_PATH}). ` +
+      "The binary was probably built WITHOUT --features test-server, so no CDP endpoint exists. " +
+      "Run 'npm run test:build' and retry (optionally with DISKRAPTOR_BIN=path/to/test/binary)."
+    );
+  }
   console.log("  Page WS ready");
 
   const cdp = await connectCDP(wsUrl);
@@ -207,6 +232,24 @@ export async function launchAndConnect(port = DEFAULT_CDP_PORT, scanPath = DEFAU
   await cdp.send("Runtime.enable");
   await cdp.send("Console.enable");
   console.log("  CDP connected");
+
+  // Don't hand out the connection while the page is still loading: an
+  // evaluate fired mid-navigation is silently lost (no POST ever arrives)
+  // and wedges the serial server loop. Bounded + best-effort — the tests
+  // have their own waits, this just avoids the startup race.
+  const readyDeadline = Date.now() + 20000;
+  for (;;) {
+    try {
+      const ready = await cdp.send("Runtime.evaluate", {
+        expression: `document.readyState === 'complete' && !!document.getElementById('scan-path')`,
+        returnByValue: true,
+        awaitPromise: true,
+      });
+      if (cdpVal(ready) === true) break;
+    } catch { /* keep waiting for a loaded page */ }
+    if (Date.now() >= readyDeadline) break;
+    await sleep(200);
+  }
 
   if (isTauri) {
     // Tauri mode: __TAURI__ is injected by Tauri's preload, ready immediately.

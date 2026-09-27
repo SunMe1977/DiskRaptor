@@ -145,6 +145,14 @@ runTest("DiskRaptor S.M.A.R.T. real-value check", 9255, async (cdp) => {
     }, { timeout: 5000, label: "smart overlay" });
     assert("S.M.A.R.T. overlay opens (real UI)", opened === true);
 
+    // The drive list loads async (list_disks); clicking scan while the
+    // button is still disabled is a no-op and the render wait below would
+    // time out. Wait for a selectable drive first.
+    await waitFor(async () => {
+      const ready = await jsExpr(cdp, `!!(document.getElementById('smart-scan') && !document.getElementById('smart-scan').disabled && document.getElementById('smart-drive').value)`);
+      return ready === true;
+    }, { timeout: 15000, label: "smart drives" });
+
     await jsExpr(cdp, `document.getElementById('smart-scan').click(); 'ok'`);
     assert("S.M.A.R.T. results rendered", await waitFor(() => renderedState(cdp), { timeout: 30000, label: "smart render" }));
 
