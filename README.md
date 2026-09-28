@@ -203,8 +203,13 @@ cd src-tauri && cargo test
 # JS syntax check
 for f in frontend/*.js; do node --check "$f"; done
 
-# Full UI test via CDP (requires the app built with the `test-server` feature)
-node tests/test_ui.mjs
+# Build the CDP test binary with a test-only CSP that permits its eval bridge
+npm run test:build
+
+# Run the tree test against the real frontend without closing other app windows
+DISKRAPTOR_NO_KILL=1 DISKraptor_NO_INJECT=1 \
+  DISKRAPTOR_BIN=src-tauri/target/debug/diskraptor \
+  node tests/test_tree_ui.mjs /path/to/scan
 ```
 
 ---

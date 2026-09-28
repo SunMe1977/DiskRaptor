@@ -17,7 +17,7 @@
     "test:syntax": "node tests/check_syntax.mjs",
     "test": "node tests/run_tests.mjs",
     "test:quick": "node tests/run_tests.mjs --quick --parallel 3",
-    "test:build": "npm run build:frontend && cargo build --manifest-path src-tauri/Cargo.toml --features test-server",
+    "test:build": "npm run build:frontend && node scripts/build-test-server.mjs",
     "test:list": "node tests/run_tests.mjs --list",
     "test:scan": "node tests/test_scan_ui.mjs",
     "test:scan-timeout": "node tests/test_scan_timeout_mock.mjs",
