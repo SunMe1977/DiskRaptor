@@ -76,6 +76,14 @@ pub fn setup_window(app: &AppHandle) {
     // Show the version in the window title (e.g. "DiskRaptor 1.0.27").
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.set_title(&format!("DiskRaptor {}", env!("CARGO_PKG_VERSION")));
+        #[cfg(target_os = "linux")]
+        let _ = win.with_webview(|webview| {
+            use webkit2gtk::{SettingsExt, WebViewExt};
+            if let Some(settings) = webview.inner().settings() {
+                // Avoid delayed touchpad movement in the directory tree.
+                settings.set_enable_smooth_scrolling(false);
+            }
+        });
     }
 
     // Restore saved window bounds

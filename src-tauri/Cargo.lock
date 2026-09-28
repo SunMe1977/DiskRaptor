@@ -927,6 +927,7 @@ dependencies = [
  "trash",
  "ureq",
  "walkdir",
+ "webkit2gtk",
  "windows 0.39.0",
  "xxhash-rust",
 ]
