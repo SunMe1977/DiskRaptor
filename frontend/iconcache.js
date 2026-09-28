@@ -31,6 +31,14 @@ class IconCache {
       : (path.split(".").pop() || "file").toLowerCase();
     if (this.cache.has(key)) return this.cache.get(key);
 
+    // The native icon command only provides icons on Windows. Avoid an IPC
+    // request for every recycled row on Linux and macOS.
+    if (!/^Win/i.test(navigator.platform || "")) {
+      const fallback = this._getFallback(key);
+      this.cache.set(key, fallback);
+      return fallback;
+    }
+
     if (this.pending.has(key)) {
       return new Promise(
         function (resolve, reject) {
@@ -50,6 +58,7 @@ class IconCache {
       return result;
     } catch (e) {
       const fallback = this._getFallback(key);
+      this.cache.set(key, fallback);
       // Resolve with fallback so callers get something
       pending.forEach(function (r) {
         r[0](fallback);
