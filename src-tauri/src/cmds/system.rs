@@ -458,7 +458,7 @@ pub(crate) fn get_memory_info() -> JsonResult {
 pub(crate) fn get_process_memory() -> JsonResult {
     let pid = sysinfo::Pid::from_u32(std::process::id());
     let mut sys = sysinfo::System::new();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, false);
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), false);
     if let Some(p) = sys.process(pid) {
         JsonResult::ok(serde_json::json!({"resident": p.memory(), "virtual": p.virtual_memory()}))
     } else {
