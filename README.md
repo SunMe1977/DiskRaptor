@@ -196,6 +196,11 @@ npx tauri build --bundles nsis --ci
 
 ## Testing
 
+The previous `node tests/test_ui.mjs` example is macOS-only: that script
+launches `dist/DiskRaptor.app/Contents/MacOS/DiskRaptor`, not the debug test
+binary built by `npm run test:build`. The tree test below uses the test binary
+and runs against the real frontend.
+
 ```bash
 # Rust unit tests (scanner tree, chunking, file accumulators)
 cd src-tauri && cargo test
