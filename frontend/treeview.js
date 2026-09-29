@@ -1191,7 +1191,7 @@ let ok = 0;
 
     // Icon: the fallback emoji is already in the row; replace it with the real
     // Windows icon from IconCache when it arrives.
-    if (window.__ICON_CACHE__) {
+    if (window.__ICON_CACHE__ && /^Win/i.test(navigator.platform || "")) {
       const iconKey = isDir ? "__folder__" : node.name || "file";
       const iconEl = el.querySelector(".icon");
       window.__ICON_CACHE__
