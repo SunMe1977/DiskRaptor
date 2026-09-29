@@ -211,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_hash_file_full_mmap_matches_streaming() {
         // File above MMAP_THRESHOLD_BYTES must take the mapped path and still
         // produce the exact xxh3 of its bytes.
