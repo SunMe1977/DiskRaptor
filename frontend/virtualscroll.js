@@ -64,13 +64,13 @@ class VirtualScroll {
     this.totalItems = count;
     this.totalHeight = totalHeight;
     this.spacer.style.height = `${totalHeight}px`;
-    this._update();
+    this._update(true);
   }
 
   /** Force re-render the visible range. */
   refresh() {
     this._updateViewport();
-    this._update();
+    this._update(true);
   }
 
   /** Scroll to a specific item index. */
@@ -102,7 +102,7 @@ class VirtualScroll {
     this.viewportHeight = this.container.clientHeight;
   }
 
-  _update() {
+  _update(updateExisting = false) {
     if (this.totalItems === 0) {
       this._clearAll();
       return;
@@ -135,11 +135,13 @@ class VirtualScroll {
       }
     }
 
-    // Add or update visible rows
+    // Scrolling only changes which rows are visible. Rebuilding existing rows
+    // here invalidates the whole list on every scroll event. Explicit refreshes
+    // still update them when their data or selection changes.
     for (let i = this.firstVisible; i <= this.lastVisible; i++) {
       if (!this.rows.has(i)) {
         this._createRow(i);
-      } else {
+      } else if (updateExisting) {
         this._updateRow(i);
       }
     }
