@@ -1,0 +1,55 @@
+# DiskRaptor touchpad scrolling investigation
+
+Recorded 2026-09-28 on Linux Mint 22.2, X11, with the ELAN06FA touchpad using the Synaptics Xorg driver.
+
+## Observed behavior
+
+- With the tree redraw fix (`822760e`), mouse-wheel and scrollbar scrolling were acceptable. Fast touchpad swipes still coasted for several seconds with uneven speed.
+- The host uses WebKitGTK 2.52.6. WebKitGTK 2.54.0 advertised asynchronous-scrolling fixes for synchronization glitches and input-latency stalls. A user-scoped GNOME Flatpak runtime supplied 2.54.0 to the **same DiskRaptor binary**; the app rendered and scrolled, but the user perceived no improvement in the touchpad symptom. That test used `WEBKIT_DISABLE_DMABUF_RENDERER=1` because the runtime's default renderer failed to create a GBM buffer. It therefore does not rule out every renderer-specific WebKit change; it shows that upgrading to 2.54 was insufficient in this tested configuration.
+- In the host build, a recorded touchpad run delivered 669 wheel events over 12.6 seconds, including multiple events at the same timestamp. Frames during that run had a median interval of 18 ms, 95th percentile of 21 ms, and occasional stalls up to 85 ms. These figures describe that gesture, not a controlled before/after benchmark.
+- Rendering all 290 tree rows once and detaching the virtual-scroll callback did not improve the touchpad feel. The callback was restored afterward.
+- The Synaptics device's original `Synaptics Coasting Speed` values were `20, 50`. Temporarily changing them to `0, 50` made fast-swipe scrolling feel **better** by user report. The user observed no change to mouse-wheel or scrollbar-drag scrolling. The original `20, 50` values were restored after the test.
+- With coasting restored to `20, 50`, the user reports that touchpad scrolling in other apps is smooth. DiskRaptor remains the app with the uneven, prolonged scrolling. This comparison limits what the coasting test proves: coasting contributes to the symptom in DiskRaptor, but the driver setting alone does not explain why DiskRaptor behaves differently.
+- A temporary standalone GTK 3 window using the host's WebKitGTK 2.52 rendered 1,500 simple 26-pixel rows in a native `overflow-y:auto` list. With coasting enabled, the user found its touchpad scrolling **much better** than DiskRaptor's, though they noticed a small amount of uneven velocity. This rules out the host's WebKitGTK version alone as a sufficient explanation; the comparison is not identical to Tauri's web view configuration.
+- In a temporary DiskRaptor test-server build, replacing the page body with the same simple 1,500-row list made touchpad scrolling much closer to the smooth standalone comparison. The same Tauri window and WebKitGTK engine therefore can scroll a plain list acceptably with coasting enabled.
+- Adding DiskRaptor's `.tree-row` markup and CSS to 400 rows in normal document flow gave an inconclusive, intermediate feel. Absolutely positioning those rows above a 13,600-pixel spacer, as the virtual list does, made scrolling less smooth, though the user found it more predictable than the real tree. These subjective comparisons are not controlled frame-time measurements and do not establish a single culprit.
+
+## Interpretation
+
+Synaptics coasting is a demonstrated trigger or amplifier of DiskRaptor's remaining touchpad behavior, not an established root cause. The driver documentation states that `CoastingSpeed=0` disables coasting. The unchanged feel with DiskRaptor's scroll callback detached weakens an app callback explanation, though it does not rule out layout, painting, or WebKit's own scroll handling. The smooth behavior in other apps with coasting enabled makes the interaction between DiskRaptor's web view and this input stream the next area to isolate. WebKitGTK 2.54's asynchronous-scrolling improvements did not resolve the symptom in the isolated test, so a 2.52-only WebKit regression is unlikely to be the primary cause. Further engine comparison would need 2.54 with its default renderer functioning on this machine.
+
+The plain-list result shifts attention toward the tree's layout, styling, or other page work. The absolute-row result suggests virtual-list layout contributes some cost, but the real tree remains worse.
+
+## Periodic frame stalls in the temporary test window
+
+- With absolutely positioned directory rows and hover transforms disabled, a 20-second touchpad trace captured five frame gaps of 165–175 ms. All five overlapped row hover events; other active frames were 16–17 ms. This is correlation, not proof that hover caused the stalls.
+- Disabling pointer events on the test rows improved the feel by user report, yet a second trace still contained six 136–146 ms gaps spaced about three seconds apart. Row highlights therefore increase perceived jitter, but row hover is not sufficient to explain the periodic gaps.
+- The page's RAM display calls `get_process_memory` every three seconds. In the current Rust implementation, that command calls `sysinfo::System::refresh_processes(ProcessesToUpdate::All, false)` before reading the app process. A direct timing check showed its promises resolving in roughly 147–157 ms, while `get_memory_info` resolved in 1–2 ms.
+- Keeping pointer events disabled and intercepting **only** `get_process_memory` in the temporary test window removed all frame gaps over 25 ms in a comparable 20-second touchpad trace (1,243 frames, 1,548 wheel events). The user found it better, with some unevenness remaining. The intercept was temporary and restored after the trace.
+
+This isolates the repeated long pauses in the temporary Tauri test page to the all-process memory refresh with high confidence. The remaining unevenness and the severity difference between the temporary page and the original tree still need separate explanation.
+
+The one-line fix is committed on `perf/refresh-own-process-memory` as `c4ef3eb`: `get_process_memory` refreshes only DiskRaptor's PID. The new binary compiled, and ten direct calls through its Tauri bridge completed in 0–2 ms each, down from roughly 147–157 ms before. The verification binary used the test-server-only CSP override from the separate CSP branch; the fix commit itself contains only the PID selection change.
+
+## Combined real-tree follow-up
+
+A temporary combined test build included `c4ef3eb` with the earlier virtual-scroll fix (`822760e5`) and Linux icon fix (`25c9713c`). It scanned a temporary 400-directory fixture and showed 401 items in a maximized window, with Synaptics coasting enabled at its original `20, 50` setting. In a 20-second touchpad trace over the real tree, 664 wheel events and 431 scroll events produced a 15 ms median frame interval; no frame gap exceeded 100 ms (the largest was 81 ms). The user reported that the middle of the list felt fairly smooth. This verifies the periodic 136–175 ms stalls were removed in the actual tree with the fixes combined. It does not imply all touchpad unevenness is gone.
+
+The user still noticed a sudden speed change near the top and bottom. A temporary `overscroll-behavior-y: none` rule on `#tree-scroll` improved this behavior by user report; the running WebKitGTK web view computed the property as `none`. The one-line CSS change is committed separately on `fix/tree-overscroll` as `433cb4d`. The CSS build passed. No host touchpad setting was changed for this follow-up.
+
+**Follow-up caution:** After rebuilding the combined test binary with the overscroll rule included, the user reported that touchpad scrolling in the running test window was terrible overall. Stopping an unrelated release compilation did not improve it. The window's `get_process_memory` calls still completed in 0–1 ms. Multiple app instances were open during that report, so it cannot be attributed to the CSS rule. Treat `433cb4d` as experimental.
+
+**Single-window correction:** Multiple DiskRaptor instances made the earlier overall comparison unreliable. After all instances were closed, one maximized combined test window was launched and labeled explicitly. With its tree overscroll behavior restored to `auto`, the user reported that ordinary scrolling was smooth. They clarified that the remaining perceived speed rise occurs near the end of *each touchpad gesture*, even a short gesture in the middle of the list; it is not specific to reaching the top or bottom. The boundary CSS change therefore has no demonstrated justification for the remaining symptom and should not be proposed as a fix. The host Synaptics coasting value remains at `20, 50`.
+
+**Wheel-input versus list-position trace:** With the same single maximized window and 401 directory entries, wheel input was front-loaded but list movement lagged and continued after input stopped. In one short 188 ms gesture, the first 100 ms delivered +768.5 px of wheel delta while the list moved +119 px; the next 100 ms delivered +62 px while the list moved +276 px. During the next two 100 ms bins, there were no wheel events but the list moved +303 and +132 px. Another 214 ms gesture showed first-bin wheel −250.8 px versus list movement −34 px, followed by list movement of −123 px in the 200–300 ms bin and −62 px in the 300–400 ms bin. A longer mid-list gesture likewise accumulated movement after wheel input ended. These samples explain the perceived end-of-gesture speed rise and locate it between wheel delivery and scroll-position update. They do not, by themselves, identify which WebKit scrolling stage is responsible.
+
+**WebKit setting experiment and fix:** A temporary Linux-only test build set the webview's `enable-smooth-scrolling` property to `false` through Tauri's `with_webview` hook. Startup logging confirmed the property changed from `true` to `false`; the user reported that scrolling in this new window “works great.” A second build with test-console CSP rendered a blank window after its WebKit web process disappeared, so no valid comparison trace was collected from that build. Rebuilding with the production CSP restored the visible UI and the user again reported that scrolling worked well. This commit applies the setting only to DiskRaptor's Linux webview. It passed `cargo check` and all 179 Rust tests on Linux. The host touchpad settings remain unchanged. The trace and subjective comparisons support this fix, but the exact internal WebKit queueing stage remains unidentified.
+
+The host's input-device setting was restored to its original value. The application change in this commit is limited to the Linux webview setting.
+
+## Sources
+
+- [Synaptics Xorg driver manual](https://cgit.freedesktop.org/xorg/driver/xf86-input-synaptics/tree/man/synaptics.man?id=1dee04e3f29840b3618a5cd4dc87367419103d18)
+- [WebKit touchpad asynchronous-scrolling bug 321660](https://bugs.webkit.org/show_bug.cgi?id=321660)
+- [WebKitGTK 2.54 release highlights](https://webkitgtk.org/2026/09/16/webkitgtk-2.54-highlights.html)
+- [WebKitGTK smooth-scrolling setting](https://webkitgtk.org/reference/webkit2gtk/2.38.3/property.Settings.enable-smooth-scrolling.html)
