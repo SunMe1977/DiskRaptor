@@ -54,8 +54,8 @@
       // Update celestial object animations
       // (_followLocked objects are skipped: a selected planet stands still
       // while the camera stays locked onto it.)
-      for (const obj of objects) {
-        if (!obj || !obj.active || obj._followLocked) continue;
+       for (const obj of objects) {
+         if (!obj || !obj.active || obj._followLocked || obj._frozen) continue;
 
         switch (obj.type) {
           case "star":

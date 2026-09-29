@@ -264,39 +264,73 @@ window.app.initSettings = function (config) {
       if (e.key === "Enter") btnScan.click();
     });
     // ── RAM status bars ────────────────────────────────────
-    const ramAppFill = document.getElementById("ram-app-fill");
-    const ramSysFill = document.getElementById("ram-sys-fill");
-    const ramAppText = document.getElementById("ram-app-text");
-    const ramSysText = document.getElementById("ram-sys-text");
-    function formatBytes(v) {
-      return window.fmtSize(v);
-    }
-    async function updateRam() {
-      try {
-        const [sysMem, procMem] = await Promise.all([
-          window.__TAURI__.invoke("get_memory_info").catch(function(){return null}),
-          window.__TAURI__.invoke("get_process_memory").catch(function(){return null})
-        ]);
-        if (sysMem && sysMem.total > 0) {
-          const total = sysMem.total;
-          const sysUsed = sysMem.used || (total - (sysMem.free || 0));
-          const sysPct = Math.round((sysUsed / total) * 100);
-          ramSysFill.style.width = sysPct + "%";
-          ramSysFill.classList.add("ram-bar-fill-sys");
-          ramSysFill.classList.toggle("critical", sysPct > 85);
-          ramSysFill.classList.toggle("warning", sysPct > 70 && sysPct <= 85);
-          ramSysText.textContent = formatBytes(sysUsed) + " / " + formatBytes(total) + " (" + sysPct + "%)";
-        }
-        if (procMem && procMem.resident > 0) {
-          const total = (sysMem && sysMem.total) || 1;
-          const appMem = procMem.resident;
-          const appPct = Math.round((appMem / total) * 100);
-          ramAppFill.style.width = appPct + "%";
-          ramAppText.textContent = formatBytes(appMem) + " (" + appPct + "%)";
-        }
-      } catch (e) { console.debug("[DiskRaptor]", e); }
-    }
-    updateRam();
-    setInterval(updateRam, 3000);
+     const ramAppFill = document.getElementById("ram-app-fill");
+     const ramSysFill = document.getElementById("ram-sys-fill");
+     const ramAppText = document.getElementById("ram-app-text");
+     const ramSysText = document.getElementById("ram-sys-text");
+     const ramBar = document.getElementById("ram-bar");
+     const ramDetailPanel = document.getElementById("ram-detail-panel");
+     const ramDetailApp = document.getElementById("ram-detail-app");
+     const ramDetailSysUsed = document.getElementById("ram-detail-sys-used");
+     const ramDetailSysFree = document.getElementById("ram-detail-sys-free");
+     const ramDetailSysTotal = document.getElementById("ram-detail-sys-total");
+     const ramDetailAppPct = document.getElementById("ram-detail-app-pct");
+     const ramDetailSysPct = document.getElementById("ram-detail-sys-pct");
+let detailVisible = false;
+       if (ramBar) {
+         ramBar.style.cursor = "pointer";
+         ramBar.addEventListener("click", function () {
+           try { if (typeof gc === "function") gc(); } catch (_) {}
+           detailVisible = !detailVisible;
+           if (ramDetailPanel) ramDetailPanel.style.display = detailVisible ? "flex" : "none";
+           updateRam();
+           if (detailVisible) window.showToast && window.showToast("Optimizer ran — memory refreshed", "info");
+         });
+       }
+       const ramDetailClose = document.getElementById("btn-ram-detail-close");
+       if (ramDetailClose) {
+         ramDetailClose.addEventListener("click", function (e) {
+           e.stopPropagation();
+           detailVisible = false;
+           if (ramDetailPanel) ramDetailPanel.style.display = "none";
+         });
+       }
+     function formatBytes(v) {
+       return window.fmtSize(v);
+     }
+     async function updateRam() {
+       try {
+         const [sysMem, procMem] = await Promise.all([
+           window.__TAURI__.invoke("get_memory_info").catch(function(){return null}),
+           window.__TAURI__.invoke("get_process_memory").catch(function(){return null})
+         ]);
+         if (sysMem && sysMem.total > 0) {
+           const total = sysMem.total;
+           const sysUsed = sysMem.used || (total - (sysMem.free || 0));
+           const sysFree = sysMem.free || (total - sysUsed);
+           const sysPct = Math.round((sysUsed / total) * 100);
+           ramSysFill.style.width = sysPct + "%";
+           ramSysFill.classList.add("ram-bar-fill-sys");
+           ramSysFill.classList.toggle("critical", sysPct > 85);
+           ramSysFill.classList.toggle("warning", sysPct > 70 && sysPct <= 85);
+           ramSysText.textContent = formatBytes(sysUsed) + " / " + formatBytes(total) + " (" + sysPct + "%)";
+           if (ramDetailSysUsed) ramDetailSysUsed.textContent = formatBytes(sysUsed);
+           if (ramDetailSysFree) ramDetailSysFree.textContent = formatBytes(sysFree);
+           if (ramDetailSysTotal) ramDetailSysTotal.textContent = formatBytes(total);
+           if (ramDetailSysPct) ramDetailSysPct.textContent = sysPct + "%";
+         }
+         if (procMem && procMem.resident > 0) {
+           const total = (sysMem && sysMem.total) || 1;
+           const appMem = procMem.resident;
+           const appPct = Math.round((appMem / total) * 100);
+           ramAppFill.style.width = appPct + "%";
+           ramAppText.textContent = formatBytes(appMem) + " (" + appPct + "%)";
+           if (ramDetailApp) ramDetailApp.textContent = formatBytes(appMem);
+           if (ramDetailAppPct) ramDetailAppPct.textContent = appPct + "%";
+         }
+       } catch (e) { console.debug("[DiskRaptor]", e); }
+     }
+     updateRam();
+     setInterval(updateRam, 3000);
   };
 })();

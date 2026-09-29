@@ -567,7 +567,16 @@ let chartData;
         setTimeout(function () {
           item.textContent = "\uD83D\uDDD1\uFE0F " + window.t("tools.empty_trash");
         }, 3000);
-      } else if (action === "exit") {
+       } else if (action === "ram-optimize") {
+         try {
+           if (typeof gc === "function") gc();
+         } catch (_) {}
+         try {
+           window.__TAURI__.invoke("get_memory_info").catch(function(){return null});
+           window.__TAURI__.invoke("get_process_memory").catch(function(){return null});
+         } catch (_) {}
+         window.showToast && window.showToast("Memory optimized", "success");
+       } else if (action === "exit") {
         try {
           await window.__TAURI__.invoke("exit_app");
         } catch (e) {

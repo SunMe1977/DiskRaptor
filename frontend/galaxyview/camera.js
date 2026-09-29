@@ -216,24 +216,26 @@
     },
 
     /** Lock the camera onto an object; cleared on any manual control. */
-    _setFollow(obj) {
-      if (this.followTarget && this.followTarget !== obj) this.followTarget._followLocked = false;
-      this.followTarget = obj || null;
-      // The selected planet itself stands still (no orbit/spin) while locked.
-      if (this.followTarget) this.followTarget._followLocked = true;
-      this._followPrev = null;
-      // Freeze the whole galaxy for calm inspection while selected.
-      this._selectionFrozen = !!this.followTarget;
-      this._updatePauseState();
-    },
+_setFollow(obj) {
+       if (this.followTarget && this.followTarget !== obj) this.followTarget._followLocked = false;
+       this.followTarget = obj || null;
+       // The selected planet itself stands still (no orbit/spin) while locked.
+       if (this.followTarget) this.followTarget._followLocked = true;
+       this._followPrev = null;
+       // Freeze the whole galaxy for calm inspection while selected.
+       this._selectionFrozen = !!this.followTarget;
+       if (this.followTarget) this.followTarget._frozen = true;
+       this._updatePauseState();
+     },
 
-    _clearFollow() {
-      if (this.followTarget) this.followTarget._followLocked = false;
-      this.followTarget = null;
-      this._followPrev = null;
-      this._selectionFrozen = false;
-      this._updatePauseState();
-    },
+     _clearFollow() {
+       if (this.followTarget) this.followTarget._followLocked = false;
+       if (this.followTarget) this.followTarget._frozen = false;
+       this.followTarget = null;
+       this._followPrev = null;
+       this._selectionFrozen = false;
+       this._updatePauseState();
+     },
 
     /**
      * Object motion runs only when nothing is hovered and nothing is

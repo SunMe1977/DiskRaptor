@@ -59,6 +59,7 @@
                         <div class="tools-item" tabindex="0" data-action="reset-view">🔄 <span data-i18n="tools.reset_view">Reset View</span></div>
                         <div class="tools-item" tabindex="0" data-action="clear-scan">🗑️ <span data-i18n="menu.clear_scan">Clear Scan</span></div>
                         <div class="tools-item" tabindex="0" data-action="trash">🗑️ <span data-i18n="tools.empty_trash">Empty Trash</span></div>
+                        <div class="tools-item" tabindex="0" data-action="ram-optimize">🧹 <span data-i18n="tools.ram_optimize">Memory Optimizer</span></div>
                     </div>
                 </div>
                 <button id="btn-export" disabled data-i18n="btn.export">📥 Export</button>
@@ -536,24 +537,28 @@
                             <b>v0.0.1</b> — Initial prototype
                         </div>
                     </div>
-                    <div id="about-tab-credits" class="about-tab-content" style="display:none;">
-                        <div style="font-size:11px;text-align:center;color:var(--text-secondary);line-height:1.8;">
-                            <p>🦀 <b>Rust</b> — Scanner engine</p>
-                            <p>📦 <b>Tauri 2</b> — Desktop framework (native webview)</p>
-                            <p>🌐 <b>WebView2 / WKWebView / WebKitGTK</b> — Frontend rendering</p>
-                            <p>🔀 <b>jwalk</b> — Parallel directory walking</p>
-                            <p>🔍 <b>serde / serde_json</b> — Serialization</p>
-                            <p>🗺️ <b>sysinfo</b> — System information</p>
-                            <div class="about-divider" style="margin:10px 0 6px;"></div>
-                            <p style="font-weight:600;color:var(--text-primary);font-size:12px;margin:0;" data-i18n="about.thanks_contributors">🙏 Thanks to our contributors</p>
-                            <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-top:6px;">
-                                <a data-open-url="https://github.com/bovirus" class="about-link" style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                                    <img src="images/contributors/bovirus.png" width="36" height="36" alt="bovirus" style="border-radius:50%;border:1px solid var(--border);" />
-                                    bovirus
-                                </a>
-                            </div>
-                        </div>
-                    </div>
+<div id="about-tab-credits" class="about-tab-content" style="display:none;">
+                         <div style="font-size:11px;text-align:center;color:var(--text-secondary);line-height:1.8;">
+                             <p>🦀 <b>Rust</b> — Scanner engine</p>
+                             <p>📦 <b>Tauri 2</b> — Desktop framework (native webview)</p>
+                             <p>🌐 <b>WebView2 / WKWebView / WebKitGTK</b> — Frontend rendering</p>
+                             <p>🔀 <b>jwalk</b> — Parallel directory walking</p>
+                             <p>🔍 <b>serde / serde_json</b> — Serialization</p>
+                             <p>🗺️ <b>sysinfo</b> — System information</p>
+                             <div class="about-divider" style="margin:10px 0 6px;"></div>
+                             <p style="font-weight:600;color:var(--text-primary);font-size:12px;margin:0;" data-i18n="about.thanks_contributors">🙏 Thanks to our contributors</p>
+                             <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-top:6px;flex-wrap:wrap;">
+                                 <a data-open-url="https://github.com/SunMe1977" class="about-link" style="display:flex;align-items:center;gap:8px;font-size:12px;">
+                                     <img src="images/contributors/SunMe1977.png" width="36" height="36" alt="SunMe1977" style="border-radius:50%;border:1px solid var(--border);" />
+                                     SunMe1977
+                                 </a>
+                                 <a data-open-url="https://github.com/bovirus" class="about-link" style="display:flex;align-items:center;gap:8px;font-size:12px;">
+                                     <img src="images/contributors/bovirus.png" width="36" height="36" alt="bovirus" style="border-radius:50%;border:1px solid var(--border);" />
+                                     bovirus
+                                 </a>
+                             </div>
+                         </div>
+                     </div>
                     <div class="about-divider"></div>
                     <p class="about-copy">© 2026 DiskRaptor</p>
                     <button id="btn-about-close" class="primary" data-i18n="about.done">✓ Done</button>
@@ -562,22 +567,51 @@
         </div>
 
         <!-- RAM status bar at the bottom of the page -->
-        <div id="ram-bar" class="ram-bar-bottom">
-            <div class="ram-section">
-                <span class="ram-label">📊 <span data-i18n="ram.app">App</span></span>
-                <div class="ram-bar-track">
-                    <div id="ram-app-fill" class="ram-bar-fill-app" style="width:0%"></div>
-                </div>
-                <span id="ram-app-text" class="ram-value">—</span>
-            </div>
-            <div class="ram-section">
-                <span class="ram-label">💻 <span data-i18n="ram.system">System</span></span>
-                <div class="ram-bar-track">
-                    <div id="ram-sys-fill" class="ram-bar-fill-sys" style="width:0%"></div>
-                </div>
-                <span id="ram-sys-text" class="ram-value">—</span>
-            </div>
-        </div>
+         <div id="ram-bar" class="ram-bar-bottom">
+             <div class="ram-section">
+                 <span class="ram-label">📊 <span data-i18n="ram.app">App</span></span>
+                 <div class="ram-bar-track">
+                     <div id="ram-app-fill" class="ram-bar-fill-app" style="width:0%"></div>
+                 </div>
+                 <span id="ram-app-text" class="ram-value">—</span>
+             </div>
+             <div class="ram-section">
+                 <span class="ram-label">💻 <span data-i18n="ram.system">System</span></span>
+                 <div class="ram-bar-track">
+                     <div id="ram-sys-fill" class="ram-bar-fill-sys" style="width:0%"></div>
+                 </div>
+                 <span id="ram-sys-text" class="ram-value">—</span>
+             </div>
+             <button id="btn-ram-detail" class="ram-detail-btn" title="Memory details">ℹ️</button>
+         </div>
+         <!-- Memory detail panel -->
+         <div id="ram-detail-panel" class="ram-detail-panel" style="display:none;">
+              <button id="btn-ram-detail-close" class="ram-detail-close" title="Close">✕</button>
+             <div class="ram-detail-section">
+                 <span class="ram-detail-label">App Memory</span>
+                 <span id="ram-detail-app" class="ram-detail-value">—</span>
+             </div>
+             <div class="ram-detail-section">
+                 <span class="ram-detail-label">System Used</span>
+                 <span id="ram-detail-sys-used" class="ram-detail-value">—</span>
+             </div>
+             <div class="ram-detail-section">
+                 <span class="ram-detail-label">System Free</span>
+                 <span id="ram-detail-sys-free" class="ram-detail-value">—</span>
+             </div>
+             <div class="ram-detail-section">
+                 <span class="ram-detail-label">System Total</span>
+                 <span id="ram-detail-sys-total" class="ram-detail-value">—</span>
+             </div>
+             <div class="ram-detail-section">
+                 <span class="ram-detail-label">App %</span>
+                 <span id="ram-detail-app-pct" class="ram-detail-value">—</span>
+             </div>
+             <div class="ram-detail-section">
+                 <span class="ram-detail-label">System %</span>
+                 <span id="ram-detail-sys-pct" class="ram-detail-value">—</span>
+             </div>
+         </div>
 
 <script defer src="qt-bridge.js"></script>
 <script defer src="contracts.js"></script>
