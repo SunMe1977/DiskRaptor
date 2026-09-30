@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const fs = require('fs');
@@ -18,6 +19,12 @@ if (!CREEM_WEBHOOK_SECRET) {
 }
 if (!CREEM_API_KEY) {
   console.error('FATAL: CREEM_API_KEY env var is required');
+  process.exit(1);
+}
+// Without Resend every fulfillment would 500 after issuing the license,
+// causing Creem retries to mint duplicate licenses without ever emailing.
+if (!process.env.RESEND_API_KEY) {
+  console.error('FATAL: RESEND_API_KEY env var is required');
   process.exit(1);
 }
 
@@ -46,7 +53,8 @@ function sendEmail(to, licenseKey) {
       subject: 'Your DiskRaptor Pro license',
       text: `License key: ${licenseKey}\n\nPaste it into About → Pro to activate.`,
     });
-    const req = http.request({
+    // NOTE: api.resend.com is HTTPS-only — plain http would fail every send.
+    const req = https.request({
       hostname: 'api.resend.com',
       path: '/v1/emails',
       method: 'POST',
