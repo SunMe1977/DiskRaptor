@@ -9,7 +9,12 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Serialize;
 use tauri::Manager;
 
-const PUBLIC_KEY_B64: &str = "";
+// Raw 32-byte Ed25519 public key (base64), injected at compile time via the
+// DISKRAPTOR_LICENSE_PUBLIC_KEY env var. Copy the "Public key (embed in app)"
+// line printed by scripts/keygen.sh into your build environment:
+//   DISKRAPTOR_LICENSE_PUBLIC_KEY=<base64> cargo build --release
+// If unset, license activation is disabled ("No public key configured").
+const PUBLIC_KEY_B64: &str = option_env!("DISKRAPTOR_LICENSE_PUBLIC_KEY").unwrap_or("");
 
 #[derive(Clone, Debug, Serialize)]
 pub struct LicenseInfo {
@@ -58,21 +63,20 @@ fn load_verifying_key(b64: &str) -> Option<VerifyingKey> {
 
 impl LicenseManager {
     pub fn activate(&mut self, license_b64: &str) -> Result<(), String> {
-        let vk = self.verifying_key.as_ref().ok_or("No public key configured")?;
+        let vk = self
+            .verifying_key
+            .as_ref()
+            .ok_or("No public key configured")?;
         let parts: Vec<&str> = license_b64.splitn(2, '.').collect();
         if parts.len() != 2 {
             return Err("Invalid license format".to_string());
         }
-        let payload_bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            parts[0],
-        )
-        .map_err(|e| format!("Payload decode error: {e}"))?;
-        let sig_bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            parts[1],
-        )
-        .map_err(|e| format!("Signature decode error: {e}"))?;
+        let payload_bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, parts[0])
+                .map_err(|e| format!("Payload decode error: {e}"))?;
+        let sig_bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, parts[1])
+                .map_err(|e| format!("Signature decode error: {e}"))?;
         if sig_bytes.len() != 64 {
             return Err("Invalid signature length".to_string());
         }
@@ -81,12 +85,28 @@ impl LicenseManager {
         let signature = Signature::from_bytes(&sig_arr);
         vk.verify(&payload_bytes, &signature)
             .map_err(|e| format!("Signature verification failed: {e}"))?;
-        let payload: serde_json::Value =
-            serde_json::from_slice(&payload_bytes).map_err(|e| format!("Payload parse error: {e}"))?;
-        let email = payload.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let license_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let issued = payload.get("issued").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let expires = payload.get("expires").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let payload: serde_json::Value = serde_json::from_slice(&payload_bytes)
+            .map_err(|e| format!("Payload parse error: {e}"))?;
+        let email = payload
+            .get("email")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let license_type = payload
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let issued = payload
+            .get("issued")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let expires = payload
+            .get("expires")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let now = chrono::Utc::now();
         let expires_dt = chrono::DateTime::parse_from_rfc3339(&expires)
             .map_err(|e| format!("Bad expires date: {e}"))?;
@@ -112,8 +132,7 @@ impl LicenseManager {
                 expires: None,
             },
             Some(d) => {
-                let expires_dt =
-                    chrono::DateTime::parse_from_rfc3339(&d.expires).ok();
+                let expires_dt = chrono::DateTime::parse_from_rfc3339(&d.expires).ok();
                 let state = match expires_dt {
                     Some(dt) if chrono::Utc::now() > dt.with_timezone(&chrono::Utc) => "expired",
                     _ => &d.license_type,
@@ -131,10 +150,7 @@ impl LicenseManager {
 }
 
 #[tauri::command]
-pub(crate) fn license_activate(
-    app: tauri::AppHandle,
-    license_key: String,
-) -> JsonResult {
+pub(crate) fn license_activate(app: tauri::AppHandle, license_key: String) -> JsonResult {
     let st = app.state::<crate::AppState>();
     let mut mgr = st.license.lock();
     match mgr.activate(&license_key) {

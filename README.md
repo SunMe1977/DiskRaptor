@@ -256,7 +256,7 @@ DISKRAPTOR_NO_KILL=1 DISKraptor_NO_INJECT=1 \
 A free, open-source disk space analyzer that shows which folders and files consume your storage — with treemap, pie/bar charts and a 3D galaxy view.
 
 **Is DiskRaptor really free?**
-Yes — MIT licensed. No ads, no premium tiers, no data collection.
+The core scanner is free and MIT-licensed — no ads, no data collection. An optional one-time Pro license unlocks premium tools, but the main analyzer is fully usable without it.
 
 **Which platforms are supported?**
 Windows (NSIS installer + Microsoft Store), macOS (DMG + Mac App Store, Intel + Apple Silicon) and Linux (DEB).

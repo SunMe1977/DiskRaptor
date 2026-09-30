@@ -55,6 +55,13 @@ apple_private.key
 developer.key
 *.certSigningRequest
 
+# ── License keys (private key is secret; public key is generated) ──
+scripts/private.key
+scripts/public.key
+scripts/public.b64
+scripts/LICENSE.key
+scripts/webhook.log
+
 # ── Generated / sensitive ───────────
 raw/
 release-assets/

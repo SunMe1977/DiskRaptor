@@ -32,7 +32,11 @@ function verifySignature(body, signature) {
     .createHmac('sha256', CREEM_WEBHOOK_SECRET)
     .update(body)
     .digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature || ''));
+  const expectedBuf = Buffer.from(expected);
+  const sigBuf = Buffer.from(signature || '');
+  // timingSafeEqual throws if buffers differ in length; guard against that.
+  if (expectedBuf.length !== sigBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, sigBuf);
 }
 
 function sendEmail(to, licenseKey) {
@@ -73,7 +77,13 @@ const server = http.createServer((req, res) => {
   req.setEncoding('utf8');
   req.on('data', chunk => body += chunk);
   req.on('end', () => {
-    const sig = req.headers['creem-signature'] || req.headers['x-creem-signature'] || '';
+    // Creem signs the raw body with an HMAC-SHA256 header. Support the common
+    // header spellings so a rename on Creem's side doesn't break verification.
+    const sig = req.headers['creem-signature']
+      || req.headers['x-creem-signature']
+      || req.headers['creem-hmac-sha256']
+      || req.headers['x-creem-hmac-sha256']
+      || '';
     if (!verifySignature(body, sig)) {
       log('INVALID SIGNATURE');
       res.writeHead(401); res.end('bad signature'); return;
@@ -82,10 +92,19 @@ const server = http.createServer((req, res) => {
     try { event = JSON.parse(body); } catch (_) {
       res.writeHead(400); res.end('bad json'); return;
     }
-    if (event.type !== 'checkout.completed') {
+    // Event type field varies by provider/version. Only issue on checkout completion.
+    const eventType = event.type || event.event || event.event_type || event.eventType || '';
+    if (!/checkout|order|purchase/i.test(eventType) || /fail|refund|dispute/i.test(eventType)) {
+      log('Ignored event: ' + eventType);
       res.writeHead(200); res.end('ignored'); return;
     }
-    const email = event.data?.customer?.email || event.data?.email;
+    const d = event.data || event;
+    const email =
+      (d.customer && (d.customer.email || d.customer.email_address)) ||
+      d.email ||
+      d.customer_email ||
+      d.billing_email ||
+      (d.billing_address && d.billing_address.email);
     if (!email) {
       log('No email in event'); res.writeHead(400); res.end('no email'); return;
     }
