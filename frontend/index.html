@@ -506,6 +506,7 @@
                         <button class="about-tab active" data-tab="about">📋 <span data-i18n="about.tab_about">About</span></button>
                         <button class="about-tab" data-tab="changelog">📜 <span data-i18n="about.tab_changelog">Changelog</span></button>
                         <button class="about-tab" data-tab="credits">🙏 <span data-i18n="about.tab_credits">Credits</span></button>
+                        <button class="about-tab" data-tab="pro">⭐ <span data-i18n="about.tab_pro">Pro</span></button>
                     </div>
                     <div id="about-tab-about" class="about-tab-content">
                         <p class="about-tech">⚡ Rust + Tauri 2 · jwalk · sysinfo</p>
@@ -558,9 +559,22 @@
                                  </a>
                              </div>
                          </div>
-                     </div>
-                    <div class="about-divider"></div>
-                    <p class="about-copy">© 2026 DiskRaptor</p>
+                      </div>
+                    <div id="about-tab-pro" class="about-tab-content" style="display:none;">
+                      <div style="font-size:11px;text-align:left;padding:4px 8px;color:var(--text-secondary);line-height:1.6;">
+                        <p data-i18n="license.state">License</p>
+                        <p id="license-state-text" style="font-size:13px;font-weight:600;color:var(--text-muted);margin:4px 0 8px;">—</p>
+                        <p id="license-details" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;"></p>
+                        <input id="license-key-input" type="text" placeholder="Paste license key…" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);box-sizing:border-box;" data-i18n-placeholder="license.enter_key" />
+                        <div style="display:flex;gap:6px;margin-top:6px;">
+                          <button id="btn-license-activate" class="primary" style="font-size:12px;padding:4px 12px;" data-i18n="license.activate">Activate</button>
+                          <button id="btn-license-deactivate" style="font-size:12px;padding:4px 12px;" data-i18n="license.deactivate">Deactivate</button>
+                        </div>
+                        <p id="license-error" style="font-size:11px;color:var(--accent-red);margin-top:6px;display:none;"></p>
+                      </div>
+                    </div>
+                     <div class="about-divider"></div>
+                     <p class="about-copy">© 2026 DiskRaptor</p>
                     <button id="btn-about-close" class="primary" data-i18n="about.done">✓ Done</button>
                 </div>
             </div>

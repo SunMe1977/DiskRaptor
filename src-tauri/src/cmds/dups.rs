@@ -97,7 +97,12 @@ impl Drop for ResetDupRunning {
 #[tauri::command]
 pub(crate) fn find_duplicates(path: String, app: tauri::AppHandle) -> JsonResult {
     let st = app.state::<AppState>();
-    if st.dup.running.swap(true, Ordering::Acquire) {
+    let lic = st.license.lock();
+    let info = lic.status();
+    if info.state != "pro" {
+        return JsonResult::err("Pro license required — open About → Pro to activate");
+    }
+    if st.dup.running.swap(true, std::sync::atomic::Ordering::Acquire) {
         return JsonResult::err("Duplicate scan already running");
     }
     st.dup.cancelled.store(false, Ordering::Release);

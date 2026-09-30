@@ -1093,7 +1093,65 @@ await doCheck();
                   console.error("GalaxyView init failed:", e);
                   galaxyView = null;
                 }
-              });
+     });
+
+     // ── License activation UI ──────────────────────────
+     (function initLicenseUI() {
+       const stateText = document.getElementById("license-state-text");
+       const details = document.getElementById("license-details");
+       const input = document.getElementById("license-key-input");
+       const errorEl = document.getElementById("license-error");
+       const btnActivate = document.getElementById("btn-license-activate");
+       const btnDeactivate = document.getElementById("btn-license-deactivate");
+
+       async function refresh() {
+         try {
+           const res = await window.__TAURI__.invoke("license_status");
+           const info = res && res.data ? res.data : res;
+           const state = info && info.state ? info.state : "inactive";
+           stateText.textContent = state;
+           stateText.style.color = state === "pro" ? "var(--accent-green)" : state === "expired" ? "var(--accent-red)" : "var(--text-muted)";
+           const email = info && info.email ? info.email : "";
+           const expires = info && info.expires ? info.expires : "";
+           details.textContent = email ? "Email: " + email + (expires ? "  ·  Expires: " + expires : "") : "";
+         } catch (_) { /* not critical */ }
+       }
+
+       function showError(msg) {
+         if (errorEl) { errorEl.textContent = msg; errorEl.style.display = msg ? "block" : "none"; }
+       }
+
+       if (btnActivate) {
+         btnActivate.addEventListener("click", async function () {
+           const key = input && input.value ? input.value.trim() : "";
+           if (!key) { showError(window.t("license.no_key")); return; }
+           showError("");
+           try {
+             const res = await window.__TAURI__.invoke("license_activate", { license_key: key });
+             if (res && res.success) {
+               showError("");
+               await refresh();
+             } else {
+               showError((res && res.error) || window.t("license.activate_error"));
+             }
+           } catch (e) { showError(String(e)); }
+         });
+       }
+       if (btnDeactivate) {
+         btnDeactivate.addEventListener("click", async function () {
+           try {
+             const state = (await window.__TAURI__.invoke("license_status")).data;
+             if (state && state.state === "pro") {
+               /* deactivate = clear stored license */
+               await window.__TAURI__.invoke("save_settings", { settings: { license_key: "" } });
+               /* re-create manager to clear in-memory state */
+               await refresh();
+             }
+           } catch (_) {}
+         });
+       }
+       refresh();
+     })();
             } else {
               galaxyView._resize();
               galaxyView.show();

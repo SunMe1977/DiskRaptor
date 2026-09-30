@@ -1,7 +1,7 @@
 //! IPC command registration.
 use tauri::Manager;
 
-use crate::{state::AppState, cmds, menu, smart, browser, apfs, trash};
+use crate::{state::AppState, cmds, license, menu, smart, browser, apfs, trash};
 
 pub fn register_commands() -> Box<tauri::ipc::InvokeHandler<tauri::Wry>> {
     // Native menu localization
@@ -54,6 +54,7 @@ pub fn register_commands() -> Box<tauri::ipc::InvokeHandler<tauri::Wry>> {
         cmds::scan::start_scan, cmds::scan::get_scan_progress, cmds::scan::get_scan_result,
         cmds::scan::get_chunk, cmds::scan::get_children, cmds::scan::cancel_scan, cmds::scan::release_scan, cmds::scan::get_stats,
         cmds::scan::search_tree,
+        license::license_activate, license::license_status,
         cmds::dups::find_duplicates, cmds::dups::get_dup_stats, cmds::dups::get_dup_result, cmds::dups::cancel_dup_scan,
         cmds::settings::save_settings, cmds::settings::load_settings,
         cmds::system::list_disks, cmds::path_ops::exit_app,

@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use std::time::Instant;
 use serde::Serialize;
 use crate::scanner;
+use crate::license::LicenseManager;
 
 /// Keeps the system-tray icon alive for the app's lifetime.
 #[allow(dead_code)]
@@ -84,6 +85,8 @@ pub struct AppState {
     pub locale: Mutex<String>,
     /// Translated labels for native (tray / window) menus, sent from the webview.
     pub menu_strings: Mutex<std::collections::HashMap<String, String>>,
+    /// License manager for Pro activation.
+    pub license: Mutex<LicenseManager>,
 }
 
 impl Default for AppState {
@@ -97,6 +100,7 @@ impl Default for AppState {
             last_scan_path: Mutex::new(None),
             locale: Mutex::new("en".to_string()),
             menu_strings: Mutex::new(std::collections::HashMap::new()),
+            license: Mutex::new(LicenseManager::default()),
         }
     }
 }
