@@ -1,4 +1,4 @@
-﻿name: Release
+name: Release
 
 on:
   push:
@@ -49,7 +49,7 @@ jobs:
       - name: Install JS dependencies
         run: npm ci --no-audit --no-fund
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           cache: true
@@ -152,7 +152,7 @@ jobs:
       - name: Install JS dependencies
         run: npm ci --no-audit --no-fund
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           cache: true
@@ -386,7 +386,7 @@ jobs:
       - name: Install JS dependencies
         run: npm ci --no-audit --no-fund
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           cache: true
@@ -574,7 +574,7 @@ jobs:
       - name: Install JS dependencies
         run: npm ci --no-audit --no-fund
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           cache: true
