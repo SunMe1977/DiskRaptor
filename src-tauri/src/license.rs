@@ -345,7 +345,7 @@ mod tests {
                 wrapped.push_str("\r\n ");
             }
         }
-        wrapped.push_str("\n");
+        wrapped.push('\n');
         mgr.activate(&wrapped).expect("wrapped key must activate");
         assert_eq!(mgr.status().state, "pro");
     }
