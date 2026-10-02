@@ -2,9 +2,15 @@
 
 ## Contents
 - `keygen.sh` — Ed25519 license key generator (run without args to generate a keypair, then `./keygen.sh <email> <type> <days>` to issue a license).
-- `public.key` — Ed25519 public key (SPKI PEM, for reference/verify).
-- `public.b64` — RAW 32-byte public key (base64). `src-tauri/build.rs` reads this and embeds it automatically.
+- `public.key` — Ed25519 public key (SPKI PEM, for reference/verify). **Committed**
+  (public by design — every binary embeds it; CI/release builds need it).
+- `public.b64` — RAW 32-byte public key (base64). `src-tauri/build.rs` reads this and embeds it automatically. **Committed.**
 - `private.key` — Ed25519 private key (kept secret, used only for signing). **NEVER commit this.**
+  The license server MUST hold this exact key — a server with its own
+  keypair issues licenses no app build will accept. Deploy it out-of-band
+  (SSH/`scp`), then verify on the server:
+  `openssl pkey -in scripts/private.key -pubout -outform DER | tail -c 32 | base64`
+  must print the same string as `scripts/public.b64`.
 - `LICENSE.key` — issued license payload (public, per-user).
 
 ## Security notes

@@ -55,10 +55,13 @@ apple_private.key
 developer.key
 *.certSigningRequest
 
-# ── License keys (private key is secret; public key is generated) ──
+# ── License keys ──
+# private.key is SECRET (signs licenses — never commit, deploy to the
+# license server out-of-band). public.key/public.b64 are PUBLIC by design
+# (every binary embeds the key) and MUST be committed so CI/release builds
+# verify the same licenses as local builds. LICENSE.key holds an issued
+# (customer-specific) license and stays local.
 scripts/private.key
-scripts/public.key
-scripts/public.b64
 scripts/LICENSE.key
 scripts/webhook.log
 
