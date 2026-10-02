@@ -131,6 +131,10 @@
       this.customBodyTypes = new Map();
       this.customAnimations = new Map();
       this.insightProviders = [];
+      // Folder explosion drill-down: objects currently flying outward after
+      // a double-click (processed in _updateExplosions, independent of the
+      // paused animation engine so the burst always plays).
+      this._exploding = [];
 
       // FPS tracking
       this._fpsValues = [];
@@ -177,6 +181,9 @@
       // Set up interaction handlers
       if (this.interaction && typeof this.interaction.onClick === "function") {
         this.interaction.onClick((x, y, camera) => this._handleClick(x, y));
+      }
+      if (this.interaction && typeof this.interaction.onDoubleClick === "function") {
+        this.interaction.onDoubleClick((x, y, camera) => this._handleDoubleClick(x, y));
       }
       if (this.interaction && typeof this.interaction.onHover === "function") {
         this.interaction.onHover((x, y, camera) => this._handleHover(x, y));
@@ -332,6 +339,7 @@
       this.scanData = scanResult;
       this.stats = stats;
       this._extent = 0;
+      this._exploding = [];
 
       // Map data to galaxy objects
       this.objects = this.dataMapper.mapData(scanResult, stats, topFiles);
@@ -396,6 +404,7 @@ _startRenderLoop() {
         this.scanData = null;
         this.stats = scene.stats;
         this.objects = scene.objects;
+        this._exploding = [];
         this._assignRings();
        this.spatialIndex.clear();
        for (const obj of this.objects) { obj.active = true; this.spatialIndex.insert(obj); }
@@ -432,6 +441,9 @@ _startRenderLoop() {
 
       // Update animations
       this.animation.update(timestamp, this.objects, this.camera);
+
+      // Folder-explosion flights (always run, even while paused).
+      this._updateExplosions(timestamp);
 
       // Update interaction
       this.interaction.update(dt);
@@ -501,7 +513,7 @@ _startRenderLoop() {
       ctx.font = "bold 22px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillText("✦ DiskRaptor Galaxy ✦", w/2, 16);
+      ctx.fillText("✦ " + (window.__proBrand || "DiskRaptor") + " Galaxy ✦", w/2, 16);
       ctx.fillStyle = "rgba(180,220,255,0.25)";
       ctx.font = "14px system-ui, sans-serif";
       ctx.fillText("Objects: " + (this.objects ? this.objects.length : 0) + " | " + (this.stats ? (this.stats.total_files || "") + " files, " + (this.stats.total_size ? this._fmtSize(this.stats.total_size) : "") : "loading..."), w/2, 48);
@@ -1066,6 +1078,252 @@ _getVisibleObjects() {
       }
     }
 
+    // ── Folder explosion drill-down (double-click) ────────────
+
+    /** Shared screen-space picking. Returns nearest object within radius or null. */
+    _pickObject(x, y, radiusFn) {
+      const visible = this._getVisibleObjects();
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const obj of visible) {
+        if (obj._screenX === undefined) continue;
+        const dx = obj._screenX - x;
+        const dy = obj._screenY - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const hitRadius = radiusFn ? radiusFn(obj) : Math.max((obj.scale || 5) * 3, 10);
+        if (dist < hitRadius && dist < nearestDist) {
+          nearest = obj;
+          nearestDist = dist;
+        }
+      }
+      return nearest;
+    }
+
+    _handleDoubleClick(x, y) {
+      const obj = this._pickObject(x, y);
+      if (!obj) return;
+      // Only folders can explode open: planets, plus exploded moons that are
+      // directories themselves (recursive drill-down). Files were already
+      // selected by the two single clicks that precede every double-click.
+      const isFolder = obj.type === "planet" ||
+        (obj.type === "moon" && obj.data && obj.data.isDir);
+      if (!isFolder || !this._contextObjPath(obj)) return;
+      if (obj._explodedChildren) {
+        this._collapseFolder(obj);
+      } else {
+        this._explodeFolder(obj);
+      }
+    }
+
+    /** Second double-click: remove the exploded children again. */
+    _collapseFolder(obj) {
+      const kids = obj._explodedChildren || [];
+      obj._explodedChildren = null;
+      if (!kids.length) return;
+      const gone = new Set(kids);
+      this.objects = this.objects.filter((o) => !gone.has(o));
+      this._exploding = this._exploding.filter((o) => !gone.has(o));
+      if (this.selectedObject && gone.has(this.selectedObject)) this.selectedObject = null;
+      if (this.followTarget && gone.has(this.followTarget)) this._clearFollow();
+      this._rebuildSpatialIndex();
+    }
+
+    /** Double-click on a folder planet: particle burst + show its contents
+     *  as new moons flying outward, settling into orbit around the folder. */
+    _explodeFolder(obj) {
+      const self = this;
+      // Release the camera/selection freeze from the preceding single clicks
+      // so the galaxy stays alive while the folder bursts open. The camera
+      // is already parked at the folder and simply stays there.
+      this._clearFollow();
+      this.selectedObject = obj;
+
+      const burstColor = Array.isArray(obj.color) ? obj.color : [0.5, 0.8, 1];
+      if (this.effects && typeof this.effects.particleBurst === "function") {
+        try { this.effects.particleBurst(obj.position, burstColor, 90); } catch (_) {}
+      }
+
+      const folderPath = this._contextObjPath(obj);
+      const folderName = obj.name || folderPath.split(/[/\\]/).pop() || "";
+      const toast = function (msg, type) {
+        if (window.showToast) { try { window.showToast(msg, type || "info"); } catch (_) {} }
+      };
+
+      function unwrap(res) {
+        if (res && typeof res === "object" && "data" in res) return res.data;
+        return res;
+      }
+      function norm(p) {
+        // Tolerate Win32 extended-device prefixes (\\?\C:\...) and case.
+        return String(p || "")
+          .replace(/\\\\\?\\|\\\\\.\\/g, "")
+          .replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+      }
+      function invoke(cmd, args) {
+        if (window.__TAURI__ && typeof window.__TAURI__.invoke === "function") {
+          return window.__TAURI__.invoke(cmd, args);
+        }
+        return Promise.reject(new Error("TAURI bridge unavailable"));
+      }
+
+      // Resolve the folder's arena index via name search + path matching,
+      // then load its real children from the scan tree. Limit 300 (backend
+      // max): common names like "lib" have dozens of prefix matches and the
+      // exact folder would otherwise be cut off at the default limit.
+      invoke("search_tree", { query: folderName, limit: 300 }).then(function (res) {
+        const matches = unwrap(res) || [];
+        const want = norm(folderPath);
+        const wantSegs = want.split("/");
+        let idx = -1;
+        if (Array.isArray(matches)) {
+          const dirs = matches.filter((m) => m && m.is_dir);
+          // Tier 1: exact normalized path.
+          for (const m of dirs) {
+            if (norm(m.path) === want) { idx = m.idx; break; }
+          }
+          // Tier 2: longest trailing-segment match (tolerates root-form
+          // drift between scan payload and tree paths). Needs ≥2 segments
+          // ("diskraptor/lib") so a bare "lib" never opens the wrong folder.
+          if (idx < 0 && wantSegs.length >= 2) {
+            let best = null;
+            let bestScore = 1;
+            for (const m of dirs) {
+              const segs = norm(m.path).split("/");
+              let s = 0;
+              while (s < segs.length && s < wantSegs.length &&
+                     segs[segs.length - 1 - s] === wantSegs[wantSegs.length - 1 - s]) s++;
+              if (s > bestScore) { bestScore = s; best = m; }
+              else if (s === bestScore && s > 1) { best = null; } // tie: ambiguous
+            }
+            if (best && bestScore >= 2) idx = best.idx;
+          }
+          // Tier 3: unique directory among the matches.
+          if (idx < 0 && dirs.length === 1) idx = dirs[0].idx;
+        }
+        if (idx < 0) {
+          toast("Could not find folder in scan tree: " + folderName, "error");
+          return null;
+        }
+        return invoke("get_children", { nodeIndex: idx }).then(function (cres) {
+          return unwrap(cres) || [];
+        });
+      }).then(function (children) {
+        if (!children) return; // error already toasted
+        if (!Array.isArray(children) || !children.length) {
+          toast("Folder is empty: " + folderName, "info");
+          return;
+        }
+        // Cap the burst: the largest entries carry the picture.
+        const top = children
+          .slice()
+          .sort((a, b) => (b.size || 0) - (a.size || 0))
+          .slice(0, 36);
+        const origin = [obj.position[0], obj.position[1], obj.position[2]];
+        const baseR = Math.max((obj.scale || 6) * 2.4, 12);
+        const now = (typeof performance !== "undefined" && performance.now()) || Date.now();
+        const kids = [];
+        for (let i = 0; i < top.length; i++) {
+          const c = top[i];
+          const isDir = c.node_type === 0 || c.node_type === "Directory";
+          const nm = c.name || ("item-" + i);
+          // Random outward direction (sphere), slightly flattened.
+          const th = Math.random() * Math.PI * 2;
+          const ph = Math.acos(2 * Math.random() - 1);
+          const dir = [
+            Math.sin(ph) * Math.cos(th),
+            Math.cos(ph) * 0.45,
+            Math.sin(ph) * Math.sin(th),
+          ];
+          const dl = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+          const ringR = baseR + (i % 4) * (baseR * 0.28);
+          const kid = {
+            type: "moon",
+            id: "burst-" + Date.now().toString(36) + "-" + i,
+            name: nm,
+            path: folderPath.replace(/\/+$/, "") + "/" + nm,
+            position: [origin[0], origin[1], origin[2]],
+            scale: Math.max(1.2, Math.min(4.5, 1.2 + Math.log10((c.size || 1) + 1) * 0.55)),
+            color: isDir ? [1.0, 0.75, 0.3] : [0.55, 0.8, 1.0],
+            glow: 0.4,
+            alpha: 1,
+            active: true,
+            _visible: true,
+            sparkle: !isDir,
+            orbitSpeed: 0.002 + Math.random() * 0.002,
+            data: { size: c.size || 0, isDir: isDir, explodedFrom: folderPath },
+            lodLevel: 0,
+            // Explosion flight; converted to a regular orbit on arrival.
+            _explode: {
+              parent: obj,
+              dir: [dir[0] / dl, dir[1] / dl, dir[2] / dl],
+              dist: ringR,
+              angle: Math.random() * Math.PI * 2,
+              t0: now + i * 18,
+              dur: 1300,
+            },
+          };
+          kid._currentScale = 0.1;
+          kids.push(kid);
+        }
+        for (const k of kids) {
+          self.objects.push(k);
+          try { self.spatialIndex.insert(k); } catch (_) {}
+          self._exploding.push(k);
+        }
+        obj._explodedChildren = kids;
+        toast("Opened " + folderName + ": " + kids.length + " items" +
+          (children.length > kids.length ? " (largest of " + children.length + ")" : ""), "success");
+      }).catch(function (e) {
+        toast("Could not open folder: " + (e && e.message ? e.message : e), "error");
+      });
+    }
+
+    /** Advance folder-explosion flights. Runs every frame, independent of the
+     *  (possibly paused) animation engine so the burst always plays. */
+    _updateExplosions(now) {
+      if (!this._exploding.length) return;
+      const still = [];
+      for (const o of this._exploding) {
+        const ex = o._explode;
+        if (!ex || o.active === false) continue;
+        const parent = ex.parent;
+        const px = parent && parent.position ? parent.position[0] : 0;
+        const py = parent && parent.position ? parent.position[1] : 0;
+        const pz = parent && parent.position ? parent.position[2] : 0;
+        let t = (now - ex.t0) / ex.dur;
+        if (t < 0) { still.push(o); continue; }
+        if (t > 1) t = 1;
+        // Ease-out cubic: fast burst, soft landing on the orbit.
+        const e = 1 - Math.pow(1 - t, 3);
+        o.position[0] = px + ex.dir[0] * ex.dist * e;
+        o.position[1] = py + ex.dir[1] * ex.dist * e;
+        o.position[2] = pz + ex.dir[2] * ex.dist * e;
+        o._currentScale = (o.scale || 1) * (0.1 + 0.9 * e);
+        if (t >= 1) {
+          // Settle into orbit: live parent reference, like regular moons.
+          o.parentPosition = parent ? parent.position : [px, py, pz];
+          o.orbitRadius = ex.dist;
+          o.orbitAngle = ex.angle;
+          o._currentScale = undefined;
+          delete o._explode;
+        } else {
+          still.push(o);
+        }
+      }
+      this._exploding = still;
+    }
+
+    /** Rebuild the picking index after adding/removing objects. */
+    _rebuildSpatialIndex() {
+      if (!this.spatialIndex || typeof this.spatialIndex.clear !== "function") return;
+      try {
+        this.spatialIndex.clear();
+        for (const o of this.objects) {
+          if (o && o.position) this.spatialIndex.insert(o);
+        }
+      } catch (_) {}
+    }
+
     // (CameraMixin: _setFollow/_clearFollow/_updatePauseState/_updateFollow
     // live in galaxyview/camera.js)
 
@@ -1432,6 +1690,7 @@ case "delete": {
       }
       this._contextMenu = null;
       this.objects = [];
+      this._exploding = [];
       this.container.innerHTML = "";
     }
   }

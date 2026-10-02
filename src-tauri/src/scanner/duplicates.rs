@@ -214,7 +214,7 @@ mod tests {
     fn test_hash_file_full_mmap_matches_streaming() {
         // File just above MMAP_THRESHOLD_BYTES must produce the same
         // hash regardless of whether the mmap or streaming path is taken.
-        // Retry up to 3 times to handle transient CI memory pressure.
+        // Retry once to handle transient CI memory pressure.
         let dir = fixture_dir("mmap");
         let size = (MMAP_THRESHOLD_BYTES + 1) as usize;
         let mut content = Vec::with_capacity(size);

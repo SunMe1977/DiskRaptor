@@ -1098,7 +1098,7 @@ window.app.initScan = function (refs) {
       } catch (err) {
         console.error("Scan failed:", err);
         document.querySelector(".status-bar").textContent =
-          "Error: " + err;
+          tKey("status.error_prefix") + err;
       } finally {
         progressActive = false;
         if (uiRaf !== null) cancelAnimationFrame(uiRaf);

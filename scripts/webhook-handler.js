@@ -7,9 +7,30 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// Minimal .env loader (no extra dependency).
+// Loads scripts/.env if present; real env vars take precedence.
+(function loadDotEnv() {
+  try {
+    const envPath = path.join(__dirname, '.env');
+    if (!fs.existsSync(envPath)) return;
+    const content = fs.readFileSync(envPath, 'utf8');
+    for (const rawLine of content.split('\n')) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eq = line.indexOf('=');
+      if (eq < 0) continue;
+      const k = line.slice(0, eq).trim();
+      let v = line.slice(eq + 1).trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      if (!(k in process.env)) process.env[k] = v;
+    }
+  } catch (_) {}
+})();
+
 const PORT = process.env.WEBHOOK_PORT || 3000;
 const CREEM_WEBHOOK_SECRET = process.env.CREEM_WEBHOOK_SECRET;
 const CREEM_API_KEY = process.env.CREEM_API_KEY;
+const RESEND_FROM = process.env.RESEND_FROM || 'DiskRaptor <noreply@diskraptor.com>';
 const KEYGEN_SCRIPT = path.join(__dirname, 'keygen.sh');
 const LOG_FILE = path.join(__dirname, 'webhook.log');
 
@@ -27,6 +48,10 @@ if (!process.env.RESEND_API_KEY) {
   console.error('FATAL: RESEND_API_KEY env var is required');
   process.exit(1);
 }
+if (!process.env.RESEND_FROM && !RESEND_FROM) {
+  console.error('FATAL: RESEND_FROM env var is required (e.g. DiskRaptor <noreply@diskraptor.com>)');
+  process.exit(1);
+}
 
 function log(msg) {
   const line = new Date().toISOString() + ' ' + msg;
@@ -35,20 +60,28 @@ function log(msg) {
 }
 
 function verifySignature(body, signature) {
-  const expected = 'sha256=' + crypto
+  // Creem sends raw hex; some setups prefix with 'sha256='. Accept both.
+  const sig = String(signature || '').trim();
+  const hex = sig.startsWith('sha256=') ? sig.slice('sha256='.length) : sig;
+  const expectedHex = crypto
     .createHmac('sha256', CREEM_WEBHOOK_SECRET)
     .update(body)
     .digest('hex');
-  const expectedBuf = Buffer.from(expected);
-  const sigBuf = Buffer.from(signature || '');
+  const expectedBuf = Buffer.from('sha256=' + expectedHex);
+  const sigBuf = Buffer.from(sig);
   // timingSafeEqual throws if buffers differ in length; guard against that.
-  if (expectedBuf.length !== sigBuf.length) return false;
-  return crypto.timingSafeEqual(expectedBuf, sigBuf);
+  // Fall back to comparing raw hex (without prefix) as well.
+  if (expectedBuf.length === sigBuf.length && crypto.timingSafeEqual(expectedBuf, sigBuf)) return true;
+  const expHexBuf = Buffer.from(expectedHex);
+  const hexBuf = Buffer.from(hex);
+  if (expHexBuf.length !== hexBuf.length) return false;
+  return crypto.timingSafeEqual(expHexBuf, hexBuf);
 }
 
 function sendEmail(to, licenseKey) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
+      from: RESEND_FROM,
       to,
       subject: 'Your DiskRaptor Pro license',
       text: `License key: ${licenseKey}\n\nPaste it into About → Pro to activate.`,
@@ -78,7 +111,14 @@ function sendEmail(to, licenseKey) {
 }
 
 const server = http.createServer((req, res) => {
-  if (req.url !== '/webhooks/creem' || req.method !== 'POST') {
+  // req.url contains query string (?...) — strip it and tolerate a trailing
+  // slash so '/webhooks/creem/', '/webhooks/creem?x=1' etc. don't 404.
+  // A 404 here shows up in Creem's dashboard as failed delivery.
+  let pathname = req.url || '';
+  try { pathname = new URL(req.url || '/', 'http://localhost').pathname; } catch (_) {}
+  pathname = pathname.replace(/\/+$/, '') || '/';
+  if ((pathname !== '/webhooks/creem' && pathname !== '/webhook/creem') || req.method !== 'POST') {
+    log(`404 ${req.method} ${req.url}`);
     res.writeHead(404); res.end('not found'); return;
   }
   let body = '';
@@ -106,20 +146,38 @@ const server = http.createServer((req, res) => {
       log('Ignored event: ' + eventType);
       res.writeHead(200); res.end('ignored'); return;
     }
-    const d = event.data || event;
+    const d = event.data || event.object || event;
     const email =
       (d.customer && (d.customer.email || d.customer.email_address)) ||
       d.email ||
       d.customer_email ||
       d.billing_email ||
-      (d.billing_address && d.billing_address.email);
+      (d.billing_address && d.billing_address.email) ||
+      // Real Creem shape: { eventType, object: { customer: { email } } }
+      (event.object && event.object.customer && event.object.customer.email) ||
+      (event.data && event.data.object && event.data.object.customer && event.data.object.customer.email) ||
+      (event.object && event.object.email);
     if (!email) {
       log('No email in event'); res.writeHead(400); res.end('no email'); return;
     }
     log(`Issuing license for ${email}`);
-    execFile(KEYGEN_SCRIPT, [email, 'pro', '365'], { timeout: 30000 }, (err, stdout) => {
+    let child;
+    try {
+      child = execFile(KEYGEN_SCRIPT, [email, 'pro', '365'], { timeout: 30000 }, (err, stdout) => {
       if (err) { log('keygen failed: ' + err.message); res.writeHead(500); res.end('keygen failed'); return; }
-      const license = stdout.trim().split('\n').pop();
+      // keygen.sh prints a decorated report — the license is the
+      // `License:` line, NOT the last line (which is a ━━━ border).
+      // Parsed from this process's own stdout, so concurrent checkouts
+      // can't steal each other's key (unlike the shared LICENSE.key file).
+      const line = String(stdout || '')
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l.startsWith('License:'));
+      const license = line ? line.slice('License:'.length).trim() : '';
+      if (!license || license.indexOf('.') < 0) {
+        log('keygen output missing License line');
+        res.writeHead(500); res.end('keygen failed'); return;
+      }
       log(`Issued: ${license}`);
       sendEmail(email, license).then(() => {
         res.writeHead(200); res.end('ok');
@@ -127,7 +185,12 @@ const server = http.createServer((req, res) => {
         log('email failed: ' + e.message);
         res.writeHead(500); res.end('email failed');
       });
-    });
+      });
+    } catch (e) {
+      // execFile throws synchronously on Windows for .sh (EFTYPE) — don't crash the listener.
+      log('keygen spawn failed: ' + (e && e.message ? e.message : e));
+      res.writeHead(500); res.end('keygen failed'); return;
+    }
   });
 });
 

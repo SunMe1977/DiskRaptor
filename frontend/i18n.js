@@ -172,6 +172,8 @@
       const key = el.getAttribute("data-i18n-aria-label");
       el.setAttribute("aria-label", t(key));
     });
+    // Re-apply Pro branding on top (app.js may load later; guarded).
+    try { if (window.refreshProBranding) window.refreshProBranding(); } catch (_) {}
   }
 
   // ── Native menu sync (Windows tray / app menu) ──────────

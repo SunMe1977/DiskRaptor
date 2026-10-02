@@ -198,25 +198,26 @@ window.app.initSettings = function (config) {
              const disableTray = disableTrayEl ? disableTrayEl.checked : false;
              const followSymlinks = followSymlinksEl ? followSymlinksEl.checked : false;
              const diagramMode = diagramEl ? diagramEl.value : "";
-             if (autoStartEl) {
+              const __t = window.__ || window.t || function (s) { return s; };
+              if (autoStartEl) {
               window.__TAURI__
                 .invoke("set_autostart", { enabled: autoStart })
                 .catch(function (e) {
-                  window.showToast("Autostart failed: " + (e && e.message ? e.message : e), "error");
+                  window.showToast(__t("toast.failed").replace("{err}", e && e.message ? e.message : e), "error");
                 });
             }
             if (disableTrayEl) {
               window.__TAURI__
                 .invoke("set_tray_enabled", { enabled: !disableTray })
                 .catch(function (e) {
-                  window.showToast("Tray setting failed: " + (e && e.message ? e.message : e), "error");
+                  window.showToast(__t("toast.failed").replace("{err}", e && e.message ? e.message : e), "error");
                 });
             }
             await window.__TAURI__
               .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor, confirm_delete: confirmDelete, disable_tray: disableTray, follow_symlinks: followSymlinks, diagram_mode: diagramMode } })
-             .catch(function (e) {
-               window.showToast("Failed to save settings: " + (e && e.message ? e.message : e), "error");
-             });
+              .catch(function (e) {
+                window.showToast(__t("toast.failed").replace("{err}", e && e.message ? e.message : e), "error");
+              });
           // Sync toolbar toggle so next scan uses the saved value.
           const tbFollow = document.querySelector("#chk-follow-symlinks input");
           if (tbFollow && followSymlinksEl) tbFollow.checked = followSymlinksEl.checked;
@@ -284,7 +285,7 @@ let detailVisible = false;
            detailVisible = !detailVisible;
            if (ramDetailPanel) ramDetailPanel.style.display = detailVisible ? "flex" : "none";
            updateRam();
-           if (detailVisible) window.showToast && window.showToast("Optimizer ran — memory refreshed", "info");
+            if (detailVisible) window.showToast && window.showToast((window.__ || window.t || function (s) { return s; })("tools.memory_refreshed"), "info");
          });
        }
        const ramDetailClose = document.getElementById("btn-ram-detail-close");

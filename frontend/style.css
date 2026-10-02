@@ -3758,3 +3758,49 @@ body.light-theme .tree-row.selected {
     scroll-behavior: auto !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Shared modal overlay + card (replaces inline style.cssText in
+   app-modules/tools.js, favorites.js, export.js, scan.js).
+   ═══════════════════════════════════════════════════════════════ */
+.dr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dr-overlay-dim {
+  background: rgba(0, 0, 0, 0.55);
+}
+.dr-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 90%;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+.dr-card-sm {
+  max-width: 360px;
+}
+.dr-card-md {
+  max-width: 480px;
+  max-height: 80vh;
+}
+.dr-card-lg {
+  max-width: 560px;
+  max-height: 80vh;
+}
+.dr-card-wide {
+  max-width: 420px;
+}
+.dr-card-xl {
+  max-width: 640px;
+  width: 92%;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+}

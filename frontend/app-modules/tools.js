@@ -48,6 +48,47 @@ window.app.initTools = function (refs) {
       showWelcome();
     }
 
+    // Keep keyboard focus inside a modal overlay (Tab cycles, Shift+Tab
+    // wraps). Self-cleaning: the listener detaches once the overlay leaves
+    // the DOM. Returns a cleanup function for explicit close handlers.
+    function trapFocus(overlay) {
+      if (!overlay) return function () {};
+      const first = overlay.querySelector("button, input, select, [tabindex]");
+      if (first && typeof first.focus === "function") {
+        try { first.focus(); } catch (_) {}
+      } else if (typeof overlay.focus === "function") {
+        if (!overlay.hasAttribute("tabindex")) overlay.setAttribute("tabindex", "-1");
+        try { overlay.focus(); } catch (_) {}
+      }
+      function onKey(e) {
+        if (!document.contains(overlay)) {
+          document.removeEventListener("keydown", onKey);
+          return;
+        }
+        if (e.key !== "Tab") return;
+        const focusables = overlay.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (!focusables.length) {
+          e.preventDefault();
+          return;
+        }
+        const firstEl = focusables[0];
+        const lastEl = focusables[focusables.length - 1];
+        if (e.shiftKey && (document.activeElement === firstEl || document.activeElement === overlay)) {
+          e.preventDefault();
+          lastEl.focus();
+        } else if (!e.shiftKey && document.activeElement === lastEl) {
+          e.preventDefault();
+          firstEl.focus();
+        }
+      }
+      document.addEventListener("keydown", onKey);
+      return function () { document.removeEventListener("keydown", onKey); };
+    }
+    // Expose for overlays defined outside initTools scope.
+    window.app.trapFocus = trapFocus;
+
     btnTools.addEventListener("click", function (e) {
       e.stopPropagation();
       toolsMenu.classList.toggle("active");
@@ -220,11 +261,9 @@ resetAllState(
             " more</div>";
         html2 += "</div>";
         const ov2 = document.createElement("div");
-        ov2.style.cssText =
-          "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+        ov2.className = "dr-overlay";
         const card2 = document.createElement("div");
-        card2.style.cssText =
-          "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:480px;width:90%;max-height:80vh;overflow:hidden;";
+        card2.className = "dr-card dr-card-md";
         card2.innerHTML =
           '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDCC2 Empty Folders (' +
           emptyDirs.length +
@@ -236,6 +275,7 @@ resetAllState(
           "</div>";
         ov2.appendChild(card2);
         document.body.appendChild(ov2);
+        trapFocus(ov2);
         const efSelAll = ov2.querySelector("#ef-select-all");
         if (efSelAll) {
           efSelAll.onchange = function () {
@@ -261,7 +301,7 @@ resetAllState(
           btn.disabled = true;
           btn.textContent = _t("status.checking");
           const ok = await window.confirmDialog(
-            window.__ ? window.__("tools.empty_folders_delete_confirm").replace("{n}", paths.length) : "Move " + paths.length + " empty folder(s) to Trash?",
+            _t("tools.empty_folders_delete_confirm").replace("{n}", paths.length),
           );
           if (!ok) return;
           let done = 0, failed = 0, skipped = 0;
@@ -281,7 +321,10 @@ resetAllState(
           }
           document.body.removeChild(ov2);
           window.showToast(
-            done + " moved to trash" + (failed ? ", " + failed + " failed" : "") + (skipped ? ", " + skipped + " skipped (no longer empty)" : ""),
+            _t("tools.moved_to_trash_summary")
+              .replace("{done}", done)
+              .replace("{failed}", failed ? _t("tools.moved_failed_suffix").replace("{n}", failed) : "")
+              .replace("{skipped}", skipped ? _t("tools.moved_skipped_suffix").replace("{n}", skipped) : ""),
             failed ? "warning" : "success",
           );
           if (btnScan) btnScan.click();
@@ -336,9 +379,10 @@ let chartData;
             (hn.size || 0) +
             "</td></tr>\n";
         }
+        const brand = window.__proBrand || "DiskRaptor";
         const htmlReport =
-          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>DiskRaptor Report</title><style>body{font-family:sans-serif;margin:20px;color:#333}h1{color:var(--accent-green)}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5}</style></head><body>' +
-          "<h1>\uD83E\uDD96 DiskRaptor Report</h1>" +
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + brand + ' Report</title><style>body{font-family:sans-serif;margin:20px;color:#333}h1{color:var(--accent-green)}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5}</style></head><body>' +
+          "<h1>\uD83E\uDD96 " + brand + " Report</h1>" +
           "<p>Path: " +
           esc(scanPath.value || "") +
           "</p>" +
@@ -355,7 +399,7 @@ let chartData;
           "<h2>Files</h2><table><tr><th>Name</th><th>Size</th></tr>" +
           fileRows +
           "</table>" +
-          '<p style="color:#999;font-size:11px;margin-top:20px;">Generated by DiskRaptor</p></body></html>';
+          '<p style="color:#999;font-size:11px;margin-top:20px;">Generated by ' + brand + "</p></body></html>";
         const blob = new Blob([htmlReport], { type: "text/html" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -428,11 +472,9 @@ let chartData;
               " more</div>";
           html += "</div>";
           const ov = document.createElement("div");
-          ov.style.cssText =
-            "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+          ov.className = "dr-overlay";
           const card = document.createElement("div");
-          card.style.cssText =
-            "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:560px;width:90%;max-height:80vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+          card.className = "dr-card dr-card-lg";
           card.innerHTML =
             '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDD0E Find Files (' +
             results.length +
@@ -441,6 +483,7 @@ let chartData;
             '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;"><button class="find-close-btn" style="padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg-tertiary);cursor:pointer;"><span data-i18n="trash.close">Close</span></button></div>';
           ov.appendChild(card);
           document.body.appendChild(ov);
+          trapFocus(ov);
           ov.querySelector(".find-close-btn").onclick = function () {
             document.body.removeChild(ov);
           };
@@ -568,14 +611,35 @@ let chartData;
           item.textContent = "\uD83D\uDDD1\uFE0F " + window.t("tools.empty_trash");
         }, 3000);
        } else if (action === "ram-optimize") {
-         try {
-           if (typeof gc === "function") gc();
-         } catch (_) {}
-         try {
-           window.__TAURI__.invoke("get_memory_info").catch(function(){return null});
-           window.__TAURI__.invoke("get_process_memory").catch(function(){return null});
-         } catch (_) {}
-         window.showToast && window.showToast("Memory optimized", "success");
+          try {
+            if (typeof gc === "function") gc();
+          } catch (_) {}
+          const tr = window.__ || window.t || function (s) { return s; };
+          try {
+            const results = await Promise.all([
+              window.__TAURI__.invoke("get_memory_info").catch(function () { return null; }),
+              window.__TAURI__.invoke("get_process_memory").catch(function () { return null; }),
+            ]);
+            const sysMem = results[0] && results[0].data ? results[0].data : results[0];
+            const procMem = results[1] && results[1].data ? results[1].data : results[1];
+            const fmt = window.fmtSize || function (b) { return String(b); };
+            if (sysMem && sysMem.total > 0) {
+              const total = sysMem.total;
+              const used = sysMem.used || (total - (sysMem.free || 0));
+              const appMem = (procMem && procMem.resident) || 0;
+              window.showToast && window.showToast(
+                tr("tools.memory_optimized")
+                  .replace("{app}", fmt(appMem))
+                  .replace("{used}", fmt(used))
+                  .replace("{total}", fmt(total)),
+                "success",
+              );
+            } else {
+              window.showToast && window.showToast(tr("tools.memory_refreshed"), "success");
+            }
+          } catch (e) {
+            window.showToast && window.showToast(tr("tools.memory_failed"), "error");
+          }
        } else if (action === "exit") {
         try {
           await window.__TAURI__.invoke("exit_app");
@@ -593,11 +657,9 @@ let chartData;
 
     const overlay = document.createElement("div");
     overlay.id = "downloads-cleanup-overlay";
-    overlay.style.cssText =
-      "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;";
+    overlay.className = "dr-overlay dr-overlay-dim";
     const card = document.createElement("div");
-    card.style.cssText =
-      "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:640px;width:92%;max-height:82vh;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.5);display:flex;flex-direction:column;";
+    card.className = "dr-card dr-card-xl";
     card.innerHTML =
       '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
       '<span style="font-size:14px;font-weight:600;">\uD83E\uDDF9 Downloads Cleanup</span>' +
@@ -617,6 +679,7 @@ let chartData;
       "</div>";
     overlay.appendChild(card);
     document.body.appendChild(overlay);
+    if (window.app.trapFocus) window.app.trapFocus(overlay);
 
     const listEl = card.querySelector(".dlc-list");
     const statusEl = card.querySelector(".dlc-status");
@@ -706,7 +769,7 @@ let chartData;
         })
         .catch(function (e) {
           files = [];
-          listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">Error: ' + esc(e && e.message ? e.message : e) + "</div>";
+          listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">' + esc((window.__ || window.t || function (s) { return s; })("status.error_prefix") + (e && e.message ? e.message : e)) + "</div>";
           statusEl.textContent = (window.__ || function (s) { return s; })("status.error");
         });
     }
@@ -731,7 +794,7 @@ let chartData;
       if (sel.length === 0) { const t0 = window.__ || function (s) { return s; }; window.showToast(t0("toast.nothing_selected"), "warning"); return; }
       const totalSel = sel.reduce(function (s, f) { return s + (f.size || 0); }, 0);
       const ok = await window.confirmDialog(
-        window.__ ? window.__("tools.cleanup_confirm").replace("{n}", sel.length).replace("{size}", fmtBytes(totalSel)) : "Move " + sel.length + " file(s) to Trash?",
+        (window.__ || window.t || function (s) { return s; })("tools.cleanup_confirm").replace("{n}", sel.length).replace("{size}", fmtBytes(totalSel)),
       );
       if (!ok) return;
        cleanBtn.disabled = true;
@@ -746,7 +809,10 @@ let chartData;
         } catch (e) { failed++; }
       }
       window.showToast(
-        done + " file(s) moved to trash, freed " + fmtBytes(totalSel) + (failed ? " (" + failed + " failed)" : ""),
+        (window.__ || window.t || function (s) { return s; })("tools.files_moved_freed")
+          .replace("{done}", done)
+          .replace("{size}", fmtBytes(totalSel))
+          .replace("{failed}", failed ? (window.__ || window.t || function (s) { return s; })("tools.failed_suffix").replace("{n}", failed) : ""),
         failed ? "warning" : "success",
       );
       cleanBtn.textContent = "\uD83D\uDDD1 " + window.t("action.move_selected_to_trash");
@@ -770,11 +836,9 @@ let chartData;
   function emptyFoldersOptionDialog() {
     return new Promise(function (resolve) {
       const ov = document.createElement("div");
-      ov.style.cssText =
-        "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+      ov.className = "dr-overlay";
       const card = document.createElement("div");
-      card.style.cssText =
-        "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:360px;width:90%;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+      card.className = "dr-card dr-card-sm";
       card.innerHTML =
         '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDCC2 Empty Folders</div>' +
         '<div style="padding:14px 16px;font-size:13px;color:var(--text-primary);">' +
@@ -786,6 +850,7 @@ let chartData;
         "</div>";
       ov.appendChild(card);
       document.body.appendChild(ov);
+      if (window.app.trapFocus) window.app.trapFocus(ov);
       function close(v) { if (ov.parentNode) ov.parentNode.removeChild(ov); resolve(v); }
       card.querySelector("#ef-cancel").onclick = function () { close(null); };
       card.querySelector("#ef-ok").onclick = function () {
@@ -797,11 +862,9 @@ let chartData;
 
   function findFilesDialog() {    return new Promise(function (resolve) {
       const ov = document.createElement("div");
-      ov.style.cssText =
-        "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;";
+      ov.className = "dr-overlay";
       const card = document.createElement("div");
-      card.style.cssText =
-        "background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:420px;width:90%;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,0.4);";
+      card.className = "dr-card dr-card-wide";
       card.innerHTML =
         '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;">\uD83D\uDD0E Find Files</div>' +
         '<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">' +
@@ -822,6 +885,7 @@ let chartData;
         "</div>";
       ov.appendChild(card);
       document.body.appendChild(ov);
+      if (window.app.trapFocus) window.app.trapFocus(ov);
       function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
       function submit() {
         const name = card.querySelector("#ff-name").value || "*";

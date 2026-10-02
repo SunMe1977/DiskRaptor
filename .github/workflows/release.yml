@@ -35,6 +35,17 @@ jobs:
             exit 1
           fi
           echo "OK: tag '$REF' matches version v$ver"
+      # Pre-release validation: fail fast before the 20-minute platform
+      # builds. Catches broken frontend builds, IPC contract drift, and
+      # untranslated/hardcoded strings while the run is still cheap.
+      - name: Install JS dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build minified frontend
+        run: node scripts/build-frontend.mjs
+      - name: IPC contract self-test
+        run: node tests/contract_self_test.mjs
+      - name: i18n hardcoded string audit
+        run: node scripts/i18n-hardcoded-audit.mjs
 
   windows-x64:
     name: Windows x64 (Tauri)

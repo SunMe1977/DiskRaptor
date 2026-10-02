@@ -83,7 +83,19 @@ fn main() {
     // rating count, theme, favorites, ...).
     let app_state = {
         let state = AppState::default();
-        *state.settings_path.lock() = settings_path;
+        *state.settings_path.lock() = settings_path.clone();
+        // Restore a previously activated Pro license so it survives
+        // restarts. Invalid/expired keys are ignored (stay inactive).
+        if let Ok(json) = std::fs::read_to_string(&settings_path) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
+                if let Some(key) = v.get("license_key").and_then(|k| k.as_str()) {
+                    let key = crate::license::sanitize_license_key(key);
+                    if !key.is_empty() {
+                        let _ = state.license.lock().activate(&key);
+                    }
+                }
+            }
+        }
         state
     };
 

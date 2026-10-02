@@ -170,13 +170,13 @@ function openApfsPanel() {
             window.__TAURI__
               .invoke("delete_local_snapshot", { volume: vol })
               .then(function () {
-                if (window.showToast) window.showToast("Local snapshots deleted", "success");
+                if (window.showToast) window.showToast((window.__ || window.t || function (s) { return s; })("trash.emptied"), "success");
                 load();
               })
               .catch(function (e) {
                 btn.disabled = false;
                 const msg = e && e.message ? e.message : String(e);
-                if (window.showToast) window.showToast("Delete failed: " + msg, "error");
+                if (window.showToast) window.showToast((window.__ || window.t || function (s) { return s; })("toast.failed").replace("{err}", msg), "error");
               });
           });
         };

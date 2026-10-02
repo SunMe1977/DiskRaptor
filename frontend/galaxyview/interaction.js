@@ -20,6 +20,7 @@
       this.hoveredObject = null;
       this.selectedObject = null;
       this.clickHandler = null;
+      this.dblClickHandler = null;
       this.hoverHandler = null;
       this.contextMenuHandler = null;
       this.cameraDamping = 0.08;
@@ -71,6 +72,16 @@
         // Hover detection
         if (this.hoverHandler) {
           this._handleHover(e);
+        }
+      });
+
+      // Double-click (e.g. explode a folder open). Fires after two single
+      // clicks — the click handler already flew the camera there, which is
+      // exactly where the explosion should happen.
+      c.addEventListener("dblclick", (e) => {
+        if (this.dblClickHandler) {
+          const rect = c.getBoundingClientRect();
+          this.dblClickHandler(e.clientX - rect.left, e.clientY - rect.top, this.camera);
         }
       });
 
@@ -301,6 +312,11 @@
       this.clickHandler = handler;
     }
 
+    /** Set callback for double-click events: function(screenX, screenY, camera) */
+    onDoubleClick(handler) {
+      this.dblClickHandler = handler;
+    }
+
     /** Set callback for hover events: function(screenX, screenY, camera) */
     onHover(handler) {
       this.hoverHandler = handler;
@@ -327,6 +343,7 @@
 
     dispose() {
       this.clickHandler = null;
+      this.dblClickHandler = null;
       this.hoverHandler = null;
       this.contextMenuHandler = null;
       this.keys = {};
