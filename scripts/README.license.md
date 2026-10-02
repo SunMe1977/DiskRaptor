@@ -39,3 +39,11 @@ chmod +x keygen.sh
 `{"email","type","issued","expires"}` (not base64 of it), signed with Ed25519
 (OpenSSL `pkeyutl -sign -rawin`). The app decodes the payload and verifies the
 signature over those exact raw bytes.
+
+## Creem short codes (online activation)
+Keys like `XXXX-XXXX-...` issued by Creem's license addon are validated
+online (`POST /v1/licenses/{activate,validate,deactivate}`) instead of
+offline. The app embeds `DISKRAPTOR_CREEM_API_KEY` + `DISKRAPTOR_CREEM_PRODUCT_ID`
+at compile time (`src-tauri/build.rs` also reads them as `CREEM_API_KEY` /
+`CREEM_PRODUCT_ID` from `scripts/.env` for local builds); without them only
+offline keys work. GitHub releases need the same values as Actions secrets.

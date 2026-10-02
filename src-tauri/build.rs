@@ -27,5 +27,41 @@ fn main() {
         }
     }
 
+    // Creem online licensing (used by the license manager for short-code
+    // activation). Explicit env vars win; otherwise scripts/.env (gitignored)
+    // is consulted so local release builds pick them up without extra setup.
+    // Absent keys only disable the online path — offline keys keep working.
+    for (creem_var, creem_file_key) in [
+        ("DISKRAPTOR_CREEM_API_KEY", "CREEM_API_KEY"),
+        ("DISKRAPTOR_CREEM_PRODUCT_ID", "CREEM_PRODUCT_ID"),
+    ] {
+        if std::env::var(creem_var).map(|v| !v.trim().is_empty()).unwrap_or(false) {
+            continue;
+        }
+        for relative in ["../scripts/.env", "scripts/.env"] {
+            let candidate = Path::new(&manifest_dir).join(relative);
+            let Ok(content) = std::fs::read_to_string(&candidate) else {
+                continue;
+            };
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some((k, v)) = line.split_once('=') {
+                    if k.trim() == creem_file_key {
+                        let v = v.trim().trim_matches('"').trim_matches('\'');
+                        if !v.is_empty() {
+                            println!("cargo:rustc-env={creem_var}={v}");
+                        }
+                        break;
+                    }
+                }
+            }
+            println!("cargo:rerun-if-changed={}", candidate.display());
+            break;
+        }
+    }
+
     tauri_build::build()
 }
