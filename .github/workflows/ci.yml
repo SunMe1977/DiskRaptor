@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
           cache: false
       # Shared compilation cache across jobs/runs (big win: the 3-OS matrix
       # below reuses the dependency build instead of recompiling everything).
-      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -115,7 +115,7 @@ jobs:
         with:
           toolchain: stable
           cache: false
-      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
