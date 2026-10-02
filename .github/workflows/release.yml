@@ -67,6 +67,8 @@ jobs:
       - name: Build normal installers (NSIS + MSI)
         env:
           DISKRAPTOR_LICENSE_PUBLIC_KEY: ${{ secrets.DISKRAPTOR_LICENSE_PUBLIC_KEY }}
+          DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
+          DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
         run: npx tauri build --bundles nsis,msi --ci --features test-server
       - name: Stage normal MSI
         shell: pwsh
@@ -81,6 +83,10 @@ jobs:
             exit 1
           }
       - name: Build silent MSI (for Microsoft Store)
+        env:
+          DISKRAPTOR_LICENSE_PUBLIC_KEY: ${{ secrets.DISKRAPTOR_LICENSE_PUBLIC_KEY }}
+          DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
+          DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
         run: npx tauri build --bundles msi --config src-tauri/tauri.silent.conf.json --ci --features test-server
       - name: Build silent installer EXE (for Microsoft Store)
         shell: pwsh
@@ -172,6 +178,8 @@ jobs:
       - name: Build Tauri app bundle (universal, unsigned)
         env:
           DISKRAPTOR_LICENSE_PUBLIC_KEY: ${{ secrets.DISKRAPTOR_LICENSE_PUBLIC_KEY }}
+          DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
+          DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
         run: npx tauri build --bundles app --ci --features test-server --target universal-apple-darwin
       - name: Setup code signing keychain (Developer ID)
         env:
@@ -424,6 +432,8 @@ jobs:
         if: env.SKIP_MAS != 'true'
         env:
           DISKRAPTOR_LICENSE_PUBLIC_KEY: ${{ secrets.DISKRAPTOR_LICENSE_PUBLIC_KEY }}
+          DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
+          DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
         run: npx tauri build --bundles app --ci --features store,test-server --target universal-apple-darwin
       - name: Setup code signing keychain
         if: env.SKIP_MAS != 'true'
@@ -604,6 +614,8 @@ jobs:
       - name: Build Tauri bundles (AppImage = universal, DEB, RPM)
         env:
           DISKRAPTOR_LICENSE_PUBLIC_KEY: ${{ secrets.DISKRAPTOR_LICENSE_PUBLIC_KEY }}
+          DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
+          DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
         run: npx tauri build --bundles deb,rpm,appimage --ci --features test-server
       - name: Stage release assets
         shell: bash
