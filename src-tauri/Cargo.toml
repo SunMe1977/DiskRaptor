@@ -61,7 +61,7 @@ parking_lot = "0.12"
 rayon = "1"
 anyhow = "1"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-ed25519-dalek = { version = "2", features = ["pkcs8", "serde"] }
+ed25519-dalek = { version = "3", features = ["pkcs8", "serde"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["clock"] }
 memmap2 = "0.9"
