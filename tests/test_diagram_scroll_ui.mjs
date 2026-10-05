@@ -26,6 +26,12 @@ runTest("DiskRaptor Diagram Scrollbar Test", 9271, async (cdp, scanPath) => {
     const fit = await jsExpr(cdp, overflowOf);
     assert(`${mode}: fit has no scrollbar`, fit.sw <= fit.cw + 1 && fit.sh <= fit.ch + 1, JSON.stringify(fit));
 
+    // 200% button (user-reachable): scrollbars must appear.
+    await jsExpr(cdp, `document.querySelector('.zoom-btn[data-zoom="2"]').click(); 'zoom200'`);
+    await sleep(400);
+    const b200 = await jsExpr(cdp, overflowOf);
+    assert(`${mode}: 200% button shows scrollbar`, b200.sw > b200.cw + 1 || b200.sh > b200.ch + 1, JSON.stringify(b200));
+
     // Max zoom: scrollbars must appear.
     await jsExpr(cdp, `window.__diagram.setZoom(10); 'max'`);
     await sleep(400);
