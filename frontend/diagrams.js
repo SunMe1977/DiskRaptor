@@ -175,18 +175,59 @@ class DiagramRenderer {
     this.canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.max(0.05, Math.min(10, this._zoom * delta));
-      const rect = this.canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const scale = newZoom / this._zoom;
-      this._panX = mx - scale * (mx - this._panX);
-      this._panY = my - scale * (my - this._panY);
+      const oldZoom = this._zoom;
+      const newZoom = Math.max(0.05, Math.min(10, oldZoom * delta));
+      if (newZoom === oldZoom) return;
+      // Content point under the cursor (container coords + scroll offset),
+      // so the zoom anchors there in both layout modes.
+      const contRect = this.container.getBoundingClientRect();
+      const cx = e.clientX - contRect.left;
+      const cy = e.clientY - contRect.top;
+      const sl = this.container.scrollLeft || 0;
+      const st = this.container.scrollTop || 0;
+      const px = (cx + sl - this._panX) / oldZoom;
+      const py = (cy + st - this._panY) / oldZoom;
+      const factor = newZoom / oldZoom;
       this._zoom = newZoom;
       this._userZoom = true;
+      this._layoutScroll();
+      if (this._scrollMode) {
+        // Navigation via native scrollbars: pan stays 0, re-anchor scroll.
+        this.container.scrollLeft = px * newZoom + this._panX - cx;
+        this.container.scrollTop = py * newZoom + this._panY - cy;
+      } else {
+        // Content fits: classic cursor-anchored pan.
+        this._panX = cx - factor * (cx - this._panX);
+        this._panY = cy - factor * (cy - this._panY);
+      }
       this._updateZoomUI();
       this._draw();
     }, { passive: false });
+
+    // Drag-to-pan (scrolls zoomed content; short drags still count as clicks).
+    this._dragStart = null;
+    this._dragged = false;
+    this.canvas.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      this._dragStart = { x: e.clientX, y: e.clientY, sl: this.container.scrollLeft || 0, st: this.container.scrollTop || 0 };
+      this._dragged = false;
+    });
+    this.canvas.addEventListener("mousemove", (e) => {
+      if (!this._dragStart) return;
+      const dx = e.clientX - this._dragStart.x;
+      const dy = e.clientY - this._dragStart.y;
+      if (Math.abs(dx) + Math.abs(dy) > 5) this._dragged = true;
+      if (this._dragged && this._scrollMode) {
+        this.container.scrollLeft = this._dragStart.sl - dx;
+        this.container.scrollTop = this._dragStart.st - dy;
+      }
+    });
+    window.addEventListener("mouseup", () => {
+      this._dragStart = null;
+      // Cleared after the click event (fired right after mouseup) ran, so a
+      // drag never triggers a click action.
+      setTimeout(() => { this._dragged = false; }, 0);
+    });
 
     this._resize();
     window.addEventListener(
@@ -353,6 +394,12 @@ class DiagramRenderer {
     this._panX = 0;
     this._panY = 0;
     this._userZoom = true;
+    this._layoutScroll();
+    // Preset levels always restart at the top-left of scrolled content.
+    if (this.container) {
+      this.container.scrollLeft = 0;
+      this.container.scrollTop = 0;
+    }
     this._updateZoomUI();
     this._draw();
   }
@@ -360,17 +407,103 @@ class DiagramRenderer {
   getZoom() { return this._zoom; }
 
   _fitToView() {
+    this._computeFit();
+    this._layoutScroll();
+    if (this.container) {
+      this.container.scrollLeft = 0;
+      this.container.scrollTop = 0;
+    }
+    this._updateZoomUI();
+    this._draw();
+  }
+
+  // ── Scrollable zoom layout ────────────────────────────
+  // When zoomed content exceeds the viewport, the canvas grows to the
+  // content size and the container shows NATIVE scrollbars (all modes:
+  // pie, treemap, bar). Navigation then happens via scroll; otherwise the
+  // classic centered pan is used.
+
+  /** Viewport size in CSS px (independent of canvas backing store). */
+  _viewW() {
+    if (this.container && this.container.clientWidth > 0) return this.container.clientWidth;
+    return this._baseW || 0;
+  }
+
+  _viewH() {
+    if (this.container && this.container.clientHeight > 0) return this.container.clientHeight;
+    return this._baseH || 0;
+  }
+
+  /** Content box at zoom 1 in CSS px (mirrors the fit math below). */
+  _contentSize() {
+    const viewW = this._viewW();
+    const viewH = this._viewH();
+    let contentW, contentH;
+    if (this.mode === "pie") {
+      const margin = 6;
+      const legendW = Math.min(120, this._baseW * 0.18 || 120);
+      const pieArea = (this._baseW || viewW) - legendW - margin * 3;
+      contentW = pieArea + legendW + margin * 3;
+      contentH = (this._baseH || viewH || 200);
+    } else if (this.mode === "bar") {
+      contentW = this._baseW || viewW || 1200;
+      contentH = this._baseH || viewH || 400;
+    } else {
+      contentW = this._baseW || viewW;
+      contentH = this._baseH || viewH || 200;
+    }
+    return { w: Math.max(contentW, 1), h: Math.max(contentH, 1) };
+  }
+
+  /**
+   * Size canvas + container overflow for the current zoom. Sets
+   * _scrollMode, _cssW/_cssH (draw coordinate space) and _backingScale.
+   */
+  _layoutScroll() {
+    if (!this.canvas || !this.container || !this.ctx) return;
+    const viewW = this._viewW();
+    const viewH = this._viewH();
+    if (viewW <= 0 || viewH <= 0) return;
+    const c = this._contentSize();
+    const cssW = Math.max(Math.round(c.w * this._zoom), 1);
+    const cssH = Math.max(Math.round(c.h * this._zoom), 1);
+    this._cssW = cssW;
+    this._cssH = cssH;
+    this._scrollMode = cssW > viewW + 1 || cssH > viewH + 1;
+    const dpr = window.devicePixelRatio || 1;
+    if (this._scrollMode) {
+      this.container.style.overflow = "auto";
+      this.canvas.style.width = cssW + "px";
+      this.canvas.style.height = cssH + "px";
+      // Cap the backing store: 10x zoom on wide content would explode memory
+      // (browser upscales past the cap — mild blur at extremes only).
+      const backingScale = Math.min(1, 8192 / Math.max(cssW, cssH));
+      this._backingScale = backingScale;
+      this.canvas.width = Math.max(1, Math.round(cssW * dpr * backingScale));
+      this.canvas.height = Math.max(1, Math.round(cssH * dpr * backingScale));
+      this._panX = 0;
+      this._panY = 0;
+    } else {
+      this.container.style.overflow = "hidden";
+      this._backingScale = 1;
+      this.canvas.width = Math.max(1, Math.round(viewW * dpr));
+      this.canvas.height = Math.max(1, Math.round(viewH * dpr));
+      this.canvas.style.width = "100%";
+      this.canvas.style.height = "100%";
+    }
+    this.ctx.setTransform(dpr * this._backingScale, 0, 0, dpr * this._backingScale, 0, 0);
+  }
+
+  _computeFit() {
     if (!this.canvas || !this.data || this.files.length === 0) {
       this._zoom = 1;
       this._panX = 0;
       this._panY = 0;
-      this._updateZoomUI();
-      this._draw();
       return;
     }
-    const dpr = window.devicePixelRatio || 1;
-    const viewW = this.canvas.width / dpr;
-    const viewH = this.canvas.height / dpr;
+    // Viewport size (not canvas backing, which may hold a zoomed layout).
+    const viewW = this._viewW();
+    const viewH = this._viewH();
 
     let contentW, contentH;
     if (this.mode === "pie") {
@@ -391,8 +524,6 @@ class DiagramRenderer {
       this._zoom = 1;
       this._panX = 0;
       this._panY = 0;
-      this._updateZoomUI();
-      this._draw();
       return;
     }
 
@@ -406,8 +537,6 @@ class DiagramRenderer {
     this._panY = (viewH - contentH * this._zoom) / 2;
     this._fitPanX = this._panX;
     this._fitPanY = this._panY;
-    this._updateZoomUI();
-    this._draw();
   }
 
   onZoomChanged(zoom) {}
@@ -425,19 +554,20 @@ class DiagramRenderer {
   _resize() {
     if (!this.canvas || !this.container) return;
     const rect = this.container.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = rect.width * dpr;
-    this.canvas.height = rect.height * dpr;
-    this.canvas.style.width = rect.width + "px";
-    this.canvas.style.height = rect.height + "px";
     this._baseW = rect.width;
     this._baseH = rect.height;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (!this._userZoom) {
-      this._fitToView();
-    } else {
-      this._draw();
+      this._computeFit();
     }
+    this._layoutScroll();
+    // A viewport resize can strand the scroll position past the content.
+    if (this.container) {
+      const maxSl = Math.max(0, (this._cssW || 0) - this._viewW());
+      const maxSt = Math.max(0, (this._cssH || 0) - this._viewH());
+      if (this.container.scrollLeft > maxSl) this.container.scrollLeft = maxSl;
+      if (this.container.scrollTop > maxSt) this.container.scrollTop = maxSt;
+    }
+    this._draw();
   }
 
   setMode(mode) {
@@ -477,9 +607,9 @@ class DiagramRenderer {
 
   _draw() {
     if (!this.ctx || !this.canvas || !this.data) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = this.canvas.width / dpr;
-    const h = this.canvas.height / dpr;
+    // Draw coordinate space = canvas CSS px (backing store may be capped).
+    const w = this._cssW || this._viewW() || 1;
+    const h = this._cssH || this._viewH() || 1;
 
     this.ctx.fillStyle = this._bgColor();
     this.ctx.fillRect(0, 0, w, h);
@@ -1052,6 +1182,8 @@ class DiagramRenderer {
   }
 
   _onClick(e) {
+    // A drag-pan gesture must not trigger click actions.
+    if (this._dragged) return;
     const rect = this.canvas.getBoundingClientRect();
     const hit = this._hitTest(e.clientX - rect.left, e.clientY - rect.top);
     this.contextMenu.style.display = "none";
