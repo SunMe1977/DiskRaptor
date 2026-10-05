@@ -98,6 +98,21 @@ window.__contract = (function () {
     get_home_dir: { type: "string" },
     pick_directory: { type: "string" },
     get_icon: { type: "string" },
+    get_file_preview: {
+      fields: { mime: isStr, base64: isStr },
+    },
+    license_status: {
+      fields: { state: isStr },
+    },
+    license_activate: {
+      fields: { state: isStr },
+    },
+    license_start_trial: {
+      fields: { state: isStr },
+    },
+    install_update: {
+      fields: { started: isBool },
+    },
   };
 
   /**

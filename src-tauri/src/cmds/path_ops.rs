@@ -445,6 +445,44 @@ pub(crate) fn get_icon(path: String, is_dir: bool) -> JsonResult {
     }
 }
 
+/// Read a small image file for duplicate-preview thumbnails. Only image
+/// extensions, capped at 2 MB. Returns `{ mime, base64 }`.
+#[tauri::command]
+pub(crate) fn get_file_preview(path: String) -> JsonResult {
+    let lower = path.to_lowercase();
+    let mime = if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
+    } else if lower.ends_with(".bmp") {
+        "image/bmp"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else {
+        return JsonResult::err("not previewable");
+    };
+    const MAX: u64 = 2 * 1024 * 1024;
+    let meta = match std::fs::metadata(&path) {
+        Ok(m) => m,
+        Err(_) => return JsonResult::err("unreadable file"),
+    };
+    if !meta.is_file() || meta.len() == 0 || meta.len() > MAX {
+        return JsonResult::err("file too large for preview");
+    }
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            use base64::Engine as _;
+            JsonResult::ok(serde_json::json!({
+                "mime": mime,
+                "base64": base64::engine::general_purpose::STANDARD.encode(&bytes),
+            }))
+        }
+        Err(_) => JsonResult::err("unreadable file"),
+    }
+}
+
 /// Render a shell icon handle into 16Ã—16 RGBA bytes (top-down), as consumed by
 /// the frontend IconCache canvas.
 #[cfg(target_os = "windows")]

@@ -45,6 +45,9 @@ pub struct LicenseInfo {
     pub license_type: Option<String>,
     pub issued: Option<String>,
     pub expires: Option<String>,
+    /// True when a Creem license could not be revalidated (no connection)
+    /// and the cached Pro state is kept as offline grace.
+    pub offline_grace: bool,
 }
 
 pub struct LicenseManager {
@@ -68,6 +71,8 @@ struct LicenseData {
     /// Creem credentials (only for `LicenseKind::Creem`).
     creem_key: String,
     creem_instance_id: String,
+    /// Kept Pro although the last Creem revalidation hit a network error.
+    grace: bool,
 }
 
 impl LicenseManager {
@@ -159,10 +164,16 @@ impl LicenseManager {
             Ok(grant) => {
                 if let Some(d) = self.license.as_mut() {
                     d.expires = grant.expires_at;
+                    d.grace = false;
                 }
                 true
             }
-            Err(CreemError::Network(_)) => true,
+            Err(CreemError::Network(_)) => {
+                if let Some(d) = self.license.as_mut() {
+                    d.grace = true;
+                }
+                true
+            }
             Err(_) => {
                 self.license = None;
                 false
@@ -229,6 +240,29 @@ impl LicenseManager {
             kind: LicenseKind::Offline,
             creem_key: String::new(),
             creem_instance_id: String::new(),
+            grace: false,
+        });
+        Ok(())
+    }
+
+    /// Start a one-time 14-day trial (no key needed). Refuses when any
+    /// license is active or a trial was already used on this machine
+    /// (`trial_used` in settings — checked by the command layer).
+    pub fn start_trial(&mut self) -> Result<(), String> {
+        if self.status().state != "inactive" {
+            return Err("A license is already active".to_string());
+        }
+        let now = chrono::Utc::now();
+        let expires = now + chrono::Duration::days(14);
+        self.license = Some(LicenseData {
+            email: String::new(),
+            license_type: "trial".to_string(),
+            issued: now.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            expires: expires.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            kind: LicenseKind::Offline,
+            creem_key: String::new(),
+            creem_instance_id: String::new(),
+            grace: false,
         });
         Ok(())
     }
@@ -263,6 +297,7 @@ impl LicenseManager {
             kind: LicenseKind::Creem,
             creem_key: key.to_string(),
             creem_instance_id: grant.instance_id,
+            grace: false,
         });
         Ok(())
     }
@@ -275,6 +310,7 @@ impl LicenseManager {
                 license_type: None,
                 issued: None,
                 expires: None,
+                offline_grace: false,
             },
             Some(d) => {
                 let expires_dt = chrono::DateTime::parse_from_rfc3339(&d.expires).ok();
@@ -288,6 +324,7 @@ impl LicenseManager {
                     license_type: Some(d.license_type.clone()),
                     issued: if d.issued.is_empty() { None } else { Some(d.issued.clone()) },
                     expires: if d.expires.is_empty() { None } else { Some(d.expires.clone()) },
+                    offline_grace: d.grace,
                 }
             }
         }
@@ -491,13 +528,41 @@ pub(crate) fn license_deactivate(app: tauri::AppHandle) -> JsonResult {
     }
     persist_license_setting(&st, None);
     persist_creem_license(&st, None);
+    persist_string_setting(&st, "trial_expires", None);
     JsonResult::ok(serde_json::json!({ "state": "inactive" }))
 }
 
+#[tauri::command]
+pub(crate) fn license_start_trial(app: tauri::AppHandle) -> JsonResult {
+    let st = app.state::<crate::AppState>();
+    // One trial per machine, and never on top of an active license.
+    if persisted_string(&st, "trial_used").is_some() {
+        return JsonResult::err("Trial already used on this machine");
+    }
+    {
+        let mut mgr = st.license.lock();
+        if let Err(e) = mgr.start_trial() {
+            return JsonResult::err(e);
+        }
+    }
+    let expires = st
+        .license
+        .lock()
+        .status()
+        .expires
+        .unwrap_or_default();
+    persist_string_setting(&st, "trial_used", Some("1"));
+    persist_string_setting(&st, "trial_expires", Some(&expires));
+    persist_license_setting(&st, None);
+    persist_creem_license(&st, None);
+    let info = st.license.lock().status();
+    JsonResult::ok(serde_json::to_value(&info).unwrap())
+}
+
 /// Restore persisted licenses at startup: offline key first, then Creem
-/// (with online revalidation). Invalid/expired keys are ignored.
+/// (with online revalidation), then a trial. Invalid/expired keys are ignored.
 pub fn restore_persisted(state: &crate::AppState) {
-    let (offline_key, creem) = read_persisted_licenses(state);
+    let (offline_key, creem, trial_expires) = read_persisted_licenses(state);
     if let Some(key) = offline_key {
         if !key.is_empty() {
             let instance = get_or_create_instance_name(state);
@@ -521,15 +586,37 @@ pub fn restore_persisted(state: &crate::AppState) {
                 kind: LicenseKind::Creem,
                 creem_key: key,
                 creem_instance_id: instance,
+                grace: false,
             });
         }
         if !state.license.lock().revalidate() {
             persist_creem_license(state, None);
         }
+        return;
+    }
+    // Fall back to a stored trial (only when nothing else activated).
+    if let Some(expires) = trial_expires {
+        let still_valid = chrono::DateTime::parse_from_rfc3339(&expires)
+            .map(|dt| chrono::Utc::now() < dt.with_timezone(&chrono::Utc))
+            .unwrap_or(false);
+        if still_valid {
+            state.license.lock().license = Some(LicenseData {
+                email: String::new(),
+                license_type: "trial".to_string(),
+                issued: String::new(),
+                expires,
+                kind: LicenseKind::Offline,
+                creem_key: String::new(),
+                creem_instance_id: String::new(),
+                grace: false,
+            });
+        }
     }
 }
 
-fn read_persisted_licenses(state: &crate::AppState) -> (Option<String>, Option<(String, String)>) {
+fn read_persisted_licenses(
+    state: &crate::AppState,
+) -> (Option<String>, Option<(String, String)>, Option<String>) {
     let path = state.settings_path.lock().clone();
     let json: serde_json::Value = std::fs::read_to_string(&path)
         .ok()
@@ -548,7 +635,48 @@ fn read_persisted_licenses(state: &crate::AppState) -> (Option<String>, Option<(
             Some((key, instance))
         }
     });
-    (offline, creem)
+    let trial_expires = json
+        .get("trial_expires")
+        .and_then(|k| k.as_str())
+        .map(|s| s.to_string());
+    (offline, creem, trial_expires)
+}
+
+/// Read a persisted top-level string setting (trial flags etc.).
+fn persisted_string(state: &crate::AppState, key: &str) -> Option<String> {
+    let path = state.settings_path.lock().clone();
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .and_then(|v| v.get(key).and_then(|k| k.as_str()).map(|s| s.to_string()))
+}
+
+/// Merge one string key into settings.json (atomic write).
+fn persist_string_setting(state: &crate::AppState, key: &str, value: Option<&str>) {
+    let path = state.settings_path.lock().clone();
+    let mut merged: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(obj) = merged.as_object_mut() {
+        match value {
+            Some(v) => {
+                obj.insert(key.to_string(), serde_json::Value::String(v.to_string()));
+            }
+            None => {
+                obj.remove(key);
+            }
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&merged) {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let tmp = path.with_extension("json.tmp");
+            if std::fs::write(&tmp, &json).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+        }
+    }
 }
 
 /// Stable per-machine label for Creem activations (readable in the Creem
@@ -810,6 +938,29 @@ mod tests {
             "unexpected error: {err}"
         );
         assert_eq!(mgr.status().state, "inactive");
+    }
+
+    #[test]
+    fn start_trial_reports_trial_with_two_weeks() {
+        let (_, verifying) = test_keypair();
+        let mut mgr = LicenseManager::with_verifying_key(Some(verifying));
+        mgr.start_trial().expect("trial must start when inactive");
+        let info = mgr.status();
+        assert_eq!(info.state, "trial");
+        let expires = chrono::DateTime::parse_from_rfc3339(info.expires.as_deref().unwrap())
+            .expect("trial expiry parses");
+        let days = (expires.with_timezone(&chrono::Utc) - chrono::Utc::now()).num_days();
+        assert!((13..=14).contains(&days), "trial lasts ~14 days, got {days}");
+    }
+
+    #[test]
+    fn start_trial_refuses_active_license() {
+        let (signing, verifying) = test_keypair();
+        let mut mgr = LicenseManager::with_verifying_key(Some(verifying));
+        mgr.activate(&issue(&signing, "user@example.com", "pro", FUTURE), "test-instance")
+            .unwrap();
+        assert!(mgr.start_trial().is_err());
+        assert_eq!(mgr.status().state, "pro");
     }
 
     #[test]

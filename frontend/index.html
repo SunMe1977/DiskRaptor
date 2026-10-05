@@ -134,6 +134,9 @@
                                 <button id="welcome-browse-btn" data-i18n="welcome.browse_folder" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
                                     📂 Browse Folder
                                 </button>
+                                <button id="welcome-downloads-btn" data-i18n="welcome.scan_downloads" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+                                    📥 Scan Downloads
+                                </button>
                                 <button id="welcome-about-btn" data-i18n="welcome.about" style="padding:8px 16px;font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;cursor:pointer;">
                                     ℹ️ About DiskRaptor
                                 </button>
@@ -157,6 +160,12 @@
                             <button class="type-filter" data-ext="custom" title="Custom extensions..." data-i18n-title="tree.type_custom">➕</button>
                         </div>
                         <input id="tree-filter" type="text" placeholder="🔍 Filter..." data-i18n-placeholder="tree.filter_placeholder" style="margin-left:auto;width:120px;padding:3px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);outline:none;">
+                        <select id="min-size-filter" title="Minimum size" data-i18n-title="tree.min_size" style="margin-left:6px;padding:3px 6px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);">
+                            <option value="0" data-i18n="tree.size_all">All sizes</option>
+                            <option value="1048576" data-i18n="tree.size_1mb">&gt; 1 MB</option>
+                            <option value="104857600" data-i18n="tree.size_100mb">&gt; 100 MB</option>
+                            <option value="1073741824" data-i18n="tree.size_1gb">&gt; 1 GB</option>
+                        </select>
                     </div>
                     <div id="tree-container">
                         <div id="tree-breadcrumb" class="tree-breadcrumb" hidden></div>
@@ -485,6 +494,26 @@
                         <label for="settings-follow-symlinks" style="font-size:12px;color:var(--text-primary);cursor:pointer;" data-i18n="settings.follow_symlinks">🔗 Follow symlinks</label>
                     </div>
                 </div>
+                <div style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                        <input id="settings-sched-enabled" type="checkbox" style="width:15px;height:15px;cursor:pointer;" />
+                        <label for="settings-sched-enabled" style="font-size:12px;color:var(--text-primary);cursor:pointer;" data-i18n="settings.sched_title">📅 Scheduled reports (Pro)</label>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;">
+                        <div>
+                            <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.sched_freq">Frequency</label>
+                            <select id="settings-sched-freq" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:12px;">
+                                <option value="daily" data-i18n="settings.sched_daily">Daily</option>
+                                <option value="weekly" data-i18n="settings.sched_weekly">Weekly</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="settings.sched_path">Folder to scan</label>
+                            <input id="settings-sched-path" type="text" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:12px;box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <p id="settings-sched-last" style="font-size:11px;color:var(--text-muted);margin:6px 0 0;"></p>
+                </div>
                 <div class="flex-row" style="gap:8px;justify-content:flex-end;">
                     <button id="settings-close" class="btn-secondary" data-i18n="settings.cancel">Cancel</button>
                     <button id="settings-save" class="btn-primary" data-i18n="settings.save">Save</button>
@@ -565,12 +594,24 @@
                         <p data-i18n="license.state">License</p>
                         <p id="license-state-text" style="font-size:13px;font-weight:600;color:var(--text-muted);margin:4px 0 8px;">—</p>
                         <p id="license-details" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;"></p>
+                        <p id="license-grace" style="font-size:11px;color:var(--accent-orange);margin-bottom:8px;display:none;" data-i18n="license.offline_grace">Offline mode — license will re-verify when you are back online.</p>
                         <input id="license-key-input" type="text" placeholder="Paste license key…" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);box-sizing:border-box;" data-i18n-placeholder="license.enter_key" />
-                        <div style="display:flex;gap:6px;margin-top:6px;">
+                        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
                           <button id="btn-license-activate" class="primary" style="font-size:12px;padding:4px 12px;" data-i18n="license.activate">Activate</button>
+                          <button id="btn-trial-start" style="font-size:12px;padding:4px 12px;" data-i18n="license.start_trial">Start 14-day free trial</button>
                           <button id="btn-license-deactivate" style="font-size:12px;padding:4px 12px;" data-i18n="license.deactivate">Deactivate</button>
                         </div>
                         <p id="license-error" style="font-size:11px;color:var(--accent-red);margin-top:6px;display:none;"></p>
+                        <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+                          <p style="font-weight:600;font-size:11px;margin:0 0 4px;" data-i18n="pro.compare_title">Free vs Pro</p>
+                          <table style="width:100%;font-size:11px;border-collapse:collapse;">
+                            <tr style="color:var(--text-muted);"><td></td><td style="text-align:center;" data-i18n="pro.compare_free">Free</td><td style="text-align:center;" data-i18n="pro.compare_pro">Pro</td></tr>
+                            <tr><td data-i18n="pro.f_scans">Scans, diagrams &amp; Galaxy</td><td style="text-align:center;">✓</td><td style="text-align:center;">✓</td></tr>
+                            <tr><td data-i18n="pro.f_dupfinder">Duplicate Finder</td><td style="text-align:center;">—</td><td style="text-align:center;">✓</td></tr>
+                            <tr><td data-i18n="pro.f_reports">Scheduled reports</td><td style="text-align:center;">—</td><td style="text-align:center;">✓</td></tr>
+                            <tr><td data-i18n="pro.f_support">Priority support</td><td style="text-align:center;">—</td><td style="text-align:center;">✓</td></tr>
+                          </table>
+                        </div>
                       </div>
                     </div>
                      <div class="about-divider"></div>

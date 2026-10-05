@@ -179,6 +179,30 @@ window.app.initSettings = function (config) {
             .catch(function () {});
         }
 
+        // Scheduled reports: load saved schedule into the controls.
+        (function loadSchedule() {
+          const en = document.getElementById("settings-sched-enabled");
+          const fq = document.getElementById("settings-sched-freq");
+          const sp = document.getElementById("settings-sched-path");
+          const last = document.getElementById("settings-sched-last");
+          if (!en || !fq || !sp) return;
+          window.__TAURI__
+            .invoke("load_settings", {})
+            .then(function (s) {
+              const sc = (s && s.report_schedule) || {};
+              en.checked = sc.enabled === true;
+              if (sc.frequency === "weekly" || sc.frequency === "daily") fq.value = sc.frequency;
+              if (typeof sc.path === "string") sp.value = sc.path;
+              if (last) {
+                const t = window.__ || window.t || function (x) { return x; };
+                last.textContent = sc.last_run
+                  ? t("settings.sched_last").replace("{date}", new Date(sc.last_run).toLocaleString())
+                  : t("settings.sched_never");
+              }
+            })
+            .catch(function () {});
+        })();
+
       document
         .getElementById("settings-close")
         ?.addEventListener("click", function () { so.style.display = "none"; });
@@ -198,6 +222,20 @@ window.app.initSettings = function (config) {
              const disableTray = disableTrayEl ? disableTrayEl.checked : false;
              const followSymlinks = followSymlinksEl ? followSymlinksEl.checked : false;
              const diagramMode = diagramEl ? diagramEl.value : "";
+             const schedEnEl = document.getElementById("settings-sched-enabled");
+             const schedFqEl = document.getElementById("settings-sched-freq");
+             const schedPathEl = document.getElementById("settings-sched-path");
+             const reportSchedule = {
+               enabled: !!(schedEnEl && schedEnEl.checked),
+               frequency: (schedFqEl && (schedFqEl.value === "weekly" ? "weekly" : "daily")) || "daily",
+               path: (schedPathEl && schedPathEl.value.trim()) || "",
+             };
+             // Shallow-merged on save: carry the runner's last_run stamp over.
+             try {
+               const cur = await window.__TAURI__.invoke("load_settings", {});
+               const lr = cur && cur.report_schedule && cur.report_schedule.last_run;
+               if (lr) reportSchedule.last_run = lr;
+             } catch (_) {}
               const __t = window.__ || window.t || function (s) { return s; };
               if (autoStartEl) {
               window.__TAURI__
@@ -214,7 +252,7 @@ window.app.initSettings = function (config) {
                 });
             }
             await window.__TAURI__
-              .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor, confirm_delete: confirmDelete, disable_tray: disableTray, follow_symlinks: followSymlinks, diagram_mode: diagramMode } })
+              .invoke("save_settings", { settings: { default_scan_path: defPath, scan_timeout_secs: scanTimeout, theme: selTheme, language: selLang, autostart: autoStart, terminal_choice: termChoice, accent_color: accentColor, confirm_delete: confirmDelete, disable_tray: disableTray, follow_symlinks: followSymlinks, diagram_mode: diagramMode, report_schedule: reportSchedule } })
               .catch(function (e) {
                 window.showToast(__t("toast.failed").replace("{err}", e && e.message ? e.message : e), "error");
               });

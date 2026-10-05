@@ -203,6 +203,17 @@ class TreeView {
       } else if (e.key === "F2") {
         e.preventDefault();
         self._handleCopyPath(cur);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        self.select(self.visibleNodes[0]);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        self.select(self.visibleNodes[self.visibleNodes.length - 1]);
+      } else if (e.key === "PageDown" || e.key === "PageUp") {
+        e.preventDefault();
+        const step = e.key === "PageDown" ? 10 : -10;
+        idx = Math.max(0, Math.min(self.visibleNodes.length - 1, idx + step));
+        self.select(self.visibleNodes[idx]);
       }
     });
   }
@@ -729,6 +740,11 @@ const name = node.name || "?";
         }
       }
       if (depth > 0 && this._filterText && !filterMatch) continue;
+
+      // Global minimum-size filter (files only — hiding small files keeps
+      // the tree structure intact while focusing on disk hogs).
+      const minSize = (typeof window !== "undefined" && window.__minSizeBytes) || 0;
+      if (!isDir && minSize > 0 && (node.size || 0) < minSize) continue;
 
       // File type filter
       if (this._typeFilter && this._typeFilter !== "all" && !isDir) {

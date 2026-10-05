@@ -885,6 +885,15 @@ await doCheck();
           const pinned = Array.isArray(s && s.scan_history_pinned)
             ? s.scan_history_pinned
             : [];
+          const snaps = (s && s.scan_snapshots) || {};
+          const fmt = window.fmtSize || function (b) { return b + " B"; };
+          const deltaFor = function (p) {
+            const snap = snaps[p];
+            if (!snap || snap.prev_size === null || snap.prev_size === undefined) return "";
+            const d = (snap.size || 0) - snap.prev_size;
+            if (d === 0) return " · =";
+            return " · " + (d > 0 ? "▲ +" : "▼ −") + fmt(Math.abs(d));
+          };
           if (hist.length === 0 && pinned.length === 0) {
             wrap.style.display = "none";
             return;
@@ -911,6 +920,7 @@ await doCheck();
               '<span class="history-pin' + (isPinned ? " pinned" : "") + '" title="' + esc(t(isPinned ? "history.unpin" : "history.pin")) + '">' + (isPinned ? "\u2605" : "\u2606") + "</span>" +
               '<span class="history-folder">\uD83D\uDCC1</span>' +
               '<span class="history-path">' + esc(p) + "</span>" +
+              '<span class="history-delta" style="font-size:10px;color:var(--text-muted);margin-left:6px;white-space:nowrap;">' + esc(deltaFor(p)) + "</span>" +
               '<span class="history-del" title="' + esc(t("history.remove")) + '">\u2715</span>' +
               "</div>";
           }
@@ -1100,8 +1110,9 @@ await doCheck();
     function _feedGalaxyView() {
       if (!galaxyView || !state.currentStats) return;
       const scanResult = state.currentScanResult || state.currentStats;
-      const topFilesData =
-        (state.currentStats && state.currentStats.top_files) || [];
+      const min = window.__minSizeBytes || 0;
+      const topFilesData = ((state.currentStats && state.currentStats.top_files) || [])
+        .filter(function (f) { return (f.size || 0) >= min; });
       try {
         galaxyView.loadData(scanResult, state.currentStats, topFilesData, []);
       } catch (e) {
@@ -1212,11 +1223,37 @@ await doCheck();
     (function initLicenseUI() {
       const stateText = document.getElementById("license-state-text");
       const details = document.getElementById("license-details");
+      const graceEl = document.getElementById("license-grace");
       const input = document.getElementById("license-key-input");
       const errorEl = document.getElementById("license-error");
       const btnActivate = document.getElementById("btn-license-activate");
+      const btnTrial = document.getElementById("btn-trial-start");
       const btnDeactivate = document.getElementById("btn-license-deactivate");
-      if (!btnActivate && !btnDeactivate) return;
+      if (!btnActivate && !btnDeactivate && !btnTrial) return;
+
+      function trialDaysLeft(expires) {
+        if (!expires) return -1;
+        const ms = Date.parse(expires) - Date.now();
+        return ms < 0 ? 0 : Math.ceil(ms / 86400000);
+      }
+
+      function updateTrialBadge(state, expires) {
+        let badge = document.getElementById("trial-badge");
+        if (state === "trial") {
+          const days = trialDaysLeft(expires);
+          if (!badge) {
+            badge = document.createElement("span");
+            badge.id = "trial-badge";
+            badge.style.cssText = "font-size:10px;font-weight:700;color:#0d1117;background:var(--accent-green);border-radius:8px;padding:1px 7px;margin-left:6px;vertical-align:middle;";
+            const title = document.querySelector('[data-i18n="toolbar.title"]');
+            if (title && title.parentElement) title.parentElement.appendChild(badge);
+          }
+          badge.style.display = "";
+          badge.textContent = window.t("license.trial_badge").replace("{n}", days);
+        } else if (badge) {
+          badge.style.display = "none";
+        }
+      }
 
       async function refresh() {
         try {
@@ -1229,7 +1266,15 @@ await doCheck();
           }
           const email = info && info.email ? info.email : "";
           const expires = info && info.expires ? info.expires : "";
-          if (details) details.textContent = email ? "Email: " + email + (expires ? "  ·  Expires: " + expires : "") : "";
+          let detailText = email ? "Email: " + email + (expires ? "  ·  Expires: " + expires : "") : "";
+          if (state === "trial") {
+            const days = trialDaysLeft(expires);
+            detailText = window.t("license.trial_left").replace("{n}", days);
+          }
+          if (details) details.textContent = detailText;
+          if (graceEl) graceEl.style.display = info && info.offline_grace ? "block" : "none";
+          if (btnTrial) btnTrial.style.display = state === "inactive" ? "" : "none";
+          updateTrialBadge(state, expires);
           // Keep the confirmation visible while Pro is active (no toast here).
           if (state === "pro" || state === "trial") { showSuccess(window.t("license.thanks_pro"), true); }
           const proActive = !!state && state !== "inactive" && state !== "expired";
@@ -1266,6 +1311,20 @@ await doCheck();
           } catch (e) { showError(String(e)); }
         });
       }
+      if (btnTrial) {
+        btnTrial.addEventListener("click", async function () {
+          showError("");
+          try {
+            const res = await window.__TAURI__.invoke("license_start_trial", {});
+            if (res && res.success === false) {
+              showError(res.error || window.t("license.activate_error"));
+            } else {
+              showSuccess(window.t("license.thanks_pro"));
+              await refresh();
+            }
+          } catch (e) { showError(String(e)); }
+        });
+      }
       if (btnDeactivate) {
         btnDeactivate.addEventListener("click", async function () {
           try {
@@ -1277,6 +1336,214 @@ await doCheck();
         });
       }
       refresh();
+    })();
+
+    // ── Scan snapshots, scheduled reports, size filter, downloads ──
+    (function initGrowth() {
+      const invoke = function (cmd, args) {
+        if (window.__TAURI__ && window.__TAURI__.invoke) return window.__TAURI__.invoke(cmd, args || {});
+        return Promise.reject(new Error("no bridge"));
+      };
+      const toast = function (msg, type) {
+        if (window.showToast) { try { window.showToast(msg, type || "info"); } catch (_) {} }
+      };
+
+      // --- Size filter (tree files + diagrams + galaxy) ---
+      window.__minSizeBytes = 0;
+      const sizeSel = document.getElementById("min-size-filter");
+      invoke("load_settings", {}).then(function (s) {
+        const v = s && typeof s.min_size_filter === "number" ? s.min_size_filter : 0;
+        window.__minSizeBytes = v;
+        if (sizeSel) {
+          const allowed = ["0", "1048576", "104857600", "1073741824"];
+          sizeSel.value = allowed.indexOf(String(v)) >= 0 ? String(v) : "0";
+        }
+      }).catch(function () {});
+      if (sizeSel) {
+        sizeSel.addEventListener("change", function () {
+          window.__minSizeBytes = Number(sizeSel.value) || 0;
+          invoke("save_settings", { settings: { min_size_filter: window.__minSizeBytes } }).catch(function () {});
+          applySizeFilter();
+        });
+      }
+      window.applySizeFilter = applySizeFilter;
+      function applySizeFilter() {
+        try {
+          if (window.__treeView && typeof window.__treeView.rebuild === "function") window.__treeView.rebuild();
+        } catch (_) {}
+        try {
+          // Re-feed diagrams + galaxy from filtered top files (originals
+          // cached on every scan-complete).
+          const stats = window.__lastStats;
+          const min = window.__minSizeBytes || 0;
+          if (stats && window.__diagram) {
+            const top = (stats.top_files || []).filter(function (f) { return (f.size || 0) >= min; });
+            const view = {};
+            for (const k in stats) { if (Object.prototype.hasOwnProperty.call(stats, k)) view[k] = stats[k]; }
+            view.top_files = top;
+            window.__diagram.setData(view);
+          }
+        } catch (_) {}
+      }
+
+      // --- Downloads quick scan (welcome) ---
+      const dlBtn = document.getElementById("welcome-downloads-btn");
+      if (dlBtn) {
+        dlBtn.addEventListener("click", function () {
+          invoke("get_home_dir").then(function (home) {
+            const h = typeof home === "string" ? home : (home && home.data) || "";
+            const sep = h.indexOf("/") >= 0 ? "/" : "\\";
+            const sp = document.getElementById("scan-path");
+            if (h && sp) sp.value = h.replace(/[\\/]+$/, "") + sep + "Downloads";
+            const btn = document.getElementById("btn-scan");
+            if (btn) btn.click();
+          }).catch(function () {
+            const btn = document.getElementById("btn-scan");
+            if (btn) btn.click();
+          });
+        });
+      }
+
+      // --- Snapshots (#4): keep last two totals per path for history deltas ---
+      window.addEventListener("scan-complete", function (e) {
+        const detail = (e && e.detail) || {};
+        const p = detail.path;
+        const stats = detail.stats || {};
+        if (!p) return;
+        window.__lastStats = stats;
+        invoke("load_settings", {}).then(function (s) {
+          const snaps = (s && s.scan_snapshots) || {};
+          const prev = snaps[p] || null;
+          snaps[p] = {
+            size: stats.total_size || 0,
+            files: stats.total_files || 0,
+            time: Date.now(),
+            prev_size: prev ? prev.size : null,
+            prev_files: prev ? prev.files : null,
+            prev_time: prev ? prev.time : null,
+          };
+          // Bound storage: newest 20 paths.
+          const keys = Object.keys(snaps);
+          if (keys.length > 20) {
+            keys.sort(function (a, b) { return (snaps[b].time || 0) - (snaps[a].time || 0); });
+            for (let i = 20; i < keys.length; i++) delete snaps[keys[i]];
+          }
+          return invoke("save_settings", { settings: { scan_snapshots: snaps } });
+        }).then(function () {
+          paintHistoryDelta(p);
+        }).catch(function () {});
+      });
+
+      function fmtDelta(cur, prev) {
+        if (prev === null || prev === undefined) return "";
+        const d = cur - prev;
+        if (d === 0) return " · =";
+        const sign = d > 0 ? "▲ +" : "▼ −";
+        const abs = Math.abs(d);
+        const fmt = window.fmtSize || function (b) { return b + " B"; };
+        return " · " + sign + fmt(abs);
+      }
+
+      function paintHistoryDelta(path) {
+        try {
+          invoke("load_settings", {}).then(function (s) {
+            const snaps = (s && s.scan_snapshots) || {};
+            const snap = snaps[path];
+            if (!snap || snap.prev_size === null || snap.prev_size === undefined) return;
+            const items = document.querySelectorAll('.history-item[data-path]');
+            for (let i = 0; i < items.length; i++) {
+              if (items[i].dataset.path !== path) continue;
+              let el = items[i].querySelector(".history-delta");
+              if (!el) {
+                el = document.createElement("span");
+                el.className = "history-delta";
+                el.style.cssText = "font-size:10px;color:var(--text-muted);margin-left:6px;white-space:nowrap;";
+                items[i].appendChild(el);
+              }
+              el.textContent = fmtDelta(snap.size, snap.prev_size);
+              el.title = "Change since previous scan";
+            }
+          }).catch(function () {});
+        } catch (_) {}
+      }
+      // Paint deltas for already-rendered history shortly after boot.
+      setTimeout(function () {
+        try {
+          const items = document.querySelectorAll('.history-item[data-path]');
+          for (let i = 0; i < items.length; i++) paintHistoryDelta(items[i].dataset.path);
+        } catch (_) {}
+      }, 4000);
+
+      // --- Scheduled reports (#6, Pro-gated) ---
+      let schedRunning = "";
+      let schedToasted = false;
+      window.addEventListener("scan-complete", function (e) {
+        const p = e && e.detail && e.detail.path;
+        if (p && p === schedRunning) {
+          schedRunning = "";
+          scheduledExport(e.detail.stats);
+        }
+      });
+      function scheduledExport(stats) {
+        try {
+          const rows = ((stats && stats.top_files) || []).slice(0, 20).map(function (f) {
+            const esc = window.escHtml || function (x) { return String(x); };
+            return "<tr><td>" + esc(f.path || "?") + "</td><td>" + (f.size || 0) + "</td></tr>";
+          }).join("");
+          const brand = window.__proBrand || "DiskRaptor";
+          const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + brand +
+            ' Scheduled Report</title></head><body style="font-family:sans-serif;margin:20px;">' +
+            "<h1>" + brand + " Scheduled Report</h1>" +
+            "<p>Files: " + (stats.total_files || 0) + " | Dirs: " + (stats.total_dirs || 0) +
+            " | Size: " + ((window.fmtSize && window.fmtSize(stats.total_size || 0)) || "") + "</p>" +
+            "<table border='1' cellpadding='6'><tr><th>Path</th><th>Size</th></tr>" + rows + "</table></body></html>";
+          const blob = new Blob([html], { type: "text/html" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "diskraptor-report-" + new Date().toISOString().slice(0, 10) + ".html";
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+          stampScheduleRun();
+          toast(window.t("report.exported"), "success");
+        } catch (e) { toast(String(e), "error"); }
+      }
+      function stampScheduleRun() {
+        invoke("load_settings", {}).then(function (s) {
+          const sc = (s && s.report_schedule) || {};
+          sc.last_run = Date.now();
+          return invoke("save_settings", { settings: { report_schedule: sc } });
+        }).catch(function () {});
+      }
+      async function checkScheduledReports() {
+        let s;
+        try { s = await invoke("load_settings", {}); } catch (_) { return; }
+        const sc = s && s.report_schedule;
+        if (!sc || !sc.enabled || !sc.path) return;
+        const dueMs = sc.frequency === "weekly" ? 7 * 86400000 : 86400000;
+        if (sc.last_run && Date.now() - sc.last_run < dueMs) return;
+        // Pro-gated.
+        let lic;
+        try { lic = await invoke("license_status", {}); } catch (_) { return; }
+        const st = (lic && lic.data ? lic.data : lic) || {};
+        if (!st.state || st.state === "inactive" || st.state === "expired") {
+          if (!schedToasted) {
+            schedToasted = true;
+            toast(window.t("report.pro_required"), "info");
+          }
+          return;
+        }
+        const btnScan = document.getElementById("btn-scan");
+        if (!btnScan || btnScan.disabled) return; // scan running — retry later
+        schedRunning = sc.path;
+        const sp = document.getElementById("scan-path");
+        if (sp) sp.value = sc.path;
+        toast(window.t("report.scan_started"), "info");
+        btnScan.click();
+      }
+      // Check at startup (delayed) and hourly.
+      setTimeout(checkScheduledReports, 30000);
+      setInterval(checkScheduledReports, 3600000);
     })();
 
     // Restore the saved diagram mode on startup. The Galaxy view is opt-in:
@@ -1524,8 +1791,28 @@ await doCheck();
      * Shows a popup with the latest version or a "no updates" message.
      */
     window.__checkUpdate = async function () {
-       const checkId = ++window.__checkUpdateId;
-       const cancelled = () => checkId !== window.__checkUpdateId;
+        const checkId = ++window.__checkUpdateId;
+        const cancelled = () => checkId !== window.__checkUpdateId;
+        // One-click install on Windows (download + launch installer + exit);
+        // other platforms just open the download URL.
+        const installOrOpenUpdate = function (url, btn) {
+          const isWin = (navigator.platform || "").toLowerCase().indexOf("win") === 0;
+          if (!isWin) {
+            window.__TAURI__.invoke("open_url", { url: url }).catch(function () {});
+            return;
+          }
+          if (btn) { btn.disabled = true; btn.textContent = window.t("about.installing_update"); }
+          window.__TAURI__.invoke("install_update", { url: url }).then(function (res) {
+            const ok = !(res && res.success === false);
+            if (window.showToast) {
+              window.showToast(ok ? window.t("about.install_started") : ((res && res.error) || "Install failed"), ok ? "success" : "error");
+            }
+            if (!ok && btn) { btn.disabled = false; }
+          }).catch(function (e) {
+            if (window.showToast) window.showToast(String(e && e.message ? e.message : e), "error");
+            if (btn) { btn.disabled = false; }
+          });
+        };
       const el = document.getElementById("about-update-check");
       const openPopup = function (contentHtml, clickHandler) {
         const overlay = document.createElement("div");
@@ -1636,12 +1923,15 @@ const current = _currentVersion || "0.0.0";
             true,
           );
           const btn = document.createElement("button");
-          btn.textContent = window.t("about.download_version").replace("{version}", latest);
+          const isWinBtn = (navigator.platform || "").toLowerCase().indexOf("win") === 0;
+          btn.textContent = isWinBtn
+            ? window.t("about.install_update").replace("{version}", latest)
+            : window.t("about.download_version").replace("{version}", latest);
           btn.style.cssText =
             "margin-top:14px;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:none;" +
             "background:linear-gradient(135deg,#238636,var(--accent-green,#2ea043));color:#fff;font-weight:600;";
           btn.addEventListener("click", function () {
-            window.__TAURI__.invoke("open_url", { url: dl }).catch(function () {});
+            installOrOpenUpdate(dl, btn);
           });
           popup.body.appendChild(btn);
           if (el) {
@@ -1650,7 +1940,7 @@ const current = _currentVersion || "0.0.0";
             el.style.cursor = "pointer";
             el.style.textDecoration = "underline";
             el.onclick = function () {
-              window.__TAURI__.invoke("open_url", { url: dl }).catch(function () {});
+              installOrOpenUpdate(dl, null);
             };
           }
         } else {
@@ -1700,12 +1990,15 @@ const current = _currentVersion || "0.0.0";
               true,
             );
             const btn = document.createElement("button");
-            btn.textContent = window.t("about.download_version").replace("{version}", latest2);
+            const isWinBtn2 = (navigator.platform || "").toLowerCase().indexOf("win") === 0;
+            btn.textContent = isWinBtn2
+              ? window.t("about.install_update").replace("{version}", latest2)
+              : window.t("about.download_version").replace("{version}", latest2);
             btn.style.cssText =
               "margin-top:14px;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:none;" +
               "background:linear-gradient(135deg,#238636,var(--accent-green,#2ea043));color:#fff;font-weight:600;";
             btn.addEventListener("click", function () {
-              window.__TAURI__.invoke("open_url", { url: dl }).catch(function () {});
+              installOrOpenUpdate(dl, btn);
             });
             popup.body.appendChild(btn);
           } else {

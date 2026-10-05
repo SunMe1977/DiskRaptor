@@ -98,6 +98,28 @@ ok(
 );
 ok(contract.check("get_scan_result", { success: false, error: "No scan result" }), "error envelope is valid");
 ok(contract.check("some_unknown_command", { anything: true }), "unknown command has no contract");
+ok(
+  contract.check("license_status", {
+    success: true,
+    data: { state: "pro", email: null, license_type: "pro", issued: null, expires: null, offline_grace: false },
+  }),
+  "license_status valid",
+);
+ok(
+  contract.check("license_start_trial", {
+    success: true,
+    data: { state: "trial", expires: "2026-10-16T00:00:00Z", offline_grace: false },
+  }),
+  "license_start_trial valid",
+);
+ok(
+  contract.check("install_update", { success: true, data: { started: true } }),
+  "install_update valid",
+);
+ok(
+  contract.check("get_file_preview", { success: true, data: { mime: "image/png", base64: "iVBOR" } }),
+  "get_file_preview valid",
+);
 
 // ── Violations must fail ──────────────────────────────────────────────────
 ok(

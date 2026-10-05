@@ -49,12 +49,12 @@ pub(crate) use cmds::{
     cancel_dup_scan, cancel_scan, check_admin_needed, check_for_updates, classify_download,
     delete_path, delete_permanent, exit_app, find_duplicates, get_app_data_dir, get_app_info,
     get_app_version, get_children, get_chunk, get_dir_stats, get_dup_result, get_dup_stats,
-    get_home_dir, get_icon, get_memory_info, get_process_memory, get_scan_progress,
-    get_scan_result, get_stats, get_trash_path, get_volume_stats, in_mac_sandbox, is_sandboxed,
-    list_downloads_candidates, list_drives, list_volumes_via_sysinfo, load_settings, open_explorer,
-    open_properties, open_terminal, open_url, parse_system_profiler_disks, pick_directory,
-    release_scan, request_permissions, restart_as_admin, sanitize_delete_path, save_settings,
-    start_scan, validate_system_path,
+    get_file_preview, get_home_dir, get_icon, get_memory_info, get_process_memory, get_scan_progress,
+    get_scan_result, get_stats, get_trash_path, get_volume_stats, in_mac_sandbox, install_update,
+    is_sandboxed, list_downloads_candidates, list_drives, list_volumes_via_sysinfo, load_settings,
+    open_explorer, open_properties, open_terminal, open_url, parse_system_profiler_disks,
+    pick_directory, release_scan, request_permissions, restart_as_admin, sanitize_delete_path,
+    save_settings, start_scan, validate_system_path,
 };
 #[cfg(not(target_os = "windows"))]
 #[allow(unused_imports)]

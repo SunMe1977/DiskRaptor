@@ -500,6 +500,69 @@ pub(crate) fn get_app_info() -> JsonResult {
     }))
 }
 
+/// Download a Windows installer from our own GitHub release and launch it,
+/// then exit so locked files can be replaced. Only our release URLs are
+/// accepted. Other platforms report unsupported (frontend opens the URL).
+#[tauri::command]
+pub(crate) fn install_update(url: String, app: tauri::AppHandle) -> JsonResult {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (url, app);
+        return JsonResult::err("Automatic install is only supported on Windows");
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let url = url.trim().to_string();
+        let prefix = "https://github.com/SunMe1977/DiskRaptor/releases/download/";
+        if !url.starts_with(prefix) || url.contains("..") || url.contains(' ') {
+            return JsonResult::err("Refusing unknown update URL");
+        }
+        let file_name = url
+            .rsplit('/')
+            .next()
+            .unwrap_or("DiskRaptor-setup.exe")
+            .to_string();
+        if !(file_name.ends_with(".exe") || file_name.ends_with(".msi")) {
+            return JsonResult::err("Refusing non-installer update file");
+        }
+        std::thread::spawn(move || {
+            // Download first (blocking, generous timeout for big installers).
+            let config = ureq::Agent::config_builder()
+                .timeout_global(Some(std::time::Duration::from_secs(300)))
+                .build();
+            let agent = ureq::Agent::new_with_config(config);
+            let mut tmp = std::env::temp_dir();
+            tmp.push(format!("diskraptor-update-{file_name}"));
+            let download_ok = agent
+                .get(&url)
+                .header("User-Agent", "DiskRaptor")
+                .call()
+                .ok()
+                .and_then(|mut r| r.body_mut().read_to_vec().ok())
+                .and_then(|bytes| {
+                    if bytes.is_empty() {
+                        None
+                    } else {
+                        std::fs::write(&tmp, &bytes).ok()
+                    }
+                })
+                .is_some();
+            if !download_ok {
+                return;
+            }
+            // Launch detached so it survives our exit, then quit to unlock files.
+            use std::os::windows::process::CommandExt;
+            const DETACHED_PROCESS: u32 = 0x00000008;
+            let _ = std::process::Command::new(&tmp)
+                .creation_flags(DETACHED_PROCESS)
+                .spawn();
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            app.exit(0);
+        });
+        JsonResult::ok(serde_json::json!({ "started": true }))
+    }
+}
+
 #[tauri::command]
 pub(crate) fn request_permissions(path: Option<String>) -> JsonResult {
     #[cfg(target_os = "macos")]

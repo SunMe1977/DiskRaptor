@@ -814,6 +814,9 @@ window.app.initScan = function (refs) {
           result.stats.termination = term;
           state.currentScanResult = result;
           state.currentStats = result.stats;
+          try {
+            window.dispatchEvent(new CustomEvent("scan-complete", { detail: { path: path, stats: result.stats } }));
+          } catch (_) {}
           statsPanel.render(result.stats);
           diagram.setData(result.stats);
           const files = Number(

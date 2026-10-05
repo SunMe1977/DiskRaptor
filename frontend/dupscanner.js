@@ -7,7 +7,31 @@ class DupScanner {
   constructor() {
     this.overlay = null;
     this.resultsPanel = null;
+    this._previewCache = new Map();
+    this._previewPending = new Set();
     this._createUI();
+  }
+
+  // Lazy image thumbnail for duplicate rows (backend caps at 2 MB).
+  _loadPreview(path, img) {
+    if (!path || this._previewCache.has(path)) {
+      if (this._previewCache.has(path)) img.src = this._previewCache.get(path);
+      return;
+    }
+    if (this._previewPending.has(path) || !/\.(png|jpe?g|gif|bmp|webp)$/i.test(path)) return;
+    this._previewPending.add(path);
+    const self = this;
+    window.__TAURI__.invoke("get_file_preview", { path: path }).then(function (res) {
+      self._previewPending.delete(path);
+      const d = res && res.data ? res.data : res;
+      if (d && d.base64) {
+        const url = "data:" + (d.mime || "image/png") + ";base64," + d.base64;
+        self._previewCache.set(path, url);
+        img.src = url;
+      }
+    }).catch(function () {
+      self._previewPending.delete(path);
+    });
   }
 
   _createUI() {
@@ -329,6 +353,18 @@ class DupScanner {
         const kindSpan = document.createElement("span");
         kindSpan.textContent = fi === 0 ? "\uD83D\uDD19 " + window.t("duplicates.keep") : "\uD83D\uDDD1";
         kindSpan.style.cssText = "color:var(--text-muted);font-size:10px;width:20px;flex-shrink:0;";
+        let thumb = null;
+        if (/\.(png|jpe?g|gif|bmp|webp)$/i.test(fp || "")) {
+          thumb = document.createElement("img");
+          thumb.alt = "";
+          thumb.title = fp;
+          thumb.style.cssText = "width:40px;height:40px;object-fit:cover;border-radius:4px;flex-shrink:0;background:var(--bg-tertiary);cursor:zoom-in;";
+          thumb.onclick = function (ev) {
+            ev.stopPropagation();
+            window.__TAURI__.invoke("open_explorer", { path: fp }).catch(function () {});
+          };
+          self._loadPreview(fp, thumb);
+        }
         const pathSpan = document.createElement("span");
         pathSpan.textContent = fp;
         pathSpan.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;";
@@ -337,6 +373,7 @@ class DupScanner {
         sizeSpan.style.cssText = "color:var(--text-muted);font-size:10px;";
         row.appendChild(cb);
         row.appendChild(kindSpan);
+        if (thumb) row.appendChild(thumb);
         row.appendChild(pathSpan);
         row.appendChild(sizeSpan);
         row.onclick = function(e) {
