@@ -508,7 +508,7 @@ pub(crate) fn install_update(url: String, app: tauri::AppHandle) -> JsonResult {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (url, app);
-        return JsonResult::err("Automatic install is only supported on Windows");
+        JsonResult::err("Automatic install is only supported on Windows")
     }
     #[cfg(target_os = "windows")]
     {
