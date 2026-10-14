@@ -91,7 +91,7 @@
     "i18n:sync": "node scripts/sync-locales.mjs"
   },
   "dependencies": {
-    "ws": "^8.21.2"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
