@@ -83,7 +83,7 @@ fn main() {
     // rating count, theme, favorites, ...).
     let app_state = {
         let state = AppState::default();
-        *state.settings_path.lock() = settings_path.clone();
+        *state.settings_path.lock() = settings_path;
         // Restore a previously activated Pro license so it survives
         // restarts (offline key and Creem online license; the latter is
         // revalidated, with offline grace when the network is down).

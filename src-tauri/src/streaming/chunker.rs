@@ -18,8 +18,10 @@ pub fn chunk_size(settings: &Option<serde_json::Value>) -> u32 {
         .as_ref()
         .and_then(|s| s.get("chunk_size"))
         .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_CHUNK_SIZE as u64) as u32;
-    raw.clamp(MIN_CHUNK_SIZE, MAX_CHUNK_SIZE)
+        .unwrap_or(DEFAULT_CHUNK_SIZE as u64);
+    // Clamp in u64 first so huge values (e.g. u64::MAX from a corrupt
+    // settings file) saturate to MAX instead of truncating on `as u32`.
+    raw.clamp(MIN_CHUNK_SIZE as u64, MAX_CHUNK_SIZE as u64) as u32
 }
 
 /// Splits the arena tree into ordered chunks for streaming to the UI.
@@ -98,13 +100,20 @@ pub fn make_root_chunk(arena: &TreeNodeArena) -> Vec<TreeChunk> {
         let mut root = arena.nodes[0].clone();
         root.chunk_id = 0;
         nodes.push(root);
-        // First-level children
+        // First-level children (bounded: corrupt next_sibling can't OOB-panic or loop forever)
         let mut child = arena.nodes[0].first_child;
-        while child != u32::MAX {
-            let mut node = arena.nodes[child as usize].clone();
-            node.chunk_id = 0;
-            nodes.push(node);
-            child = arena.nodes[child as usize].next_sibling;
+        let mut guard: usize = 0;
+        const MAX_SIBLINGS: usize = 1_000_000;
+        while child != u32::MAX && guard < MAX_SIBLINGS {
+            guard += 1;
+            let Some(node) = arena.nodes.get(child as usize) else {
+                break;
+            };
+            let next = node.next_sibling;
+            let mut cloned = node.clone();
+            cloned.chunk_id = 0;
+            nodes.push(cloned);
+            child = next;
         }
     }
     vec![TreeChunk {

@@ -141,14 +141,16 @@ class TreeView {
           if (input === null) return;
           const exts = input.split(",").map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
           if (exts.length === 0) return;
-          document.querySelectorAll(".type-filter").forEach(function(b) { b.classList.remove("active"); });
+          document.querySelectorAll(".type-filter").forEach(function(b) { b.classList.remove("active"); b.setAttribute("aria-pressed", "false"); });
           this.classList.add("active");
+          this.setAttribute("aria-pressed", "true");
           self._typeFilter = exts.join("|");
           self.rebuild();
           return;
         }
-        document.querySelectorAll(".type-filter").forEach(function(b) { b.classList.remove("active"); });
+        document.querySelectorAll(".type-filter").forEach(function(b) { b.classList.remove("active"); b.setAttribute("aria-pressed", "false"); });
         this.classList.add("active");
+        this.setAttribute("aria-pressed", "true");
         self._typeFilter = this.dataset.ext;
         self.rebuild();
       });
@@ -1216,12 +1218,15 @@ let ok = 0;
           if (!iconEl || !iconEl.parentNode) return;
           if (
             typeof iconResult === "string" &&
-            iconResult.indexOf("data:") === 0
+            iconResult.indexOf("data:") === 0 &&
+            iconResult.indexOf('"') === -1
           ) {
-            iconEl.innerHTML =
-              '<img src="' +
-              iconResult +
-              '" style="width:16px;height:16px;display:block;">';
+            iconEl.textContent = "";
+            var img = document.createElement("img");
+            img.setAttribute("src", iconResult);
+            img.setAttribute("style", "width:16px;height:16px;display:block;");
+            img.setAttribute("alt", "");
+            iconEl.appendChild(img);
           } else if (typeof iconResult === "string" && iconResult.length < 10) {
             iconEl.textContent = iconResult;
           }

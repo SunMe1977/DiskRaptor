@@ -40,13 +40,13 @@ fn sum_sizes(paths: &[std::path::PathBuf]) -> u64 {
 
 fn delete_path_recursive(path: &std::path::Path) -> u64 {
     let size = dir_size(path);
-    if size > 0 {
-        let _ = if path.is_dir() {
-            std::fs::remove_dir_all(path)
-        } else {
-            std::fs::remove_file(path)
-        };
-    }
+    // Always attempt removal: empty files/dirs report size 0 but still
+    // need deleting, and skipping them left zero-byte cache files behind.
+    let _ = if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
     size
 }
 

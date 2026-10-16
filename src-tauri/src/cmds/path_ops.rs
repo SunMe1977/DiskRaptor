@@ -336,7 +336,9 @@ pub(crate) fn open_terminal(path: String, state: tauri::State<crate::AppState>) 
     {
         // cmd.exe interprets the whole command line, so reject paths carrying
         // cmd metacharacters that could break out of the `cd` argument.
-        if dir_str.chars().any(|c| "&|<>^%".contains(c)) {
+        // `"` is rejected explicitly because it terminates the quoted arg;
+        // `;,()!`+backtick` cover &&/|| chaining and delayed expansion.
+        if dir_str.chars().any(|c| "&|<>^%\";,()!`".contains(c)) {
             return JsonResult::err("Path contains characters unsafe for cmd.exe");
         }
     }
@@ -464,14 +466,24 @@ pub(crate) fn get_file_preview(path: String) -> JsonResult {
         return JsonResult::err("not previewable");
     };
     const MAX: u64 = 2 * 1024 * 1024;
-    let meta = match std::fs::metadata(&path) {
+    let validated = match validate_system_path(&path) {
+        Ok(p) => p,
+        Err(_) => return JsonResult::err("unreadable file"),
+    };
+    // Reject symlinks: metadata() follows links, so check explicitly.
+    if let Ok(meta) = std::fs::symlink_metadata(&validated) {
+        if meta.file_type().is_symlink() {
+            return JsonResult::err("unreadable file");
+        }
+    }
+    let meta = match std::fs::metadata(&validated) {
         Ok(m) => m,
         Err(_) => return JsonResult::err("unreadable file"),
     };
     if !meta.is_file() || meta.len() == 0 || meta.len() > MAX {
         return JsonResult::err("file too large for preview");
     }
-    match std::fs::read(&path) {
+    match std::fs::read(&validated) {
         Ok(bytes) => {
             use base64::Engine as _;
             JsonResult::ok(serde_json::json!({

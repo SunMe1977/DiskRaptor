@@ -78,8 +78,9 @@
     closeBtn.className = "toast-close";
     closeBtn.title = window.t("dialog.close");
     closeBtn.setAttribute("aria-label", window.t("dialog.close"));
-    closeBtn.setAttribute("data-i18n", "dialog.close");
-    closeBtn.innerHTML = "&times;";
+    closeBtn.setAttribute("data-i18n-aria-label", "dialog.close");
+    closeBtn.setAttribute("data-i18n-title", "dialog.close");
+    closeBtn.textContent = "×";
     closeBtn.addEventListener("click", function () {
       dismiss(toast);
     });

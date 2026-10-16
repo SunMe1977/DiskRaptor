@@ -39,7 +39,9 @@
       text.style.flex = "1";
       text.textContent = message;
       var reloadBtn = document.createElement("button");
-      reloadBtn.textContent = "Reload";
+      var tr = window.t || window.__ || function (s) { return s; };
+      var reloadLabel = tr("dialog.reload");
+      reloadBtn.textContent = reloadLabel === "dialog.reload" ? "Reload" : reloadLabel;
       reloadBtn.style.cssText =
         "padding:5px 12px;border:1px solid var(--border);border-radius:6px;" +
         "background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;";
@@ -50,7 +52,8 @@
       };
       var dismissBtn = document.createElement("button");
       dismissBtn.textContent = "\u2715";
-      dismissBtn.setAttribute("aria-label", "Dismiss");
+      var dismissLabel = tr("dialog.dismiss");
+      dismissBtn.setAttribute("aria-label", dismissLabel === "dialog.dismiss" ? "Dismiss" : dismissLabel);
       dismissBtn.style.cssText =
         "padding:5px 10px;border:none;background:none;color:var(--text-muted);cursor:pointer;";
       dismissBtn.onclick = function () {

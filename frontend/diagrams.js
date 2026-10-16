@@ -80,6 +80,9 @@ class DiagramRenderer {
     this.canvas.style.display = "block";
     this.canvas.style.position = "relative";
     this.canvas.style.zIndex = "1";
+    this.canvas.setAttribute("role", "img");
+    this.canvas.setAttribute("tabindex", "0");
+    this.canvas.setAttribute("aria-label", window.t("diagram.top50"));
     this.container.appendChild(this.canvas);
     this.ctx = this.canvas.getContext("2d");
 
@@ -134,14 +137,17 @@ class DiagramRenderer {
       '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + window.t("action.move_to_trash") + '</div>';
     document.body.appendChild(this.contextMenu);
 
-    // Context menu styles
+    // Context menu styles (inject once; DiagramView may be re-created)
+    if (!document.getElementById("diag-ctx-style")) {
     const style = document.createElement("style");
+    style.id = "diag-ctx-style";
     style.textContent =
       ".diag-ctx-item{padding:6px 16px;font-size:13px;cursor:pointer;color:#e6edf3;}" +
       ".diag-ctx-item:hover{background:#30363d;}" +
       ".diag-ctx-sep{height:1px;background:#30363d;margin:4px 8px;}" +
       ".diag-ctx-del{color:#f85149;}";
     document.head.appendChild(style);
+    }
 
     // Events
     this.canvas.addEventListener("mousemove", (e) => this._onMouseMove(e));
@@ -153,6 +159,19 @@ class DiagramRenderer {
     });
     this.canvas.addEventListener("click", (e) => this._onClick(e));
     this.canvas.addEventListener("contextmenu", (e) => this._onContextMenu(e));
+    // Keyboard access: Enter/Space opens the context menu at canvas center
+    // so the diagram is operable without a mouse.
+    this.canvas.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const r = this.canvas.getBoundingClientRect();
+        this._onContextMenu({
+          preventDefault: () => {},
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+        });
+      }
+    });
     document.addEventListener("click", (e) => {
       if (
         this.contextMenu &&
@@ -1268,14 +1287,18 @@ class DiagramRenderer {
       case "delete": {
           if (!filePath) break;
           const t = window.t;
-          const self = this;
-          self._invoke("delete_path", { path: filePath }).then((ok2) => {
-             if (ok2 && ok2.success !== false) {
-               self.files = self.files.filter((f) => f.path !== filePath);
-               self._draw();
-               if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
-             }
+          if (window.app && typeof window.app.deletePath === "function") {
+            window.app.deletePath(filePath);
+          } else if (window.confirm(t("tree.confirm_delete").replace("{name}", filePath))) {
+            const self = this;
+            self._invoke("delete_path", { path: filePath }).then((ok2) => {
+              if (ok2 && ok2.success !== false) {
+                self.files = self.files.filter((f) => f.path !== filePath);
+                self._draw();
+                if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
+              }
             });
+          }
           break;
         }
     }

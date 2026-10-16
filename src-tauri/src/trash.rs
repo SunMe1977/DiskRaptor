@@ -151,7 +151,7 @@ fn list_trash_windows() -> Vec<serde_json::Value> {
     }
     for (i_path, meta) in i_entries {
         let i_name = i_path.file_name().unwrap_or_default().to_string_lossy().to_string();
-        let suffix = &i_name[2..];
+        let suffix = i_name.strip_prefix("$I").unwrap_or_default();
         let data = bin.join(format!("$R{}", suffix));
         let is_dir = data.is_dir();
         let size = std::fs::metadata(&data)

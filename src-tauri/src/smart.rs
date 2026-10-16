@@ -326,19 +326,19 @@ fn native_smart_report(device_id: &str) -> Option<serde_json::Value> {
                               pct_used.map(|x| format!("{}%", x)).unwrap_or_else(|| "n/a".into()),
                               if pct_used.unwrap_or(0) >= 90 { "WARN" } else { "OK" }));
             nvme_attrs.push(mk("06", "Data Units Read", Some(du_read),
-                              Some(du_read).map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()), "OK"));
+                              du_read.to_string(), "OK"));
             nvme_attrs.push(mk("07", "Data Units Written", Some(du_written),
-                              Some(du_written).map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()), "OK"));
+                              du_written.to_string(), "OK"));
             nvme_attrs.push(mk("0b", "Power Cycles", power_cycles,
                               power_cycles.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()), "OK"));
             nvme_attrs.push(mk("0c", "Power On Hours", Some(power_on_hours), power_on_hours.to_string(), "OK"));
             nvme_attrs.push(mk("0d", "Unsafe Shutdowns", Some(unsafe_shutdowns),
-                              Some(unsafe_shutdowns).map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()), "OK"));
+                              unsafe_shutdowns.to_string(), "OK"));
             nvme_attrs.push(mk("0e", "Media Errors", media_errors,
                               media_errors.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),
                               if media_errors.unwrap_or(0) > 0 { "WARN" } else { "OK" }));
             nvme_attrs.push(mk("0f", "Num Err Log Entries", Some(num_err),
-                              Some(num_err).map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()), "OK"));
+                              num_err.to_string(), "OK"));
         }
     }
 

@@ -1035,7 +1035,11 @@ function openSmartTools(autoScanId) {
         }
       })
       .catch(function (e) {
-        select.innerHTML = '<option value="">Error</option>';
+        select.textContent = "";
+        var errOpt = document.createElement("option");
+        errOpt.value = "";
+        errOpt.textContent = t("smart.error_list");
+        select.appendChild(errOpt);
         const msg = e && e.message ? e.message : String(e);
         statusEl.textContent = t("smart.error_list") + msg;
         if (/sandbox|sandboxed/i.test(msg)) {

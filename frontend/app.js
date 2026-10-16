@@ -747,14 +747,14 @@ head.textContent = "? " + window.t("shortcut.title");
        const body = document.createElement("div");
        body.style.cssText = "padding:14px 18px;font-size:13px;line-height:2;color:var(--text-primary);";
        const rows = [
-         ["Ctrl+L", "Focus scan path"],
-         ["Ctrl+S", "Start scan"],
-         ["Ctrl+R", "Rescan same directory"],
-         ["Ctrl+E", "Export results"],
-         ["Ctrl+F", "Filter tree"],
-         ["Ctrl+Enter", "Start scan"],
-         ["Esc", "Close dialogs / menus"],
-         ["?", "Show this help"],
+         ["Ctrl+L", "shortcut.focus_path"],
+         ["Ctrl+S", "shortcut.start_scan"],
+         ["Ctrl+R", "shortcut.rescan"],
+         ["Ctrl+E", "shortcut.export"],
+         ["Ctrl+F", "shortcut.filter"],
+         ["Ctrl+Enter", "shortcut.start_scan"],
+         ["Esc", "shortcut.close"],
+         ["?", "shortcut.title"],
        ];
        rows.forEach(function (r) {
          const line = document.createElement("div");
@@ -1887,10 +1887,21 @@ const btnAction = document.createElement("button");
       const setStatus = function (icon, title, sub, isSuccess) {
         const st = popup.body.querySelector("#upd-status");
         if (!st) return;
-        st.innerHTML =
-          "<div style='font-size:18px;margin-bottom:6px;'>" + icon + "</div>" +
-          "<b style='color:" + (isSuccess ? "var(--accent-green)" : "inherit") + "'>" + title + "</b>" +
-          (sub ? "<div style='margin-top:6px;color:var(--text-secondary);font-size:12px;'>" + sub + "</div>" : "");
+        st.textContent = "";
+        const iconDiv = document.createElement("div");
+        iconDiv.style.cssText = "font-size:18px;margin-bottom:6px;";
+        iconDiv.textContent = icon;
+        const titleEl = document.createElement("b");
+        if (isSuccess) titleEl.style.color = "var(--accent-green)";
+        titleEl.textContent = title;
+        st.appendChild(iconDiv);
+        st.appendChild(titleEl);
+        if (sub) {
+          const subDiv = document.createElement("div");
+          subDiv.style.cssText = "margin-top:6px;color:var(--text-secondary);font-size:12px;";
+          subDiv.textContent = sub;
+          st.appendChild(subDiv);
+        }
       };
 
 const current = _currentVersion || "0.0.0";
@@ -2031,12 +2042,11 @@ const current = _currentVersion || "0.0.0";
         filter = (filter || "").toLowerCase();
         const current = window.I18N.getLocale().raw;
         let html = "";
-        const autoActive =
-          current === "auto" ? ' class="lang-item active"' : "";
+        const autoCls =
+          current === "auto" ? "lang-item active" : "lang-item";
         html +=
           '<button data-lang="auto"' +
-          autoActive +
-          ' class="lang-item"><span class="lang-flag">\uD83D\uDDA5\uFE0F</span> <span>' +
+          ' class="' + autoCls + '"><span class="lang-flag">\uD83D\uDDA5\uFE0F</span> <span>' +
           window.t("lang.auto") +
           '</span> <span class="lang-code">auto</span></button>';
         html +=
@@ -2049,14 +2059,13 @@ const current = _currentVersion || "0.0.0";
             !lang.code.includes(filter)
           )
             return;
-          const active =
-            current === lang.code ? ' class="lang-item active"' : "";
+          const activeCls =
+            current === lang.code ? "lang-item active" : "lang-item";
           html +=
             '<button data-lang="' +
             window.escHtml(lang.code) +
             '"' +
-            active +
-            ' class="lang-item"><span class="lang-flag">' +
+            ' class="' + activeCls + '"><span class="lang-flag">' +
             window.escHtml(lang.flag) +
             '</span> <span>' +
             window.escHtml(lang.label) +

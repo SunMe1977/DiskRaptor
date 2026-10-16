@@ -52,7 +52,7 @@ pub fn init() -> Result<(), Box<dyn std::error::Error>> {
 macro_rules! log_error {
     ($($arg:tt)*) => {
         error!($($arg)*);
-        eprintln!("[ERROR] {}", format!($($arg)*));
+        eprintln!("[ERROR] {}", format_args!($($arg)*));
     };
 }
 
@@ -60,7 +60,7 @@ macro_rules! log_error {
 macro_rules! log_warn {
     ($($arg:tt)*) => {
         warn!($($arg)*);
-        eprintln!("[WARN] {}", format!($($arg)*));
+        eprintln!("[WARN] {}", format_args!($($arg)*));
     };
 }
 

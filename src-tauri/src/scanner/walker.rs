@@ -598,7 +598,7 @@ pub fn scan_simple(
             }
         };
         let full = entry.path().to_string_lossy().to_string();
-        if entry.file_type().is_dir() { current_directory = full.clone(); }
+        if entry.file_type().is_dir() { current_directory.clone_from(&full); }
         if full == root_path {
             continue;
         }

@@ -50,7 +50,7 @@ fn current_strings<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> HashMap<Stri
         }
     }
     let code = sys_locale::get_locale()
-        .map(|l| l.split('-').next().unwrap_or("en").to_lowercase())
+        .map(|l| l.split(['-', '_']).next().unwrap_or("en").to_lowercase())
         .unwrap_or_else(|| "en".to_string());
     crate::menu_i18n::menu_labels(&code)
         .iter()

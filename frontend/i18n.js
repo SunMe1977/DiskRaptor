@@ -262,7 +262,9 @@
     document.documentElement.lang = resolvedLocale;
   });
 
-  console.debug(
-    `[i18n] Detected locale: ${detectLocale()}, selected: ${currentLocale} → ${resolvedLocale}`,
-  );
+  if (localStorage.getItem("diskraptor-debug")) {
+    console.debug(
+      `[i18n] Detected locale: ${detectLocale()}, selected: ${currentLocale} → ${resolvedLocale}`,
+    );
+  }
 })();

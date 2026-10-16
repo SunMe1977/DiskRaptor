@@ -63,7 +63,7 @@ export default [
   {
     // Node ESM tooling (tests, build scripts, this config). Linted for
     // visibility; node --check already guards their syntax in CI.
-    files: ["tests/**/*.mjs", "scripts/**/*.mjs", "eslint.config.mjs"],
+    files: ["tests/**/*.mjs", "scripts/**/*.mjs", "scripts/**/*.js", "eslint.config.mjs"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
