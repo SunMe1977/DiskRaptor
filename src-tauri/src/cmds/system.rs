@@ -647,7 +647,7 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
                 an.to_lowercase().cmp(&bn.to_lowercase())
             });
 
-            return JsonResult::ok(serde_json::json!(apps));
+            JsonResult::ok(serde_json::json!(apps))
         }
 
         #[cfg(target_os = "macos")]
@@ -715,7 +715,7 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
                 let bn = b["name"].as_str().unwrap_or("");
                 an.to_lowercase().cmp(&bn.to_lowercase())
             });
-            return JsonResult::ok(serde_json::json!(apps));
+            JsonResult::ok(serde_json::json!(apps))
         }
 
         #[cfg(target_os = "linux")]
@@ -739,15 +739,14 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
                                 let mut icon = String::new();
                                 let mut no_display = false;
                                 for line in content.lines() {
-                                    if line.starts_with("Name=") {
-                                        name = line[5..].to_string();
-                                    } else if line.starts_with("Exec=") {
-                                        exec = line[5..].to_string();
+                                    if let Some(v) = line.strip_prefix("Name=") {
+                                        name = v.to_string();
+                                    } else if let Some(v) = line.strip_prefix("Exec=") {
                                         // Remove field codes like %f %u
-                                        exec = exec.split_whitespace().next().unwrap_or(&exec).to_string();
-                                    } else if line.starts_with("Icon=") {
-                                        icon = line[5..].to_string();
-                                    } else if line.starts_with("NoDisplay=true") {
+                                        exec = v.split_whitespace().next().unwrap_or(v).to_string();
+                                    } else if let Some(v) = line.strip_prefix("Icon=") {
+                                        icon = v.to_string();
+                                    } else if line == "NoDisplay=true" {
                                         no_display = true;
                                     }
                                 }
@@ -799,7 +798,7 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
                 let bn = b["name"].as_str().unwrap_or("");
                 an.to_lowercase().cmp(&bn.to_lowercase())
             });
-            return JsonResult::ok(serde_json::json!(apps));
+            JsonResult::ok(serde_json::json!(apps))
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
