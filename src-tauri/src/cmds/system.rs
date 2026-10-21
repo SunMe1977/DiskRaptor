@@ -8,6 +8,27 @@ use crate::JsonResult;
 use crate::trash;
 use crate::scanner::tree::format_size;
 
+/// Recursively calculate directory size.
+pub(crate) fn dir_size(path: &std::path::Path) -> u64 {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(_) => return 0,
+    };
+    if meta.is_file() {
+        return meta.len();
+    }
+    if !meta.is_dir() {
+        return 0;
+    }
+    let mut total = 0u64;
+    if let Ok(rd) = std::fs::read_dir(path) {
+        for entry in rd.flatten() {
+            total += dir_size(&entry.path());
+        }
+    }
+    total
+}
+
 /// Build a `Command` without flashing a console window. Windows GUI apps show
 /// a brief DOS box whenever powershell/cmd/curl/smartctl are launched from
 /// them; `CREATE_NO_WINDOW` suppresses that. Only needed on macOS/Linux now â€”
@@ -498,6 +519,677 @@ pub(crate) fn get_app_info() -> JsonResult {
         "arch": arch,
         "data_dir": data_dir.to_string_lossy(),
     }))
+}
+
+/// Enumerate installed applications with their icons and install sizes.
+/// Cross-platform: Windows (registry), macOS (/Applications), Linux (.desktop files).
+#[tauri::command]
+pub(crate) async fn list_installed_apps() -> JsonResult {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(target_os = "windows")]
+        {
+            use std::collections::HashMap;
+            use winreg::enums::*;
+            use winreg::RegKey;
+
+            let mut apps = Vec::new();
+            let mut seen = HashMap::new();
+
+            // Helper to process a registry key for uninstall entries
+            let process_uninstall_key = |root: RegKey, path: &str, apps: &mut Vec<serde_json::Value>, seen: &mut HashMap<String, serde_json::Value>| {
+                if let Ok(key) = root.open_subkey(path) {
+                    for subkey_name in key.enum_keys().flatten() {
+                        if let Ok(subkey) = key.open_subkey(&subkey_name) {
+                            let name: String = subkey.get_value("DisplayName").unwrap_or_default();
+                            if name.is_empty() { continue; }
+                            let system_component: u32 = subkey.get_value("SystemComponent").unwrap_or(0);
+                            if system_component == 1 { continue; } // Skip system components
+                            let is_update: u32 = subkey.get_value("IsUpdate").unwrap_or(0);
+                            if is_update == 1 { continue; }
+
+                            let install_location: String = subkey.get_value("InstallLocation").unwrap_or_default();
+                            let display_icon: String = subkey.get_value("DisplayIcon").unwrap_or_default();
+                            let uninstall_string: String = subkey.get_value("UninstallString").unwrap_or_default();
+                            let quiet_uninstall: String = subkey.get_value("QuietUninstallString").unwrap_or_default();
+                            let version: String = subkey.get_value("DisplayVersion").unwrap_or_default();
+                            let publisher: String = subkey.get_value("Publisher").unwrap_or_default();
+                            let estimated_size: u32 = subkey.get_value("EstimatedSize").unwrap_or(0); // In KB
+                            let install_date: String = subkey.get_value("InstallDate").unwrap_or_default();
+
+                            // Calculate install size from InstallLocation if EstimatedSize not available
+                            let mut install_size = (estimated_size as u64) * 1024;
+                            if install_size == 0 && !install_location.is_empty() {
+                                install_size = crate::cmds::system::dir_size(&std::path::PathBuf::from(&install_location));
+                            }
+
+                            // Try to get icon from DisplayIcon or exe in InstallLocation
+                            let icon_path = if !display_icon.is_empty() {
+                                display_icon
+                            } else if !install_location.is_empty() {
+                                // Find first .exe in install location
+                                let mut found_exe = String::new();
+                                if let Ok(rd) = std::fs::read_dir(&install_location) {
+                                    for entry in rd.flatten() {
+                                        let p = entry.path();
+                                        if p.extension().and_then(|s| s.to_str()).unwrap_or("").eq_ignore_ascii_case("exe") {
+                                            found_exe = p.to_string_lossy().to_string();
+                                            break;
+                                        }
+                                    }
+                                }
+                                found_exe
+                            } else {
+                                String::new()
+                            };
+
+                            let key_name = name.to_lowercase();
+                            let existing = seen.get(&key_name);
+                            let existing_size = existing.and_then(|v| v["install_size"].as_u64()).unwrap_or(0);
+                            if existing_size >= install_size {
+                                continue; // Keep the larger entry
+                            }
+
+                            let app_json = serde_json::json!({
+                                "name": name,
+                                "version": version,
+                                "publisher": publisher,
+                                "install_location": install_location,
+                                "uninstall_string": uninstall_string,
+                                "quiet_uninstall": quiet_uninstall,
+                                "icon_path": icon_path,
+                                "install_size": install_size,
+                                "install_date": install_date,
+                                "estimated_size_kb": estimated_size,
+                            });
+                            apps.push(app_json.clone());
+                            seen.insert(key_name, app_json);
+                        }
+                    }
+                }
+            };
+
+            // 32-bit and 64-bit registry views
+            let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+            process_uninstall_key(hklm, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
+            let hklm2 = RegKey::predef(HKEY_LOCAL_MACHINE);
+            process_uninstall_key(hklm2, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            process_uninstall_key(hkcu, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
+
+            // Also check Windows Store apps
+            let hkcu2 = RegKey::predef(HKEY_CURRENT_USER);
+            if let Ok(key) = hkcu2.open_subkey(r"SOFTWARE\Classes\Extensions\ContractId\Windows.Protocol\PackageId") {
+                for pkg in key.enum_keys().flatten() {
+                    let name = pkg.split('_').next().unwrap_or(&pkg).to_string();
+                    if !name.is_empty() && !seen.contains_key(&name.to_lowercase()) {
+                        let app_json = serde_json::json!({
+                            "name": name,
+                            "version": "",
+                            "publisher": "Microsoft Store",
+                            "install_location": "",
+                            "uninstall_string": "",
+                            "quiet_uninstall": "",
+                            "icon_path": "",
+                            "install_size": 0,
+                            "install_date": "",
+                            "estimated_size_kb": 0,
+                            "is_store_app": true,
+                        });
+                        apps.push(app_json.clone());
+                        seen.insert(name.to_lowercase(), app_json);
+                    }
+                }
+            }
+
+            apps.sort_by(|a, b| {
+                let an = a["name"].as_str().unwrap_or("");
+                let bn = b["name"].as_str().unwrap_or("");
+                an.to_lowercase().cmp(&bn.to_lowercase())
+            });
+
+            return JsonResult::ok(serde_json::json!(apps));
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            use std::fs;
+            let mut apps = Vec::new();
+            let app_dirs = [
+                "/Applications",
+                "/System/Applications",
+                &format!("{}/Applications", std::env::var("HOME").unwrap_or_default()),
+            ];
+            for app_dir in &app_dirs {
+                if let Ok(entries) = fs::read_dir(app_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|s| s.to_str()) == Some("app") {
+                            let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                            if name.is_empty() { continue; }
+                            
+                            // Read Info.plist for version and bundle ID
+                            let info_plist = path.join("Contents/Info.plist");
+                            let mut version = String::new();
+                            let mut bundle_id = String::new();
+                            if let Ok(content) = fs::read_to_string(&info_plist) {
+                                // Simple XML parsing for CFBundleShortVersionString and CFBundleIdentifier
+                                if let Some(start) = content.find("<key>CFBundleShortVersionString</key>") {
+                                    if let Some(vstart) = content[start..].find("<string>") {
+                                        if let Some(vend) = content[start+vstart+8..].find("</string>") {
+                                            version = content[start+vstart+8..start+vstart+8+vend].to_string();
+                                        }
+                                    }
+                                }
+                                if let Some(start) = content.find("<key>CFBundleIdentifier</key>") {
+                                    if let Some(vstart) = content[start..].find("<string>") {
+                                        if let Some(vend) = content[start+vstart+8..].find("</string>") {
+                                            bundle_id = content[start+vstart+8..start+vstart+8+vend].to_string();
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            let icon_path = path.join("Contents/Resources/AppIcon.icns");
+                            let icon_str = if icon_path.exists() { icon_path.to_string_lossy().to_string() } else { String::new() };
+                            
+                            let install_size = crate::cmds::system::dir_size(&path);
+                            
+                            apps.push(serde_json::json!({
+                                "name": name,
+                                "version": version,
+                                "publisher": bundle_id,
+                                "install_location": path.to_string_lossy(),
+                                "uninstall_string": "",
+                                "quiet_uninstall": "",
+                                "icon_path": icon_str,
+                                "install_size": install_size,
+                                "install_date": "",
+                                "estimated_size_kb": install_size / 1024,
+                            }));
+                        }
+                    }
+                }
+            }
+            apps.sort_by(|a, b| {
+                let an = a["name"].as_str().unwrap_or("");
+                let bn = b["name"].as_str().unwrap_or("");
+                an.to_lowercase().cmp(&bn.to_lowercase())
+            });
+            return JsonResult::ok(serde_json::json!(apps));
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            use std::fs;
+            let mut apps = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            let desktop_dirs = [
+                "/usr/share/applications",
+                "/usr/local/share/applications",
+                &format!("{}/.local/share/applications", std::env::var("HOME").unwrap_or_default()),
+            ];
+            for desktop_dir in &desktop_dirs {
+                if let Ok(entries) = fs::read_dir(desktop_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|s| s.to_str()) == Some("desktop") {
+                            if let Ok(content) = fs::read_to_string(&path) {
+                                let mut name = String::new();
+                                let mut exec = String::new();
+                                let mut icon = String::new();
+                                let mut no_display = false;
+                                for line in content.lines() {
+                                    if line.starts_with("Name=") {
+                                        name = line[5..].to_string();
+                                    } else if line.starts_with("Exec=") {
+                                        exec = line[5..].to_string();
+                                        // Remove field codes like %f %u
+                                        exec = exec.split_whitespace().next().unwrap_or(&exec).to_string();
+                                    } else if line.starts_with("Icon=") {
+                                        icon = line[5..].to_string();
+                                    } else if line.starts_with("NoDisplay=true") {
+                                        no_display = true;
+                                    }
+                                }
+                                if no_display || name.is_empty() { continue; }
+                                if !seen.insert(name.to_lowercase()) { continue; }
+                                
+                                // Try to find install size from the executable
+                                let mut install_size = 0u64;
+                                if !exec.is_empty() {
+                                    if let Ok(exe_path) = std::path::PathBuf::from(&exec).canonicalize() {
+                                        if let Ok(meta) = fs::metadata(&exe_path) {
+                                            install_size = meta.len();
+                                        }
+                                        // Also check parent directory
+                                        if let Some(parent) = exe_path.parent() {
+                                            install_size = install_size.max(crate::cmds::system::dir_size(parent));
+                                        }
+                                    }
+                                }
+                                
+                                // Resolve icon path
+                                let icon_path = if icon.contains('/') {
+                                    icon.to_string()
+                                } else if !icon.is_empty() {
+                                    format!("/usr/share/icons/hicolor/48x48/apps/{}.png", icon)
+                                } else {
+                                    String::new()
+                                };
+                                
+                                apps.push(serde_json::json!({
+                                    "name": name,
+                                    "version": "",
+                                    "publisher": "",
+                                    "install_location": exec,
+                                    "uninstall_string": "",
+                                    "quiet_uninstall": "",
+                                    "icon_path": icon_path,
+                                    "install_size": install_size,
+                                    "install_date": "",
+                                    "estimated_size_kb": install_size / 1024,
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+            apps.sort_by(|a, b| {
+                let an = a["name"].as_str().unwrap_or("");
+                let bn = b["name"].as_str().unwrap_or("");
+                an.to_lowercase().cmp(&bn.to_lowercase())
+            });
+            return JsonResult::ok(serde_json::json!(apps));
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            JsonResult::err("Unsupported platform")
+        }
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Failed to list apps: {e}")))
+}
+
+/// Check installed applications for available updates.
+///
+/// Windows: uses `winget list --upgrade-available` (the same package data the
+/// OS uses). macOS: `brew outdated --json=v2`. Returns
+/// `{ supported, updates: [{name, id, version, available, source}], error? }`.
+#[tauri::command]
+pub(crate) async fn check_app_updates() -> JsonResult {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let output = std::process::Command::new("winget")
+                .args([
+                    "list",
+                    "--upgrade-available",
+                    "--include-unknown",
+                    "--accept-source-agreements",
+                    "--disable-interactivity",
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+            match output {
+                Ok(o) => {
+                    let text = String::from_utf8_lossy(&o.stdout).to_string();
+                    let updates = parse_winget_upgrades(&text);
+                    // winget exits non-zero when it has nothing to report on
+                    // older versions; treat a parseable table as success.
+                    if !updates.is_empty() || text.contains("---") {
+                        JsonResult::ok(serde_json::json!({
+                            "supported": true,
+                            "updates": updates,
+                        }))
+                    } else {
+                        let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                        JsonResult::ok(serde_json::json!({
+                            "supported": false,
+                            "error": if err.is_empty() { "winget returned no data".to_string() } else { err },
+                            "updates": [],
+                        }))
+                    }
+                }
+                Err(e) => JsonResult::ok(serde_json::json!({
+                    "supported": false,
+                    "error": format!("winget is not available: {e}"),
+                    "updates": [],
+                })),
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            match std::process::Command::new("brew")
+                .args(["outdated", "--json=v2"])
+                .output()
+            {
+                Ok(o) if o.status.success() => {
+                    let text = String::from_utf8_lossy(&o.stdout);
+                    JsonResult::ok(serde_json::json!({
+                        "supported": true,
+                        "updates": parse_brew_outdated(&text),
+                    }))
+                }
+                Ok(o) => JsonResult::ok(serde_json::json!({
+                    "supported": false,
+                    "error": String::from_utf8_lossy(&o.stderr).trim(),
+                    "updates": [],
+                })),
+                Err(e) => JsonResult::ok(serde_json::json!({
+                    "supported": false,
+                    "error": format!("Homebrew is not available: {e}"),
+                    "updates": [],
+                })),
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            JsonResult::ok(serde_json::json!({
+                "supported": false,
+                "error": "Update checking is not implemented for Linux yet",
+                "updates": [],
+            }))
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            JsonResult::ok(serde_json::json!({
+                "supported": false,
+                "error": "Unsupported platform",
+                "updates": [],
+            }))
+        }
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Update check failed: {e}")))
+}
+
+/// Parse the table printed by `winget list --upgrade-available`.
+///
+/// Columns are located from the header line (Name / Id / Version / Available /
+/// Source); the dashed separator line below it is the anchor. Long names may
+/// wrap onto a continuation line with an empty Id column, which is appended to
+/// the previous entry.
+#[cfg(target_os = "windows")]
+fn parse_winget_upgrades(text: &str) -> Vec<serde_json::Value> {
+    let lines: Vec<&str> = text.lines().collect();
+    let sep = lines.iter().position(|line| {
+        let t = line.trim();
+        t.len() >= 20 && t.chars().all(|c| c == '-')
+    });
+    let Some(sep) = sep else { return Vec::new() };
+    if sep == 0 {
+        return Vec::new();
+    }
+
+    // Column start offsets: beginning of the line or after a run of 2+ spaces.
+    let header: Vec<char> = lines[sep - 1].chars().collect();
+    let mut starts: Vec<usize> = Vec::new();
+    let mut in_word = false;
+    let mut spaces = 0usize;
+    for (idx, ch) in header.iter().enumerate() {
+        if *ch == ' ' {
+            spaces += 1;
+            in_word = false;
+        } else {
+            if !in_word && (idx == 0 || spaces >= 2) {
+                starts.push(idx);
+            }
+            in_word = true;
+            spaces = 0;
+        }
+    }
+    if starts.len() < 4 {
+        return Vec::new();
+    }
+
+    let mut updates: Vec<serde_json::Value> = Vec::new();
+    for line in lines.iter().skip(sep + 1) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let chars: Vec<char> = line.chars().collect();
+        let field = |k: usize| -> String {
+            let s = starts[k];
+            let e = starts.get(k + 1).copied().unwrap_or(chars.len());
+            if s >= chars.len() {
+                return String::new();
+            }
+            chars[s..e.min(chars.len())]
+                .iter()
+                .collect::<String>()
+                .trim()
+                .to_string()
+        };
+        let name = field(0);
+        let id = field(1);
+        let version = field(2);
+        let available = field(3);
+        let source = field(4);
+
+        if id.is_empty() {
+            // Wrapped name: append to the previous entry.
+            if !name.is_empty() {
+                if let Some(last) = updates.last_mut() {
+                    let old = last["name"].as_str().unwrap_or("").to_string();
+                    last["name"] = serde_json::Value::String(format!("{old} {name}"));
+                }
+            }
+            continue;
+        }
+        if name.is_empty() {
+            continue;
+        }
+        updates.push(serde_json::json!({
+            "name": name,
+            "id": id,
+            "version": version,
+            "available": available,
+            "source": source,
+        }));
+    }
+    updates
+}
+
+/// Convert `brew outdated --json=v2` output into the shared update shape.
+#[cfg(target_os = "macos")]
+fn parse_brew_outdated(text: &str) -> Vec<serde_json::Value> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for section in ["formulae", "casks"] {
+        if let Some(items) = v[section].as_array() {
+            for item in items {
+                let name = item["name"]
+                    .as_str()
+                    .or_else(|| item["token"].as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let installed = item["installed_versions"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "))
+                    .unwrap_or_default();
+                out.push(serde_json::json!({
+                    "name": name,
+                    "id": name,
+                    "version": installed,
+                    "available": item["current_version"].as_str().unwrap_or(""),
+                    "source": "brew",
+                }));
+            }
+        }
+    }
+    out
+}
+
+/// Upgrade a single application via the platform package manager.
+///
+/// Windows: `winget upgrade --id <id> --exact --silent`. macOS: `brew upgrade`.
+/// Returns `{ success, output?, error?, code? }`.
+#[tauri::command]
+pub(crate) async fn run_app_update(id: String, source: String) -> JsonResult {
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let mut cmd = std::process::Command::new("winget");
+            cmd.args([
+                "upgrade",
+                "--id",
+                &id,
+                "--exact",
+                "--silent",
+                "--include-unknown",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+                "--disable-interactivity",
+            ]);
+            let src = source.trim();
+            if !src.is_empty() {
+                cmd.args(["--source", src]);
+            }
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            match cmd.output() {
+                Ok(o) => {
+                    let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                    // winget reports "no applicable update" as a failure exit
+                    // code; for our purposes the package is already current.
+                    let no_update = stdout.to_lowercase().contains("no applicable update")
+                        || stdout.to_lowercase().contains("no available upgrade")
+                        || stdout.to_lowercase().contains("no newer package versions");
+                    if o.status.success() || no_update {
+                        JsonResult::ok(serde_json::json!({
+                            "success": true,
+                            "output": stdout,
+                        }))
+                    } else {
+                        JsonResult::ok(serde_json::json!({
+                            "success": false,
+                            "code": o.status.code(),
+                            "output": stdout,
+                            "error": if stderr.is_empty() { stdout } else { stderr },
+                        }))
+                    }
+                }
+                Err(e) => JsonResult::ok(serde_json::json!({
+                    "success": false,
+                    "error": format!("winget is not available: {e}"),
+                })),
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let _ = &source;
+            match std::process::Command::new("brew").args(["upgrade", &id]).output() {
+                Ok(o) if o.status.success() => JsonResult::ok(serde_json::json!({
+                    "success": true,
+                    "output": String::from_utf8_lossy(&o.stdout).trim(),
+                })),
+                Ok(o) => JsonResult::ok(serde_json::json!({
+                    "success": false,
+                    "code": o.status.code(),
+                    "error": String::from_utf8_lossy(&o.stderr).trim(),
+                })),
+                Err(e) => JsonResult::ok(serde_json::json!({
+                    "success": false,
+                    "error": format!("Homebrew is not available: {e}"),
+                })),
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let _ = (id, source);
+            JsonResult::ok(serde_json::json!({
+                "success": false,
+                "error": "Updating applications is not implemented for Linux yet",
+            }))
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            let _ = (id, source);
+            JsonResult::ok(serde_json::json!({
+                "success": false,
+                "error": "Unsupported platform",
+            }))
+        }
+    })
+    .await
+    .unwrap_or_else(|e| JsonResult::err(format!("Update failed: {e}")))
+}
+
+/// Execute an uninstall command.
+#[tauri::command]
+pub(crate) fn run_uninstall(command: String) -> JsonResult {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        // Run the uninstall command hidden
+        let result = std::process::Command::new("cmd.exe")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["/C", &command])
+            .status();
+        match result {
+            Ok(status) => {
+                if status.success() {
+                    JsonResult::ok(serde_json::json!({ "success": true }))
+                } else {
+                    JsonResult::err(format!("Uninstall failed with exit code: {:?}", status.code()))
+                }
+            }
+            Err(e) => JsonResult::err(format!("Failed to execute uninstall: {}", e)),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, uninstall commands are typically shell scripts or pkgutil
+        let result = std::process::Command::new("sh")
+            .args(["-c", &command])
+            .status();
+        match result {
+            Ok(status) => {
+                if status.success() {
+                    JsonResult::ok(serde_json::json!({ "success": true }))
+                } else {
+                    JsonResult::err(format!("Uninstall failed with exit code: {:?}", status.code()))
+                }
+            }
+            Err(e) => JsonResult::err(format!("Failed to execute uninstall: {}", e)),
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, use the package manager or the uninstall script
+        let result = std::process::Command::new("sh")
+            .args(["-c", &command])
+            .status();
+        match result {
+            Ok(status) => {
+                if status.success() {
+                    JsonResult::ok(serde_json::json!({ "success": true }))
+                } else {
+                    JsonResult::err(format!("Uninstall failed with exit code: {:?}", status.code()))
+                }
+            }
+            Err(e) => JsonResult::err(format!("Failed to execute uninstall: {}", e)),
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = command;
+        JsonResult::err("Unsupported platform")
+    }
 }
 
 /// Download a Windows installer from our own GitHub release and launch it,

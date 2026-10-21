@@ -579,6 +579,8 @@ let chartData;
       } else if (action === "apfs-snapshots") {
         if (window.openApfsPanel) window.openApfsPanel();
         else window.showToast(window.t("apfs.mac_only"), "info");
+      } else if (action === "app-manager") {
+        openAppManager();
       } else if (action === "trash") {
         const t = window.__ || function (s) { return s; };
         let trashInfo = "";
@@ -1590,6 +1592,439 @@ cleanBtn.addEventListener("click", async function () {
        }
        load();
      });
+
+    load();
+  }
+
+  // ── App Manager overlay ──────────────────────────────────────
+  function openAppManager() {
+    const t = window.__ || window.t || function (s) { return s; };
+    const old = document.getElementById("app-manager-overlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "app-manager-overlay";
+    overlay.className = "dr-overlay dr-overlay-dim";
+    const card = document.createElement("div");
+    card.className = "dr-card dr-card-xl";
+    card.innerHTML =
+      '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+      '<span style="font-size:14px;font-weight:600;">📦 ' + t("tools.app_manager") + '</span>' +
+      '<button class="am-close" aria-label="Close" style="padding:3px 8px;font-size:14px;border:none;background:none;color:var(--text-muted);cursor:pointer;">\u2715</button>' +
+      "</div>" +
+      '<div class="am-toolbar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+      '<button class="am-refresh" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\u27F3 ' + t("appmgr.refresh") + '</button>' +
+      '<button class="am-select-all" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">' + t("appmgr.select_all") + '</button>' +
+      '<button class="am-select-none" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">' + t("appmgr.select_none") + '</button>' +
+      '<button class="am-check-updates" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">🔄 ' + t("appmgr.check_updates") + '</button>' +
+      '<button class="am-update-btn" style="padding:5px 12px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,var(--accent-blue,#1f6feb),var(--accent-green,#3fb950));color:#fff;cursor:pointer;font-weight:600;">⬆ ' + t("appmgr.update_all") + '</button>' +
+      '<span class="am-sort" style="display:flex;align-items:center;gap:4px;font-size:12px;margin-left:4px;">' +
+      '<span style="color:var(--text-muted);">' + t("appmgr.sort_by") + '</span>' +
+      '<select class="am-sort-key" style="padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">' +
+      '<option value="name">' + t("appmgr.sort_name") + '</option>' +
+      '<option value="size">' + t("appmgr.sort_size") + '</option>' +
+      '<option value="publisher">' + t("appmgr.sort_publisher") + '</option>' +
+      '<option value="version">' + t("appmgr.sort_version") + '</option>' +
+      '<option value="date">' + t("appmgr.sort_date") + '</option>' +
+      '</select>' +
+      '<button class="am-sort-dir" title="' + t("appmgr.sort_direction") + '" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\u2191</button>' +
+      '</span>' +
+      '<span class="am-status" style="flex:1;font-size:12px;color:var(--text-muted);text-align:right;"></span>' +
+      "</div>" +
+      '<div class="am-list" style="flex:1;overflow-y:auto;padding:8px;min-height:300px;"></div>' +
+      '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+      '<span class="am-total" style="font-size:12px;color:var(--text-muted);"></span>' +
+      '<button class="am-uninstall-btn" style="padding:7px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;font-weight:600;">🗑️ ' + t("appmgr.uninstall_selected") + '</button>' +
+      "</div>";
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    if (window.app.trapFocus) window.app.trapFocus(overlay);
+
+    const listEl = card.querySelector(".am-list");
+    const statusEl = card.querySelector(".am-status");
+    const totalEl = card.querySelector(".am-total");
+    const uninstallBtn = card.querySelector(".am-uninstall-btn");
+    const updateBtn = card.querySelector(".am-update-btn");
+    let apps = [];
+    let sortKey = "name";
+    let sortDir = 1;
+
+    function applySort() {
+      apps.sort(function (a, b) {
+        let cmp;
+        if (sortKey === "size") {
+          cmp = (a.install_size || 0) - (b.install_size || 0);
+        } else {
+          const av = String(a[sortKey] || "").toLowerCase();
+          const bv = String(b[sortKey] || "").toLowerCase();
+          cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        }
+        if (cmp === 0) {
+          const an = String(a.name || "").toLowerCase();
+          const bn = String(b.name || "").toLowerCase();
+          cmp = an < bn ? -1 : an > bn ? 1 : 0;
+        }
+        return cmp * sortDir;
+      });
+    }
+
+    function close() { overlay.remove(); }
+    card.querySelector(".am-close").onclick = close;
+    overlay.onclick = function (e) { if (e.target === overlay) close(); };
+    document.addEventListener("keydown", function onKey(e) {
+      if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); }
+    });
+
+    function selectedApps() {
+      return apps.filter(function (app, i) {
+        const cb = listEl.querySelector('.am-item[data-idx="' + i + '"] input');
+        return cb && cb.checked;
+      });
+    }
+
+    function fmtSize(bytes) {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB", "TB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    }
+
+    // Loose name normalisation so registry DisplayNames line up with winget's
+    // package names ("(x64)", "(User)", "remove only" suffixes etc.).
+    function normName(s) {
+      return String(s || "")
+        .toLowerCase()
+        .replace(/\((x64|x86|64-bit|32-bit|user|current user|remove only)\)/g, " ")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+    }
+    function findUpdate(updates, name) {
+      const n = normName(name);
+      if (!n) return null;
+      for (let i = 0; i < updates.length; i++) {
+        const un = normName(updates[i].name);
+        if (!un) continue;
+        if (un === n) return updates[i];
+        if (un.length > 3 && (un.indexOf(n) >= 0 || n.indexOf(un) >= 0)) return updates[i];
+      }
+      return null;
+    }
+
+    function render() {
+      if (apps.length === 0) {
+        listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">' + t("appmgr.no_apps") + "</div>";
+        totalEl.textContent = "";
+        uninstallBtn.disabled = true;
+        return;
+      }
+      applySort();
+      let html = "";
+      let totalSize = 0;
+      for (let i = 0; i < apps.length; i++) {
+        const app = apps[i];
+        totalSize += app.install_size || 0;
+        const iconHtml = app.icon_path
+          ? '<img class="am-icon" data-icon="' + esc(app.icon_path) + '" alt="" style="width:20px;height:20px;border-radius:4px;object-fit:contain;flex-shrink:0;display:none;" />' +
+            '<span class="am-icon-fallback" style="font-size:18px;flex-shrink:0;">\uD83D\uDCE6</span>'
+          : '<span class="am-icon-fallback" style="font-size:18px;flex-shrink:0;">\uD83D\uDCE6</span>';
+        html +=
+          '<div class="am-item" data-idx="' + i + '" title="' + esc(app.install_location || "") + '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;">' +
+          '<input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" />' +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;">' + iconHtml + " " + esc(app.name || "") + "</span>" +
+          '<span style="color:var(--text-muted);white-space:nowrap;">' + esc(app.publisher || "") + "</span>" +
+          '<span style="color:var(--text-muted);white-space:nowrap;">' + esc(app.version || "") + "</span>" +
+          (app.update_available
+            ? '<span title="' + esc(t("appmgr.update_available")) + '" style="font-size:11px;color:var(--accent-green,#3fb950);white-space:nowrap;">\u2B06 ' + esc(app.update_available) + "</span>"
+            : "") +
+          '<span style="font-family:monospace;font-size:11px;color:var(--text-primary);white-space:nowrap;">' + fmtSize(app.install_size || 0) + "</span>" +
+          '<span style="color:var(--text-muted);font-size:11px;white-space:nowrap;">' + (app.install_date || "") + "</span>" +
+          "</div>";
+      }
+      listEl.innerHTML = html;
+      listEl.querySelectorAll(".am-item").forEach(function (row) {
+        row.onclick = function (e) {
+          if (e.target.tagName === "INPUT") return;
+          const cb = this.querySelector('input');
+          if (cb) { cb.checked = !cb.checked; }
+        };
+        row.onmouseenter = function () { this.style.background = "var(--bg-hover)"; };
+        row.onmouseleave = function () { this.style.background = "transparent"; };
+      });
+      loadIcons();
+      totalEl.textContent = t("appmgr.total").replace("{n}", apps.length).replace("{size}", fmtSize(totalSize));
+      uninstallBtn.disabled = false;
+    }
+
+    // Real shell icons are extracted lazily (one IPC call per app) and cached
+    // by executable path, so re-opening the overlay stays instant.
+    const iconCache = new Map();
+    function loadIcons() {
+      if (!window.__TAURI__ || !window.__TAURI__.invoke) return;
+      listEl.querySelectorAll("img.am-icon").forEach(function (img) {
+        const path = img.getAttribute("data-icon");
+        if (!path) return;
+        const fallback = img.nextElementSibling;
+        function showFallback() {
+          img.style.display = "none";
+          if (fallback) fallback.style.display = "inline";
+        }
+        function showIcon(url) {
+          img.src = url;
+          img.style.display = "inline";
+          if (fallback) fallback.style.display = "none";
+        }
+        if (iconCache.has(path)) {
+          const cached = iconCache.get(path);
+          if (cached) showIcon(cached); else showFallback();
+          return;
+        }
+        window.__TAURI__.invoke("get_app_icon", { path: path })
+          .then(function (url) {
+            url = typeof url === "string" ? url : "";
+            iconCache.set(path, url);
+            if (url) showIcon(url); else showFallback();
+          })
+          .catch(function () { iconCache.set(path, ""); showFallback(); });
+      });
+    }
+
+    function load() {
+      statusEl.className = "am-status";
+      statusEl.innerHTML = '<span class="smart-spinner"></span>' + t("appmgr.loading");
+      uninstallBtn.disabled = true;
+      updateBtn.textContent = "⬆ " + t("appmgr.update_all");
+      window.__TAURI__
+        .invoke("list_installed_apps")
+        .then(function (res) {
+          const appsArr = Array.isArray(res) ? res : (res && res.data ? res.data : []);
+          apps = appsArr;
+          render();
+          statusEl.className = "am-status";
+          statusEl.textContent = t("appmgr.found").replace("{n}", apps.length);
+          // Fill update badges right away instead of waiting for the button.
+          checkForUpdates(true);
+        })
+        .catch(function (e) {
+          apps = [];
+          listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">' + esc((window.__ || window.t || function (s) { return s; })("status.error_prefix") + (e && e.message ? e.message : e)) + "</div>";
+          statusEl.className = "am-status err";
+          statusEl.textContent = (window.__ || function (s) { return s; })("status.error");
+        });
+    }
+
+    card.querySelector(".am-refresh").onclick = load;
+    card.querySelector(".am-select-all").onclick = function () {
+      listEl.querySelectorAll(".am-item input").forEach(function (c) { c.checked = true; });
+    };
+    card.querySelector(".am-select-none").onclick = function () {
+      listEl.querySelectorAll(".am-item input").forEach(function (c) { c.checked = false; });
+    };
+    const sortKeyEl = card.querySelector(".am-sort-key");
+    const sortDirEl = card.querySelector(".am-sort-dir");
+    sortKeyEl.onchange = function () {
+      sortKey = this.value;
+      sortDir = sortKey === "size" ? -1 : 1;
+      sortDirEl.textContent = sortDir === 1 ? "\u2191" : "\u2193";
+      render();
+    };
+    sortDirEl.onclick = function () {
+      sortDir = -sortDir;
+      this.textContent = sortDir === 1 ? "\u2191" : "\u2193";
+      render();
+    };
+
+    async function runUpdateCheck(silent) {
+      const selected = selectedApps();
+      statusEl.className = "am-status";
+      statusEl.textContent = selected.length
+        ? t("appmgr.checking_selected").replace("{n}", selected.length)
+        : t("appmgr.checking_all");
+      try {
+        const res = await window.__TAURI__.invoke("check_app_updates");
+        if (!res || !res.supported) {
+          const err = (res && res.error) || "";
+          const msg = t("appmgr.update_unsupported").replace("{error}", err);
+          statusEl.textContent = msg;
+          window.showToast && window.showToast(msg, "warning");
+          return 0;
+        }
+        const updates = Array.isArray(res.updates) ? res.updates : [];
+        const target = selected.length ? selected : apps;
+        for (let i = 0; i < apps.length; i++) {
+          apps[i].update_available = "";
+          apps[i].update_id = "";
+          apps[i].update_source = "";
+        }
+        let matched = 0;
+        for (let i = 0; i < target.length; i++) {
+          const u = findUpdate(updates, target[i].name);
+          if (u) {
+            target[i].update_available = u.available || "";
+            target[i].update_id = u.id || "";
+            target[i].update_source = u.source || "";
+            matched++;
+          }
+        }
+        render();
+        updateBtn.textContent = "⬆ " + t("appmgr.update_all") + (matched ? " (" + matched + ")" : "");
+        const msg = matched
+          ? t("appmgr.updates_found").replace("{n}", matched)
+          : t("appmgr.up_to_date");
+        statusEl.textContent = msg;
+        if (!silent) window.showToast && window.showToast(msg, matched ? "success" : "info");
+        return matched;
+      } catch (e) {
+        const msg = t("appmgr.update_unsupported").replace(
+          "{error}",
+          e && e.message ? e.message : String(e),
+        );
+        statusEl.textContent = msg;
+        if (!silent) window.showToast && window.showToast(msg, "warning");
+        return 0;
+      }
+    }
+
+    // Opening the manager starts the update check automatically; a second
+    // click while it runs joins the same request instead of starting another.
+    let checkPromise = null;
+    function checkForUpdates(silent) {
+      if (!checkPromise) {
+        checkPromise = runUpdateCheck(silent === true).finally(function () {
+          checkPromise = null;
+        });
+      }
+      return checkPromise;
+    }
+
+    card.querySelector(".am-check-updates").onclick = async function () {
+      const btn = this;
+      btn.disabled = true;
+      btn.textContent = "🔄 " + t("appmgr.checking_updates");
+      await checkForUpdates();
+      btn.disabled = false;
+      btn.textContent = "🔄 " + t("appmgr.check_updates");
+    };
+
+    updateBtn.onclick = async function () {
+      updateBtn.disabled = true;
+      try {
+        // First click without a prior check: discover updates automatically,
+        // so "Update All" also works straight from opening the manager.
+        if (!apps.some(function (a) { return a.update_id; })) {
+          const checkBtn = card.querySelector(".am-check-updates");
+          checkBtn.disabled = true;
+          checkBtn.textContent = "🔄 " + t("appmgr.checking_updates");
+          try {
+            await checkForUpdates();
+          } finally {
+            checkBtn.disabled = false;
+            checkBtn.textContent = "🔄 " + t("appmgr.check_updates");
+          }
+        }
+
+        const selected = selectedApps().filter(function (a) { return a.update_id; });
+        const targets = selected.length
+          ? selected
+          : apps.filter(function (a) { return a.update_id; });
+        if (targets.length === 0) {
+          window.showToast && window.showToast(t("appmgr.no_updates_selected"), "info");
+          return;
+        }
+        const ok = await window.confirmDialog(
+          t("appmgr.update_confirm").replace("{n}", targets.length),
+        );
+        if (!ok) return;
+
+        uninstallBtn.disabled = true;
+        let done = 0;
+        let failed = 0;
+        let lastError = "";
+        for (let i = 0; i < targets.length; i++) {
+          const app = targets[i];
+          statusEl.className = "am-status";
+          statusEl.textContent = t("appmgr.updating")
+            .replace("{n}", i + 1)
+            .replace("{total}", targets.length)
+            .replace("{name}", app.name || "");
+          updateBtn.textContent = "⬆ " + (i + 1) + "/" + targets.length;
+          try {
+            const res = await window.__TAURI__.invoke("run_app_update", {
+              id: app.update_id,
+              source: app.update_source || "",
+            });
+            if (res && res.success) {
+              done++;
+              app.update_available = "";
+              app.update_id = "";
+              app.update_source = "";
+            } else {
+              failed++;
+              lastError = (res && (res.error || res.output)) || "";
+              console.warn("Update failed:", app.name, res);
+            }
+          } catch (e) {
+            failed++;
+            lastError = e && e.message ? e.message : String(e);
+            console.warn("Update failed:", app.name, e);
+          }
+        }
+        const remaining = apps.filter(function (a) { return a.update_id; }).length;
+        updateBtn.textContent =
+          "⬆ " + t("appmgr.update_all") + (remaining ? " (" + remaining + ")" : "");
+        render();
+        const msg = t("appmgr.update_done").replace("{done}", done).replace("{failed}", failed);
+        statusEl.textContent = msg;
+        statusEl.title = lastError;
+        window.showToast && window.showToast(msg, failed ? "warning" : "success");
+        uninstallBtn.disabled = false;
+      } finally {
+        updateBtn.disabled = false;
+      }
+    };
+
+    uninstallBtn.onclick = async function () {
+      const sel = selectedApps();
+      if (sel.length === 0) {
+        window.showToast && window.showToast(t("toast.nothing_selected"), "warning");
+        return;
+      }
+      const ok = await window.confirmDialog(
+        t("appmgr.uninstall_confirm").replace("{n}", sel.length),
+      );
+      if (!ok) return;
+      uninstallBtn.disabled = true;
+      let done = 0, failed = 0;
+      for (let si = 0; si < sel.length; si++) {
+        const app = sel[si];
+        uninstallBtn.textContent = t("appmgr.uninstalling").replace("{n}", si + 1).replace("{total}", sel.length);
+        try {
+          if (app.uninstall_string) {
+            // Execute uninstall command
+            await window.__TAURI__.invoke("run_uninstall", { command: app.uninstall_string });
+            done++;
+          } else if (app.quiet_uninstall) {
+            await window.__TAURI__.invoke("run_uninstall", { command: app.quiet_uninstall });
+            done++;
+          } else {
+            // No uninstall command available
+            failed++;
+          }
+        } catch (e) {
+          failed++;
+          console.warn("Uninstall failed:", app.name, e);
+        }
+      }
+      window.showToast(
+        t("appmgr.uninstall_done")
+          .replace("{done}", done)
+          .replace("{failed}", failed),
+        failed ? "warning" : "success",
+      );
+      uninstallBtn.textContent = "🗑️ " + t("appmgr.uninstall_selected");
+      uninstallBtn.disabled = false;
+      load();
+    };
 
     load();
   }

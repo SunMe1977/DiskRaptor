@@ -749,6 +749,35 @@ pub(crate) fn native_browser_icon(exe_path: &str) -> Option<String> {
     Some(format!("data:image/png;base64,{}", base64_encode(&png)))
 }
 
+/// Extract the icon embedded in an application executable and return it as a
+/// PNG data URL. `DisplayIcon` registry values often carry a trailing icon
+/// index (`"C:\App\app.exe",0`), which is stripped here. Returns an empty
+/// string when no icon can be extracted so the UI can fall back to its generic
+/// placeholder.
+#[tauri::command]
+pub(crate) fn get_app_icon(path: String) -> JsonResult {
+    #[cfg(target_os = "windows")]
+    {
+        let mut probe = path.trim();
+        if let Some((head, tail)) = probe.rsplit_once(',') {
+            if tail.trim().parse::<i32>().is_ok() {
+                probe = head;
+            }
+        }
+        let probe = probe.trim().trim_matches('"').trim();
+        if !probe.is_empty() {
+            if let Some(data_url) = native_browser_icon(probe) {
+                return JsonResult::ok(serde_json::Value::String(data_url));
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+    }
+    JsonResult::ok(serde_json::Value::String(String::new()))
+}
+
 #[tauri::command]
 pub(crate) fn open_url(url: String) -> JsonResult {
     // Restrict to safe schemes so a compromised frontend can't use this to

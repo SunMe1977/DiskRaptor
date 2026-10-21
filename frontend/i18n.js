@@ -186,7 +186,7 @@
     "menu.view", "menu.tools", "menu.window", "menu.help",
     "tools.scan_downloads", "tools.scan_trash", "trash.title", "menu.find_files",
     "menu.empty_folders", "menu.cleanup_downloads", "smart.title", "menu.browser_tools",
-    "menu.apfs_snapshots", "tools.find_duplicates", "menu.export_html",
+    "menu.apfs_snapshots", "tools.find_duplicates", "tools.app_manager", "menu.export_html",
     "menu.preferences", "menu.clear_scan", "tools.empty_trash", "menu.check_updates",
   ];
 
