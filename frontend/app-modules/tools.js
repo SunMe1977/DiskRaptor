@@ -1607,6 +1607,8 @@ cleanBtn.addEventListener("click", async function () {
     overlay.className = "dr-overlay dr-overlay-dim";
     const card = document.createElement("div");
     card.className = "dr-card dr-card-xl";
+    // The app table needs more room than the default dialog width.
+    card.style.maxWidth = "920px";
     card.innerHTML =
       '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
       '<span style="font-size:14px;font-weight:600;">📦 ' + t("tools.app_manager") + '</span>' +
@@ -1618,20 +1620,10 @@ cleanBtn.addEventListener("click", async function () {
       '<button class="am-select-none" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">' + t("appmgr.select_none") + '</button>' +
       '<button class="am-check-updates" style="padding:5px 12px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">🔄 ' + t("appmgr.check_updates") + '</button>' +
       '<button class="am-update-btn" style="padding:5px 12px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,var(--accent-blue,#1f6feb),var(--accent-green,#3fb950));color:#fff;cursor:pointer;font-weight:600;">⬆ ' + t("appmgr.update_all") + '</button>' +
-      '<span class="am-sort" style="display:flex;align-items:center;gap:4px;font-size:12px;margin-left:4px;">' +
-      '<span style="color:var(--text-muted);">' + t("appmgr.sort_by") + '</span>' +
-      '<select class="am-sort-key" style="padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">' +
-      '<option value="name">' + t("appmgr.sort_name") + '</option>' +
-      '<option value="size">' + t("appmgr.sort_size") + '</option>' +
-      '<option value="publisher">' + t("appmgr.sort_publisher") + '</option>' +
-      '<option value="version">' + t("appmgr.sort_version") + '</option>' +
-      '<option value="date">' + t("appmgr.sort_date") + '</option>' +
-      '</select>' +
-      '<button class="am-sort-dir" title="' + t("appmgr.sort_direction") + '" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">\u2191</button>' +
-      '</span>' +
+      '<input class="am-filter" type="search" placeholder="' + t("appmgr.filter_placeholder") + '" aria-label="' + t("appmgr.filter_placeholder") + '" style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);width:200px;margin-left:4px;" />' +
       '<span class="am-status" style="flex:1;font-size:12px;color:var(--text-muted);text-align:right;"></span>' +
       "</div>" +
-      '<div class="am-list" style="flex:1;overflow-y:auto;padding:8px;min-height:300px;"></div>' +
+      '<div class="am-list" style="flex:1;overflow-y:auto;padding:0;min-height:300px;"></div>' +
       '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
       '<span class="am-total" style="font-size:12px;color:var(--text-muted);"></span>' +
       '<button class="am-uninstall-btn" style="padding:7px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;font-weight:600;">🗑️ ' + t("appmgr.uninstall_selected") + '</button>' +
@@ -1648,24 +1640,45 @@ cleanBtn.addEventListener("click", async function () {
     let apps = [];
     let sortKey = "name";
     let sortDir = 1;
+    let filterText = "";
 
-    function applySort() {
-      apps.sort(function (a, b) {
-        let cmp;
-        if (sortKey === "size") {
-          cmp = (a.install_size || 0) - (b.install_size || 0);
-        } else {
-          const av = String(a[sortKey] || "").toLowerCase();
-          const bv = String(b[sortKey] || "").toLowerCase();
-          cmp = av < bv ? -1 : av > bv ? 1 : 0;
-        }
-        if (cmp === 0) {
-          const an = String(a.name || "").toLowerCase();
-          const bn = String(b.name || "").toLowerCase();
-          cmp = an < bn ? -1 : an > bn ? 1 : 0;
-        }
-        return cmp * sortDir;
+    const AM_GRID =
+      "26px minmax(0,1.7fr) minmax(0,1.1fr) 82px 78px 88px 94px";
+
+    // Clicking a new column starts with its natural direction; the active
+    // column toggles. Size and date are most useful largest/newest first.
+    function defaultSortDir(key) {
+      return key === "size" || key === "date" ? -1 : 1;
+    }
+
+    function compareApps(a, b, key) {
+      let cmp;
+      if (key === "size") {
+        cmp = (a.install_size || 0) - (b.install_size || 0);
+      } else {
+        const av = String(a[key] || "").toLowerCase();
+        const bv = String(b[key] || "").toLowerCase();
+        cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      }
+      if (cmp === 0) {
+        const an = String(a.name || "").toLowerCase();
+        const bn = String(b.name || "").toLowerCase();
+        cmp = an < bn ? -1 : an > bn ? 1 : 0;
+      }
+      return cmp;
+    }
+
+    function visibleApps() {
+      const needle = filterText.trim().toLowerCase();
+      const list = needle
+        ? apps.filter(function (app) {
+            return String(app.name || "").toLowerCase().indexOf(needle) >= 0;
+          })
+        : apps.slice();
+      list.sort(function (a, b) {
+        return compareApps(a, b, sortKey) * sortDir;
       });
+      return list;
     }
 
     function close() { overlay.remove(); }
@@ -1676,10 +1689,7 @@ cleanBtn.addEventListener("click", async function () {
     });
 
     function selectedApps() {
-      return apps.filter(function (app, i) {
-        const cb = listEl.querySelector('.am-item[data-idx="' + i + '"] input');
-        return cb && cb.checked;
-      });
+      return apps.filter(function (app) { return app.checked; });
     }
 
     function fmtSize(bytes) {
@@ -1711,6 +1721,38 @@ cleanBtn.addEventListener("click", async function () {
       return null;
     }
 
+    function sortHeader(key, label, alignRight) {
+      const active = key === sortKey;
+      const arrow = active ? (sortDir === 1 ? "\u25B2" : "\u25BC") : "\u2195";
+      const hint = active
+        ? (sortDir === 1 ? t("appmgr.sort_ascending") : t("appmgr.sort_descending"))
+        : t("appmgr.sort_direction");
+      return (
+        '<button type="button" class="am-sort-col" data-key="' + key + '"' +
+        ' aria-label="' + esc(label + " - " + hint) + '"' +
+        ' title="' + esc(hint) + '"' +
+        ' style="display:flex;align-items:center;justify-content:' + (alignRight ? "flex-end" : "flex-start") + ';gap:3px;background:none;border:none;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left;overflow:hidden;white-space:nowrap;">' +
+        esc(label) +
+        ' <span style="font-size:9px;opacity:' + (active ? "1" : "0.4") + ';">' + arrow + "</span>" +
+        "</button>"
+      );
+    }
+
+    function headerHtml() {
+      return (
+        '<div class="am-head" style="display:grid;grid-template-columns:' + AM_GRID +
+        ';gap:8px;align-items:center;padding:6px 8px;position:sticky;top:0;z-index:2;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);">' +
+        "<span></span>" +
+        sortHeader("name", t("appmgr.sort_name")) +
+        sortHeader("publisher", t("appmgr.sort_publisher")) +
+        sortHeader("version", t("appmgr.sort_version")) +
+        '<span style="white-space:nowrap;">' + t("appmgr.column_update") + "</span>" +
+        sortHeader("size", t("appmgr.sort_size"), true) +
+        sortHeader("date", t("appmgr.sort_date")) +
+        "</div>"
+      );
+    }
+
     function render() {
       if (apps.length === 0) {
         listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">' + t("appmgr.no_apps") + "</div>";
@@ -1718,41 +1760,65 @@ cleanBtn.addEventListener("click", async function () {
         uninstallBtn.disabled = true;
         return;
       }
-      applySort();
-      let html = "";
+      const list = visibleApps();
+      let html = headerHtml();
       let totalSize = 0;
-      for (let i = 0; i < apps.length; i++) {
-        const app = apps[i];
+      if (list.length === 0) {
+        html +=
+          '<div style="grid-column:1/-1;padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">' +
+          t("appmgr.no_matches") +
+          "</div>";
+      }
+      for (let i = 0; i < list.length; i++) {
+        const app = list[i];
+        const idx = apps.indexOf(app);
         totalSize += app.install_size || 0;
         const iconHtml = app.icon_path
           ? '<img class="am-icon" data-icon="' + esc(app.icon_path) + '" alt="" style="width:20px;height:20px;border-radius:4px;object-fit:contain;flex-shrink:0;display:none;" />' +
             '<span class="am-icon-fallback" style="font-size:18px;flex-shrink:0;">\uD83D\uDCE6</span>'
           : '<span class="am-icon-fallback" style="font-size:18px;flex-shrink:0;">\uD83D\uDCE6</span>';
+        const updateHtml = app.update_available
+          ? '<span title="' + esc(t("appmgr.update_available")) + '" style="font-size:11px;color:var(--accent-green,#3fb950);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\u2B06 ' + esc(app.update_available) + "</span>"
+          : "<span></span>";
         html +=
-          '<div class="am-item" data-idx="' + i + '" title="' + esc(app.install_location || "") + '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;">' +
-          '<input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" />' +
-          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;">' + iconHtml + " " + esc(app.name || "") + "</span>" +
-          '<span style="color:var(--text-muted);white-space:nowrap;">' + esc(app.publisher || "") + "</span>" +
-          '<span style="color:var(--text-muted);white-space:nowrap;">' + esc(app.version || "") + "</span>" +
-          (app.update_available
-            ? '<span title="' + esc(t("appmgr.update_available")) + '" style="font-size:11px;color:var(--accent-green,#3fb950);white-space:nowrap;">\u2B06 ' + esc(app.update_available) + "</span>"
-            : "") +
-          '<span style="font-family:monospace;font-size:11px;color:var(--text-primary);white-space:nowrap;">' + fmtSize(app.install_size || 0) + "</span>" +
-          '<span style="color:var(--text-muted);font-size:11px;white-space:nowrap;">' + (app.install_date || "") + "</span>" +
+          '<div class="am-item" data-idx="' + idx + '" title="' + esc(app.install_location || "") + '" style="display:grid;grid-template-columns:' + AM_GRID + ';gap:8px;align-items:center;padding:4px 8px;cursor:pointer;font-size:12px;">' +
+          '<input type="checkbox"' + (app.checked ? " checked" : "") + ' style="width:14px;height:14px;cursor:pointer;flex-shrink:0;" />' +
+          '<span style="display:flex;align-items:center;gap:6px;overflow:hidden;min-width:0;">' +
+          iconHtml +
+          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(app.name || "") + "</span></span>" +
+          '<span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(app.publisher || "") + "</span>" +
+          '<span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(app.version || "") + "</span>" +
+          updateHtml +
+          '<span style="font-family:monospace;font-size:11px;color:var(--text-primary);white-space:nowrap;text-align:right;">' + fmtSize(app.install_size || 0) + "</span>" +
+          '<span style="color:var(--text-muted);font-size:11px;white-space:nowrap;">' + esc(app.install_date || "") + "</span>" +
           "</div>";
       }
       listEl.innerHTML = html;
       listEl.querySelectorAll(".am-item").forEach(function (row) {
         row.onclick = function (e) {
-          if (e.target.tagName === "INPUT") return;
-          const cb = this.querySelector('input');
-          if (cb) { cb.checked = !cb.checked; }
+          const cb = this.querySelector("input");
+          if (!cb) return;
+          const app = apps[Number(this.getAttribute("data-idx"))];
+          if (!app) return;
+          if (e.target === cb) {
+            app.checked = cb.checked;
+          } else {
+            app.checked = !app.checked;
+            cb.checked = app.checked;
+          }
         };
         row.onmouseenter = function () { this.style.background = "var(--bg-hover)"; };
         row.onmouseleave = function () { this.style.background = "transparent"; };
       });
       loadIcons();
-      totalEl.textContent = t("appmgr.total").replace("{n}", apps.length).replace("{size}", fmtSize(totalSize));
+      if (filterText.trim()) {
+        totalEl.textContent = t("appmgr.total_filtered")
+          .replace("{n}", list.length)
+          .replace("{total}", apps.length)
+          .replace("{size}", fmtSize(totalSize));
+      } else {
+        totalEl.textContent = t("appmgr.total").replace("{n}", apps.length).replace("{size}", fmtSize(totalSize));
+      }
       uninstallBtn.disabled = false;
     }
 
@@ -1814,25 +1880,33 @@ cleanBtn.addEventListener("click", async function () {
     }
 
     card.querySelector(".am-refresh").onclick = load;
-    card.querySelector(".am-select-all").onclick = function () {
-      listEl.querySelectorAll(".am-item input").forEach(function (c) { c.checked = true; });
-    };
-    card.querySelector(".am-select-none").onclick = function () {
-      listEl.querySelectorAll(".am-item input").forEach(function (c) { c.checked = false; });
-    };
-    const sortKeyEl = card.querySelector(".am-sort-key");
-    const sortDirEl = card.querySelector(".am-sort-dir");
-    sortKeyEl.onchange = function () {
-      sortKey = this.value;
-      sortDir = sortKey === "size" ? -1 : 1;
-      sortDirEl.textContent = sortDir === 1 ? "\u2191" : "\u2193";
+    function setVisibleChecked(checked) {
+      visibleApps().forEach(function (app) { app.checked = checked; });
+      listEl.querySelectorAll(".am-item input").forEach(function (c) { c.checked = checked; });
+    }
+    card.querySelector(".am-select-all").onclick = function () { setVisibleChecked(true); };
+    card.querySelector(".am-select-none").onclick = function () { setVisibleChecked(false); };
+
+    const filterEl = card.querySelector(".am-filter");
+    filterEl.oninput = function () {
+      filterText = this.value;
       render();
     };
-    sortDirEl.onclick = function () {
-      sortDir = -sortDir;
-      this.textContent = sortDir === 1 ? "\u2191" : "\u2193";
+
+    // Clicking a column header sorts directly: a new column starts with its
+    // natural direction, clicking the active column toggles ascending/descending.
+    listEl.addEventListener("click", function (e) {
+      const btn = e.target.closest(".am-sort-col");
+      if (!btn) return;
+      const key = btn.getAttribute("data-key");
+      if (key === sortKey) {
+        sortDir = -sortDir;
+      } else {
+        sortKey = key;
+        sortDir = defaultSortDir(key);
+      }
       render();
-    };
+    });
 
     async function runUpdateCheck(silent) {
       const selected = selectedApps();
