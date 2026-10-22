@@ -1364,6 +1364,65 @@ fn contains_utf16(haystack: &[u8], needle: &str) -> bool {
     contains_ascii(haystack, &encoded)
 }
 
+#[cfg(target_os = "windows")]
+fn read_file_prefix(path: &str, limit: u64) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).ok()?;
+    let mut data = Vec::new();
+    file.take(limit).read_to_end(&mut data).ok()?;
+    Some(data)
+}
+
+/// NsisMultiUser keeps the install directory in an unsuffixed key
+/// (`...\Uninstall\App`) while the per-user uninstall entry lives under
+/// `...\Uninstall\App (current user)`. Some installers fail to write the
+/// base key; the uninstaller then reports "no installation" and exits 0
+/// without removing anything. Repair that metadata before launching it.
+#[cfg(target_os = "windows")]
+fn repair_nsis_current_user_install_key(registry_key: &str, command: &str) {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let Some((hive, path)) = registry_key.split_once('\\') else {
+        return;
+    };
+    if !hive.eq_ignore_ascii_case("HKCU") {
+        return;
+    }
+    let Some(base_path) = path.strip_suffix(" (current user)") else {
+        return;
+    };
+    if base_path.is_empty() || !base_path.to_ascii_lowercase().contains("\\uninstall\\") {
+        return;
+    }
+    let Some((exe, _)) = split_uninstall_command(command) else {
+        return;
+    };
+    // The NSIS signature is in the PE manifest near the start. Avoid reading
+    // large installers in full just to identify the framework.
+    let Some(data) = read_file_prefix(&exe, 1024 * 1024) else {
+        return;
+    };
+    if !contains_ascii(&data, b"Nullsoft Install System") && !contains_ascii(&data, b"NSIS") {
+        return;
+    }
+    let Some(dir) = std::path::Path::new(&exe).parent() else {
+        return;
+    };
+    let dir = dir.to_string_lossy().trim_end_matches('\\').to_string();
+    if dir.is_empty() {
+        return;
+    }
+    let root = RegKey::predef(HKEY_CURRENT_USER);
+    let Ok((key, _)) = root.create_subkey(base_path) else {
+        return;
+    };
+    let existing: String = key.get_value("InstallLocation").unwrap_or_default();
+    if existing.trim().is_empty() {
+        let _ = key.set_value("InstallLocation", &dir);
+    }
+}
+
 /// Many uninstallers only remove anything in their quiet mode. The registry
 /// often has no QuietUninstallString (DBeaver is one example), so detect the
 /// common installer frameworks from the uninstaller binary and add the flag.
@@ -1463,6 +1522,9 @@ pub(crate) async fn uninstall_app(
             };
             let command = add_silent_switch(&command);
             let store = is_store_app || (command.is_empty() && store_app_installed(&name));
+            if !store && !command.is_empty() {
+                repair_nsis_current_user_install_key(&registry_key, &command);
+            }
 
             // Do not fail on a non-zero exit code up front: MSI and several
             // EXE uninstallers return non-zero (or 3010) after a successful
@@ -1783,5 +1845,51 @@ pub(crate) async fn check_for_updates() -> JsonResult {
             "latest": null,
             "update_available": false,
         })),
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    #[test]
+    fn repairs_missing_nsis_current_user_install_key() {
+        // Any NSIS binary works for the framework check.
+        let nsis = r"C:\Program Files (x86)\NSIS\Bin\makensis.exe";
+        if !std::path::Path::new(nsis).is_file() {
+            return;
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_millis();
+        let suffix = format!("DiskRaptorTest-{}-{stamp}", std::process::id());
+        let base_rel =
+            format!(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{suffix}");
+        let user_rel = format!("{base_rel} (current user)");
+
+        let root = RegKey::predef(HKEY_CURRENT_USER);
+        let _ = root.delete_subkey_all(&base_rel);
+        let _ = root.delete_subkey_all(&user_rel);
+        let (user_key, _) = root.create_subkey(&user_rel).expect("create test key");
+        user_key
+            .set_value("DisplayName", &suffix)
+            .expect("display name");
+        user_key
+            .set_value("UninstallString", &format!("\"{nsis}\" /currentuser"))
+            .expect("uninstall string");
+
+        let registry_key = format!("HKCU\\{user_rel}");
+        let command = format!("\"{nsis}\" /currentuser");
+        repair_nsis_current_user_install_key(&registry_key, &command);
+
+        let base_key = root.open_subkey(&base_rel).expect("repaired base key");
+        let location: String = base_key.get_value("InstallLocation").expect("location");
+        assert_eq!(location, r"C:\Program Files (x86)\NSIS\Bin");
+
+        let _ = root.delete_subkey_all(&base_rel);
+        let _ = root.delete_subkey_all(&user_rel);
     }
 }
