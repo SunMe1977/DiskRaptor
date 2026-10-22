@@ -179,7 +179,7 @@ if (action === "open-current") {
 resetAllState(
            action === "clear-scan"
              ? (window.__ || function (s) { return s; })("status.clear_scan")
-             : window.t("status.reset_view"),
+             : window.t("tools.reset_view"),
          );
       } else if (action === "settings") {
         const so = document.getElementById("settings-overlay");
