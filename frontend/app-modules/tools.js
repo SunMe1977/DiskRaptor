@@ -1626,7 +1626,10 @@ cleanBtn.addEventListener("click", async function () {
       '<div class="am-list" style="flex:1;overflow-y:auto;padding:0;min-height:300px;"></div>' +
       '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
       '<span class="am-total" style="font-size:12px;color:var(--text-muted);"></span>' +
+      '<div style="display:flex;gap:8px;align-items:center;">' +
+      '<button class="am-admin-btn" title="' + t("appmgr.admin_hint") + '" style="padding:7px 14px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;font-weight:600;">🛡️ ' + t("appmgr.uninstall_admin") + '</button>' +
       '<button class="am-uninstall-btn" style="padding:7px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,#da3633,var(--accent-red));color:#fff;cursor:pointer;font-weight:600;">🗑️ ' + t("appmgr.uninstall_selected") + '</button>' +
+      "</div>" +
       "</div>";
     overlay.appendChild(card);
     document.body.appendChild(overlay);
@@ -1636,6 +1639,7 @@ cleanBtn.addEventListener("click", async function () {
     const statusEl = card.querySelector(".am-status");
     const totalEl = card.querySelector(".am-total");
     const uninstallBtn = card.querySelector(".am-uninstall-btn");
+    const adminBtn = card.querySelector(".am-admin-btn");
     const updateBtn = card.querySelector(".am-update-btn");
     let apps = [];
     let sortKey = "name";
@@ -1758,6 +1762,7 @@ cleanBtn.addEventListener("click", async function () {
         listEl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">' + t("appmgr.no_apps") + "</div>";
         totalEl.textContent = "";
         uninstallBtn.disabled = true;
+        adminBtn.disabled = true;
         return;
       }
       const list = visibleApps();
@@ -1820,6 +1825,7 @@ cleanBtn.addEventListener("click", async function () {
         totalEl.textContent = t("appmgr.total").replace("{n}", apps.length).replace("{size}", fmtSize(totalSize));
       }
       uninstallBtn.disabled = false;
+      adminBtn.disabled = false;
     }
 
     // Real shell icons are extracted lazily (one IPC call per app) and cached
@@ -1859,6 +1865,7 @@ cleanBtn.addEventListener("click", async function () {
       statusEl.className = "am-status";
       statusEl.innerHTML = '<span class="smart-spinner"></span>' + t("appmgr.loading");
       uninstallBtn.disabled = true;
+      adminBtn.disabled = true;
       updateBtn.textContent = "⬆ " + t("appmgr.update_all");
       window.__TAURI__
         .invoke("list_installed_apps")
@@ -2027,6 +2034,7 @@ cleanBtn.addEventListener("click", async function () {
         if (!ok) return;
 
         uninstallBtn.disabled = true;
+        adminBtn.disabled = true;
         let done = 0;
         let failed = 0;
         const failures = [];
@@ -2083,27 +2091,35 @@ cleanBtn.addEventListener("click", async function () {
           await window.alertDialog(t("appmgr.failures_title") + "\n\n" + failureText);
         }
         uninstallBtn.disabled = false;
+        adminBtn.disabled = false;
       } finally {
         updateBtn.disabled = false;
       }
     };
 
-    uninstallBtn.onclick = async function () {
-      const sel = selectedApps();
-      if (sel.length === 0) {
-        window.showToast && window.showToast(t("toast.nothing_selected"), "warning");
-        return;
-      }
-      const ok = await window.confirmDialog(
-        t("appmgr.uninstall_confirm").replace("{n}", sel.length),
+    function uninstallLabel(asAdmin) {
+      return (
+        (asAdmin ? "🛡️ " : "🗑️ ") +
+        t(asAdmin ? "appmgr.uninstall_admin" : "appmgr.uninstall_selected")
       );
+    }
+
+    async function runUninstall(sel, asAdmin) {
+      const btn = asAdmin ? adminBtn : uninstallBtn;
+      const confirmText = (
+        asAdmin
+          ? t("appmgr.uninstall_admin_confirm")
+          : t("appmgr.uninstall_confirm")
+      ).replace("{n}", sel.length);
+      const ok = await window.confirmDialog(confirmText);
       if (!ok) return;
       uninstallBtn.disabled = true;
+      adminBtn.disabled = true;
       let done = 0, failed = 0;
       const failures = [];
       for (let si = 0; si < sel.length; si++) {
         const app = sel[si];
-        uninstallBtn.textContent = t("appmgr.uninstalling").replace("{n}", si + 1).replace("{total}", sel.length);
+        btn.textContent = t("appmgr.uninstalling").replace("{n}", si + 1).replace("{total}", sel.length);
         try {
           const res = await window.__TAURI__.invoke("uninstall_app", {
             name: app.name || "",
@@ -2111,6 +2127,7 @@ cleanBtn.addEventListener("click", async function () {
             quietUninstall: app.quiet_uninstall || "",
             isStoreApp: !!app.is_store_app,
             registryKey: app.registry_key || "",
+            runAsAdmin: !!asAdmin,
           });
           if (res && res.success) {
             done++;
@@ -2150,13 +2167,35 @@ cleanBtn.addEventListener("click", async function () {
         failed ? "warning" : "success",
       );
       if (failureText && window.alertDialog) {
-        await window.alertDialog(t("appmgr.failures_title") + "\n\n" + failureText);
+        const adminHint = asAdmin ? "" : "\n\n" + t("appmgr.admin_hint");
+        await window.alertDialog(
+          t("appmgr.failures_title") + "\n\n" + failureText + adminHint,
+        );
       }
-      uninstallBtn.textContent = "🗑️ " + t("appmgr.uninstall_selected");
+      btn.textContent = uninstallLabel(asAdmin);
       uninstallBtn.disabled = false;
+      adminBtn.disabled = false;
       // Only reload when something was actually removed; otherwise keep the
       // error summary visible instead of replacing it with "N apps found".
       if (done > 0) load();
+    }
+
+    uninstallBtn.onclick = function () {
+      const sel = selectedApps();
+      if (sel.length === 0) {
+        window.showToast && window.showToast(t("toast.nothing_selected"), "warning");
+        return;
+      }
+      runUninstall(sel, false);
+    };
+
+    adminBtn.onclick = function () {
+      const sel = selectedApps();
+      if (sel.length === 0) {
+        window.showToast && window.showToast(t("toast.nothing_selected"), "warning");
+        return;
+      }
+      runUninstall(sel, true);
     };
 
     load();

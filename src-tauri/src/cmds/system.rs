@@ -1329,10 +1329,79 @@ fn uninstall_msi(guid: &str) -> Result<(), String> {
     run_powershell(&script).map(|_| ())
 }
 
+/// Split `"C:\path\app.exe" /arg` into the executable and its arguments.
+#[cfg(target_os = "windows")]
+fn split_uninstall_command(command: &str) -> Option<(String, String)> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = trimmed.strip_prefix('"') {
+        let end = stripped.find('"')?;
+        Some((
+            stripped[..end].to_string(),
+            stripped[end + 1..].trim().to_string(),
+        ))
+    } else {
+        let end = trimmed
+            .find(char::is_whitespace)
+            .unwrap_or(trimmed.len());
+        Some((trimmed[..end].to_string(), trimmed[end..].trim().to_string()))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn contains_ascii(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && haystack.windows(needle.len()).any(|part| part == needle)
+}
+
+#[cfg(target_os = "windows")]
+fn contains_utf16(haystack: &[u8], needle: &str) -> bool {
+    let encoded: Vec<u8> = needle
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    contains_ascii(haystack, &encoded)
+}
+
+/// Many uninstallers only remove anything in their quiet mode. The registry
+/// often has no QuietUninstallString (DBeaver is one example), so detect the
+/// common installer frameworks from the uninstaller binary and add the flag.
+#[cfg(target_os = "windows")]
+fn add_silent_switch(command: &str) -> String {
+    let lower = command.to_ascii_lowercase();
+    let already_quiet = lower.split_whitespace().any(|arg| {
+        matches!(
+            arg,
+            "/s" | "/silent" | "/verysilent" | "/quiet" | "-q" | "--silent"
+        )
+    });
+    if already_quiet {
+        return command.to_string();
+    }
+    let Some((exe, _args)) = split_uninstall_command(command) else {
+        return command.to_string();
+    };
+    let Ok(data) = std::fs::read(&exe) else {
+        return command.to_string();
+    };
+    if contains_ascii(&data, b"Nullsoft Install System") || contains_ascii(&data, b"NSIS") {
+        return format!("{command} /S");
+    }
+    if contains_ascii(&data, b"Inno Setup") || contains_utf16(&data, "Inno Setup") {
+        return format!("{command} /VERYSILENT /SUPPRESSMSGBOXES /NORESTART");
+    }
+    if contains_ascii(&data, b"install4j") || contains_utf16(&data, "install4j") {
+        return format!("{command} -q");
+    }
+    command.to_string()
+}
+
 #[cfg(target_os = "windows")]
 fn uninstall_command(command: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let command = add_silent_switch(command);
     // raw_arg is required here: std quoting would turn `"C:\...\app.exe" /S`
     // into a string cmd.exe cannot resolve.
     match std::process::Command::new("cmd.exe")
@@ -1346,6 +1415,32 @@ fn uninstall_command(command: &str) -> Result<(), String> {
     }
 }
 
+/// Run only the uninstaller elevated, so the rest of DiskRaptor keeps its
+/// state. Windows shows the normal UAC prompt.
+#[cfg(target_os = "windows")]
+fn uninstall_command_elevated(command: &str) -> Result<(), String> {
+    let command = add_silent_switch(command);
+    let Some((exe, args)) = split_uninstall_command(&command) else {
+        return Err("Could not parse the uninstall command.".to_string());
+    };
+    if !std::path::Path::new(&exe).is_file() {
+        return Err(format!("Uninstaller not found: {exe}"));
+    }
+    let arguments = if args.is_empty() {
+        String::new()
+    } else {
+        format!(" -ArgumentList '{}'", ps_single_quote(&args))
+    };
+    let script = format!(
+        "$p = Start-Process -FilePath '{}'{} -Verb RunAs -Wait -PassThru; \
+         if ($p.ExitCode -eq 0 -or $p.ExitCode -eq 3010 -or $p.ExitCode -eq 1641) {{ exit 0 }}; \
+         exit $p.ExitCode",
+        ps_single_quote(&exe),
+        arguments
+    );
+    run_powershell(&script).map(|_| ())
+}
+
 /// Uninstall an app and verify that it actually disappeared. Store apps use
 /// Remove-AppxPackage, MSI entries are run silently (elevated when required),
 /// and everything else uses QuietUninstallString/UninstallString.
@@ -1356,6 +1451,7 @@ pub(crate) async fn uninstall_app(
     quiet_uninstall: String,
     is_store_app: bool,
     registry_key: String,
+    run_as_admin: bool,
 ) -> JsonResult {
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
@@ -1365,6 +1461,7 @@ pub(crate) async fn uninstall_app(
             } else {
                 quiet_uninstall.trim().to_string()
             };
+            let command = add_silent_switch(&command);
             let store = is_store_app || (command.is_empty() && store_app_installed(&name));
 
             // Do not fail on a non-zero exit code up front: MSI and several
@@ -1385,13 +1482,25 @@ pub(crate) async fn uninstall_app(
                         }
                     }
                     None => {
-                        if let Err(e) = uninstall_command(&command) {
+                        let result = if run_as_admin {
+                            uninstall_command_elevated(&command)
+                        } else {
+                            uninstall_command(&command)
+                        };
+                        if let Err(e) = result {
                             run_error = Some(e);
                         }
                     }
                 }
-            } else if let Err(e) = uninstall_command(&command) {
-                run_error = Some(e);
+            } else {
+                let result = if run_as_admin {
+                    uninstall_command_elevated(&command)
+                } else {
+                    uninstall_command(&command)
+                };
+                if let Err(e) = result {
+                    run_error = Some(e);
+                }
             }
 
             // Exit code 0 is not proof: some uninstallers spawn a child and
@@ -1423,7 +1532,7 @@ pub(crate) async fn uninstall_app(
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            let _ = (&name, &registry_key, is_store_app);
+            let _ = (&name, &registry_key, is_store_app, run_as_admin);
             let command = if quiet_uninstall.trim().is_empty() {
                 uninstall_string
             } else {
@@ -1451,6 +1560,7 @@ pub(crate) async fn uninstall_app(
                 &quiet_uninstall,
                 is_store_app,
                 &registry_key,
+                run_as_admin,
             );
             JsonResult::err("Unsupported platform")
         }
