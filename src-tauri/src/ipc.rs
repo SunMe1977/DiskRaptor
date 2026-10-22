@@ -60,7 +60,7 @@ pub fn register_commands() -> Box<tauri::ipc::InvokeHandler<tauri::Wry>> {
         cmds::system::list_disks, cmds::path_ops::exit_app,
         smart::get_smart_status,
         browser::list_browser_data, browser::clean_browser, browser::get_browser_icon,
-        cmds::system::list_installed_apps, cmds::system::run_uninstall,
+        cmds::system::list_installed_apps, cmds::system::uninstall_app,
         cmds::system::check_app_updates,
         cmds::system::run_app_update,
         cmds::path_ops::get_app_icon,

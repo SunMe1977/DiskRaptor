@@ -42,7 +42,7 @@ pub(crate) use system::{
     get_trash_path, get_volume_stats, in_mac_sandbox, install_update, is_sandboxed,
     list_downloads_candidates, list_drives, list_installed_apps, list_volumes_via_sysinfo,
     parse_system_profiler_disks, pick_directory, request_permissions, restart_as_admin,
-    run_app_update, run_uninstall,
+    run_app_update, uninstall_app,
 };
 #[cfg(not(target_os = "windows"))]
 #[allow(unused_imports)]

@@ -2069,35 +2069,47 @@ cleanBtn.addEventListener("click", async function () {
       if (!ok) return;
       uninstallBtn.disabled = true;
       let done = 0, failed = 0;
+      let lastError = "";
       for (let si = 0; si < sel.length; si++) {
         const app = sel[si];
         uninstallBtn.textContent = t("appmgr.uninstalling").replace("{n}", si + 1).replace("{total}", sel.length);
         try {
-          if (app.uninstall_string) {
-            // Execute uninstall command
-            await window.__TAURI__.invoke("run_uninstall", { command: app.uninstall_string });
+          const res = await window.__TAURI__.invoke("uninstall_app", {
+            name: app.name || "",
+            uninstallString: app.uninstall_string || "",
+            quietUninstall: app.quiet_uninstall || "",
+            isStoreApp: !!app.is_store_app,
+          });
+          if (res && res.success) {
             done++;
-          } else if (app.quiet_uninstall) {
-            await window.__TAURI__.invoke("run_uninstall", { command: app.quiet_uninstall });
-            done++;
+            // Drop the row immediately; load() below re-reads the real list.
+            apps = apps.filter(function (a) { return a !== app; });
+            render();
           } else {
-            // No uninstall command available
             failed++;
+            lastError = (res && (res.error || res.output)) || "";
+            console.warn("Uninstall failed:", app.name, res);
           }
         } catch (e) {
           failed++;
+          lastError = e && e.message ? e.message : String(e);
           console.warn("Uninstall failed:", app.name, e);
         }
       }
+      const uninstallMsg = t("appmgr.uninstall_done")
+        .replace("{done}", done)
+        .replace("{failed}", failed);
+      statusEl.textContent = uninstallMsg;
+      statusEl.title = lastError;
       window.showToast(
-        t("appmgr.uninstall_done")
-          .replace("{done}", done)
-          .replace("{failed}", failed),
+        uninstallMsg + (lastError ? ": " + lastError : ""),
         failed ? "warning" : "success",
       );
       uninstallBtn.textContent = "🗑️ " + t("appmgr.uninstall_selected");
       uninstallBtn.disabled = false;
-      load();
+      // Only reload when something was actually removed; otherwise keep the
+      // error summary visible instead of replacing it with "N apps found".
+      if (done > 0) load();
     };
 
     load();
