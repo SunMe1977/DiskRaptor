@@ -149,6 +149,64 @@ function checkHardcodedStrings() {
   return issues;
 }
 
+function collectFrontendFiles() {
+  const files = [
+    ...fs.readdirSync(FRONTEND_DIR).filter((f) => f.endsWith(".js")).map((f) => path.join(FRONTEND_DIR, f)),
+    ...fs.readdirSync(APP_MODULES_DIR).filter((f) => f.endsWith(".js")).map((f) => path.join(APP_MODULES_DIR, f)),
+    ...fs.readdirSync(GALAXY_DIR).filter((f) => f.endsWith(".js")).map((f) => path.join(GALAXY_DIR, f)),
+  ];
+  const html = path.join(FRONTEND_DIR, "index.html");
+  if (fs.existsSync(html)) files.push(html);
+  return files;
+}
+
+function loadEnglishKeysWithExtras() {
+  const { keys } = loadKeys(EN_FILE);
+  const extraPath = path.join(I18N_DIR, "ui-extra.js");
+  if (fs.existsSync(extraPath)) {
+    const src = fs.readFileSync(extraPath, "utf8");
+    const m = src.match(/window\.I18N_DATA\.en\s*=\s*Object\.assign\([^,]+,\s*(\{[\s\S]*?\})\);/);
+    if (m) {
+      try {
+        for (const key of Object.keys(JSON.parse(m[1]))) keys.add(key);
+      } catch (e) {
+        console.error(`Parse error ${extraPath}: ${e.message}`);
+      }
+    }
+  }
+  return keys;
+}
+
+/**
+ * Every statically referenced key (t("..."), __("..."), data-i18n="...")
+ * must resolve in the English table or its ui-extra supplement. Dynamic
+ * lookups built by concatenation cannot be checked here.
+ */
+function checkUsedKeys() {
+  const known = loadEnglishKeysWithExtras();
+  const patterns = [
+    /\b(?:t|__|tr|I18N\.t)\s*\(\s*["']([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)["']/g,
+    /data-i18n(?:-[a-z-]+)?\s*=\s*["']([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)["']/g,
+  ];
+  const used = new Map();
+
+  for (const filePath of collectFrontendFiles()) {
+    const content = fs.readFileSync(filePath, "utf8");
+    for (const re of patterns) {
+      re.lastIndex = 0;
+      let match;
+      while ((match = re.exec(content)) !== null) {
+        const key = match[1];
+        if (!used.has(key)) used.set(key, path.relative(process.cwd(), filePath));
+      }
+    }
+  }
+
+  return [...used]
+    .filter(([key]) => !known.has(key) && !SKIP_KEYS.has(key))
+    .map(([key, file]) => ({ key, file }));
+}
+
 function checkTranslationCompleteness() {
   const issues = [];
   const { keys: enKeys, raw: enRaw } = loadKeys(EN_FILE);
@@ -197,6 +255,18 @@ function main() {
     totalIssues += hardcoded.length;
   } else {
     console.log("\x1b[32mNo hardcoded strings found.\x1b[0m");
+  }
+
+  console.log("\n=== Translation Key Usage Audit ===");
+  const unusedKeys = checkUsedKeys();
+  if (unusedKeys.length) {
+    console.log(`\x1b[31mFound ${unusedKeys.length} key(s) used in code but missing from translations:\x1b[0m`);
+    for (const u of unusedKeys) {
+      console.log(`  \x1b[31m${u.key}\x1b[0m — ${u.file}`);
+    }
+    totalIssues += unusedKeys.length;
+  } else {
+    console.log("\x1b[32mAll referenced keys resolve.\x1b[0m");
   }
 
   console.log("\n=== Translation Completeness Audit ===");
