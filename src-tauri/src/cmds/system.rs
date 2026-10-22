@@ -536,7 +536,7 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
             let mut seen = HashMap::new();
 
             // Helper to process a registry key for uninstall entries
-            let process_uninstall_key = |root: RegKey, path: &str, apps: &mut Vec<serde_json::Value>, seen: &mut HashMap<String, serde_json::Value>| {
+            let process_uninstall_key = |root: RegKey, hive: &str, path: &str, apps: &mut Vec<serde_json::Value>, seen: &mut HashMap<String, serde_json::Value>| {
                 if let Ok(key) = root.open_subkey(path) {
                     for subkey_name in key.enum_keys().flatten() {
                         if let Ok(subkey) = key.open_subkey(&subkey_name) {
@@ -602,6 +602,10 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
                                 "install_size": install_size,
                                 "install_date": install_date,
                                 "estimated_size_kb": estimated_size,
+                                // Exact location lets the uninstaller verify that
+                                // *this* entry is gone instead of matching names
+                                // (two products can share a DisplayName).
+                                "registry_key": format!("{hive}\\{path}\\{subkey_name}"),
                             });
                             apps.push(app_json.clone());
                             seen.insert(key_name, app_json);
@@ -612,11 +616,11 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
 
             // 32-bit and 64-bit registry views
             let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-            process_uninstall_key(hklm, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
+            process_uninstall_key(hklm, "HKLM", r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
             let hklm2 = RegKey::predef(HKEY_LOCAL_MACHINE);
-            process_uninstall_key(hklm2, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
+            process_uninstall_key(hklm2, "HKLM", r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
             let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            process_uninstall_key(hkcu, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
+            process_uninstall_key(hkcu, "HKCU", r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", &mut apps, &mut seen);
 
             // Also check Windows Store apps. The protocol registrations are a
             // convenient list, but stale keys survive an uninstall, so only keep
@@ -1211,11 +1215,23 @@ fn msiexec_guid(command: &str) -> Option<String> {
     }
 }
 
-/// True while a display name is still present in the uninstall registry keys.
+/// True while the entry is still present. The exact registry key from the list
+/// is preferred: two products can share a DisplayName, and matching by name
+/// would then report a false failure after a successful uninstall.
 #[cfg(target_os = "windows")]
-fn uninstall_entry_exists(name: &str) -> bool {
+fn uninstall_entry_exists(registry_key: Option<&str>, name: &str) -> bool {
     use winreg::enums::*;
     use winreg::RegKey;
+    if let Some(key_path) = registry_key.filter(|key| !key.is_empty()) {
+        if let Some((hive, path)) = key_path.split_once('\\') {
+            let root = match hive {
+                "HKLM" => RegKey::predef(HKEY_LOCAL_MACHINE),
+                "HKCU" => RegKey::predef(HKEY_CURRENT_USER),
+                _ => return uninstall_entry_exists(None, name),
+            };
+            return root.open_subkey(path).is_ok();
+        }
+    }
     let target = name.to_lowercase();
     let roots = [
         (
@@ -1246,8 +1262,26 @@ fn uninstall_entry_exists(name: &str) -> bool {
     false
 }
 
+/// Fast installed check via the per-user AppModel package repository. Falls
+/// back to PowerShell when the repository key is unavailable.
+#[cfg(target_os = "windows")]
+fn store_package_in_repository(name: &str) -> Option<bool> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    let key = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(
+            r"SOFTWARE\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages",
+        )
+        .ok()?;
+    let prefix = format!("{name}_");
+    Some(key.enum_keys().flatten().any(|pkg| pkg.starts_with(&prefix)))
+}
+
 #[cfg(target_os = "windows")]
 fn store_app_installed(name: &str) -> bool {
+    if let Some(installed) = store_package_in_repository(name) {
+        return installed;
+    }
     let script = format!(
         "if (Get-AppxPackage -Name '{}' -ErrorAction SilentlyContinue) {{ 'yes' }} else {{ 'no' }}",
         ps_single_quote(name)
@@ -1269,19 +1303,27 @@ fn uninstall_store_app(name: &str) -> Result<(), String> {
     run_powershell(&script).map(|_| ())
 }
 
+/// Windows Installer treats 3010/1641 as "removed successfully, reboot
+/// pending". They must not be mistaken for failures.
+#[cfg(target_os = "windows")]
+fn msi_success(code: Option<i32>) -> bool {
+    matches!(code, Some(0) | Some(3010) | Some(1641))
+}
+
 /// MSI: attempt a silent per-user removal first, then retry elevated for
 /// per-machine packages. Without the retry every HKLM app would fail silently.
 #[cfg(target_os = "windows")]
 fn uninstall_msi(guid: &str) -> Result<(), String> {
     if let Ok(status) = win_hidden("msiexec.exe", &["/x", guid, "/qn", "/norestart"]) {
-        if status.success() {
+        if msi_success(status.code()) {
             return Ok(());
         }
     }
     let script = format!(
         "$p = Start-Process -FilePath 'msiexec.exe' \
          -ArgumentList '/x {} /qn /norestart' -Verb RunAs -Wait -PassThru; \
-         if ($p.ExitCode -ne 0) {{ exit $p.ExitCode }}",
+         if ($p.ExitCode -eq 0 -or $p.ExitCode -eq 3010 -or $p.ExitCode -eq 1641) {{ exit 0 }}; \
+         exit $p.ExitCode",
         guid
     );
     run_powershell(&script).map(|_| ())
@@ -1298,7 +1340,7 @@ fn uninstall_command(command: &str) -> Result<(), String> {
         .raw_arg(format!("/C {command}"))
         .status()
     {
-        Ok(status) if status.success() => Ok(()),
+        Ok(status) if status.success() || msi_success(status.code()) => Ok(()),
         Ok(status) => Err(format!("Uninstaller exited with code {:?}", status.code())),
         Err(e) => Err(format!("Failed to execute uninstaller: {e}")),
     }
@@ -1313,6 +1355,7 @@ pub(crate) async fn uninstall_app(
     uninstall_string: String,
     quiet_uninstall: String,
     is_store_app: bool,
+    registry_key: String,
 ) -> JsonResult {
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
@@ -1324,9 +1367,13 @@ pub(crate) async fn uninstall_app(
             };
             let store = is_store_app || (command.is_empty() && store_app_installed(&name));
 
+            // Do not fail on a non-zero exit code up front: MSI and several
+            // EXE uninstallers return non-zero (or 3010) after a successful
+            // removal. The registry/package check below is the source of truth.
+            let mut run_error: Option<String> = None;
             if store {
                 if let Err(e) = uninstall_store_app(&name) {
-                    return JsonResult::err(e);
+                    run_error = Some(e);
                 }
             } else if command.is_empty() {
                 return JsonResult::err("No uninstall command is available for this app.");
@@ -1334,41 +1381,49 @@ pub(crate) async fn uninstall_app(
                 match msiexec_guid(&command) {
                     Some(guid) => {
                         if let Err(e) = uninstall_msi(&guid) {
-                            return JsonResult::err(e);
+                            run_error = Some(e);
                         }
                     }
                     None => {
                         if let Err(e) = uninstall_command(&command) {
-                            return JsonResult::err(e);
+                            run_error = Some(e);
                         }
                     }
                 }
             } else if let Err(e) = uninstall_command(&command) {
-                return JsonResult::err(e);
+                run_error = Some(e);
             }
 
             // Exit code 0 is not proof: some uninstallers spawn a child and
-            // return immediately. Wait until the entry/package really is gone.
-            for attempt in 0..12 {
+            // return immediately. Wait until the exact entry/package is gone.
+            let exact_key = if registry_key.is_empty() {
+                None
+            } else {
+                Some(registry_key.as_str())
+            };
+            for attempt in 0..40 {
                 if attempt > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(500));
                 }
                 let still_there = if store {
                     store_app_installed(&name)
                 } else {
-                    uninstall_entry_exists(&name)
+                    uninstall_entry_exists(exact_key, &name)
                 };
                 if !still_there {
                     return JsonResult::ok(serde_json::json!({ "success": true }));
                 }
             }
-            JsonResult::err(
-                "Uninstaller finished, but the app is still installed. It may require administrator rights or user interaction.",
-            )
+            let detail = run_error
+                .map(|error| format!(" ({error})"))
+                .unwrap_or_default();
+            JsonResult::err(format!(
+                "Uninstaller finished, but the app is still installed{detail}. It may require administrator rights or user interaction."
+            ))
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            let _ = (&name, is_store_app);
+            let _ = (&name, &registry_key, is_store_app);
             let command = if quiet_uninstall.trim().is_empty() {
                 uninstall_string
             } else {
@@ -1390,7 +1445,13 @@ pub(crate) async fn uninstall_app(
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         {
-            let _ = (&name, &uninstall_string, &quiet_uninstall, is_store_app);
+            let _ = (
+                &name,
+                &uninstall_string,
+                &quiet_uninstall,
+                is_store_app,
+                &registry_key,
+            );
             JsonResult::err("Unsupported platform")
         }
     })

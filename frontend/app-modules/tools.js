@@ -1998,22 +1998,38 @@ cleanBtn.addEventListener("click", async function () {
         }
 
         const selected = selectedApps().filter(function (a) { return a.update_id; });
-        const targets = selected.length
+        let targets = selected.length
           ? selected
           : apps.filter(function (a) { return a.update_id; });
+        // Never update ourselves from here: the silent winget installer would
+        // replace the package under the running window and close DiskRaptor.
+        const selfTargets = targets.filter(function (a) {
+          return (a.name || "").toLowerCase().indexOf("diskraptor") === 0;
+        });
+        targets = targets.filter(function (a) {
+          return (a.name || "").toLowerCase().indexOf("diskraptor") !== 0;
+        });
+        if (selfTargets.length) {
+          window.showToast &&
+            window.showToast(t("appmgr.self_update_skipped"), "info");
+        }
         if (targets.length === 0) {
-          window.showToast && window.showToast(t("appmgr.no_updates_selected"), "info");
+          if (!selfTargets.length) {
+            window.showToast && window.showToast(t("appmgr.no_updates_selected"), "info");
+          }
           return;
         }
         const ok = await window.confirmDialog(
-          t("appmgr.update_confirm").replace("{n}", targets.length),
+          t("appmgr.update_confirm").replace("{n}", targets.length) +
+            "\n\n" +
+            t("appmgr.update_running_warning"),
         );
         if (!ok) return;
 
         uninstallBtn.disabled = true;
         let done = 0;
         let failed = 0;
-        let lastError = "";
+        const failures = [];
         for (let i = 0; i < targets.length; i++) {
           const app = targets[i];
           statusEl.className = "am-status";
@@ -2034,12 +2050,14 @@ cleanBtn.addEventListener("click", async function () {
               app.update_source = "";
             } else {
               failed++;
-              lastError = (res && (res.error || res.output)) || "";
+              const reason = (res && (res.error || res.output)) || "";
+              failures.push({ name: app.name || "?", error: reason });
               console.warn("Update failed:", app.name, res);
             }
           } catch (e) {
             failed++;
-            lastError = e && e.message ? e.message : String(e);
+            const reason = e && e.message ? e.message : String(e);
+            failures.push({ name: app.name || "?", error: reason });
             console.warn("Update failed:", app.name, e);
           }
         }
@@ -2049,8 +2067,21 @@ cleanBtn.addEventListener("click", async function () {
         render();
         const msg = t("appmgr.update_done").replace("{done}", done).replace("{failed}", failed);
         statusEl.textContent = msg;
-        statusEl.title = lastError;
-        window.showToast && window.showToast(msg, failed ? "warning" : "success");
+        const failureText = failures
+          .map(function (f) { return "• " + f.name + ": " + f.error; })
+          .join("\n");
+        statusEl.title = failureText;
+        window.showToast &&
+          window.showToast(
+            msg +
+              (failures.length
+                ? " – " + failures.map(function (f) { return f.name; }).join(", ")
+                : ""),
+            failed ? "warning" : "success",
+          );
+        if (failureText && window.alertDialog) {
+          await window.alertDialog(t("appmgr.failures_title") + "\n\n" + failureText);
+        }
         uninstallBtn.disabled = false;
       } finally {
         updateBtn.disabled = false;
@@ -2069,7 +2100,7 @@ cleanBtn.addEventListener("click", async function () {
       if (!ok) return;
       uninstallBtn.disabled = true;
       let done = 0, failed = 0;
-      let lastError = "";
+      const failures = [];
       for (let si = 0; si < sel.length; si++) {
         const app = sel[si];
         uninstallBtn.textContent = t("appmgr.uninstalling").replace("{n}", si + 1).replace("{total}", sel.length);
@@ -2079,6 +2110,7 @@ cleanBtn.addEventListener("click", async function () {
             uninstallString: app.uninstall_string || "",
             quietUninstall: app.quiet_uninstall || "",
             isStoreApp: !!app.is_store_app,
+            registryKey: app.registry_key || "",
           });
           if (res && res.success) {
             done++;
@@ -2087,12 +2119,18 @@ cleanBtn.addEventListener("click", async function () {
             render();
           } else {
             failed++;
-            lastError = (res && (res.error || res.output)) || "";
+            failures.push({
+              name: app.name || "?",
+              error: (res && (res.error || res.output)) || "",
+            });
             console.warn("Uninstall failed:", app.name, res);
           }
         } catch (e) {
           failed++;
-          lastError = e && e.message ? e.message : String(e);
+          failures.push({
+            name: app.name || "?",
+            error: e && e.message ? e.message : String(e),
+          });
           console.warn("Uninstall failed:", app.name, e);
         }
       }
@@ -2100,11 +2138,20 @@ cleanBtn.addEventListener("click", async function () {
         .replace("{done}", done)
         .replace("{failed}", failed);
       statusEl.textContent = uninstallMsg;
-      statusEl.title = lastError;
+      const failureText = failures
+        .map(function (f) { return "• " + f.name + ": " + f.error; })
+        .join("\n");
+      statusEl.title = failureText;
       window.showToast(
-        uninstallMsg + (lastError ? ": " + lastError : ""),
+        uninstallMsg +
+          (failures.length
+            ? " – " + failures.map(function (f) { return f.name; }).join(", ")
+            : ""),
         failed ? "warning" : "success",
       );
+      if (failureText && window.alertDialog) {
+        await window.alertDialog(t("appmgr.failures_title") + "\n\n" + failureText);
+      }
       uninstallBtn.textContent = "🗑️ " + t("appmgr.uninstall_selected");
       uninstallBtn.disabled = false;
       // Only reload when something was actually removed; otherwise keep the
