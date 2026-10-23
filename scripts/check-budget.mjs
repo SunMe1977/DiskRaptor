@@ -23,7 +23,10 @@ const DIST = path.join(ROOT, "frontend-dist");
 const BUDGETS = {
   codeGzip: 420 * 1024,
   assetsRaw: 700 * 1024,
-  totalRaw: 1.6 * 1024 * 1024,
+  // Raised from 1.6 MiB when the App Manager landed: the installed-app view
+  // plus its translations in 23 locales adds ~35 KB of raw text that gzips
+  // well. Keep headroom small enough to still catch accidental bloat.
+  totalRaw: 1.7 * 1024 * 1024,
   // No single JS payload may exceed this (catches an accidental unminified
   // file or a debug bundle slipping into dist).
   maxSingleJsRaw: 900 * 1024,

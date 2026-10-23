@@ -300,7 +300,7 @@ fn list_trash_linux() -> Vec<serde_json::Value> {
             let meta = entry.metadata().ok();
             let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
             let size = if is_dir {
-                crate::browser::dir_size(&entry.path())
+                crate::cmds::system::dir_size(&entry.path())
             } else {
                 meta.as_ref().map(|m| m.len()).unwrap_or(0)
             };

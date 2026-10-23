@@ -1,8 +1,9 @@
 ﻿//! Browser cache / cookie cleanup tools.
 
+use crate::cmds::system::dir_size;
 use crate::JsonResult;
 
-// â”€â”€ Browser Cleanup Tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Browser Cleanup Tools ────────────────────────────────────────────
 
 #[derive(Clone)]
 pub(crate) struct BrowserDef {
@@ -12,26 +13,6 @@ pub(crate) struct BrowserDef {
     pub(crate) kind: &'static str,
     #[allow(dead_code)] // used by browser_paths_windows
     pub(crate) base: &'static str, // "local" | "appdata"
-}
-
-pub(crate) fn dir_size(path: &std::path::Path) -> u64 {
-    let meta = match std::fs::symlink_metadata(path) {
-        Ok(m) => m,
-        Err(_) => return 0,
-    };
-    if meta.is_file() {
-        return meta.len();
-    }
-    if !meta.is_dir() {
-        return 0;
-    }
-    let mut total = 0u64;
-    if let Ok(rd) = std::fs::read_dir(path) {
-        for entry in rd.flatten() {
-            total += dir_size(&entry.path());
-        }
-    }
-    total
 }
 
 fn sum_sizes(paths: &[std::path::PathBuf]) -> u64 {

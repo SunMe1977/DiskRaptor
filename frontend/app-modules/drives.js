@@ -10,62 +10,69 @@
  */
 window.app.initDrives = function (scanPath, btnScan) {
     // ── Volume stats on welcome page ─────────────────────
+    // Locale files load asynchronously at startup; render after I18N.ready
+    // (and again on language changes) so labels never remain raw keys.
+    let volumeCache = null;
+    function renderVolumes(vols) {
+      const container = document.getElementById("welcome-volumes");
+      if (!container) return;
+      const tr = window.__ || function (s) { return s; };
+      if (!vols || vols.length === 0) {
+        container.innerHTML =
+          '<div style="font-size:11px;color:var(--text-muted);text-align:center;">' + tr("drive.none") + "</div>";
+        return;
+      }
+      let html =
+        '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">\uD83D\uDCBE ' + tr("drive.title") + '<span id="refresh-volumes" style="font-size:11px;cursor:pointer;color:var(--text-muted);font-weight:400;">\u21BB ' + tr("action.refresh") + "</span></div>";
+      let shown = 0;
+      for (let vi = 0; vi < vols.length && shown < 10; vi++) {
+        const v = vols[vi];
+        if (!v.total_bytes && !v.name && !v.path) continue;
+        const pct = Math.min(100, Math.max(0, v.usage_pct || v.percentFull || 0));
+        const color = pct > 90 ? "#f85149" : pct > 70 ? "#d29922" : "#3fb950";
+        const usedStr = formatSize(v.used_bytes || v.used || 0);
+        const totalStr = formatSize(v.total_bytes || v.total || 0);
+        html +=
+          '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--bg-tertiary);margin-bottom:4px;">';
+        html += '<span style="font-size:14px;">\uD83D\uDCBD</span>';
+        html +=
+          '<span style="flex:1;font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+          (window.escHtml ? window.escHtml(v.name || v.path || "Drive") : (v.name || v.path || "Drive")) +
+          "</span>";
+        html +=
+          '<div style="width:80px;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;"><div style="width:' +
+          pct +
+          "%;height:100%;background:" +
+          color +
+          ';border-radius:3px;"></div></div>';
+        html +=
+          '<span style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono);white-space:nowrap;">' +
+          usedStr +
+          (totalStr && totalStr !== "0 B" ? " / " + totalStr : "") +
+          "</span>";
+        html += "</div>";
+        shown++;
+      }
+      if (vols.length > 10) {
+        html +=
+          '<div style="font-size:10px;color:var(--text-muted);text-align:center;padding:4px;">' +
+          tr("progress.more").replace("{count}", vols.length - 10) +
+          "</div>";
+      }
+      container.innerHTML = html;
+    }
     (async function () {
       try {
-        const vols = await window.__TAURI__.invoke("get_volume_stats", {});
-        const container = document.getElementById("welcome-volumes");
-        if (!container) return;
-        if (!vols || vols.length === 0) {
-          container.innerHTML =
-            '<div style="font-size:11px;color:var(--text-muted);text-align:center;">' + (window.__ || function (s) { return s; })("drive.none") + "</div>";
-          return;
-        }
-        let html =
-          '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;display:flex;align-items:center;gap:8px;">\uD83D\uDCBE ' + (window.__ || function (s) { return s; })("drive.title") + '<span id="refresh-volumes" style="font-size:11px;cursor:pointer;color:var(--text-muted);font-weight:400;">\u21BB ' + (window.__ || function (s) { return s; })("action.refresh") + "</span></div>";
-        let shown = 0;
-        for (let vi = 0; vi < vols.length && shown < 10; vi++) {
-          const v = vols[vi];
-          if (!v.total_bytes && !v.name && !v.path) continue;
-          const pct = Math.min(100, Math.max(0, v.usage_pct || v.percentFull || 0));
-          const color =
-            pct > 90 ? "#f85149" : pct > 70 ? "#d29922" : "#3fb950";
-          const usedStr = fmtVol(v.used_bytes || v.used || 0);
-          const totalStr = fmtVol(v.total_bytes || v.total || 0);
-          html +=
-            '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--bg-tertiary);margin-bottom:4px;">';
-          html += '<span style="font-size:14px;">\uD83D\uDCBD</span>';
-          html +=
-            '<span style="flex:1;font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-            (window.escHtml ? window.escHtml(v.name || v.path || "Drive") : (v.name || v.path || "Drive")) +
-            "</span>";
-          html +=
-            '<div style="width:80px;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;"><div style="width:' +
-            pct +
-            "%;height:100%;background:" +
-            color +
-            ';border-radius:3px;"></div></div>';
-          html +=
-            '<span style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono);white-space:nowrap;">' +
-            usedStr +
-            (totalStr && totalStr !== "0 B" ? " / " + totalStr : "") +
-            "</span>";
-          html += "</div>";
-          shown++;
-        }
-        function fmtVol(bytes) {
-          return window.fmtSize(bytes);
-        }
-        if (vols.length > 10) {
-          html +=
-            '<div style="font-size:10px;color:var(--text-muted);text-align:center;padding:4px;">+ ' +
-            (vols.length - 10) +
-            " more</div>";
-        }
-        container.innerHTML = html;
+        if (window.I18N && window.I18N.ready) await window.I18N.ready;
+        volumeCache = await window.__TAURI__.invoke("get_volume_stats", {});
+        renderVolumes(volumeCache);
       } catch (e) {
         console.warn("Volume stats:", e);
       }
     })();
+    window.addEventListener("locale-changed", function () {
+      if (volumeCache) renderVolumes(volumeCache);
+    });
 
     // ── Drive Selector Dropdown ────────────────────────────
     const btnDrive = document.getElementById("btn-drive");
