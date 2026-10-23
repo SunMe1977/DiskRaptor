@@ -773,7 +773,9 @@ pub(crate) fn get_app_icon(path: String) -> JsonResult {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = path;
+        if let Some(data_url) = crate::cmds::apps::icon_data_url(&path) {
+            return JsonResult::ok(serde_json::Value::String(data_url));
+        }
     }
     JsonResult::ok(serde_json::Value::String(String::new()))
 }

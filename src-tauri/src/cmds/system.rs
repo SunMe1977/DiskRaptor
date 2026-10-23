@@ -671,155 +671,12 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
             JsonResult::ok(serde_json::json!(apps))
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            use std::fs;
-            let mut apps = Vec::new();
-            let app_dirs = [
-                "/Applications",
-                "/System/Applications",
-                &format!("{}/Applications", std::env::var("HOME").unwrap_or_default()),
-            ];
-            for app_dir in &app_dirs {
-                if let Ok(entries) = fs::read_dir(app_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().and_then(|s| s.to_str()) == Some("app") {
-                            let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-                            if name.is_empty() { continue; }
-                            
-                            // Read Info.plist for version and bundle ID
-                            let info_plist = path.join("Contents/Info.plist");
-                            let mut version = String::new();
-                            let mut bundle_id = String::new();
-                            if let Ok(content) = fs::read_to_string(&info_plist) {
-                                // Simple XML parsing for CFBundleShortVersionString and CFBundleIdentifier
-                                if let Some(start) = content.find("<key>CFBundleShortVersionString</key>") {
-                                    if let Some(vstart) = content[start..].find("<string>") {
-                                        if let Some(vend) = content[start+vstart+8..].find("</string>") {
-                                            version = content[start+vstart+8..start+vstart+8+vend].to_string();
-                                        }
-                                    }
-                                }
-                                if let Some(start) = content.find("<key>CFBundleIdentifier</key>") {
-                                    if let Some(vstart) = content[start..].find("<string>") {
-                                        if let Some(vend) = content[start+vstart+8..].find("</string>") {
-                                            bundle_id = content[start+vstart+8..start+vstart+8+vend].to_string();
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            let icon_path = path.join("Contents/Resources/AppIcon.icns");
-                            let icon_str = if icon_path.exists() { icon_path.to_string_lossy().to_string() } else { String::new() };
-                            
-                            let install_size = crate::cmds::system::dir_size(&path);
-                            
-                            apps.push(serde_json::json!({
-                                "name": name,
-                                "version": version,
-                                "publisher": bundle_id,
-                                "install_location": path.to_string_lossy(),
-                                "uninstall_string": "",
-                                "quiet_uninstall": "",
-                                "icon_path": icon_str,
-                                "install_size": install_size,
-                                "install_date": "",
-                                "estimated_size_kb": install_size / 1024,
-                            }));
-                        }
-                    }
-                }
+            match crate::cmds::apps::platform_list_apps() {
+                Ok(apps) => JsonResult::ok(serde_json::json!(apps)),
+                Err(error) => JsonResult::err(error),
             }
-            apps.sort_by(|a, b| {
-                let an = a["name"].as_str().unwrap_or("");
-                let bn = b["name"].as_str().unwrap_or("");
-                an.to_lowercase().cmp(&bn.to_lowercase())
-            });
-            JsonResult::ok(serde_json::json!(apps))
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            use std::fs;
-            let mut apps = Vec::new();
-            let mut seen = std::collections::HashSet::new();
-            let desktop_dirs = [
-                "/usr/share/applications",
-                "/usr/local/share/applications",
-                &format!("{}/.local/share/applications", std::env::var("HOME").unwrap_or_default()),
-            ];
-            for desktop_dir in &desktop_dirs {
-                if let Ok(entries) = fs::read_dir(desktop_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().and_then(|s| s.to_str()) == Some("desktop") {
-                            if let Ok(content) = fs::read_to_string(&path) {
-                                let mut name = String::new();
-                                let mut exec = String::new();
-                                let mut icon = String::new();
-                                let mut no_display = false;
-                                for line in content.lines() {
-                                    if let Some(v) = line.strip_prefix("Name=") {
-                                        name = v.to_string();
-                                    } else if let Some(v) = line.strip_prefix("Exec=") {
-                                        // Remove field codes like %f %u
-                                        exec = v.split_whitespace().next().unwrap_or(v).to_string();
-                                    } else if let Some(v) = line.strip_prefix("Icon=") {
-                                        icon = v.to_string();
-                                    } else if line == "NoDisplay=true" {
-                                        no_display = true;
-                                    }
-                                }
-                                if no_display || name.is_empty() { continue; }
-                                if !seen.insert(name.to_lowercase()) { continue; }
-                                
-                                // Try to find install size from the executable
-                                let mut install_size = 0u64;
-                                if !exec.is_empty() {
-                                    if let Ok(exe_path) = std::path::PathBuf::from(&exec).canonicalize() {
-                                        if let Ok(meta) = fs::metadata(&exe_path) {
-                                            install_size = meta.len();
-                                        }
-                                        // Also check parent directory
-                                        if let Some(parent) = exe_path.parent() {
-                                            install_size = install_size.max(crate::cmds::system::dir_size(parent));
-                                        }
-                                    }
-                                }
-                                
-                                // Resolve icon path
-                                let icon_path = if icon.contains('/') {
-                                    icon.to_string()
-                                } else if !icon.is_empty() {
-                                    format!("/usr/share/icons/hicolor/48x48/apps/{}.png", icon)
-                                } else {
-                                    String::new()
-                                };
-                                
-                                apps.push(serde_json::json!({
-                                    "name": name,
-                                    "version": "",
-                                    "publisher": "",
-                                    "install_location": exec,
-                                    "uninstall_string": "",
-                                    "quiet_uninstall": "",
-                                    "icon_path": icon_path,
-                                    "install_size": install_size,
-                                    "install_date": "",
-                                    "estimated_size_kb": install_size / 1024,
-                                }));
-                            }
-                        }
-                    }
-                }
-            }
-            apps.sort_by(|a, b| {
-                let an = a["name"].as_str().unwrap_or("");
-                let bn = b["name"].as_str().unwrap_or("");
-                an.to_lowercase().cmp(&bn.to_lowercase())
-            });
-            JsonResult::ok(serde_json::json!(apps))
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -834,7 +691,8 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
 /// Check installed applications for available updates.
 ///
 /// Windows: uses `winget list --upgrade-available` (the same package data the
-/// OS uses). macOS: `brew outdated --json=v2`. Returns
+/// OS uses). macOS: Homebrew plus `mas` when installed. Linux: the native
+/// package manager (apt/dnf/zypper/pacman) plus flatpak and snap. Returns
 /// `{ supported, updates: [{name, id, version, available, source}], error? }`.
 #[tauri::command]
 pub(crate) async fn check_app_updates() -> JsonResult {
@@ -881,39 +739,9 @@ pub(crate) async fn check_app_updates() -> JsonResult {
             }
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            match std::process::Command::new("brew")
-                .args(["outdated", "--json=v2"])
-                .output()
-            {
-                Ok(o) if o.status.success() => {
-                    let text = String::from_utf8_lossy(&o.stdout);
-                    JsonResult::ok(serde_json::json!({
-                        "supported": true,
-                        "updates": parse_brew_outdated(&text),
-                    }))
-                }
-                Ok(o) => JsonResult::ok(serde_json::json!({
-                    "supported": false,
-                    "error": String::from_utf8_lossy(&o.stderr).trim(),
-                    "updates": [],
-                })),
-                Err(e) => JsonResult::ok(serde_json::json!({
-                    "supported": false,
-                    "error": format!("Homebrew is not available: {e}"),
-                    "updates": [],
-                })),
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            JsonResult::ok(serde_json::json!({
-                "supported": false,
-                "error": "Update checking is not implemented for Linux yet",
-                "updates": [],
-            }))
+            JsonResult::ok(crate::cmds::apps::platform_check_updates())
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -1016,42 +844,12 @@ fn parse_winget_upgrades(text: &str) -> Vec<serde_json::Value> {
     updates
 }
 
-/// Convert `brew outdated --json=v2` output into the shared update shape.
-#[cfg(target_os = "macos")]
-fn parse_brew_outdated(text: &str) -> Vec<serde_json::Value> {
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for section in ["formulae", "casks"] {
-        if let Some(items) = v[section].as_array() {
-            for item in items {
-                let name = item["name"]
-                    .as_str()
-                    .or_else(|| item["token"].as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let installed = item["installed_versions"]
-                    .as_array()
-                    .map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "))
-                    .unwrap_or_default();
-                out.push(serde_json::json!({
-                    "name": name,
-                    "id": name,
-                    "version": installed,
-                    "available": item["current_version"].as_str().unwrap_or(""),
-                    "source": "brew",
-                }));
-            }
-        }
-    }
-    out
-}
-
 /// Upgrade a single application via the platform package manager.
 ///
-/// Windows: `winget upgrade --id <id> --exact --silent`. macOS: `brew upgrade`.
-/// Returns `{ success, output?, error?, code? }`.
+/// Windows: `winget upgrade --id <id> --exact --silent`. macOS/Linux: Homebrew,
+/// mas, apt, dnf, zypper, pacman, flatpak or snap depending on the source.
+/// Returns `{ success, output? }`; failures reject the IPC call so the UI can
+/// report them.
 #[tauri::command]
 pub(crate) async fn run_app_update(id: String, source: String) -> JsonResult {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1106,33 +904,12 @@ pub(crate) async fn run_app_update(id: String, source: String) -> JsonResult {
             }
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            let _ = &source;
-            match std::process::Command::new("brew").args(["upgrade", &id]).output() {
-                Ok(o) if o.status.success() => JsonResult::ok(serde_json::json!({
-                    "success": true,
-                    "output": String::from_utf8_lossy(&o.stdout).trim(),
-                })),
-                Ok(o) => JsonResult::ok(serde_json::json!({
-                    "success": false,
-                    "code": o.status.code(),
-                    "error": String::from_utf8_lossy(&o.stderr).trim(),
-                })),
-                Err(e) => JsonResult::ok(serde_json::json!({
-                    "success": false,
-                    "error": format!("Homebrew is not available: {e}"),
-                })),
+            match crate::cmds::apps::platform_run_update(&id, &source) {
+                Ok(data) => JsonResult::ok(data),
+                Err(error) => JsonResult::err(error),
             }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            let _ = (id, source);
-            JsonResult::ok(serde_json::json!({
-                "success": false,
-                "error": "Updating applications is not implemented for Linux yet",
-            }))
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -1504,6 +1281,7 @@ fn uninstall_command_elevated(command: &str) -> Result<(), String> {
 /// Remove-AppxPackage, MSI entries are run silently (elevated when required),
 /// and everything else uses QuietUninstallString/UninstallString.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn uninstall_app(
     name: String,
     uninstall_string: String,
@@ -1511,10 +1289,14 @@ pub(crate) async fn uninstall_app(
     is_store_app: bool,
     registry_key: String,
     run_as_admin: bool,
+    install_location: Option<String>,
+    package_id: Option<String>,
+    package_source: Option<String>,
 ) -> JsonResult {
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
+            let _ = (install_location, package_id, package_source);
             let command = if quiet_uninstall.trim().is_empty() {
                 uninstall_string.trim().to_string()
             } else {
@@ -1594,26 +1376,23 @@ pub(crate) async fn uninstall_app(
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            let _ = (&name, &registry_key, is_store_app, run_as_admin);
-            let command = if quiet_uninstall.trim().is_empty() {
-                uninstall_string
-            } else {
-                quiet_uninstall
-            };
-            match std::process::Command::new("sh")
-                .args(["-c", &command])
-                .status()
-            {
-                Ok(status) if status.success() => {
-                    JsonResult::ok(serde_json::json!({ "success": true }))
-                }
-                Ok(status) => JsonResult::err(format!(
-                    "Uninstall failed with exit code: {:?}",
-                    status.code()
-                )),
-                Err(e) => JsonResult::err(format!("Failed to execute uninstall: {e}")),
+            let _ = (is_store_app, registry_key, run_as_admin);
+            let location = install_location.unwrap_or_default();
+            let package = package_id.unwrap_or_default();
+            let source = package_source.unwrap_or_default();
+            match crate::cmds::apps::platform_uninstall(
+                &name,
+                &location,
+                &package,
+                &source,
+                &uninstall_string,
+                &quiet_uninstall,
+            ) {
+                Ok(()) => JsonResult::ok(serde_json::json!({ "success": true })),
+                Err(error) => JsonResult::err(error),
             }
         }
+
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         {
             let _ = (

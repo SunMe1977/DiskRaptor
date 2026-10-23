@@ -938,6 +938,7 @@ dependencies = [
  "objc2-foundation",
  "open",
  "parking_lot",
+ "plist",
  "rayon",
  "serde",
  "serde_json",

@@ -1641,6 +1641,11 @@ cleanBtn.addEventListener("click", async function () {
     const uninstallBtn = card.querySelector(".am-uninstall-btn");
     const adminBtn = card.querySelector(".am-admin-btn");
     const updateBtn = card.querySelector(".am-update-btn");
+    // Elevation on macOS/Linux is handled by the package manager (polkit/sudo),
+    // so the Windows-only "uninstall as admin" button must not be offered.
+    const platform = (navigator.platform || navigator.userAgent || "").toLowerCase();
+    const isWindows = platform.indexOf("win") === 0 || platform.indexOf("windows") >= 0;
+    if (!isWindows) adminBtn.style.display = "none";
     let apps = [];
     let sortKey = "name";
     let sortDir = 1;
@@ -1713,8 +1718,22 @@ cleanBtn.addEventListener("click", async function () {
         .replace(/[^a-z0-9]+/g, " ")
         .trim();
     }
-    function findUpdate(updates, name) {
+    function findUpdate(updates, app) {
+      const name = app && app.name;
       const n = normName(name);
+      const packageId = normName(app && app.package_id);
+      const packageSource = String((app && app.package_source) || "").toLowerCase();
+      // Prefer an exact package-id match (winget id, brew cask token, apt
+      // package, flatpak/snap app id) so name collisions across managers cannot
+      // attach the wrong update.
+      if (packageId) {
+        for (let i = 0; i < updates.length; i++) {
+          if (normName(updates[i].id) !== packageId) continue;
+          const source = String(updates[i].source || "").toLowerCase();
+          if (packageSource && source && packageSource !== source) continue;
+          return updates[i];
+        }
+      }
       if (!n) return null;
       for (let i = 0; i < updates.length; i++) {
         const un = normName(updates[i].name);
@@ -1852,8 +1871,10 @@ cleanBtn.addEventListener("click", async function () {
           return;
         }
         window.__TAURI__.invoke("get_app_icon", { path: path })
-          .then(function (url) {
-            url = typeof url === "string" ? url : "";
+          .then(function (res) {
+            const url = typeof res === "string"
+              ? res
+              : (res && typeof res.data === "string" ? res.data : "");
             iconCache.set(path, url);
             if (url) showIcon(url); else showFallback();
           })
@@ -1923,14 +1944,16 @@ cleanBtn.addEventListener("click", async function () {
         : t("appmgr.checking_all");
       try {
         const res = await window.__TAURI__.invoke("check_app_updates");
-        if (!res || !res.supported) {
-          const err = (res && res.error) || "";
+        // IPC results are wrapped in JsonResult: { success, data }.
+        const data = res && res.data ? res.data : res;
+        if (!data || !data.supported) {
+          const err = (data && data.error) || "";
           const msg = t("appmgr.update_unsupported").replace("{error}", err);
           statusEl.textContent = msg;
-          window.showToast && window.showToast(msg, "warning");
+          if (!silent) window.showToast && window.showToast(msg, "warning");
           return 0;
         }
-        const updates = Array.isArray(res.updates) ? res.updates : [];
+        const updates = Array.isArray(data.updates) ? data.updates : [];
         const target = selected.length ? selected : apps;
         for (let i = 0; i < apps.length; i++) {
           apps[i].update_available = "";
@@ -1939,7 +1962,7 @@ cleanBtn.addEventListener("click", async function () {
         }
         let matched = 0;
         for (let i = 0; i < target.length; i++) {
-          const u = findUpdate(updates, target[i].name);
+          const u = findUpdate(updates, target[i]);
           if (u) {
             target[i].update_available = u.available || "";
             target[i].update_id = u.id || "";
@@ -2051,14 +2074,18 @@ cleanBtn.addEventListener("click", async function () {
               id: app.update_id,
               source: app.update_source || "",
             });
-            if (res && res.success) {
+            const payload = res && res.data ? res.data : res;
+            if (payload && payload.success !== false) {
               done++;
               app.update_available = "";
               app.update_id = "";
               app.update_source = "";
             } else {
               failed++;
-              const reason = (res && (res.error || res.output)) || "";
+              const reason =
+                (payload && (payload.error || payload.output)) ||
+                (res && (res.error || res.output)) ||
+                "";
               failures.push({ name: app.name || "?", error: reason });
               console.warn("Update failed:", app.name, res);
             }
@@ -2128,6 +2155,9 @@ cleanBtn.addEventListener("click", async function () {
             isStoreApp: !!app.is_store_app,
             registryKey: app.registry_key || "",
             runAsAdmin: !!asAdmin,
+            installLocation: app.install_location || "",
+            packageId: app.package_id || "",
+            packageSource: app.package_source || "",
           });
           if (res && res.success) {
             done++;

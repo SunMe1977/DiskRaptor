@@ -13,6 +13,9 @@ pub(crate) mod scan;
 pub(crate) mod settings;
 #[allow(unused_imports)]
 pub(crate) mod system;
+#[allow(dead_code)]
+#[allow(unused_imports)]
+pub(crate) mod apps;
 #[allow(unused_imports)]
 pub(crate) mod autostart;
 #[allow(unused_imports)]
