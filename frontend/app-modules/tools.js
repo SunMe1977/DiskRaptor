@@ -1723,9 +1723,9 @@ cleanBtn.addEventListener("click", async function () {
       const n = normName(name);
       const packageId = normName(app && app.package_id);
       const packageSource = String((app && app.package_source) || "").toLowerCase();
-      // Prefer an exact package-id match (winget id, brew cask token, apt
-      // package, flatpak/snap app id) so name collisions across managers cannot
-      // attach the wrong update.
+      // Prefer an exact package-id match (winget id, bundle id, apt package,
+      // flatpak/snap app id) so name collisions across managers cannot attach
+      // the wrong update.
       if (packageId) {
         for (let i = 0; i < updates.length; i++) {
           if (normName(updates[i].id) !== packageId) continue;
@@ -2060,6 +2060,7 @@ cleanBtn.addEventListener("click", async function () {
         adminBtn.disabled = true;
         let done = 0;
         let failed = 0;
+        let pending = 0;
         const failures = [];
         for (let i = 0; i < targets.length; i++) {
           const app = targets[i];
@@ -2076,10 +2077,17 @@ cleanBtn.addEventListener("click", async function () {
             });
             const payload = res && res.data ? res.data : res;
             if (payload && payload.success !== false) {
-              done++;
-              app.update_available = "";
-              app.update_id = "";
-              app.update_source = "";
+              if (payload.pending) {
+                // App Store and package-installer updates finish outside
+                // DiskRaptor. Keep the badge until the next check confirms the
+                // installed version actually changed.
+                pending++;
+              } else {
+                done++;
+                app.update_available = "";
+                app.update_id = "";
+                app.update_source = "";
+              }
             } else {
               failed++;
               const reason =
@@ -2100,7 +2108,12 @@ cleanBtn.addEventListener("click", async function () {
         updateBtn.textContent =
           "⬆ " + t("appmgr.update_all") + (remaining ? " (" + remaining + ")" : "");
         render();
-        const msg = t("appmgr.update_done").replace("{done}", done).replace("{failed}", failed);
+        const msg = pending
+          ? t("appmgr.update_pending")
+              .replace("{done}", done)
+              .replace("{pending}", pending)
+              .replace("{failed}", failed)
+          : t("appmgr.update_done").replace("{done}", done).replace("{failed}", failed);
         statusEl.textContent = msg;
         const failureText = failures
           .map(function (f) { return "• " + f.name + ": " + f.error; })
@@ -2112,7 +2125,7 @@ cleanBtn.addEventListener("click", async function () {
               (failures.length
                 ? " – " + failures.map(function (f) { return f.name; }).join(", ")
                 : ""),
-            failed ? "warning" : "success",
+            failed ? "warning" : pending ? "info" : "success",
           );
         if (failureText && window.alertDialog) {
           await window.alertDialog(t("appmgr.failures_title") + "\n\n" + failureText);

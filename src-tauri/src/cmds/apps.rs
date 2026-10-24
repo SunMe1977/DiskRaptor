@@ -9,12 +9,16 @@
 //! the macOS/Linux branches cannot rot silently on a Windows CI machine.
 
 use base64::Engine as _;
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use quick_xml::events::{BytesStart, Event};
+use quick_xml::{Reader, XmlVersion};
 use rayon::prelude::*;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use crate::cmds::system::{dir_size, in_mac_sandbox};
 
@@ -1045,15 +1049,53 @@ fn collect_mac_app_paths(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Read version, bundle id and icon name from `Contents/Info.plist`. Uses the
-/// `plist` crate so binary plists (the default for most built bundles) work.
-fn mac_bundle_info(app: &Path) -> (String, String, Option<String>) {
+/// Information read from an app bundle's `Contents/Info.plist`.
+#[derive(Clone, Debug, Default)]
+struct MacBundleInfo {
+    version: String,
+    build_version: String,
+    bundle_id: String,
+    icon: Option<String>,
+    feed_url: String,
+    public_ed_key: String,
+    app_store: bool,
+}
+
+impl MacBundleInfo {
+    /// The update channel the app itself exposes. App Store apps update through
+    /// the App Store; direct apps use their own Sparkle appcast. Anything else is
+    /// deliberately treated as "no native update channel" instead of falling
+    /// back to a package manager.
+    fn native_update_source(&self) -> &'static str {
+        if self.app_store {
+            "appstore"
+        } else if self.feed_url.trim().to_ascii_lowercase().starts_with("https://")
+            && !self.public_ed_key.trim().is_empty()
+        {
+            "sparkle"
+        } else {
+            ""
+        }
+    }
+}
+
+/// Read version, bundle id, icon and native update information from
+/// `Contents/Info.plist`. Uses the `plist` crate so binary plists (the default
+/// for most built bundles) work.
+fn mac_bundle_info(app: &Path) -> MacBundleInfo {
+    let app_store = app.join("Contents/_MASReceipt/receipt").is_file();
     let plist_path = app.join("Contents/Info.plist");
     let Ok(value) = plist::Value::from_file(&plist_path) else {
-        return (String::new(), String::new(), None);
+        return MacBundleInfo {
+            app_store,
+            ..MacBundleInfo::default()
+        };
     };
     let Some(dictionary) = value.as_dictionary() else {
-        return (String::new(), String::new(), None);
+        return MacBundleInfo {
+            app_store,
+            ..MacBundleInfo::default()
+        };
     };
     let get = |key: &str| {
         dictionary
@@ -1061,13 +1103,28 @@ fn mac_bundle_info(app: &Path) -> (String, String, Option<String>) {
             .and_then(|value| value.as_string())
             .map(str::to_string)
     };
+    let build_version = get("CFBundleVersion").unwrap_or_default();
     let version = get("CFBundleShortVersionString")
         .filter(|version| !version.is_empty())
-        .or_else(|| get("CFBundleVersion"))
+        .or_else(|| {
+            if build_version.is_empty() {
+                None
+            } else {
+                Some(build_version.clone())
+            }
+        })
         .unwrap_or_default();
     let bundle_id = get("CFBundleIdentifier").unwrap_or_default();
     let icon = get("CFBundleIconFile").or_else(|| get("CFBundleIconName"));
-    (version, bundle_id, icon)
+    MacBundleInfo {
+        version,
+        build_version,
+        bundle_id,
+        icon,
+        feed_url: get("SUFeedURL").unwrap_or_default(),
+        public_ed_key: get("SUPublicEDKey").unwrap_or_default(),
+        app_store,
+    }
 }
 
 fn mac_bundle_icon(app: &Path, icon: Option<&str>) -> String {
@@ -1106,52 +1163,7 @@ fn mac_bundle_icon(app: &Path, icon: Option<&str>) -> String {
         .unwrap_or_default()
 }
 
-/// Map `.app` bundle names to their Homebrew cask token, so update badges can
-/// be matched exactly instead of relying on fuzzy name comparison.
-fn brew_cask_app_map() -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    if !command_exists("brew") {
-        return map;
-    }
-    let Some((true, out, _)) = run_capture("brew", &["list", "--cask", "--json=v2"]) else {
-        return map;
-    };
-    let Ok(value) = serde_json::from_str::<Value>(&out) else {
-        return map;
-    };
-    let Some(casks) = value.get("casks").and_then(|casks| casks.as_array()) else {
-        return map;
-    };
-    for cask in casks {
-        let Some(token) = cask.get("token").and_then(|token| token.as_str()) else {
-            continue;
-        };
-        let Some(artifacts) = cask
-            .get("artifacts")
-            .and_then(|artifacts| artifacts.as_array())
-        else {
-            continue;
-        };
-        for artifact in artifacts {
-            let Some(app) = artifact.get("app") else {
-                continue;
-            };
-            let names: Vec<&str> = match app {
-                Value::Array(values) => values.iter().filter_map(|value| value.as_str()).collect(),
-                Value::String(value) => vec![value.as_str()],
-                _ => continue,
-            };
-            for name in names {
-                let stem = name.strip_suffix(".app").unwrap_or(name);
-                map.insert(stem.to_lowercase(), token.to_string());
-            }
-        }
-    }
-    map
-}
-
 pub(crate) fn list_macos_apps() -> Result<Vec<Value>, String> {
-    let cask_map = brew_cask_app_map();
     let mut chosen: HashMap<String, (i32, Value)> = HashMap::new();
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();
     for (priority, dir) in mac_app_dirs() {
@@ -1165,8 +1177,8 @@ pub(crate) fn list_macos_apps() -> Result<Vec<Value>, String> {
             let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
                 continue;
             };
-            let (version, bundle_id, icon_name) = mac_bundle_info(&path);
-            let icon_path = mac_bundle_icon(&path, icon_name.as_deref());
+            let info = mac_bundle_info(&path);
+            let icon_path = mac_bundle_icon(&path, info.icon.as_deref());
             // A few entries in /Applications are symlinks into /System; size the
             // target, not the link (dir_size uses symlink_metadata).
             let size_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
@@ -1181,16 +1193,10 @@ pub(crate) fn list_macos_apps() -> Result<Vec<Value>, String> {
                 })
                 .unwrap_or_default();
 
-            let cask = cask_map.get(&name.to_lowercase()).cloned();
-            let (package_id, package_source) = match cask {
-                Some(token) => (token, "brew".to_string()),
-                None => (bundle_id.clone(), String::new()),
-            };
-
             let app = json!({
                 "name": name,
-                "version": version,
-                "publisher": bundle_id,
+                "version": info.version,
+                "publisher": info.bundle_id,
                 "install_location": path.to_string_lossy(),
                 "uninstall_string": "",
                 "quiet_uninstall": "",
@@ -1198,14 +1204,14 @@ pub(crate) fn list_macos_apps() -> Result<Vec<Value>, String> {
                 "install_size": install_size,
                 "install_date": install_date,
                 "estimated_size_kb": install_size / 1024,
-                "package_id": package_id,
-                "package_source": package_source,
+                "package_id": info.bundle_id,
+                "package_source": info.native_update_source(),
             });
 
-            let key = if bundle_id.is_empty() {
+            let key = if info.bundle_id.is_empty() {
                 format!("name:{}", name.to_lowercase())
             } else {
-                format!("id:{}", bundle_id.to_lowercase())
+                format!("id:{}", info.bundle_id.to_lowercase())
             };
             match chosen.get(&key) {
                 Some((current, _)) if *current > priority => {}
@@ -1222,6 +1228,61 @@ pub(crate) fn list_macos_apps() -> Result<Vec<Value>, String> {
         left.cmp(&right)
     });
     Ok(apps)
+}
+
+/// A bundle that exposes a native update channel. Sizes and icons are not
+/// needed here, so the update check stays fast even with hundreds of apps.
+#[derive(Clone, Debug)]
+struct MacUpdateCandidate {
+    name: String,
+    version: String,
+    build_version: String,
+    bundle_id: String,
+    feed_url: String,
+    app_store: bool,
+}
+
+fn mac_update_candidates() -> Vec<MacUpdateCandidate> {
+    let mut chosen: HashMap<String, (i32, MacUpdateCandidate)> = HashMap::new();
+    let mut seen_paths: HashSet<PathBuf> = HashSet::new();
+    for (priority, dir) in mac_app_dirs() {
+        let mut paths = Vec::new();
+        collect_mac_app_paths(&dir, 3, &mut paths);
+        for path in paths {
+            let identity = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !seen_paths.insert(identity.clone()) {
+                continue;
+            }
+            // Apple updates system apps through macOS itself, not the App
+            // Store page or an appcast.
+            if identity.starts_with("/System") {
+                continue;
+            }
+            let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+            let info = mac_bundle_info(&path);
+            if info.bundle_id.is_empty() || info.native_update_source().is_empty() {
+                continue;
+            }
+            let candidate = MacUpdateCandidate {
+                name: name.to_string(),
+                version: info.version,
+                build_version: info.build_version,
+                bundle_id: info.bundle_id.clone(),
+                feed_url: info.feed_url,
+                app_store: info.app_store,
+            };
+            let key = info.bundle_id.to_lowercase();
+            match chosen.get(&key) {
+                Some((current, _)) if *current > priority => {}
+                _ => {
+                    chosen.insert(key, (priority, candidate));
+                }
+            }
+        }
+    }
+    chosen.into_values().map(|(_, app)| app).collect()
 }
 
 // ── macOS icons ─────────────────────────────────────────────────────────────
@@ -1351,95 +1412,335 @@ pub(crate) fn icon_data_url(path: &str) -> Option<String> {
 
 // ── Update discovery ────────────────────────────────────────────────────────
 
-fn installed_versions(item: &Value) -> String {
-    match item.get("installed_versions") {
-        Some(Value::Array(versions)) => versions
-            .iter()
-            .filter_map(|version| version.as_str())
-            .collect::<Vec<_>>()
-            .join(", "),
-        Some(Value::String(version)) => version.clone(),
-        _ => String::new(),
-    }
+fn http_agent(timeout_secs: u64) -> ureq::Agent {
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(timeout_secs)))
+        .build();
+    ureq::Agent::new_with_config(config)
 }
 
-/// Brew JSON uses a string for formula names and occasionally an array for
-/// cask display names; accept both.
-fn json_first_string(value: Option<&Value>) -> Option<String> {
-    match value {
-        Some(Value::String(text)) => Some(text.clone()),
-        Some(Value::Array(values)) => values
-            .iter()
-            .find_map(|value| value.as_str())
-            .map(str::to_string),
-        _ => None,
-    }
+fn http_get_text(url: &str, timeout_secs: u64) -> Result<String, String> {
+    let agent = http_agent(timeout_secs);
+    let mut response = agent
+        .get(url)
+        .header("User-Agent", concat!("DiskRaptor/", env!("CARGO_PKG_VERSION")))
+        .call()
+        .map_err(|error| format!("Request failed for {url}: {error}"))?;
+    response
+        .body_mut()
+        .read_to_string()
+        .map_err(|error| format!("Could not read response from {url}: {error}"))
 }
 
-fn parse_brew_outdated(text: &str) -> Vec<AppUpdate> {
-    let Ok(value) = serde_json::from_str::<Value>(text) else {
-        return Vec::new();
-    };
-    let mut updates = Vec::new();
-    for section in ["formulae", "casks"] {
-        let Some(items) = value.get(section).and_then(|items| items.as_array()) else {
+fn http_get_json(url: &str, timeout_secs: u64) -> Result<Value, String> {
+    let text = http_get_text(url, timeout_secs)?;
+    serde_json::from_str(&text)
+        .map_err(|error| format!("Invalid response from {url}: {error}"))
+}
+
+fn http_download(url: &str, destination: &Path) -> Result<(), String> {
+    let agent = http_agent(600);
+    let mut response = agent
+        .get(url)
+        .header("User-Agent", concat!("DiskRaptor/", env!("CARGO_PKG_VERSION")))
+        .call()
+        .map_err(|error| format!("Download failed for {url}: {error}"))?;
+    let mut reader = response.body_mut().as_reader();
+    let mut file = std::fs::File::create(destination)
+        .map_err(|error| format!("Could not create {}: {error}", destination.display()))?;
+    let copied = std::io::copy(&mut reader, &mut file)
+        .map_err(|error| format!("Could not save {}: {error}", destination.display()))?;
+    if copied == 0 {
+        return Err("The downloaded update is empty".to_string());
+    }
+    Ok(())
+}
+
+fn numeric_version_parts(version: &str) -> Vec<u64> {
+    version
+        .split(|ch: char| !ch.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u64>().ok())
+        .collect()
+}
+
+/// Compare dotted versions numerically. Text suffixes such as `1.2.3-beta`
+/// are ignored for ordering, and missing components count as zero.
+fn version_is_newer(available: &str, installed: &str) -> bool {
+    let available = available.trim();
+    let installed = installed.trim();
+    if available.is_empty() || installed.is_empty() {
+        return false;
+    }
+    let next = numeric_version_parts(available);
+    let current = numeric_version_parts(installed);
+    if next.is_empty() || current.is_empty() {
+        return available != installed;
+    }
+    for index in 0..next.len().max(current.len()) {
+        let left = next.get(index).copied().unwrap_or(0);
+        let right = current.get(index).copied().unwrap_or(0);
+        if left != right {
+            return left > right;
+        }
+    }
+    false
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SparkleRelease {
+    version: String,
+    version_is_build: bool,
+    build_version: Option<String>,
+    enclosure_url: String,
+    ed_signature: Option<String>,
+}
+
+fn sparkle_release_is_newer(release: &SparkleRelease, version: &str, build: &str) -> bool {
+    if release.version_is_build {
+        return version_is_newer(&release.version, build);
+    }
+    version_is_newer(&release.version, version)
+        || release
+            .build_version
+            .as_deref()
+            .is_some_and(|candidate| version_is_newer(candidate, build))
+}
+
+fn xml_local_name(name: &str) -> &str {
+    name.rsplit(':').next().unwrap_or(name)
+}
+
+fn enclosure_attributes(event: &BytesStart, url: &mut String, signature: &mut Option<String>) {
+    for attribute in event.attributes().flatten() {
+        let key = xml_local_name(attribute.key.as_ref());
+        let Ok(value) = attribute.normalized_value(XmlVersion::Implicit1_0) else {
             continue;
         };
-        for item in items {
-            let name = json_first_string(item.get("name"))
-                .or_else(|| json_first_string(item.get("token")))
-                .unwrap_or_default();
-            if name.is_empty() {
-                continue;
+        match key {
+            "url" => *url = value.into_owned(),
+            "edSignature" => *signature = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+}
+
+/// Atom feeds use `<link rel="enclosure" href="...">` instead of Sparkle's
+/// `<enclosure>` element. Supporting both keeps older feeds working.
+fn atom_enclosure(event: &BytesStart, url: &mut String) {
+    let mut relation = String::new();
+    let mut href = String::new();
+    for attribute in event.attributes().flatten() {
+        let key = xml_local_name(attribute.key.as_ref());
+        let Ok(value) = attribute.normalized_value(XmlVersion::Implicit1_0) else {
+            continue;
+        };
+        match key {
+            "rel" => relation = value.into_owned(),
+            "href" => href = value.into_owned(),
+            _ => {}
+        }
+    }
+    if relation == "enclosure" && !href.is_empty() {
+        *url = href;
+    }
+}
+
+/// Parse a Sparkle appcast and return the newest release. Sparkle uses RSS
+/// `<item>` elements with `sparkle:shortVersionString` and an `<enclosure>`;
+/// some feeds use Atom `<entry>`/`<link>` instead.
+fn parse_sparkle_appcast(xml: &str) -> Option<SparkleRelease> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+
+    let mut in_item = false;
+    let mut short_version = String::new();
+    let mut build_version = String::new();
+    let mut channel = String::new();
+    let mut enclosure_url = String::new();
+    let mut ed_signature: Option<String> = None;
+    let mut text_target: Option<String> = None;
+    let mut text = String::new();
+    let mut best: Option<SparkleRelease> = None;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(event)) => {
+                let local = xml_local_name(event.name().as_ref()).to_string();
+                if local == "item" || local == "entry" {
+                    in_item = true;
+                    short_version.clear();
+                    build_version.clear();
+                    channel.clear();
+                    enclosure_url.clear();
+                    ed_signature = None;
+                    text_target = None;
+                    text.clear();
+                } else if in_item
+                    && (local == "shortVersionString" || local == "version" || local == "channel")
+                {
+                    text_target = Some(local);
+                    text.clear();
+                } else if in_item && local == "enclosure" {
+                    enclosure_attributes(&event, &mut enclosure_url, &mut ed_signature);
+                } else if in_item && local == "link" {
+                    atom_enclosure(&event, &mut enclosure_url);
+                }
             }
-            let id = json_first_string(item.get("token")).unwrap_or_else(|| name.clone());
-            updates.push(AppUpdate {
-                name,
-                id,
-                version: installed_versions(item),
-                available: item
-                    .get("current_version")
-                    .and_then(|version| version.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                source: "brew".to_string(),
-            });
+            Ok(Event::Empty(event)) => {
+                let local = xml_local_name(event.name().as_ref()).to_string();
+                if in_item && local == "enclosure" {
+                    enclosure_attributes(&event, &mut enclosure_url, &mut ed_signature);
+                } else if in_item && local == "link" {
+                    atom_enclosure(&event, &mut enclosure_url);
+                }
+            }
+            Ok(Event::Text(event)) => {
+                if text_target.is_some() {
+                    text.push_str(event.as_ref());
+                }
+            }
+            Ok(Event::CData(event)) => {
+                if text_target.is_some() {
+                    text.push_str(event.as_ref());
+                }
+            }
+            Ok(Event::End(event)) => {
+                let local = xml_local_name(event.name().as_ref()).to_string();
+                if in_item {
+                    if let Some(target) = text_target.take() {
+                        let value = text.trim().to_string();
+                        match target.as_str() {
+                            "shortVersionString" => short_version = value,
+                            "channel" => channel = value,
+                            _ => build_version = value,
+                        }
+                        text.clear();
+                    }
+                    if local == "item" || local == "entry" {
+                        let (version, version_is_build) =
+                            if short_version.trim().is_empty() {
+                                (build_version.trim().to_string(), true)
+                            } else {
+                                (short_version.trim().to_string(), false)
+                            };
+                        let release_build_version = if build_version.trim().is_empty() {
+                            None
+                        } else {
+                            Some(build_version.trim().to_string())
+                        };
+                        // Channels are optional. Only empty/stable releases are
+                        // installed automatically; beta and nightly feeds stay
+                        // opt-in through the app itself.
+                        let stable_channel = {
+                            let channel = channel.trim().to_ascii_lowercase();
+                            channel.is_empty()
+                                || matches!(
+                                    channel.as_str(),
+                                    "stable" | "release" | "production"
+                                )
+                        };
+                        if stable_channel
+                            && !version.is_empty()
+                            && !enclosure_url.trim().is_empty()
+                        {
+                            let signature = ed_signature
+                                .take()
+                                .map(|signature| signature.trim().to_string())
+                                .filter(|signature| !signature.is_empty());
+                            // Sparkle rejects unsigned updates, so never offer a
+                            // release that cannot be verified after download.
+                            if let Some(signature) = signature {
+                                let release = SparkleRelease {
+                                    version,
+                                    version_is_build,
+                                    build_version: release_build_version,
+                                    enclosure_url: enclosure_url.trim().to_string(),
+                                    ed_signature: Some(signature),
+                                };
+                                if best.as_ref().is_none_or(|current| {
+                                    version_is_newer(&release.version, &current.version)
+                                }) {
+                                    best = Some(release);
+                                }
+                            }
+                        }
+                        in_item = false;
+                        short_version.clear();
+                        build_version.clear();
+                        channel.clear();
+                        enclosure_url.clear();
+                        ed_signature = None;
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => return None,
+            _ => {}
         }
     }
-    updates
+    best
 }
 
-fn parse_mas_outdated(text: &str) -> Vec<AppUpdate> {
-    let mut updates = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
-        let Some((id, rest)) = line.split_once(' ') else {
-            continue;
-        };
-        if id.is_empty() || !id.chars().all(|ch| ch.is_ascii_digit()) {
-            continue;
-        }
-        let name = rest.split(" (").next().unwrap_or(rest).trim().to_string();
-        if name.is_empty() {
-            continue;
-        }
-        let (version, available) = rest
-            .split_once('(')
-            .and_then(|(_, inner)| inner.split_once(')').map(|(inner, _)| inner))
-            .map(|inner| match inner.split_once("->") {
-                Some((old, new)) => (old.trim().to_string(), new.trim().to_string()),
-                None => (String::new(), inner.trim().to_string()),
-            })
-            .unwrap_or_default();
-        updates.push(AppUpdate {
-            name,
-            id: id.to_string(),
-            version,
-            available,
-            source: "mas".to_string(),
-        });
+fn safe_bundle_id(bundle_id: &str) -> bool {
+    !bundle_id.is_empty()
+        && bundle_id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+}
+
+/// Ask Apple's public lookup API for the current App Store version. This uses
+/// the native App Store catalogue rather than a command-line package manager;
+/// installs are handed back to the App Store itself.
+fn check_app_store_update(app: &MacUpdateCandidate) -> Result<Option<AppUpdate>, String> {
+    if !safe_bundle_id(&app.bundle_id) {
+        return Err("Invalid bundle identifier".to_string());
     }
-    updates
+    let url = format!(
+        "https://itunes.apple.com/lookup?bundleId={}&entity=macSoftware",
+        app.bundle_id
+    );
+    let value = http_get_json(&url, 10)?;
+    let Some(item) = value
+        .get("results")
+        .and_then(Value::as_array)
+        .and_then(|results| results.first())
+    else {
+        return Ok(None);
+    };
+    let available = item
+        .get("version")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if !version_is_newer(available, &app.version) {
+        return Ok(None);
+    }
+    Ok(Some(AppUpdate {
+        name: app.name.clone(),
+        id: app.bundle_id.clone(),
+        version: app.version.clone(),
+        available: available.to_string(),
+        source: "appstore".to_string(),
+    }))
+}
+
+fn check_sparkle_update(app: &MacUpdateCandidate) -> Result<Option<AppUpdate>, String> {
+    let xml = http_get_text(&app.feed_url, 10)?;
+    let Some(release) = parse_sparkle_appcast(&xml) else {
+        // A feed with only unsigned or prerelease entries is not actionable.
+        return Ok(None);
+    };
+    if !sparkle_release_is_newer(&release, &app.version, &app.build_version) {
+        return Ok(None);
+    }
+    Ok(Some(AppUpdate {
+        name: app.name.clone(),
+        id: app.bundle_id.clone(),
+        version: app.version.clone(),
+        available: release.version,
+        source: "sparkle".to_string(),
+    }))
 }
 
 fn parse_apt_upgradable(text: &str) -> Vec<AppUpdate> {
@@ -1644,41 +1945,52 @@ pub(crate) fn check_macos_updates() -> Value {
     if in_mac_sandbox() {
         return json!({
             "supported": false,
-            "error": "Command-line update tools are not available in the sandboxed Mac App Store build.",
+            "error": "App updates in the sandboxed Mac App Store build are handled by the App Store.",
             "updates": [],
         });
     }
+    let candidates = mac_update_candidates();
+    if candidates.is_empty() {
+        return json!({
+            "supported": false,
+            "error": "No App Store or Sparkle-based applications were found.",
+            "updates": [],
+        });
+    }
+
+    // App Store lookups and appcast requests are independent; checking them in
+    // parallel keeps the manager responsive on machines with many apps.
+    let results: Vec<Result<Option<AppUpdate>, String>> = candidates
+        .par_iter()
+        .map(|app| {
+            if app.app_store {
+                check_app_store_update(app)
+            } else {
+                check_sparkle_update(app)
+            }
+        })
+        .collect();
+
     let mut updates = Vec::new();
-    let mut sources = Vec::new();
-    let mut errors: Vec<String> = Vec::new();
-
-    if command_exists("brew") {
-        match run_capture("brew", &["outdated", "--json=v2"]) {
-            Some((true, out, _)) => {
-                updates.extend(parse_brew_outdated(&out));
-                sources.push("brew");
+    let mut errors = Vec::new();
+    let mut checked = 0usize;
+    for result in results {
+        match result {
+            Ok(update) => {
+                checked += 1;
+                if let Some(update) = update {
+                    updates.push(update);
+                }
             }
-            Some((false, _, err)) => errors.push(format!("Homebrew: {}", first_error(&err))),
-            None => errors.push("Homebrew could not be executed".to_string()),
-        }
-    }
-    if command_exists("mas") {
-        match run_capture("mas", &["outdated"]) {
-            Some((true, out, _)) => {
-                updates.extend(parse_mas_outdated(&out));
-                sources.push("mas");
-            }
-            Some((false, _, err)) => errors.push(format!("mas: {}", first_error(&err))),
-            None => errors.push("mas could not be executed".to_string()),
+            Err(error) => errors.push(error),
         }
     }
 
-    if sources.is_empty() {
+    if checked == 0 {
         return json!({
             "supported": false,
             "error": if errors.is_empty() {
-                "Homebrew is not installed. Only Homebrew- and mas-managed apps can be updated automatically."
-                    .to_string()
+                "Could not query any native update source.".to_string()
             } else {
                 errors.join("; ")
             },
@@ -1805,6 +2117,422 @@ fn run_elevated(program: &str, args: &[&str]) -> Option<(bool, String, String)> 
     run_capture(program, args)
 }
 
+enum MacUpdateOutcome {
+    Installed(String),
+    Pending(String),
+}
+
+fn find_mac_app_by_bundle_id(bundle_id: &str) -> Option<PathBuf> {
+    for (_, dir) in mac_app_dirs() {
+        let mut paths = Vec::new();
+        collect_mac_app_paths(&dir, 3, &mut paths);
+        for path in paths {
+            let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+            if canonical.starts_with("/System") {
+                continue;
+            }
+            let info = mac_bundle_info(&canonical);
+            if info.bundle_id.eq_ignore_ascii_case(bundle_id) {
+                return Some(canonical);
+            }
+        }
+    }
+    None
+}
+
+fn sparkle_archive_extension(url: &str) -> Option<&'static str> {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let extension = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "zip" => Some("zip"),
+        "dmg" => Some("dmg"),
+        "pkg" => Some("pkg"),
+        _ => None,
+    }
+}
+
+struct TempWorkspace {
+    path: PathBuf,
+    cleanup: bool,
+}
+
+impl TempWorkspace {
+    fn new() -> Result<Self, String> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "diskraptor-mac-update-{}-{stamp}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path)
+            .map_err(|error| format!("Could not create update workspace: {error}"))?;
+        Ok(Self {
+            path,
+            cleanup: true,
+        })
+    }
+
+    /// Keep the downloaded archive around when an external installer has to
+    /// open it after this function returns.
+    fn keep(mut self) {
+        self.cleanup = false;
+    }
+}
+
+impl Drop for TempWorkspace {
+    fn drop(&mut self) {
+        if self.cleanup {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+struct MountedDmg {
+    mount: PathBuf,
+}
+
+impl MountedDmg {
+    fn attach(archive: &Path, mount: &Path) -> Result<Self, String> {
+        std::fs::create_dir_all(mount)
+            .map_err(|error| format!("Could not create mount point: {error}"))?;
+        let status = Command::new("hdiutil")
+            .args([
+                "attach",
+                "-nobrowse",
+                "-readonly",
+                "-noautoopen",
+                "-mountpoint",
+            ])
+            .arg(mount)
+            .arg(archive)
+            .status()
+            .map_err(|error| format!("Could not mount the update image: {error}"))?;
+        if !status.success() {
+            return Err("Could not mount the downloaded update image".to_string());
+        }
+        Ok(Self {
+            mount: mount.to_path_buf(),
+        })
+    }
+}
+
+impl Drop for MountedDmg {
+    fn drop(&mut self) {
+        let _ = Command::new("hdiutil")
+            .args(["detach", "-force"])
+            .arg(&self.mount)
+            .status();
+    }
+}
+
+fn code_team_id(bundle: &Path) -> Option<String> {
+    let output = Command::new("codesign")
+        .args(["-dv", "--verbose=4"])
+        .arg(bundle)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stderr);
+    text.lines().find_map(|line| {
+        line.strip_prefix("TeamIdentifier=")
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && *value != "not set")
+            .map(str::to_string)
+    })
+}
+
+fn verify_mac_code_signature(bundle: &Path) -> Result<(), String> {
+    let output = Command::new("codesign")
+        .args(["--verify", "--deep", "--strict"])
+        .arg(bundle)
+        .output()
+        .map_err(|error| format!("Could not verify the update signature: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let detail = first_error(&String::from_utf8_lossy(&output.stderr));
+        Err(format!(
+            "The downloaded application is not correctly signed: {detail}"
+        ))
+    }
+}
+
+fn clean_base64(value: &str) -> String {
+    value.chars().filter(|ch| !ch.is_whitespace()).collect()
+}
+
+/// Verify the Ed25519 signature Sparkle publishes for the archive. This is the
+/// same signature Sparkle itself checks before installing an update.
+fn verify_sparkle_signature(
+    app: &Path,
+    archive: &Path,
+    signature: Option<&str>,
+) -> Result<(), String> {
+    let info = mac_bundle_info(app);
+    let public_key = clean_base64(&info.public_ed_key);
+    if public_key.is_empty() {
+        return Err("This app does not publish a Sparkle Ed25519 public key".to_string());
+    }
+    let signature = signature
+        .map(clean_base64)
+        .filter(|signature| !signature.is_empty())
+        .ok_or_else(|| "The update is not signed in the appcast".to_string())?;
+
+    let key_bytes = base64::engine::general_purpose::STANDARD
+        .decode(public_key)
+        .map_err(|error| format!("Invalid Sparkle public key: {error}"))?;
+    if key_bytes.len() != 32 {
+        return Err("Invalid Sparkle public key length".to_string());
+    }
+    let mut key_array = [0u8; 32];
+    key_array.copy_from_slice(&key_bytes);
+    let verifying_key = VerifyingKey::from_bytes(&key_array)
+        .map_err(|error| format!("Invalid Sparkle public key: {error}"))?;
+
+    let signature_bytes = base64::engine::general_purpose::STANDARD
+        .decode(signature)
+        .map_err(|error| format!("Invalid Sparkle signature: {error}"))?;
+    if signature_bytes.len() != 64 {
+        return Err("Invalid Sparkle signature length".to_string());
+    }
+    let mut signature_array = [0u8; 64];
+    signature_array.copy_from_slice(&signature_bytes);
+    let signature = Signature::from_bytes(&signature_array);
+
+    let bytes = std::fs::read(archive)
+        .map_err(|error| format!("Could not read the downloaded update: {error}"))?;
+    verifying_key
+        .verify(&bytes, &signature)
+        .map_err(|_| "The update signature is invalid".to_string())
+}
+
+fn find_app_with_bundle_id(root: &Path, bundle_id: &str) -> Option<PathBuf> {
+    let mut paths = Vec::new();
+    collect_mac_app_paths(root, 5, &mut paths);
+    paths.into_iter().find(|path| {
+        mac_bundle_info(path)
+            .bundle_id
+            .eq_ignore_ascii_case(bundle_id)
+    })
+}
+
+fn mac_bundle_is_newer(next: &MacBundleInfo, current: &MacBundleInfo) -> bool {
+    if version_is_newer(&next.version, &current.version) {
+        return true;
+    }
+    next.version == current.version
+        && !next.build_version.is_empty()
+        && !current.build_version.is_empty()
+        && version_is_newer(&next.build_version, &current.build_version)
+}
+
+fn install_bundle_update(
+    old_path: &Path,
+    new_path: &Path,
+    expected: &MacBundleInfo,
+) -> Result<String, String> {
+    let new_info = mac_bundle_info(new_path);
+    if !new_info.bundle_id.eq_ignore_ascii_case(&expected.bundle_id) {
+        return Err("The update contains a different application".to_string());
+    }
+    if !mac_bundle_is_newer(&new_info, expected) {
+        return Err(format!(
+            "The downloaded version ({}) is not newer than the installed version ({})",
+            new_info.version, expected.version
+        ));
+    }
+    verify_mac_code_signature(new_path)?;
+
+    let old_team = code_team_id(old_path)
+        .ok_or_else(|| "The installed app has no Developer ID signature".to_string())?;
+    let new_team = code_team_id(new_path)
+        .ok_or_else(|| "The downloaded app has no Developer ID signature".to_string())?;
+    if old_team != new_team {
+        return Err("The update is signed by a different developer".to_string());
+    }
+
+    quit_mac_app(old_path);
+    let name = old_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Application.app");
+    let backup = old_path.with_file_name(format!(
+        ".{name}.diskraptor-backup-{}",
+        std::process::id()
+    ));
+    if backup.exists() {
+        let _ = std::fs::remove_dir_all(&backup);
+    }
+    std::fs::rename(old_path, &backup).map_err(|error| {
+        format!(
+            "Could not replace {name}: {error}. Administrator permission may be required."
+        )
+    })?;
+
+    let copied = Command::new("ditto")
+        .arg(new_path)
+        .arg(old_path)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if !copied {
+        let _ = std::fs::remove_dir_all(old_path);
+        let _ = std::fs::rename(&backup, old_path);
+        return Err(format!("Could not copy the update into {name}"));
+    }
+
+    let installed = mac_bundle_info(old_path);
+    if !installed.bundle_id.eq_ignore_ascii_case(&expected.bundle_id)
+        || !mac_bundle_is_newer(&installed, expected)
+    {
+        let _ = std::fs::remove_dir_all(old_path);
+        let _ = std::fs::rename(&backup, old_path);
+        return Err("The installed app did not report the expected version".to_string());
+    }
+    if ::trash::delete(&backup).is_err() {
+        let _ = std::fs::remove_dir_all(&backup);
+    }
+    Ok(installed.version)
+}
+
+fn install_sparkle_archive(
+    old_path: &Path,
+    expected: &MacBundleInfo,
+    archive: &Path,
+    workspace: &TempWorkspace,
+) -> Result<MacUpdateOutcome, String> {
+    let extension = archive
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "zip" => {
+            let extract = workspace.path.join("extract");
+            std::fs::create_dir_all(&extract)
+                .map_err(|error| format!("Could not prepare the update: {error}"))?;
+            let status = Command::new("ditto")
+                .args(["-x", "-k"])
+                .arg(archive)
+                .arg(&extract)
+                .status()
+                .map_err(|error| format!("Could not extract the update: {error}"))?;
+            if !status.success() {
+                return Err("Could not extract the downloaded update".to_string());
+            }
+            let new_app = find_app_with_bundle_id(&extract, &expected.bundle_id)
+                .ok_or_else(|| "The update archive does not contain the app".to_string())?;
+            install_bundle_update(old_path, &new_app, expected).map(MacUpdateOutcome::Installed)
+        }
+        "dmg" => {
+            let mount = workspace.path.join("mount");
+            let mounted = MountedDmg::attach(archive, &mount)?;
+            let result = match find_app_with_bundle_id(&mount, &expected.bundle_id) {
+                Some(new_app) => install_bundle_update(old_path, &new_app, expected)
+                    .map(MacUpdateOutcome::Installed),
+                None => {
+                    drop(mounted);
+                    Command::new("open")
+                        .arg(archive)
+                        .status()
+                        .map_err(|error| format!("Could not open the update image: {error}"))?;
+                    Ok(MacUpdateOutcome::Pending(
+                        "Opened the official update image; finish the installation in Finder."
+                            .to_string(),
+                    ))
+                }
+            };
+            result
+        }
+        "pkg" => {
+            let status = Command::new("open")
+                .arg(archive)
+                .status()
+                .map_err(|error| format!("Could not open the update installer: {error}"))?;
+            if !status.success() {
+                return Err("Could not open the update installer".to_string());
+            }
+            Ok(MacUpdateOutcome::Pending(
+                "Opened the signed package installer; finish the installation there.".to_string(),
+            ))
+        }
+        _ => Err("Unsupported update archive type".to_string()),
+    }
+}
+
+fn run_sparkle_update(bundle_id: &str) -> Result<Value, String> {
+    let app_path = find_mac_app_by_bundle_id(bundle_id)
+        .ok_or_else(|| "Could not find the installed application".to_string())?;
+    let info = mac_bundle_info(&app_path);
+    if info.app_store {
+        return Err("This application is managed by the App Store".to_string());
+    }
+    if !info.feed_url.trim().to_ascii_lowercase().starts_with("https://") {
+        return Err("This application does not publish a secure update feed".to_string());
+    }
+
+    let xml = http_get_text(&info.feed_url, 10)?;
+    let release = parse_sparkle_appcast(&xml)
+        .ok_or_else(|| "No usable release found in the appcast".to_string())?;
+    if !sparkle_release_is_newer(&release, &info.version, &info.build_version) {
+        return Err("This application is already up to date".to_string());
+    }
+    let extension = sparkle_archive_extension(&release.enclosure_url)
+        .ok_or_else(|| "The update URL does not point to a supported archive".to_string())?;
+    if !release.enclosure_url.trim().to_ascii_lowercase().starts_with("https://") {
+        return Err("The update download is not served over HTTPS".to_string());
+    }
+
+    let workspace = TempWorkspace::new()?;
+    let archive = workspace.path.join(format!("update.{extension}"));
+    http_download(&release.enclosure_url, &archive)?;
+    verify_sparkle_signature(&app_path, &archive, release.ed_signature.as_deref())?;
+
+    match install_sparkle_archive(&app_path, &info, &archive, &workspace)? {
+        MacUpdateOutcome::Installed(version) => Ok(json!({
+            "success": true,
+            "output": format!("Updated {} to {version}", info.bundle_id),
+        })),
+        MacUpdateOutcome::Pending(message) => {
+            // The external installer still needs the downloaded file after we
+            // return, so do not let the workspace guard delete it yet.
+            workspace.keep();
+            Ok(json!({
+                "success": true,
+                "pending": true,
+                "output": message,
+            }))
+        }
+    }
+}
+
+fn open_app_store_updates() -> Result<Value, String> {
+    let opened = Command::new("open")
+        .arg("macappstore://showUpdatesPage")
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if !opened {
+        let fallback = Command::new("open")
+            .args(["-a", "App Store"])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !fallback {
+            return Err("Could not open the App Store".to_string());
+        }
+    }
+    Ok(json!({
+        "success": true,
+        "pending": true,
+        "output": "Opened the App Store Updates page. Finish the update there.",
+    }))
+}
+
 pub(crate) fn run_macos_update(id: &str, source: &str) -> Result<Value, String> {
     if in_mac_sandbox() {
         return Err(
@@ -1812,32 +2540,13 @@ pub(crate) fn run_macos_update(id: &str, source: &str) -> Result<Value, String> 
         );
     }
     let id = id.trim();
-    if id.is_empty() {
-        return Err("Missing application id".to_string());
+    if !safe_bundle_id(id) {
+        return Err("Invalid bundle identifier".to_string());
     }
-    if !valid_package_id(id) {
-        return Err("Invalid application id".to_string());
-    }
-    let program = match source {
-        "mas" => "mas",
-        "brew" => "brew",
-        other => return Err(format!("Unknown update source: {other}")),
-    };
-    if !command_exists(program) {
-        return Err(format!("{program} is not installed"));
-    }
-    let Some((ok, out, err)) = run_capture(program, &["upgrade", id]) else {
-        return Err(format!("{program} could not be executed"));
-    };
-    if ok {
-        Ok(json!({ "success": true, "output": out.trim() }))
-    } else {
-        let detail = if err.trim().is_empty() {
-            out.trim().to_string()
-        } else {
-            err.trim().to_string()
-        };
-        Err(format!("{program} could not update {id}: {detail}"))
+    match source {
+        "appstore" => open_app_store_updates(),
+        "sparkle" => run_sparkle_update(id),
+        other => Err(format!("Unknown update source: {other}")),
     }
 }
 
@@ -1913,7 +2622,7 @@ fn quit_mac_app(path: &Path) {
     if in_mac_sandbox() {
         return;
     }
-    let (_, bundle_id, _) = mac_bundle_info(path);
+    let bundle_id = mac_bundle_info(path).bundle_id;
     let script = if bundle_id.is_empty() {
         let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
             return;
@@ -1988,21 +2697,7 @@ pub(crate) fn uninstall_macos(
         }
     })?;
 
-    // Prefer Homebrew for cask-managed applications: uninstalling through brew
-    // also removes symlinks, launch agents and cached metadata. Fall back to
-    // the Trash when brew is unavailable or the cask fails.
-    if package_source.eq_ignore_ascii_case("brew")
-        && command_exists("brew")
-        && valid_package_id(package_id.trim())
-    {
-        if let Some((true, _, _)) = run_capture("brew", &["uninstall", "--cask", package_id.trim()])
-        {
-            if wait_path_gone(&path) {
-                return Ok(());
-            }
-        }
-    }
-
+    let _ = (package_id, package_source);
     quit_mac_app(&path);
     ::trash::delete(&path)
         .map_err(|error| format!("Could not move {} to the Trash: {error}", path.display()))?;
@@ -2413,23 +3108,155 @@ mod tests {
     }
 
     #[test]
-    fn brew_and_mas_parsers() {
-        let brew = parse_brew_outdated(
-            r#"{"formulae":[{"name":"wget","installed_versions":["1.21"],"current_version":"1.24"}],
-                "casks":[{"token":"firefox","name":["Firefox"],"installed_versions":["125.0"],"current_version":"126.0"}]}"#,
-        );
-        assert_eq!(brew.len(), 2);
-        assert_eq!(brew[0].id, "wget");
-        assert_eq!(brew[0].version, "1.21");
-        assert_eq!(brew[1].id, "firefox");
-        assert_eq!(brew[1].name, "Firefox");
+    fn version_comparison_handles_numeric_parts() {
+        assert!(version_is_newer("1.10.0", "1.9.9"));
+        assert!(version_is_newer("2.0", "1.99.99"));
+        assert!(version_is_newer("1.2.3", "1.2"));
+        assert!(!version_is_newer("1.2.3", "1.2.3"));
+        assert!(!version_is_newer("1.2.3", "1.2.4"));
+        assert!(!version_is_newer("", "1.2.3"));
+    }
 
-        let mas = parse_mas_outdated("497799835 Xcode (14.3 -> 15.0)\n");
-        assert_eq!(mas.len(), 1);
-        assert_eq!(mas[0].id, "497799835");
-        assert_eq!(mas[0].name, "Xcode");
-        assert_eq!(mas[0].version, "14.3");
-        assert_eq!(mas[0].available, "15.0");
+    #[test]
+    fn sparkle_appcast_picks_the_newest_signed_release() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+            <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+              <channel>
+                <title>Updates</title>
+                <item>
+                  <title>Old</title>
+                  <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+                  <enclosure url="https://example.com/old.zip" sparkle:edSignature="old"/>
+                </item>
+                <item>
+                  <title>New</title>
+                  <sparkle:shortVersionString>1.4.2</sparkle:shortVersionString>
+                  <sparkle:version>142</sparkle:version>
+                  <enclosure url="https://example.com/new.zip" sparkle:edSignature="new"/>
+                </item>
+              </channel>
+            </rss>"#;
+        let release = parse_sparkle_appcast(xml).expect("release");
+        assert_eq!(release.version, "1.4.2");
+        assert_eq!(release.enclosure_url, "https://example.com/new.zip");
+        assert_eq!(release.ed_signature.as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn sparkle_appcast_skips_prerelease_channels() {
+        let xml = r#"<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+              <channel>
+                <item>
+                  <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+                  <enclosure url="https://example.com/stable.zip" sparkle:edSignature="stable"/>
+                </item>
+                <item>
+                  <sparkle:shortVersionString>2.0.0-beta.1</sparkle:shortVersionString>
+                  <sparkle:channel>beta</sparkle:channel>
+                  <enclosure url="https://example.com/beta.zip" sparkle:edSignature="beta"/>
+                </item>
+              </channel>
+            </rss>"#;
+        let release = parse_sparkle_appcast(xml).expect("stable release");
+        assert_eq!(release.version, "1.5.0");
+        assert_eq!(release.enclosure_url, "https://example.com/stable.zip");
+    }
+
+    #[test]
+    fn sparkle_appcast_uses_build_version_when_short_version_is_missing() {
+        let xml = r#"<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+              <channel><item>
+                <sparkle:version>142</sparkle:version>
+                <enclosure url="https://example.com/app.zip" sparkle:edSignature="sig"/>
+              </item></channel>
+            </rss>"#;
+        let release = parse_sparkle_appcast(xml).expect("release");
+        assert_eq!(release.version, "142");
+        assert!(release.version_is_build);
+    }
+
+    #[test]
+    fn sparkle_release_considers_build_number_changes() {
+        let short_release = SparkleRelease {
+            version: "1.4.2".to_string(),
+            version_is_build: false,
+            build_version: Some("143".to_string()),
+            enclosure_url: "https://example.com/app.zip".to_string(),
+            ed_signature: Some("sig".to_string()),
+        };
+        assert!(sparkle_release_is_newer(
+            &short_release,
+            "1.4.2",
+            "142"
+        ));
+        assert!(!sparkle_release_is_newer(
+            &short_release,
+            "1.4.2",
+            "143"
+        ));
+
+        let build_release = SparkleRelease {
+            version: "143".to_string(),
+            version_is_build: true,
+            build_version: Some("143".to_string()),
+            enclosure_url: "https://example.com/app.zip".to_string(),
+            ed_signature: Some("sig".to_string()),
+        };
+        assert!(sparkle_release_is_newer(
+            &build_release,
+            "1.4.2",
+            "142"
+        ));
+        assert!(!sparkle_release_is_newer(
+            &build_release,
+            "1.4.2",
+            "143"
+        ));
+    }
+
+    #[test]
+    fn mac_bundle_build_version_can_make_an_update_newer() {
+        let installed = MacBundleInfo {
+            version: "1.4.2".to_string(),
+            build_version: "142".to_string(),
+            ..MacBundleInfo::default()
+        };
+        let updated = MacBundleInfo {
+            version: "1.4.2".to_string(),
+            build_version: "143".to_string(),
+            ..MacBundleInfo::default()
+        };
+        assert!(mac_bundle_is_newer(&updated, &installed));
+        assert!(!mac_bundle_is_newer(&installed, &updated));
+    }
+
+    #[test]
+    fn sparkle_appcast_ignores_unsigned_releases() {
+        let xml = r#"<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+              <channel>
+                <item>
+                  <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+                  <enclosure url="https://example.com/old.zip" sparkle:edSignature="old"/>
+                </item>
+                <item>
+                  <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+                  <enclosure url="https://example.com/unsigned.zip"/>
+                </item>
+              </channel>
+            </rss>"#;
+        let release = parse_sparkle_appcast(xml).expect("signed release");
+        assert_eq!(release.version, "1.5.0");
+        assert_eq!(release.enclosure_url, "https://example.com/old.zip");
+    }
+
+    #[test]
+    fn sparkle_appcast_ignores_entries_without_an_enclosure() {
+        let xml = r#"<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+              <channel><item>
+                <sparkle:shortVersionString>9.0</sparkle:shortVersionString>
+              </item></channel>
+            </rss>"#;
+        assert!(parse_sparkle_appcast(xml).is_none());
     }
 
     #[test]

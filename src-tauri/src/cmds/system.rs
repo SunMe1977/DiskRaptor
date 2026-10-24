@@ -691,8 +691,9 @@ pub(crate) async fn list_installed_apps() -> JsonResult {
 /// Check installed applications for available updates.
 ///
 /// Windows: uses `winget list --upgrade-available` (the same package data the
-/// OS uses). macOS: Homebrew plus `mas` when installed. Linux: the native
-/// package manager (apt/dnf/zypper/pacman) plus flatpak and snap. Returns
+/// OS uses). macOS: the App Store catalogue plus each app's Sparkle appcast.
+/// Linux: the native package manager (apt/dnf/zypper/pacman) plus flatpak and
+/// snap. Returns
 /// `{ supported, updates: [{name, id, version, available, source}], error? }`.
 #[tauri::command]
 pub(crate) async fn check_app_updates() -> JsonResult {
@@ -846,9 +847,10 @@ fn parse_winget_upgrades(text: &str) -> Vec<serde_json::Value> {
 
 /// Upgrade a single application via the platform package manager.
 ///
-/// Windows: `winget upgrade --id <id> --exact --silent`. macOS/Linux: Homebrew,
-/// mas, apt, dnf, zypper, pacman, flatpak or snap depending on the source.
-/// Returns `{ success, output? }`; failures reject the IPC call so the UI can
+/// Windows: `winget upgrade --id <id> --exact --silent`. macOS: opens the App
+/// Store updates page or installs a signed Sparkle update. Linux: apt, dnf,
+/// zypper, pacman, flatpak or snap depending on the source. Returns
+/// `{ success, pending?, output? }`; failures reject the IPC call so the UI can
 /// report them.
 #[tauri::command]
 pub(crate) async fn run_app_update(id: String, source: String) -> JsonResult {

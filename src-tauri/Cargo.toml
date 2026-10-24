@@ -70,6 +70,8 @@ sysinfo = "0.39"
 trash = "5"
 # Reads both XML and binary Info.plist files, which most built .app bundles use.
 plist = "1"
+# Parses Sparkle appcasts for native macOS application updates.
+quick-xml = "0.42"
 open = "5"
 ureq = "3"
 tokio = { version = "1", features = ["full"] }
