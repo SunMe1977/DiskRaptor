@@ -43,9 +43,9 @@ pub(crate) use system::{
     check_admin_needed, check_app_updates, check_for_updates, classify_download, get_app_data_dir, get_app_info,
     get_app_version, get_dir_stats, get_home_dir, get_memory_info, get_process_memory,
     get_trash_path, get_volume_stats, in_mac_sandbox, install_update, is_sandboxed,
-    list_downloads_candidates, list_drives, list_installed_apps, list_volumes_via_sysinfo,
-    parse_system_profiler_disks, pick_directory, request_permissions, restart_as_admin,
-    run_app_update, uninstall_app,
+    kill_process, list_downloads_candidates, list_drives, list_installed_apps, list_processes,
+    list_volumes_via_sysinfo, optimize_memory, parse_system_profiler_disks, pick_directory,
+    request_permissions, restart_as_admin, run_app_update, uninstall_app,
 };
 #[cfg(not(target_os = "windows"))]
 #[allow(unused_imports)]

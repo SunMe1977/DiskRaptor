@@ -487,6 +487,168 @@ pub(crate) fn get_process_memory() -> JsonResult {
     }
 }
 
+/// Processes that must never be offered for termination: DiskRaptor itself,
+/// the kernel's bookkeeping processes and the Windows session services that
+/// would crash the desktop if killed.
+fn is_protected_process(pid: u32, name: &str, self_pid: u32) -> bool {
+    if pid == self_pid || pid <= 4 {
+        return true;
+    }
+    let lower = name.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "system"
+            | "system idle process"
+            | "registry"
+            | "memory compression"
+            | "smss"
+            | "csrss"
+            | "wininit"
+            | "winlogon"
+            | "services"
+            | "lsass"
+            | "fontdrvhost"
+            | "dwm"
+            | "svchost"
+            | "audiodg"
+    )
+}
+
+/// Enumerate running processes ordered by RAM usage. Returns at most the 150
+/// heaviest processes so the overlay stays responsive on busy machines.
+#[tauri::command]
+pub(crate) fn list_processes() -> JsonResult {
+    let self_pid = std::process::id();
+    let mut sys = sysinfo::System::new();
+    // Two passes give `cpu_usage` a delta to measure against, so the first open
+    // already shows a sensible CPU column.
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    let mut procs: Vec<serde_json::Value> = sys
+        .processes()
+        .iter()
+        .map(|(pid, p)| {
+            let pid_u32 = pid.as_u32();
+            let name = p.name().to_string_lossy().to_string();
+            serde_json::json!({
+                "pid": pid_u32,
+                "name": name,
+                "memory": p.memory(),
+                "cpu": p.cpu_usage(),
+                "protected": is_protected_process(pid_u32, &name, self_pid),
+                "self": pid_u32 == self_pid,
+            })
+        })
+        .collect();
+    procs.sort_by(|a, b| {
+        let left = a.get("memory").and_then(|v| v.as_u64()).unwrap_or(0);
+        let right = b.get("memory").and_then(|v| v.as_u64()).unwrap_or(0);
+        right.cmp(&left)
+    });
+    procs.truncate(150);
+    JsonResult::ok(serde_json::json!(procs))
+}
+
+/// Terminate a single process by PID. System processes and DiskRaptor itself
+/// are refused here as a second line of defence behind the UI.
+#[tauri::command]
+pub(crate) fn kill_process(pid: u32) -> JsonResult {
+    let self_pid = std::process::id();
+    if pid == self_pid {
+        return JsonResult::err("Cannot terminate DiskRaptor itself");
+    }
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, false);
+    let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) else {
+        return JsonResult::err("The process no longer exists");
+    };
+    let name = process.name().to_string_lossy().to_string();
+    if is_protected_process(pid, &name, self_pid) {
+        return JsonResult::err("This is a system process and cannot be terminated");
+    }
+    if process.kill() {
+        JsonResult::ok(serde_json::json!({ "killed": true, "pid": pid, "name": name }))
+    } else {
+        JsonResult::err("The process could not be terminated (insufficient permissions?)")
+    }
+}
+
+/// Trim every accessible process working set so idle pages are paged out. This
+/// is the native, dependency-free equivalent of the classic Windows "RAM
+/// booster" and needs no admin rights for processes the user already owns.
+#[cfg(target_os = "windows")]
+fn trim_process_working_sets() -> usize {
+    use windows::Win32::Foundation::{CloseHandle, BOOL};
+    use windows::Win32::System::ProcessStatus::{K32EmptyWorkingSet, K32EnumProcesses};
+    use windows::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA,
+    };
+
+    const SLOT_COUNT: usize = 1024;
+    let mut pids = vec![0u32; SLOT_COUNT];
+    let mut needed: u32 = 0;
+    let ok = unsafe {
+        K32EnumProcesses(
+            pids.as_mut_ptr(),
+            (SLOT_COUNT * std::mem::size_of::<u32>()) as u32,
+            &mut needed,
+        )
+    };
+    if !ok.as_bool() || needed == 0 {
+        return 0;
+    }
+    let count = (needed as usize / std::mem::size_of::<u32>()).min(SLOT_COUNT);
+    let mut trimmed = 0usize;
+    for &pid in &pids[..count] {
+        if pid == 0 {
+            continue;
+        }
+        let handle = unsafe {
+            OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA,
+                BOOL(0),
+                pid,
+            )
+        };
+        let Ok(handle) = handle else { continue };
+        unsafe {
+            if K32EmptyWorkingSet(handle).as_bool() {
+                trimmed += 1;
+            }
+            let _ = CloseHandle(handle);
+        }
+    }
+    trimmed
+}
+
+#[cfg(not(target_os = "windows"))]
+fn trim_process_working_sets() -> usize {
+    // macOS and Linux expose no user-space equivalent to EmptyWorkingSet;
+    // freeing memory there means closing apps (the per-process Kill button).
+    0
+}
+
+/// Release what RAM can be released without closing applications, then report
+/// the before/after available memory so the UI never overstates the result.
+#[tauri::command]
+pub(crate) fn optimize_memory() -> JsonResult {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let before = sys.available_memory();
+    let trimmed = trim_process_working_sets();
+    sys.refresh_memory();
+    let after = sys.available_memory();
+    let freed = after.saturating_sub(before);
+    JsonResult::ok(serde_json::json!({
+        "before": before,
+        "after": after,
+        "freed": freed,
+        "trimmed": trimmed,
+    }))
+}
+
 #[tauri::command]
 pub(crate) fn get_app_version() -> JsonResult {
     JsonResult::ok(serde_json::json!({

@@ -48,6 +48,7 @@ pub fn register_commands() -> Box<tauri::ipc::InvokeHandler<tauri::Wry>> {
         cmds::system::get_home_dir, cmds::system::pick_directory, cmds::system::get_trash_path, cmds::system::list_drives, cmds::system::get_volume_stats, cmds::system::get_dir_stats,
         cmds::system::list_downloads_candidates,
         cmds::system::get_memory_info, cmds::system::get_process_memory, cmds::system::get_app_version, cmds::system::get_app_data_dir, cmds::system::get_app_info,
+        cmds::system::list_processes, cmds::system::kill_process, cmds::system::optimize_memory,
         trash::empty_trash, trash::list_trash, trash::restore_trash,
         cmds::system::request_permissions, cmds::system::check_admin_needed, cmds::system::restart_as_admin, cmds::system::is_sandboxed,
         cmds::system::check_for_updates, cmds::system::install_update, cmds::path_ops::open_url,

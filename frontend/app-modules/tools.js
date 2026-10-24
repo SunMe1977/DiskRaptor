@@ -613,35 +613,7 @@ let chartData;
           item.textContent = "\uD83D\uDDD1\uFE0F " + window.t("tools.empty_trash");
         }, 3000);
        } else if (action === "ram-optimize") {
-          try {
-            if (typeof gc === "function") gc();
-          } catch (_) {}
-          const tr = window.__ || window.t || function (s) { return s; };
-          try {
-            const results = await Promise.all([
-              window.__TAURI__.invoke("get_memory_info").catch(function () { return null; }),
-              window.__TAURI__.invoke("get_process_memory").catch(function () { return null; }),
-            ]);
-            const sysMem = results[0] && results[0].data ? results[0].data : results[0];
-            const procMem = results[1] && results[1].data ? results[1].data : results[1];
-            const fmt = window.fmtSize || function (b) { return String(b); };
-            if (sysMem && sysMem.total > 0) {
-              const total = sysMem.total;
-              const used = sysMem.used || (total - (sysMem.free || 0));
-              const appMem = (procMem && procMem.resident) || 0;
-              window.showToast && window.showToast(
-                tr("tools.memory_optimized")
-                  .replace("{app}", fmt(appMem))
-                  .replace("{used}", fmt(used))
-                  .replace("{total}", fmt(total)),
-                "success",
-              );
-            } else {
-              window.showToast && window.showToast(tr("tools.memory_refreshed"), "success");
-            }
-          } catch (e) {
-            window.showToast && window.showToast(tr("tools.memory_failed"), "error");
-          }
+          openMemoryOptimizer();
        } else if (action === "exit") {
         try {
           await window.__TAURI__.invoke("exit_app");
@@ -933,6 +905,197 @@ let chartData;
     if (t === 4) return "SSD";
     if (t === 3) return "HDD";
     return "Unknown";
+  }
+
+  /**
+ * Open the Memory Optimizer overlay: a gradient RAM gauge, the heaviest
+ * processes (with a per-process Kill) and a dependency-free "Optimize All"
+ * that trims idle working sets on Windows and re-measures RAM honestly.
+ */
+function openMemoryOptimizer() {
+    const t = window.__ || window.t || function (s) { return s; };
+    const esc = window.escHtml || function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); };
+    const fmt = window.fmtSize || function (b) { return b + " B"; };
+    const old = document.getElementById("mem-overlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "mem-overlay";
+    overlay.className = "dr-overlay dr-overlay-dim";
+    const card = document.createElement("div");
+    card.className = "dr-card dr-card-xl";
+    card.style.maxWidth = "760px";
+    card.innerHTML =
+      '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+      '<span style="font-size:14px;font-weight:600;">\uD83E\uDDE0 ' + esc(t("mem.title")) + "</span>" +
+      '<div style="display:flex;gap:6px;">' +
+      '<button class="mem-refresh" aria-label="' + esc(t("mem.refresh")) + '" title="' + esc(t("mem.refresh")) + '" style="padding:3px 8px;font-size:14px;border:none;background:none;color:var(--text-muted);cursor:pointer;">\u27F3</button>' +
+      '<button class="mem-close" aria-label="' + esc(t("welcome.close")) + '" style="padding:3px 8px;font-size:14px;border:none;background:none;color:var(--text-muted);cursor:pointer;">\u2715</button>' +
+      "</div>" +
+      "</div>" +
+      '<div style="padding:12px 16px;border-bottom:1px solid var(--border);">' +
+      '<div style="height:16px;border-radius:8px;overflow:hidden;background:var(--bg-tertiary);">' +
+      '<div class="mem-bar-fill" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent-blue,#1f6feb),var(--accent-green,#3fb950));transition:width .45s ease;"></div>' +
+      "</div>" +
+      '<div style="display:flex;gap:28px;margin-top:10px;flex-wrap:wrap;">' +
+      '<div><div style="font-size:11px;color:var(--text-muted);">' + esc(t("mem.used")) + '</div><div class="mem-used" style="font-size:16px;font-weight:700;">\u2014</div></div>' +
+      '<div><div style="font-size:11px;color:var(--text-muted);">' + esc(t("mem.available")) + '</div><div class="mem-avail" style="font-size:16px;font-weight:700;">\u2014</div></div>' +
+      '<div><div style="font-size:11px;color:var(--text-muted);">' + esc(t("mem.total")) + '</div><div class="mem-total" style="font-size:16px;font-weight:700;">\u2014</div></div>' +
+      "</div>" +
+      "</div>" +
+      '<div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;">' +
+      '<button class="mem-optimize" style="padding:7px 16px;font-size:12px;border:none;border-radius:6px;background:linear-gradient(135deg,var(--accent-blue,#1f6feb),var(--accent-green,#3fb950));color:#fff;cursor:pointer;font-weight:600;">\u26A1 ' + esc(t("mem.optimize_all")) + "</button>" +
+      '<span class="mem-status" style="flex:1;font-size:12px;color:var(--text-muted);text-align:right;"></span>' +
+      "</div>" +
+      '<div class="mem-list" style="flex:1;overflow-y:auto;padding:6px 8px;min-height:280px;"></div>';
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    if (window.app && window.app.trapFocus) window.app.trapFocus(overlay);
+
+    const closeBtn = card.querySelector(".mem-close");
+    const refreshBtn = card.querySelector(".mem-refresh");
+    const optBtn = card.querySelector(".mem-optimize");
+    const statusEl = card.querySelector(".mem-status");
+    const listEl = card.querySelector(".mem-list");
+    const barEl = card.querySelector(".mem-bar-fill");
+    const usedEl = card.querySelector(".mem-used");
+    const availEl = card.querySelector(".mem-avail");
+    const totalEl = card.querySelector(".mem-total");
+
+    function onKey(e) {
+      if (e.key === "Escape") close();
+    }
+    function close() {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey);
+    }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+    document.addEventListener("keydown", onKey);
+    closeBtn.focus();
+
+    function setMem(total, used, available) {
+      totalEl.textContent = fmt(total);
+      usedEl.textContent = fmt(used);
+      availEl.textContent = fmt(available);
+      const pct = total > 0 ? Math.min(100, Math.max(0, (used / total) * 100)) : 0;
+      barEl.style.width = pct.toFixed(1) + "%";
+    }
+
+    function renderRows(rows) {
+      listEl.innerHTML = "";
+      if (!rows || !rows.length) {
+        listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">' + esc(t("mem.no_processes")) + "</div>";
+        return;
+      }
+      rows.forEach(function (p) {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px;border-bottom:1px solid var(--border);";
+        const name = document.createElement("span");
+        name.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;";
+        name.textContent = p.name || ("PID " + p.pid);
+        name.title = p.name || "";
+        const pid = document.createElement("span");
+        pid.style.cssText = "width:60px;text-align:right;color:var(--text-muted);font-size:12px;";
+        pid.textContent = p.pid;
+        const cpu = document.createElement("span");
+        cpu.style.cssText = "width:58px;text-align:right;color:var(--text-muted);font-size:12px;";
+        cpu.textContent = (typeof p.cpu === "number" ? p.cpu.toFixed(0) : "0") + "%";
+        const size = document.createElement("span");
+        size.style.cssText = "width:90px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;";
+        size.textContent = fmt(p.memory || 0);
+        row.appendChild(name);
+        row.appendChild(pid);
+        row.appendChild(cpu);
+        row.appendChild(size);
+        if (p.protected || p.self) {
+          const badge = document.createElement("span");
+          badge.style.cssText = "width:44px;text-align:center;";
+          badge.textContent = p.self ? "\uD83D\uDC51" : "\uD83D\uDD12";
+          badge.title = p.self ? t("mem.this_app") : t("mem.protected");
+          row.appendChild(badge);
+        } else {
+          const kill = document.createElement("button");
+          kill.textContent = t("mem.kill");
+          kill.style.cssText = "padding:4px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--accent-red,#da3633);cursor:pointer;";
+          kill.addEventListener("click", function () { killOne(p); });
+          row.appendChild(kill);
+        }
+        listEl.appendChild(row);
+      });
+    }
+
+    async function killOne(p) {
+      const ok = await window.confirmDialog(
+        t("mem.kill_confirm").replace("{name}", p.name || ("PID " + p.pid)).replace("{pid}", p.pid),
+      );
+      if (!ok) return;
+      try {
+        const res = await window.__TAURI__.invoke("kill_process", { pid: p.pid });
+        const data = res && res.data ? res.data : res;
+        statusEl.textContent = t("mem.killed").replace("{name}", (data && data.name) || p.name);
+        window.showToast && window.showToast(statusEl.textContent, "success");
+        refresh();
+      } catch (e) {
+        const msg = t("mem.kill_failed")
+          .replace("{name}", p.name || ("PID " + p.pid))
+          .replace("{error}", (e && e.message) || String(e));
+        statusEl.textContent = msg;
+        window.showToast && window.showToast(msg, "error");
+      }
+    }
+
+    async function refresh() {
+      statusEl.textContent = t("mem.loading");
+      try {
+        const results = await Promise.all([
+          window.__TAURI__.invoke("get_memory_info").catch(function () { return null; }),
+          window.__TAURI__.invoke("list_processes").catch(function () { return null; }),
+        ]);
+        const m = results[0] && results[0].data ? results[0].data : results[0];
+        if (m && m.total > 0) {
+          const available = m.available || m.free || 0;
+          const used = m.used || (m.total - available);
+          setMem(m.total, used, available);
+        } else {
+          setMem(0, 0, 0);
+        }
+        const raw = results[1];
+        const arr = raw && raw.data ? raw.data : (Array.isArray(raw) ? raw : []);
+        renderRows(arr);
+        statusEl.textContent = arr.length ? arr.length + " " + t("mem.processes") : t("mem.no_processes");
+      } catch (e) {
+        statusEl.textContent = e && e.message ? e.message : String(e);
+      }
+    }
+
+    optBtn.addEventListener("click", async function () {
+      optBtn.disabled = true;
+      statusEl.textContent = t("mem.optimizing");
+      if (typeof gc === "function") { try { gc(); } catch (_) {} }
+      try {
+        const res = await window.__TAURI__.invoke("optimize_memory");
+        const data = res && res.data ? res.data : res;
+        const freed = data && data.freed ? data.freed : 0;
+        const trimmed = data && data.trimmed ? data.trimmed : 0;
+        if (freed > 0) {
+          statusEl.textContent = t("mem.freed").replace("{size}", fmt(freed));
+          window.showToast && window.showToast(statusEl.textContent, "success");
+        } else if (trimmed > 0) {
+          statusEl.textContent = t("mem.trimmed").replace("{n}", trimmed);
+        } else {
+          statusEl.textContent = t("mem.nothing_freed");
+        }
+      } catch (e) {
+        statusEl.textContent = e && e.message ? e.message : String(e);
+      } finally {
+        optBtn.disabled = false;
+        refresh();
+      }
+    });
+
+    refreshBtn.addEventListener("click", refresh);
+    refresh();
   }
 
   /**
