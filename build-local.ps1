@@ -72,6 +72,15 @@ if (-not (Test-Path -LiteralPath $dist)) {
 
 try {
     Copy-Item -LiteralPath $srcExe -Destination (Join-Path $dist "DiskRaptor.exe") -Force
+    # Debug builds link the Rust std dynamically (because of the `cdylib`
+    # crate type), so the matching std-*.dll must sit next to the exe or
+    # Windows fails to start it (STATUS_DLL_NOT_FOUND). Release builds link
+    # std statically and need nothing.
+    $stdDll = Get-ChildItem (Join-Path $root "src-tauri\target\$profile\deps") -Filter "std-*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($stdDll) {
+        Copy-Item -LiteralPath $stdDll.FullName -Destination (Join-Path $dist $stdDll.Name) -Force
+        Write-Host "  (copied $($stdDll.Name) next to the exe)" -ForegroundColor DarkGray
+    }
     Write-Host ""
     Write-Host "  OK: dist\DiskRaptor.exe" -ForegroundColor Green
     Write-Host ""

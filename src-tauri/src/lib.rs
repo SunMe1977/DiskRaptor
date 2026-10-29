@@ -6,7 +6,6 @@ pub mod lifecycle;
 pub mod log;
 pub mod menu;
 pub mod menu_i18n;
-pub mod license;
 pub mod scanner;
 pub mod smart;
 pub mod state;

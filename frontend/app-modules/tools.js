@@ -379,7 +379,7 @@ let chartData;
             (hn.size || 0) +
             "</td></tr>\n";
         }
-        const brand = window.__proBrand || "DiskRaptor";
+        const brand = "DiskRaptor";
         const htmlReport =
           '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + brand + ' Report</title><style>body{font-family:sans-serif;margin:20px;color:#333}h1{color:var(--accent-green)}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5}</style></head><body>' +
           "<h1>\uD83E\uDD96 " + brand + " Report</h1>" +

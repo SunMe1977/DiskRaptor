@@ -513,7 +513,7 @@ _startRenderLoop() {
       ctx.font = "bold 22px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillText("✦ " + (window.__proBrand || "DiskRaptor") + " Galaxy ✦", w/2, 16);
+      ctx.fillText("✦ DiskRaptor Galaxy ✦", w/2, 16);
       ctx.fillStyle = "rgba(180,220,255,0.25)";
       ctx.font = "14px system-ui, sans-serif";
       ctx.fillText("Objects: " + (this.objects ? this.objects.length : 0) + " | " + (this.stats ? (this.stats.total_files || "") + " files, " + (this.stats.total_size ? this._fmtSize(this.stats.total_size) : "") : "loading..."), w/2, 48);

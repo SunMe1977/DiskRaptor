@@ -5,7 +5,6 @@ mod browser;
 mod cmds;
 mod ipc;
 mod lifecycle;
-mod license;
 mod menu;
 mod menu_i18n;
 mod scanner;
@@ -19,8 +18,6 @@ mod trash;
 mod window;
 
 use crate::state::{AppState, JsonResult, ScanResultData};
-#[allow(unused_imports)]
-use crate::license::LicenseManager;
 #[allow(unused_imports)]
 use std::sync::atomic::{AtomicBool, AtomicU64};
 #[allow(unused_imports)]
@@ -84,10 +81,6 @@ fn main() {
     let app_state = {
         let state = AppState::default();
         *state.settings_path.lock() = settings_path;
-        // Restore a previously activated Pro license so it survives
-        // restarts (offline key and Creem online license; the latter is
-        // revalidated, with offline grace when the network is down).
-        crate::license::restore_persisted(&state);
         state
     };
 

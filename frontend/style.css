@@ -1421,11 +1421,37 @@ button.icon-btn {
     text-align: center;
     min-width: 400px;
     max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
     box-shadow:
         0 0 0 1px rgba(255, 255, 255, 0.15),
         0 0 0 2px rgba(255, 255, 255, 0.05),
         0 20px 60px rgba(0, 0, 0, 0.5);
     animation: slideUp 0.3s ease;
+}
+.about-close-x {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 2;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease, background 0.2s ease;
+}
+.about-close-x:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
 }
 .about-bg {
     position: absolute;
@@ -1445,9 +1471,16 @@ body.light-theme .about-bg {
     flex-direction: column;
     align-items: center;
     gap: 6px;
-    max-height: 90vh;
-    overflow: hidden;
-    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.about-footer {
+    position: relative;
+    z-index: 1;
+    padding: 0 36px 20px;
+    flex-shrink: 0;
 }
 .about-tab-content {
     flex: 1;
@@ -1456,12 +1489,13 @@ body.light-theme .about-bg {
     width: 100%;
 }
 .about-logo {
-    width: 240px;
-    height: 240px;
+    width: 140px;
+    height: 140px;
     margin-bottom: 12px;
     border-radius: 20px;
     overflow: hidden;
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
+    flex-shrink: 0;
 }
 .about-logo img {
     width: 100%;

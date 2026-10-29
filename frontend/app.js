@@ -462,11 +462,8 @@ return window.__TAURI__.invoke("delete_permanent", { path });
     })();
 
 // True in store builds (Mac App Store / MSIX): the packager stamps
-// data-store="true" onto #about-update-check. Store builds must not
-// steer users to external purchase flows (Apple Guideline 3.1.1), so
-// buy links and the Pro upsell are hidden there. License *activation*
-// with an externally bought key (e.g. via Creem on the website) keeps
-// working in every build.
+// data-store="true" onto #about-update-check. Store builds update via
+// the store instead of the in-app update check.
 window.app = window.app || {};
 window.app.isStoreBuild = function () {
   try {
@@ -476,106 +473,6 @@ window.app.isStoreBuild = function () {
     return false;
   }
 };
-
-// -- Rating prompt: ask for a store rating on the 5th, 10th, 50th and
-    //    100th launch. "No" only closes the dialog -- it reappears at the next
-    //    milestone; "Yes" opens the store page. After launch #100 it stops.
-let __ratingPromptCancelled = false;
-    (async function maybeShowRatingPrompt() {
-      if (__ratingPromptCancelled) return;
-      try {
-        const s = await window.__TAURI__.invoke("load_settings", {});
-        const count = (s && typeof s.rating_launch_count === "number")
-          ? s.rating_launch_count
-          : 0;
-        const next = count + 1;
-        window.__TAURI__
-          .invoke("save_settings", { settings: { rating_launch_count: next } })
-          .catch(function () {});
-        if (next !== 5 && next !== 10 && next !== 50 && next !== 100) return;
-        if (!window.yesNoDialog) return;
-        // Make sure the translation tables are loaded before building the
-        // dialog (they load asynchronously at startup) � otherwise t() would
-        // return raw key names.
-        try {
-          if (window.I18N && window.I18N.ready) await window.I18N.ready;
-        } catch (_) { /* intentional */ }
-        const platform = (navigator.platform || "").toLowerCase();
-        const isMac = platform.indexOf("mac") === 0;
-        const storeUrl = isMac
-          ? "https://apps.apple.com/us/app/diskraptor/id6793462969"
-          : "https://apps.microsoft.com/detail/xpdf89vj02kvmm?cid=PCCongratsBnr";
-        const storeName = isMac ? "Mac App Store" : "Microsoft Store";
-        const tr = function (key, vars, fallback) {
-          let s = (window.__ || function () { return fallback || key; })(key);
-          if (s === key && fallback) s = fallback; // not translated yet ? inline text
-          Object.keys(vars || {}).forEach(function (k) {
-            s = s.replace("{" + k + "}", vars[k]);
-          });
-          return s;
-        };
-        const ok = await window.yesNoDialog(
-          tr("rating.message", { store: storeName, times: next },
-            "You've started DiskRaptor {times} times. I'm a solo developer � a 5-star rating would help me a lot ?????. Thank you!") + "\n\n" +
-            tr("rating.question", { store: storeName }, "Rate in the {store}?"),
-          tr("rating.yes", {}, "Yes, I'll rate it"),
-          tr("rating.no", {}, "No, thanks"),
-        );
-        if (ok) {
-          window.__TAURI__.invoke("open_url", { url: storeUrl }).catch(function () {});
-        }
-      } catch (e) { console.debug("[DiskRaptor]", e); }
-    })();
-
-// -- Pro upsell prompt: on the 5th, 10th, 50th launch and every 50th
-//    after that (100, 150, ...), offer the Pro license or continuing
-//    free. Never shown to Pro users. "Continue free" only closes the
-//    dialog — it reappears at the next milestone.
-    (async function maybeShowProPrompt() {
-      try {
-        // No external steering in store builds (Apple Guideline 3.1.1).
-        if (window.app.isStoreBuild()) return;
-        const lic = await window.__TAURI__.invoke("license_status", {});
-        const info = lic && lic.data ? lic.data : lic;
-        if (info && info.state === "pro") return;
-        const s = await window.__TAURI__.invoke("load_settings", {});
-        const count = (s && typeof s.pro_prompt_launch_count === "number")
-          ? s.pro_prompt_launch_count
-          : 0;
-        const next = count + 1;
-        window.__TAURI__
-          .invoke("save_settings", { settings: { pro_prompt_launch_count: next } })
-          .catch(function () {});
-        if (!(next === 5 || next === 10 || (next >= 50 && next % 50 === 0))) return;
-        if (!window.yesNoDialog) return;
-        try {
-          if (window.I18N && window.I18N.ready) await window.I18N.ready;
-        } catch (_) { /* intentional */ }
-        const tr = function (key, vars, fallback) {
-          let str = (window.__ || function () { return fallback || key; })(key);
-          if (str === key && fallback) str = fallback; // not translated yet ? inline text
-          Object.keys(vars || {}).forEach(function (k) {
-            str = str.replace("{" + k + "}", vars[k]);
-          });
-          return str;
-        };
-        // Single source of truth: reuse the license page URL from the
-        // About link (users pick a tier there; checkouts stay on the site).
-        const buyUrlEl = document.querySelector('[data-open-url*="diskraptor.com/license"]');
-        const buyUrl = (buyUrlEl && buyUrlEl.getAttribute("data-open-url")) ||
-          "https://diskraptor.com/license/";
-        const ok = await window.yesNoDialog(
-          tr("pro_prompt.message", { times: next },
-            "You've started DiskRaptor {times} times. Go Pro to unlock the duplicate finder and support solo development. Thank you!") + "\n\n" +
-            tr("pro_prompt.question", {}, "Buy the Pro license?"),
-          tr("pro_prompt.buy", {}, "Buy Pro"),
-          tr("pro_prompt.free", {}, "Continue free"),
-        );
-        if (ok) {
-          window.__TAURI__.invoke("open_url", { url: buyUrl }).catch(function () {});
-        }
-      } catch (e) { console.debug("[DiskRaptor]", e); }
-    })();
 
     // -- Accessibility: keep aria-expanded in sync with each dropdown's
     //    .active class (menus are shown/hidden purely via that class). --
@@ -1190,154 +1087,6 @@ await doCheck();
       });
     });
 
-    // ── Pro branding ───────────────────────────────────
-    // When a license is active the product reads "DiskRaptor Pro"
-    // everywhere a user can see it. Re-applied after every
-    // re-translation (see i18n.js) so language switches keep it.
-    window.__isPro = !!window.__isPro;
-    window.refreshProBranding = function (pro) {
-      if (pro !== undefined) window.__isPro = !!pro;
-      const brand = window.__isPro ? "DiskRaptor Pro" : "DiskRaptor";
-      window.__proBrand = brand;
-      try { document.title = brand; } catch (_) {}
-      const tr = window.t || window.__ || function (s) { return s; };
-      const branded = function (key) {
-        return String(tr(key)).split("DiskRaptor").join(brand);
-      };
-      const setText = function (sel, text) {
-        try {
-          const el = document.querySelector(sel);
-          if (el) el.textContent = text;
-        } catch (_) {}
-      };
-      setText('[data-i18n="toolbar.title"]', brand);
-      setText('[data-i18n="tip.title"]', branded("tip.title"));
-      setText("#welcome-about-btn", branded("welcome.about"));
-      setText("#about-brand-name", brand);
-      setText(".about-copy", "© 2026 " + brand);
-    };
-
-    // ── License activation UI ──────────────────────────
-    // Wired at startup (not inside the galaxy loader): otherwise the
-    // Activate button stays dead until the Galaxy view opens once.
-    (function initLicenseUI() {
-      const stateText = document.getElementById("license-state-text");
-      const details = document.getElementById("license-details");
-      const graceEl = document.getElementById("license-grace");
-      const input = document.getElementById("license-key-input");
-      const errorEl = document.getElementById("license-error");
-      const btnActivate = document.getElementById("btn-license-activate");
-      const btnTrial = document.getElementById("btn-trial-start");
-      const btnDeactivate = document.getElementById("btn-license-deactivate");
-      if (!btnActivate && !btnDeactivate && !btnTrial) return;
-
-      function trialDaysLeft(expires) {
-        if (!expires) return -1;
-        const ms = Date.parse(expires) - Date.now();
-        return ms < 0 ? 0 : Math.ceil(ms / 86400000);
-      }
-
-      function updateTrialBadge(state, expires) {
-        let badge = document.getElementById("trial-badge");
-        if (state === "trial") {
-          const days = trialDaysLeft(expires);
-          if (!badge) {
-            badge = document.createElement("span");
-            badge.id = "trial-badge";
-            badge.style.cssText = "font-size:10px;font-weight:700;color:#0d1117;background:var(--accent-green);border-radius:8px;padding:1px 7px;margin-left:6px;vertical-align:middle;";
-            const title = document.querySelector('[data-i18n="toolbar.title"]');
-            if (title && title.parentElement) title.parentElement.appendChild(badge);
-          }
-          badge.style.display = "";
-          badge.textContent = window.t("license.trial_badge").replace("{n}", days);
-        } else if (badge) {
-          badge.style.display = "none";
-        }
-      }
-
-      async function refresh() {
-        try {
-          const res = await window.__TAURI__.invoke("license_status");
-          const info = res && res.data ? res.data : res;
-          const state = info && info.state ? info.state : "inactive";
-          if (stateText) {
-            stateText.textContent = state;
-            stateText.style.color = state === "pro" ? "var(--accent-green)" : state === "expired" ? "var(--accent-red)" : "var(--text-muted)";
-          }
-          const email = info && info.email ? info.email : "";
-          const expires = info && info.expires ? info.expires : "";
-          let detailText = email ? "Email: " + email + (expires ? "  ·  Expires: " + expires : "") : "";
-          if (state === "trial") {
-            const days = trialDaysLeft(expires);
-            detailText = window.t("license.trial_left").replace("{n}", days);
-          }
-          if (details) details.textContent = detailText;
-          if (graceEl) graceEl.style.display = info && info.offline_grace ? "block" : "none";
-          if (btnTrial) btnTrial.style.display = state === "inactive" ? "" : "none";
-          updateTrialBadge(state, expires);
-          // Keep the confirmation visible while Pro is active (no toast here).
-          if (state === "pro" || state === "trial") { showSuccess(window.t("license.thanks_pro"), true); }
-          const proActive = !!state && state !== "inactive" && state !== "expired";
-          if (window.refreshProBranding) window.refreshProBranding(proActive);
-        } catch (_) { /* not critical */ }
-      }
-
-      function showError(msg) {
-        if (errorEl) { errorEl.textContent = msg; errorEl.style.display = msg ? "block" : "none"; errorEl.style.color = "var(--accent-red)"; }
-      }
-
-      function showSuccess(msg, silent) {
-        if (errorEl) { errorEl.textContent = msg; errorEl.style.display = msg ? "block" : "none"; errorEl.style.color = "var(--accent-green)"; }
-        if (msg && !silent && window.showToast) { try { window.showToast(msg, "success"); } catch (_) {} }
-      }
-
-      if (btnActivate) {
-        btnActivate.addEventListener("click", async function () {
-          const key = input && input.value ? input.value.trim() : "";
-          if (!key) { showError(window.t("license.no_key")); return; }
-          showError("");
-          try {
-            // NOTE: the IPC bridge unwraps successful JsonResult payloads
-            // (resolves `data` directly), so success has NO `success` field.
-            // Only an explicit `success === false` means failure.
-            const res = await window.__TAURI__.invoke("license_activate", { licenseKey: key });
-            if (res && res.success === false) {
-              showError(res.error || window.t("license.activate_error"));
-            } else {
-              if (input) input.value = "";
-              showSuccess(window.t("license.thanks_pro"));
-              await refresh();
-            }
-          } catch (e) { showError(String(e)); }
-        });
-      }
-      if (btnTrial) {
-        btnTrial.addEventListener("click", async function () {
-          showError("");
-          try {
-            const res = await window.__TAURI__.invoke("license_start_trial", {});
-            if (res && res.success === false) {
-              showError(res.error || window.t("license.activate_error"));
-            } else {
-              showSuccess(window.t("license.thanks_pro"));
-              await refresh();
-            }
-          } catch (e) { showError(String(e)); }
-        });
-      }
-      if (btnDeactivate) {
-        btnDeactivate.addEventListener("click", async function () {
-          try {
-            await window.__TAURI__.invoke("license_deactivate");
-            if (input) input.value = "";
-            showError("");
-            await refresh();
-          } catch (_) {}
-        });
-      }
-      refresh();
-    })();
-
     // ── Scan snapshots, scheduled reports, size filter, downloads ──
     (function initGrowth() {
       const invoke = function (cmd, args) {
@@ -1474,9 +1223,8 @@ await doCheck();
         } catch (_) {}
       }, 4000);
 
-      // --- Scheduled reports (#6, Pro-gated) ---
+      // --- Scheduled reports ---
       let schedRunning = "";
-      let schedToasted = false;
       window.addEventListener("scan-complete", function (e) {
         const p = e && e.detail && e.detail.path;
         if (p && p === schedRunning) {
@@ -1490,7 +1238,7 @@ await doCheck();
             const esc = window.escHtml || function (x) { return String(x); };
             return "<tr><td>" + esc(f.path || "?") + "</td><td>" + (f.size || 0) + "</td></tr>";
           }).join("");
-          const brand = window.__proBrand || "DiskRaptor";
+          const brand = "DiskRaptor";
           const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + brand +
             ' Scheduled Report</title></head><body style="font-family:sans-serif;margin:20px;">' +
             "<h1>" + brand + " Scheduled Report</h1>" +
@@ -1522,17 +1270,6 @@ await doCheck();
         if (!sc || !sc.enabled || !sc.path) return;
         const dueMs = sc.frequency === "weekly" ? 7 * 86400000 : 86400000;
         if (sc.last_run && Date.now() - sc.last_run < dueMs) return;
-        // Pro-gated.
-        let lic;
-        try { lic = await invoke("license_status", {}); } catch (_) { return; }
-        const st = (lic && lic.data ? lic.data : lic) || {};
-        if (!st.state || st.state === "inactive" || st.state === "expired") {
-          if (!schedToasted) {
-            schedToasted = true;
-            toast(window.t("report.pro_required"), "info");
-          }
-          return;
-        }
         const btnScan = document.getElementById("btn-scan");
         if (!btnScan || btnScan.disabled) return; // scan running — retry later
         schedRunning = sc.path;
@@ -1687,6 +1424,12 @@ await doCheck();
         aboutOverlay.classList.remove("active");
       });
     }
+    const aboutCloseX = document.getElementById("btn-about-close-x");
+    if (aboutCloseX) {
+      aboutCloseX.addEventListener("click", function () {
+        aboutOverlay.classList.remove("active");
+      });
+    }
     aboutOverlay.addEventListener("click", function (e) {
       if (e.target === aboutOverlay) aboutOverlay.classList.remove("active");
     });
@@ -1765,12 +1508,6 @@ await doCheck();
       // becomes a button that opens the DiskRaptor page in the Mac App Store
       // app (macOS routes apps.apple.com URLs to the App Store app).
       if (updateCheckEl.getAttribute("data-store") === "true") {
-        // No external purchase steering in store builds (Apple 3.1.1):
-        // hide the license page link (it leads to checkouts). Pasting an
-        // externally bought license key into About → Pro keeps working.
-        document.querySelectorAll('[data-open-url*="diskraptor.com/license"]').forEach(function (a) {
-          a.style.display = "none";
-        });
         updateCheckEl.textContent = "\u{1F3EC} " + window.__("about.open_mac_app_store");
         updateCheckEl.style.color = "var(--accent-green)";
         updateCheckEl.style.cursor = "pointer";

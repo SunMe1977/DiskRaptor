@@ -499,7 +499,7 @@
                 <div style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
                         <input id="settings-sched-enabled" type="checkbox" style="width:15px;height:15px;cursor:pointer;" />
-                        <label for="settings-sched-enabled" style="font-size:12px;color:var(--text-primary);cursor:pointer;" data-i18n="settings.sched_title">📅 Scheduled reports (Pro)</label>
+                        <label for="settings-sched-enabled" style="font-size:12px;color:var(--text-primary);cursor:pointer;" data-i18n="settings.sched_title">📅 Scheduled reports</label>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;">
                         <div>
@@ -526,6 +526,7 @@
         <div id="about-overlay">
             <div class="about-card">
                 <div class="about-bg"></div>
+                <button id="btn-about-close-x" class="about-close-x" type="button" aria-label="Close" title="Close">✕</button>
                 <div class="about-content">
                     <div class="about-logo">
                         <img id="about-logo-img" src="images/logo6_about.png" alt="DiskRaptor" />
@@ -537,7 +538,6 @@
                         <button class="about-tab active" data-tab="about">📋 <span data-i18n="about.tab_about">About</span></button>
                         <button class="about-tab" data-tab="changelog">📜 <span data-i18n="about.tab_changelog">Changelog</span></button>
                         <button class="about-tab" data-tab="credits">🙏 <span data-i18n="about.tab_credits">Credits</span></button>
-                        <button class="about-tab" data-tab="pro">⭐ <span data-i18n="about.tab_pro">Pro</span></button>
                     </div>
                     <div id="about-tab-about" class="about-tab-content">
                         <p class="about-tech">⚡ Rust + Tauri 2 · jwalk · sysinfo</p>
@@ -549,7 +549,6 @@
                             <a data-open-url="mailto:support@diskraptor.com" class="about-link" title="support@diskraptor.com">📧 support@diskraptor.com</a>
                             <a data-open-url="https://diskraptor.com" class="about-link">🌐 diskraptor.com</a>
                             <a data-open-url="https://github.com/SunMe1977/DiskRaptor" class="about-link">🐙 GitHub</a>
-                            <a data-open-url="https://diskraptor.com/license/" class="about-link">💰 Single-user license</a>
                         </p>
                         <p id="about-update-check" style="font-size:11px;color:var(--text-muted);cursor:pointer;margin:8px 0 0;">🔍 <span data-i18n="menu.check_updates">Check for Updates</span></p>
                     </div>
@@ -581,47 +580,28 @@
                              <p style="font-weight:600;color:var(--text-primary);font-size:12px;margin:0;" data-i18n="about.thanks_contributors">🙏 Thanks to our contributors</p>
                              <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-top:6px;flex-wrap:wrap;">
                                  <a data-open-url="https://github.com/SunMe1977" class="about-link" style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                                     <img src="images/contributors/SunMe1977.png" width="36" height="36" alt="SunMe1977" style="border-radius:50%;border:1px solid var(--border);" />
+                                     <img src="images/contributors/SunMe1977.jpg" width="36" height="36" alt="SunMe1977" style="border-radius:50%;border:1px solid var(--border);" />
                                      SunMe1977
                                  </a>
                                  <a data-open-url="https://github.com/bovirus" class="about-link" style="display:flex;align-items:center;gap:8px;font-size:12px;">
                                      <img src="images/contributors/bovirus.png" width="36" height="36" alt="bovirus" style="border-radius:50%;border:1px solid var(--border);" />
                                      bovirus
                                  </a>
+                                 <a data-open-url="https://github.com/MrScripty" class="about-link" style="display:flex;align-items:center;gap:8px;font-size:12px;">
+                                     <img src="images/contributors/MrScripty.jpg" width="36" height="36" alt="MrScripty" style="border-radius:50%;border:1px solid var(--border);" />
+                                     MrScripty
+                                 </a>
                              </div>
                          </div>
                       </div>
-                    <div id="about-tab-pro" class="about-tab-content" style="display:none;">
-                      <div style="font-size:11px;text-align:left;padding:4px 8px;color:var(--text-secondary);line-height:1.6;">
-                        <p data-i18n="license.state">License</p>
-                        <p id="license-state-text" style="font-size:13px;font-weight:600;color:var(--text-muted);margin:4px 0 8px;">—</p>
-                        <p id="license-details" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;"></p>
-                        <p id="license-grace" style="font-size:11px;color:var(--accent-orange);margin-bottom:8px;display:none;" data-i18n="license.offline_grace">Offline mode — license will re-verify when you are back online.</p>
-                        <input id="license-key-input" type="text" placeholder="Paste license key…" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);box-sizing:border-box;" data-i18n-placeholder="license.enter_key" />
-                        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-                          <button id="btn-license-activate" class="primary" style="font-size:12px;padding:4px 12px;" data-i18n="license.activate">Activate</button>
-                          <button id="btn-trial-start" style="font-size:12px;padding:4px 12px;" data-i18n="license.start_trial">Start 14-day free trial</button>
-                          <button id="btn-license-deactivate" style="font-size:12px;padding:4px 12px;" data-i18n="license.deactivate">Deactivate</button>
-                        </div>
-                        <p id="license-error" style="font-size:11px;color:var(--accent-red);margin-top:6px;display:none;"></p>
-                        <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
-                          <p style="font-weight:600;font-size:11px;margin:0 0 4px;" data-i18n="pro.compare_title">Free vs Pro</p>
-                          <table style="width:100%;font-size:11px;border-collapse:collapse;">
-                            <tr style="color:var(--text-muted);"><td></td><td style="text-align:center;" data-i18n="pro.compare_free">Free</td><td style="text-align:center;" data-i18n="pro.compare_pro">Pro</td></tr>
-                            <tr><td data-i18n="pro.f_scans">Scans, diagrams &amp; Galaxy</td><td style="text-align:center;">✓</td><td style="text-align:center;">✓</td></tr>
-                            <tr><td data-i18n="pro.f_dupfinder">Duplicate Finder</td><td style="text-align:center;">—</td><td style="text-align:center;">✓</td></tr>
-                            <tr><td data-i18n="pro.f_reports">Scheduled reports</td><td style="text-align:center;">—</td><td style="text-align:center;">✓</td></tr>
-                            <tr><td data-i18n="pro.f_support">Priority support</td><td style="text-align:center;">—</td><td style="text-align:center;">✓</td></tr>
-                          </table>
-                        </div>
-                      </div>
                     </div>
+                <div class="about-footer">
                      <div class="about-divider"></div>
                      <p class="about-copy">© 2026 DiskRaptor</p>
                     <button id="btn-about-close" class="primary" data-i18n="about.done">✓ Done</button>
                 </div>
+                </div>
             </div>
-        </div>
 
         <!-- RAM status bar at the bottom of the page -->
          <div id="ram-bar" class="ram-bar-bottom">
