@@ -4,6 +4,11 @@
 # No code signing, no NSIS/MSIX bundling, no prompt — use build.cmd for a full
 # release build.
 #
+# The exe is self-contained (single file): Rust 1.99+ ships a dynamically
+# linked std on Windows, which would add a std-<hash>.dll next to the exe, so
+# this script pins the build to the last toolchain that still links std
+# statically (see $toolchain below).
+#
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File build-local.ps1
 #   powershell -ExecutionPolicy Bypass -File build-local.ps1 -DebugBuild   # debug binary
@@ -41,6 +46,20 @@ if (-not $SkipFrontend) {
 # 2) Rust binary. Use `tauri build --no-bundle` (not a bare `cargo build`) so
 #    the frontend assets are embedded via the tauri/custom-protocol feature —
 #    a plain `cargo build` produces a slim exe that is missing the UI.
+#
+#    Toolchain: Rust 1.99 links std as an import library on Windows (the exe
+#    then needs std-<hash>.dll beside it). 1.98.0 still embeds std statically,
+#    so the local build is pinned to it to keep dist\DiskRaptor.exe a single
+#    file like the official release. Remove the pin once a stable release
+#    links std statically again.
+$toolchain = "1.98.0"
+if (-not (rustup toolchain list 2>$null | Select-String -SimpleMatch $toolchain)) {
+    Write-Host "Installing Rust $toolchain (one-time, ~250 MB)..." -ForegroundColor Yellow
+    rustup toolchain install $toolchain --profile minimal
+    if ($LASTEXITCODE -ne 0) { throw "Could not install Rust $toolchain" }
+}
+$env:RUSTUP_TOOLCHAIN = $toolchain
+
 $profile = if ($DebugBuild) { "debug" } else { "release" }
 Write-Host "[2/3] Building Rust binary ($profile)..." -ForegroundColor Yellow
 Set-Location "$root\src-tauri"
@@ -50,6 +69,7 @@ if ($DebugBuild) {
     npx tauri build --no-bundle --ci
 }
 if ($LASTEXITCODE -ne 0) { throw "Rust/Tauri build failed" }
+Remove-Item Env:\RUSTUP_TOOLCHAIN -ErrorAction SilentlyContinue
 Set-Location $root
 
 # 3) Package into dist\
@@ -71,15 +91,26 @@ if (-not (Test-Path -LiteralPath $dist)) {
 }
 
 try {
-    Copy-Item -LiteralPath $srcExe -Destination (Join-Path $dist "DiskRaptor.exe") -Force
-    # Debug builds link the Rust std dynamically (because of the `cdylib`
-    # crate type), so the matching std-*.dll must sit next to the exe or
-    # Windows fails to start it (STATUS_DLL_NOT_FOUND). Release builds link
-    # std statically and need nothing.
-    $stdDll = Get-ChildItem (Join-Path $root "src-tauri\target\$profile\deps") -Filter "std-*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($stdDll) {
-        Copy-Item -LiteralPath $stdDll.FullName -Destination (Join-Path $dist $stdDll.Name) -Force
-        Write-Host "  (copied $($stdDll.Name) next to the exe)" -ForegroundColor DarkGray
+    $dstExe = Join-Path $dist "DiskRaptor.exe"
+    Copy-Item -LiteralPath $srcExe -Destination $dstExe -Force
+
+    # Safety net: only ship a std DLL if this exe actually imports one. The
+    # pinned toolchain links std statically (a single exe), but if a future
+    # toolchain regresses to dynamic std, the app would fail to start with
+    # STATUS_DLL_NOT_FOUND unless the DLL sits next to it.
+    $exeText = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($dstExe))
+    $stdDllName = [regex]::Match($exeText, "std-[0-9a-f]{16}\.dll").Value
+    if ($stdDllName) {
+        $stdDll = Get-ChildItem (Join-Path $root "src-tauri\target\$profile\deps") -Filter $stdDllName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $stdDll) {
+            $stdDll = Get-ChildItem (Join-Path (rustup run $toolchain rustc --print sysroot) "lib\rustlib\x86_64-pc-windows-msvc\lib") -Filter $stdDllName -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if ($stdDll) {
+            Copy-Item -LiteralPath $stdDll.FullName -Destination (Join-Path $dist $stdDllName) -Force
+            Write-Warning "exe imports $stdDllName - copied it next to the exe (dist is not single-file)"
+        } else {
+            Write-Warning "exe imports $stdDllName but the DLL was not found - the app will not start"
+        }
     }
     Write-Host ""
     Write-Host "  OK: dist\DiskRaptor.exe" -ForegroundColor Green
