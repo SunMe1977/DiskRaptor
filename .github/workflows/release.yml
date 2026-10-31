@@ -88,6 +88,22 @@ jobs:
           DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
           DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
         run: npx tauri build --bundles msi --config src-tauri/tauri.silent.conf.json --ci --features test-server
+      - name: Build MSIX package (Microsoft Store)
+        shell: pwsh
+        run: |
+          # Tauri v2 has no MSIX bundler: pack the silent MSI into an (unsigned)
+          # MSIX with MakeAppx. Microsoft re-signs it on Partner Center submission.
+          python -m pip install --upgrade pillow --disable-pip-version-check -q
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          $msi = "src-tauri\target\release\bundle\msi\DiskRaptor_${ver}_x64_en-US.msi"
+          if (-not (Test-Path $msi)) { Write-Error "Silent MSI not found: $msi"; exit 1 }
+          powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
+            -MsiPath $msi -Version "${ver}.0" `
+            -OutFile "release-assets\DiskRaptor-windows-x64.msix"
+          if (-not (Test-Path "release-assets\DiskRaptor-windows-x64.msix")) {
+            Write-Error "MSIX package not created"; exit 1
+          }
+          Get-Item "release-assets\DiskRaptor-windows-x64.msix" | Select-Object Name, Length
       - name: Build silent installer EXE (for Microsoft Store)
         shell: pwsh
         run: |

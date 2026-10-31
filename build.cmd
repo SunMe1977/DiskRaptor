@@ -153,25 +153,13 @@ if exist "%MAKENSIS%" (
 )
 
 REM -- Step 4: MSIX (Microsoft Store) package ------------
-echo.
-echo [MSIX] Building MSIX package...
-set "MSIX_CERT=%SIGNTOOL_CERT_PATH%"
-if not exist "%MSIX_CERT%" set "MSIX_CERT=%~dp0certs\DiskRaptor.pfx"
-if exist "%MSIX_CERT%" (
-    REM Build MSIX with the same signing cert used for signtool.
-    call npx tauri build --bundles msix --ci
-    if %ERRORLEVEL% equ 0 (
-        echo  OK - MSIX package built
-        echo  Upload it via Partner Center: https://partner.microsoft.com/dashboard
-    ) else (
-        echo  WARNING: MSIX build failed (check tauri msix prerequisites)
-    )
-) else (
-    echo  SKIP MSIX: no signing certificate found.
-    echo  Set SIGNTOOL_CERT_PATH or place a .pfx at certs\DiskRaptor.pfx
-    echo  Microsoft Store requires an MSIX signed with a cert from your
-    echo  Partner Center account (not the signtool/EV cert).
-)
+REM Tauri v2 has no MSIX bundler. The Store package is built from the silent
+REM MSI by the CI release workflow (release.yml -> msix\pack-msix.ps1) and
+REM uploaded to GitHub Releases as DiskRaptor-windows-x64.msix.
+REM Build it manually with:
+REM   npx tauri build --bundles msi --config src-tauri\tauri.silent.conf.json --ci
+REM   powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 -MsiPath <silent.msi>
+echo [MSIX] Skipped - built automatically by the release workflow (see msix\README.md)
 
 echo.
 echo ==========================================
@@ -179,7 +167,7 @@ echo   BUILD COMPLETE
 echo ==========================================
 echo.
 echo  EXE: dist\DiskRaptor.exe
-echo  MSIX: src-tauri\target\release\bundle\msix\*
+echo  MSIX: built by the release workflow -> release-assets\DiskRaptor-windows-x64.msix
 echo.
 
 pause

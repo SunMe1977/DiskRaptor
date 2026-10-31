@@ -28,16 +28,17 @@ Code-Signing-Zertifikat**.
 ## MSIX-Paket erzeugen
 
 **Automatisch (empfohlen):** Der Release-Workflow (`.github/workflows/release.yml`,
-Job `windows-release`) baut das MSIX jetzt automatisch mit
+Job `windows-x64`) baut das MSIX nach dem Silent-MSI automatisch mit
 `msix\pack-msix.ps1` und lÃ¤dt es als `DiskRaptor-windows-x64.msix` auf den
 GitHub-Release. Du kannst es von dort direkt im Partner Center einreichen.
 
 **Manuell (optional):**
 ```powershell
 powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
-  -MsiPath src-tauri\target\release\bundle\msi\DiskRaptor_1.0.14_x64_en-US.msi `
-  -Version 1.0.14.0
+  -MsiPath src-tauri\target\release\bundle\msi\DiskRaptor_1.0.50_x64_en-US.msi
 ```
+- Die MSIX-Version wird automatisch aus `package.json` abgeleitet
+  (`1.0.50` â†’ `1.0.50.0`); optional per `-Version 1.0.50.0` Ã¼berschreiben.
 - Voraussetzungen: Windows-SDK (enthÃ¤lt `makeappx.exe`), Python mit Pillow.
 - `-SelfSign` erzeugt zusÃ¤tzlich eine Signatur mit einem temporÃ¤ren
   Selbstzertifikat (nur fÃ¼r lokale Tests; der Store signiert ohnehin neu).

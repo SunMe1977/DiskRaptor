@@ -10,12 +10,17 @@
 
   Run from the repo root. Example:
     powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
-      -MsiPath src-tauri\target\release\bundle\msi\DiskRaptor_1.0.16_x64_en-US.msi `
-      -Version 1.0.16.0
+      -MsiPath src-tauri\target\release\bundle\msi\DiskRaptor_1.0.50_x64_en-US.msi
+
+  The MSIX version defaults to the package.json version + ".0" (e.g. 1.0.50.0);
+  override with -Version 1.0.50.0 if needed.
 #>
 param(
   [Parameter(Mandatory=$true)][string]$MsiPath,
-  [string]$Version = "1.0.16.0",
+  # 4-part MSIX version (major.minor.build.revision). Defaults to the app
+  # version from package.json + ".0" so a stale hardcoded version can never be
+  # re-submitted to the Store by accident.
+  [string]$Version = "",
   [string]$PackageName = "DiskRaptor.DiskRaptor",
   [string]$Publisher = "CN=Hansjoerg Hofer",
   [string]$DisplayName = "DiskRaptor",
@@ -27,6 +32,15 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $work = Join-Path $env:TEMP ("diskraptor_msix_" + [guid]::NewGuid().ToString("N"))
+
+if (-not $Version) {
+  $pkgJson = Join-Path $repoRoot "package.json"
+  $appVer = (Get-Content $pkgJson -Raw | ConvertFrom-Json).version
+  $Version = "$appVer.0"
+  Write-Host "  Version not given - derived $Version from package.json"
+} elseif ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+  throw "MSIX version must be 4 parts (major.minor.build.revision), got '$Version'"
+}
 
 function Find-MakeAppx {
   $roots = @(
