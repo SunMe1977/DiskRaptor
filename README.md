@@ -158,7 +158,7 @@ To install as `brew install diskraptor` (no tap, no path), the cask must first b
 ## Build from Source
 
 ### Prerequisites
-- **Rust** (latest stable) -- `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- **Rust** -- `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` (the version is pinned in `rust-toolchain.toml` and installed automatically by rustup)
 - **Node.js** 18+ (for the Tauri CLI)
 - Linux: **WebKitGTK 4.1** (`sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev`)
 

@@ -62,7 +62,7 @@ jobs:
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          # toolchain is pinned in rust-toolchain.toml (1.98.0)
           cache: true
       - name: Build normal installers (NSIS + MSI)
         env:
@@ -171,7 +171,7 @@ jobs:
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          # toolchain is pinned in rust-toolchain.toml (1.98.0)
           cache: true
       - name: Add macOS universal targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -407,7 +407,7 @@ jobs:
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          # toolchain is pinned in rust-toolchain.toml (1.98.0)
           cache: true
       - name: Add macOS universal targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -597,7 +597,7 @@ jobs:
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          # toolchain is pinned in rust-toolchain.toml (1.98.0)
           cache: true
       - name: Install Linux dependencies
         run: |

@@ -50,13 +50,9 @@ set LIB=%LIB%;%WIN10_KIT%\Lib\%WIN10_KIT_VER%\ucrt\x64
 set LIB=%LIB%;%WIN10_KIT%\Lib\%WIN10_KIT_VER%\um\x64
 
 REM -- Rust toolchain -----------------------------
-REM Rust 1.99 ships std as an import library on Windows, so the exe would
-REM need std-<hash>.dll next to it. 1.98.0 still links std statically and
-REM keeps dist\DiskRaptor.exe a single file (same pin as build-local.ps1).
-rustup toolchain list 2>nul | findstr /b /c:"1.98.0-" >nul
-if errorlevel 1 rustup toolchain install 1.98.0 --profile minimal
-set RUSTUP_TOOLCHAIN=1.98.0
-
+REM Pinned in rust-toolchain.toml (1.98.0): newer toolchains link std as an
+REM import library on Windows, so the exe would need std-<hash>.dll next to
+REM it. rustup installs the pinned toolchain automatically on first use.
 REM -- Step 1: Build Rust app --------------------
 echo [1/3] Building Tauri app...
 cd /d "%~dp0src-tauri"

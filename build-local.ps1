@@ -4,10 +4,9 @@
 # No code signing, no NSIS/MSIX bundling, no prompt — use build.cmd for a full
 # release build.
 #
-# The exe is self-contained (single file): Rust 1.99+ ships a dynamically
-# linked std on Windows, which would add a std-<hash>.dll next to the exe, so
-# this script pins the build to the last toolchain that still links std
-# statically (see $toolchain below).
+# The exe is self-contained (single file): Rust 1.99+ links std as a DLL on
+# Windows, which would add a std-<hash>.dll next to the exe, so the toolchain
+# is pinned repo-wide to 1.98.0 in rust-toolchain.toml.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File build-local.ps1
@@ -46,20 +45,9 @@ if (-not $SkipFrontend) {
 # 2) Rust binary. Use `tauri build --no-bundle` (not a bare `cargo build`) so
 #    the frontend assets are embedded via the tauri/custom-protocol feature —
 #    a plain `cargo build` produces a slim exe that is missing the UI.
-#
-#    Toolchain: Rust 1.99 links std as an import library on Windows (the exe
-#    then needs std-<hash>.dll beside it). 1.98.0 still embeds std statically,
-#    so the local build is pinned to it to keep dist\DiskRaptor.exe a single
-#    file like the official release. Remove the pin once a stable release
-#    links std statically again.
-$toolchain = "1.98.0"
-if (-not (rustup toolchain list 2>$null | Select-String -SimpleMatch $toolchain)) {
-    Write-Host "Installing Rust $toolchain (one-time, ~250 MB)..." -ForegroundColor Yellow
-    rustup toolchain install $toolchain --profile minimal
-    if ($LASTEXITCODE -ne 0) { throw "Could not install Rust $toolchain" }
-}
-$env:RUSTUP_TOOLCHAIN = $toolchain
-
+#    The Rust version comes from rust-toolchain.toml (1.98.0, installed by
+#    rustup on demand): newer toolchains link std as an import library on
+#    Windows, so the exe would need std-<hash>.dll beside it.
 $profile = if ($DebugBuild) { "debug" } else { "release" }
 Write-Host "[2/3] Building Rust binary ($profile)..." -ForegroundColor Yellow
 Set-Location "$root\src-tauri"
@@ -69,7 +57,6 @@ if ($DebugBuild) {
     npx tauri build --no-bundle --ci
 }
 if ($LASTEXITCODE -ne 0) { throw "Rust/Tauri build failed" }
-Remove-Item Env:\RUSTUP_TOOLCHAIN -ErrorAction SilentlyContinue
 Set-Location $root
 
 # 3) Package into dist\
@@ -103,7 +90,7 @@ try {
     if ($stdDllName) {
         $stdDll = Get-ChildItem (Join-Path $root "src-tauri\target\$profile\deps") -Filter $stdDllName -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $stdDll) {
-            $stdDll = Get-ChildItem (Join-Path (rustup run $toolchain rustc --print sysroot) "lib\rustlib\x86_64-pc-windows-msvc\lib") -Filter $stdDllName -ErrorAction SilentlyContinue | Select-Object -First 1
+            $stdDll = Get-ChildItem (Join-Path (rustc --print sysroot) "lib\rustlib\x86_64-pc-windows-msvc\lib") -Filter $stdDllName -ErrorAction SilentlyContinue | Select-Object -First 1
         }
         if ($stdDll) {
             Copy-Item -LiteralPath $stdDll.FullName -Destination (Join-Path $dist $stdDllName) -Force

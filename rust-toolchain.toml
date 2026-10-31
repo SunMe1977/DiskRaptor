@@ -1,0 +1,14 @@
+# Pinned Rust toolchain for CI, release builds and local builds.
+#
+# Why: Rust 1.99 links `std` as an import library on Windows (std-<hash>.dll),
+# so every exe needs that DLL next to it. The portable dist\DiskRaptor.exe is
+# shipped as a single file, so the project stays on 1.98.0 — the last toolchain
+# that embeds std statically.
+#
+# Bump this once a stable release links std statically again on Windows; verify
+# with: dumpbin /dependents src-tauri\target\release\diskraptor.exe
+# (no std-*.dll entry = self-contained).
+[toolchain]
+channel = "1.98.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
