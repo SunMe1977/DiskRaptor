@@ -158,7 +158,8 @@ jobs:
 
   macos-universal:
     name: macOS Universal (Tauri)
-    runs-on: macos-14
+    # macOS 14 runner images are retired on 2026-11-02 (brownouts cancel jobs).
+    runs-on: macos-15
     needs: [validate]
     steps:
       - uses: actions/checkout@v4
@@ -393,7 +394,8 @@ jobs:
   # secrets aren't configured the job is skipped, never blocking the release.
   macos-mas:
     name: macOS App Store (MAS PKG + upload)
-    runs-on: macos-14
+    # macOS 14 runner images are retired on 2026-11-02 (brownouts cancel jobs).
+    runs-on: macos-15
     needs: [validate]
     continue-on-error: true
     steps:
