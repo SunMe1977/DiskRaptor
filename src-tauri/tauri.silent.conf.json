@@ -1,4 +1,7 @@
 {
+  "build": {
+    "beforeBuildCommand": "npm run build:frontend && npm run stamp-store"
+  },
   "bundle": {
     "windows": {
       "webviewInstallMode": {

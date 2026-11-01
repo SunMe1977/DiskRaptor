@@ -474,6 +474,15 @@ window.app.isStoreBuild = function () {
   }
 };
 
+// Store URL for store builds: macOS opens the Mac App Store page, Windows
+// opens the Microsoft Store search (no hardcoded product id available).
+window.app.storeUrl = function () {
+  const isMac = (navigator.platform || "").toLowerCase().indexOf("mac") === 0;
+  return isMac
+    ? "https://apps.apple.com/us/app/diskraptor/id6793462969?mt=12"
+    : "ms-windows-store://search/?query=DiskRaptor";
+};
+
     // -- Accessibility: keep aria-expanded in sync with each dropdown's
     //    .active class (menus are shown/hidden purely via that class). --
     (function syncDropdownAria() {
@@ -684,8 +693,12 @@ head.textContent = "? " + window.t("shortcut.title");
     }
 
      // -- Auto-update check on startup (after bridge ready) ------
+     // Store builds (Mac App Store / Windows Store) update through the store,
+     // so never contact GitHub for updates.
      (async function () {
        try {
+         const storeEl = document.getElementById("about-update-check");
+         if (storeEl && storeEl.getAttribute("data-store") === "true") return;
          const doCheck = async function () {
            try {
              const res = await window.__TAURI__.invoke("check_for_updates");
@@ -1514,7 +1527,7 @@ await doCheck();
         updateCheckEl.style.textDecoration = "underline";
         updateCheckEl.addEventListener("click", function () {
           window.__TAURI__.invoke("open_url", {
-            url: "https://apps.apple.com/us/app/diskraptor/id6793462969?mt=12",
+            url: window.app.storeUrl(),
           }).catch(function () {});
         });
       } else {
@@ -1608,7 +1621,7 @@ const btnAction = document.createElement("button");
         el && el.getAttribute("data-store") === "true";
       if (disableUpdates) {
         window.__TAURI__.invoke("open_url", {
-          url: "https://apps.apple.com/us/app/diskraptor/id6793462969?mt=12",
+          url: window.app.storeUrl(),
         }).catch(function () {});
         return;
       }

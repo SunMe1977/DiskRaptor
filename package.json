@@ -10,6 +10,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:frontend": "node scripts/build-frontend.mjs",
+    "stamp-store": "node scripts/stamp-store.mjs",
     "test:ui": "node tests/test_ui.mjs",
     "test:ui:playwright": "node tests/downloads-cleanup.spec.mjs",
     "test:scanner": "cd src-tauri && cargo run --features ffi --example scanner_test -- /tmp",
