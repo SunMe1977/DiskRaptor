@@ -2,7 +2,7 @@
   "bundle": {
     "windows": {
       "webviewInstallMode": {
-        "type": "downloadBootstrapper"
+        "type": "skip"
       },
       "wix": {
         "template": "../installer/wix/silent.wxs"
