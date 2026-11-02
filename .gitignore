@@ -79,3 +79,7 @@ DiskRaptor-windows.zip
 deb/
 
 
+
+# Python bytecode
+__pycache__/
+*.pyc

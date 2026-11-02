@@ -26,6 +26,11 @@ def main() -> int:
     os.makedirs(out_dir, exist_ok=True)
 
     img = Image.open(src).convert("RGBA")
+    if img.getchannel("A").getbbox() is None:
+        raise SystemExit(
+            f"  ERROR: source logo {src} is fully transparent - Store validation "
+            "rejects blank package assets"
+        )
 
     # Pad square artwork so wide/tall targets keep the artwork centered on a
     # transparent background (matches how Windows renders packaged logos).
@@ -34,6 +39,8 @@ def main() -> int:
         side = min(w, h)
         art = img.resize((side, side), Image.LANCZOS)
         canvas.paste(art, ((w - side) // 2, (h - side) // 2), art)
+        if canvas.getchannel("A").getbbox() is None:
+            raise SystemExit(f"  ERROR: generated {name} is blank")
         canvas.save(os.path.join(out_dir, name))
         print(f"  wrote {name} ({w}x{h})")
 

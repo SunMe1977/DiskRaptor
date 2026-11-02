@@ -3,6 +3,7 @@
     "beforeBuildCommand": "npm run build:frontend && npm run stamp-store"
   },
   "bundle": {
+    "resources": [],
     "windows": {
       "webviewInstallMode": {
         "type": "skip"

@@ -87,7 +87,10 @@ jobs:
           DISKRAPTOR_LICENSE_PUBLIC_KEY: ${{ secrets.DISKRAPTOR_LICENSE_PUBLIC_KEY }}
           DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
           DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
-        run: npx tauri build --bundles msi --config src-tauri/tauri.silent.conf.json --ci --features test-server
+        # `store` compiles out admin elevation (restart_as_admin/runas), which
+        # Microsoft Store policy forbids and package validation rejects. The
+        # CDP test server is not compiled into the Store build.
+        run: npx tauri build --bundles msi --config src-tauri/tauri.silent.conf.json --ci --features store
       - name: Build MSIX package (Microsoft Store)
         shell: pwsh
         run: |
@@ -97,13 +100,59 @@ jobs:
           $ver = (Get-Content package.json | ConvertFrom-Json).version
           $msi = "src-tauri\target\release\bundle\msi\DiskRaptor_${ver}_x64_en-US.msi"
           if (-not (Test-Path $msi)) { Write-Error "Silent MSI not found: $msi"; exit 1 }
+          # Partner Center assigns the package identity (App identity page).
+          # Set the repository variables MSIX_IDENTITY_NAME / MSIX_IDENTITY_PUBLISHER
+          # to those exact values, otherwise the upload is rejected.
+          $identity = @()
+          if ("${{ vars.MSIX_IDENTITY_NAME }}") { $identity += @("-PackageName", "${{ vars.MSIX_IDENTITY_NAME }}") }
+          if ("${{ vars.MSIX_IDENTITY_PUBLISHER }}") { $identity += @("-Publisher", "${{ vars.MSIX_IDENTITY_PUBLISHER }}") }
           powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
             -MsiPath $msi -Version "${ver}.0" `
-            -OutFile "release-assets\DiskRaptor-windows-x64.msix"
+            -OutFile "release-assets\DiskRaptor-windows-x64.msix" @identity
           if (-not (Test-Path "release-assets\DiskRaptor-windows-x64.msix")) {
             Write-Error "MSIX package not created"; exit 1
           }
           Get-Item "release-assets\DiskRaptor-windows-x64.msix" | Select-Object Name, Length
+      - name: Verify MSIX is Store-submittable
+        shell: pwsh
+        run: |
+          # Guards against the three regressions that broke Store submissions:
+          # a stale package version, blank logo assets, and a second unstamped
+          # copy of the frontend (which re-enables in-app self-update).
+          $ErrorActionPreference = "Stop"
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          $msix = "release-assets\DiskRaptor-windows-x64.msix"
+          $work = Join-Path $env:TEMP "msix-verify"
+          Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+          $makeappx = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeappx) { Write-Error "makeappx.exe not found"; exit 1 }
+          & $makeappx.FullName unpack /p $msix /d $work /o | Out-Null
+          if ($LASTEXITCODE -ne 0) { Write-Error "MSIX unpack failed"; exit 1 }
+
+          [xml]$manifest = Get-Content (Join-Path $work "AppxManifest.xml")
+          $identity = $manifest.Package.Identity
+          Write-Host "Identity: $($identity.Name) / $($identity.Publisher) / $($identity.Version)"
+          if ($identity.Version -ne "${ver}.0") {
+            Write-Error "MSIX version $($identity.Version) does not match ${ver}.0 (stale package?)"
+            exit 1
+          }
+          if (Test-Path (Join-Path $work "frontend")) {
+            Write-Error "MSIX contains a duplicate unstamped frontend folder"
+            exit 1
+          }
+          $blankCheck = @'
+from PIL import Image
+import glob, os, sys
+assets = os.path.join(sys.argv[1], "Assets")
+bad = [os.path.basename(p) for p in glob.glob(os.path.join(assets, "*.png"))
+       if Image.open(p).convert("RGBA").getchannel("A").getbbox() is None]
+print("blank logos:", bad)
+sys.exit(1 if bad else 0)
+'@
+          $blankCheck | python - $work
+          if ($LASTEXITCODE -ne 0) { Write-Error "MSIX contains blank logo assets"; exit 1 }
+          Write-Host "MSIX verification passed"
       - name: Build silent installer EXE (for Microsoft Store)
         shell: pwsh
         run: |

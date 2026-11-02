@@ -1,9 +1,6 @@
 //! Application lifecycle: startup, shutdown, single-instance, autostart.
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_autostart::ManagerExt;
-use tracing::{info};
-
-use crate::state::AppState;
+use tracing::info;
 
 /// Single-instance enforcement (Windows).
 #[cfg(target_os = "windows")]
@@ -65,34 +62,11 @@ pub fn focus_existing_and_exit() -> ! {
     std::process::exit(0)
 }
 
-pub fn setup_autostart(app: &AppHandle) {
-    let st = app.state::<AppState>();
-    let path = st.settings_path.lock().clone();
-    let already_set = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
-        .map(|v| v.get("autostart").is_some())
-        .unwrap_or(false);
-    if !already_set {
-        let _ = app.autolaunch().enable();
-        let mut merged = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
-            .unwrap_or_else(|| serde_json::json!({}));
-        if let Some(obj) = merged.as_object_mut() {
-            obj.insert("autostart".into(), serde_json::json!(true));
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let tmp = path.with_extension("json.tmp");
-            if let Ok(json) = serde_json::to_string_pretty(&merged) {
-                let _ = std::fs::write(&tmp, &json);
-                let _ = std::fs::rename(&tmp, &path);
-            }
-        }
-        info!("Autostart enabled by default");
-    }
-}
+/// Startup behaviour is opt-in. The app must never add itself to the login
+/// items without explicit consent (Microsoft Store certification rejects that),
+/// so nothing is registered here - the user enables "Launch at login" in
+/// Preferences, which calls `set_autostart`.
+pub fn setup_autostart(_app: &AppHandle) {}
 
 #[cfg(feature = "test-server")]
 pub fn setup_test_server(app: &AppHandle) {

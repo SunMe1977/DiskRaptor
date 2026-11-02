@@ -1,96 +1,108 @@
-# Microsoft Store: MSIX-Packaging (statt signiertem Win32)
+# Microsoft Store: MSIX statt Win32-MSI
 
-Der Store lehnt die unsignierten EXE/MSI ab (Policy 10.2.9: Code-Signing Ã¼ber
-ein Zertifikat aus dem Microsoft Trusted Root Program). Microsoft empfiehlt
-fÃ¼r diesen Fall, die App als **MSIX** zu verpacken â€” MSIX-Pakete werden von
-Microsoft beim Einreichen automatisch signiert, du brauchst **kein eigenes
-Code-Signing-Zertifikat**.
+## Warum MSIX (und nicht die Silent-MSI)
 
-> Tauri v2 hat aktuell **keinen** MSIX-Bundler (nur `msi`/`nsis`), daher wird
-> die Conversion einmalig pro Version mit dem offiziellen **MSIX Packaging
-> Tool** gemacht. Das ist ein ~2-Minuten-Schritt.
+Microsoft hat für Windows-Apps zwei getrennte Store-Pfade. Sie verhalten sich
+grundlegend unterschiedlich – das erklärt, warum "Store-Update" mit der MSI
+nicht funktioniert:
 
-## Voraussetzungen
+| | MSI/EXE-Einreichung | MSIX-Einreichung |
+|---|---|---|
+| Signierung | **Du** brauchst ein Zertifikat aus dem Microsoft Trusted Root Program (alle PE-Dateien: exe **und** DLLs) | Microsoft signiert kostenlos beim Einreichen |
+| Hosting | Du hostest den Installer selbst unter einer **versionierten, unveränderlichen** URL | Microsoft hostet das Paket |
+| Updates | **Keine** – „Updates sind Aufgabe des App-Herstellers" | Store verwaltet Updates automatisch |
+| Installation | Store lädt deine MSI und führt sie aus | Store installiert das MSIX |
+| UAC | erlaubt | keine Elevation möglich |
 
-- Windows 10/11 mit Admin-Rechten
-- **MSIX Packaging Tool** aus dem Microsoft Store installieren:
-  `ms-windows-store://pdp/?productid=9N5LW3JBCXKF` (oder im Store nach
-  â€žMSIX Packaging Tool" suchen, Hersteller Microsoft)
-- Das **Silent-MSI** neu bauen (enthÃ¤lt den Publisher `Hansjoerg Hofer`):
+Quelle: <https://learn.microsoft.com/windows/apps/publish/publish-your-app/msi/app-package-requirements>
 
-  ```powershell
-  cd src-tauri
-  npx tauri build --bundles msi --config tauri.silent.conf.json --ci
-  ```
+Konkret heißt das:
 
-  Ergebnis: `src-tauri\target\release\bundle\msi\DiskRaptor_1.0.14_x64_en-US.msi`
+- Die Store-Update-Kette gibt es **nur** beim MSIX-Pfad. Eine über MSI/EXE
+  installierte App wird vom Store **nie** aktualisiert – unabhängig davon, wie
+  oft du eine neue MSI einreichst.
+- Beim MSI/EXE-Pfad muss die Download-URL in Partner Center versioniert sein
+  (z. B. `.../releases/download/v1.0.50/DiskRaptor-1.0.50-windows-x64-silent.msi`)
+  und die Datei darf sich danach **nicht mehr ändern**. Ein `latest/download/...`-
+  Link oder ein überschriebenes Release-Asset lässt die Prüfung
+  („Hintergrundinstallation konnte nicht verifiziert werden") scheitern.
+- Unsere MSI/EXE-Dateien sind **unsigniert** (`Get-AuthenticodeSignature` →
+  `NotSigned`) – auf dem MSI/EXE-Pfad ist das ein Ablehnungsgrund (Policy 10.2.9).
 
-## MSIX-Paket erzeugen
+## Was der Release-Workflow baut
 
-**Automatisch (empfohlen):** Der Release-Workflow (`.github/workflows/release.yml`,
-Job `windows-x64`) baut das MSIX nach dem Silent-MSI automatisch mit
-`msix\pack-msix.ps1` und lÃ¤dt es als `DiskRaptor-windows-x64.msix` auf den
-GitHub-Release. Du kannst es von dort direkt im Partner Center einreichen.
+`windows-x64` baut pro Version:
 
-**Manuell (optional):**
+1. `DiskRaptor-<ver>-windows-x64.exe` – normaler NSIS-Installer (mit UI)
+2. `DiskRaptor-<ver>-windows-x64.msi` – normaler MSI (mit UI)
+3. `DiskRaptor-<ver>-windows-x64-silent.msi` – MSI ohne UI (Basis für das MSIX)
+4. `DiskRaptor-<ver>-windows-x64-silent.exe` – NSIS ohne UI
+5. `DiskRaptor-windows-x64.msix` – **das Store-Paket**
+
+Das Silent-MSI wird mit `--features store` gebaut (keine Admin-Elevation,
+`restart_as_admin` ist deaktiviert) und enthält **keinen** WebView2-Download
+mehr, damit es die Store-Regel „standalone installer, kein Web-Downloader"
+erfüllt. Es enthält außerdem keine zweite Frontend-Kopie: das Frontend steckt
+bereits (als Store-Build gestempelt, ohne In-App-Self-Update) in
+`diskraptor.exe`.
+
+## MSIX bauen
+
+Automatisch: der Release-Workflow ruft `msix/pack-msix.ps1` auf und lädt das
+Ergebnis als `DiskRaptor-windows-x64.msix` hoch.
+
+Manuell:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
   -MsiPath src-tauri\target\release\bundle\msi\DiskRaptor_1.0.50_x64_en-US.msi
 ```
-- Die MSIX-Version wird automatisch aus `package.json` abgeleitet
-  (`1.0.50` â†’ `1.0.50.0`); optional per `-Version 1.0.50.0` Ã¼berschreiben.
-- Voraussetzungen: Windows-SDK (enthÃ¤lt `makeappx.exe`), Python mit Pillow.
-- `-SelfSign` erzeugt zusÃ¤tzlich eine Signatur mit einem temporÃ¤ren
-  Selbstzertifikat (nur fÃ¼r lokale Tests; der Store signiert ohnehin neu).
-- Das Skript: extrahiert die App aus dem MSI, generiert
-  `AppxManifest.xml` (`Publisher=CN=Hansjoerg Hofer`, `runFullTrust`),
-  erzeugt die Store-Logos aus `src-tauri/icons/icon.png` und packt mit
-  `makeappx`.
 
-Oder per **MSIX Packaging Tool** (GUI): â†’ **â€žMSIX conversion"** â†’ Datei =
-das Silent-MSI auswÃ¤hlen â†’ fertigstellen. Der Publisher im Manifest muss
-`CN=Hansjoerg Hofer` sein.
+- Version wird aus `package.json` abgeleitet (`1.0.50` → `1.0.50.0`).
+- Logos werden aus `images/logo6_original_ms.png` erzeugt; das Skript bricht ab,
+  wenn eine Logo-Datei leer/transparent wäre (Store-Validierung lehnt das ab).
+- Voraussetzungen: Windows-SDK (`makeappx.exe`), Python + Pillow.
 
-## Lokal testen (Optional)
+## Partner Center (einmalig, danach pro Version nur Upload)
 
-Das gebaute MSIX ist absichtlich **unsigniert** (Microsoft signiert erst beim
-Einreichen), daher schlÃ¤gt eine lokale Installation mit `Add-AppxPackage` mit
-`0x800B0100` fehl. Zum lokalen Test das Paket mit dem Hilfsskript signieren,
-das Zertifikat in die Maschinen-Stores (`LocalMachine\Root` +
-`LocalMachine\TrustedPeople`) installieren und installieren:
+1. **App-Identität aus Partner Center holen**
+   (Product → App identity): `Package/Identity/Name` und
+   `Package/Identity/Publisher`. Diese müssen **exakt** im Manifest stehen.
+2. Als Repository-Variablen setzen (Settings → Secrets and variables → Actions
+   → Variables):
+   - `MSIX_IDENTITY_NAME` – z. B. `12345HansjoergHofer.DiskRaptor`
+   - `MSIX_IDENTITY_PUBLISHER` – z. B. `CN=8A1B...`
+   Ohne diese Variablen werden die Standardwerte
+   `DiskRaptor.DiskRaptor` / `CN=Hansjoerg Hofer` verwendet.
+3. **Neue Submission** anlegen, `DiskRaptor-windows-x64.msix` hochladen,
+   Version prüfen (`1.0.50.0`), einreichen.
+
+> Ein bestehendes Win32-Produkt (MSI/EXE) lässt sich nicht in ein
+> MSIX-Produkt umwandeln. Für MSIX braucht es ein neues Produkt – der
+> Produktname „DiskRaptor" muss dafür in Partner Center frei sein (das alte
+> Win32-Produkt ggf. entfernen). Das ist der Preis dafür, dass der Store
+> Updates künftig selbst ausliefert.
+
+## Lokal testen (optional)
+
+Das MSIX ist absichtlich unsigniert (Microsoft signiert erst beim Einreichen).
+`Add-AppxPackage` scheitert daher mit `0x800B0100`. Zum Testen:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File msix\install-msix.ps1
 ```
 
-- Fordert bei Bedarf per UAC **Admin-Rechte** an (der AppX-Dienst vertraut nur
-  Maschinen-Zertifikaten) und erzeugt ein wiederverwendbares Selbstzertifikat
-  (FriendlyName `DiskRaptor MSIX test`).
-- Signiert eine **Kopie** in `%TEMP%` â€” die Store-Datei in `release-assets`
-  bleibt unsigniert und damit einreichbar.
-- Optionen: `-SkipSign` (nur installieren, wenn schon signiert),
-  `-SignOnly` (nur signieren + Zertifikat vertrauen), `-Uninstall`
-  (Paket wieder entfernen).
+- fordert Admin-Rechte an (AppX vertraut nur Maschinen-Zertifikaten),
+- erzeugt ein wiederverwendbares Selbstzertifikat,
+- signiert eine **Kopie** in `%TEMP%` (das Store-Artefakt bleibt unsigniert),
+- Optionen: `-SkipSign`, `-SignOnly`, `-Uninstall`.
 
-## Partner Center (wichtig â€” einmalig pro App)
+## Wenn du beim MSI/EXE-Pfad bleiben willst
 
-Beim Wechsel von Win32 â†’ MSIX gilt laut Microsoft:
+Dann sind zusätzlich nötig (nicht im Repo enthalten):
 
-1. **Die bestehende Win32-App â€žDiskRaptor" in Partner Center LÃ–SCHEN**
-   (Product â†’ App entfernen), damit der Name fÃ¼r die MSIX-App frei wird.
-2. **Neue App anlegen** (gleicher Name â€žDiskRaptor").
-3. **Package einreichen:** das `.msix` aus Schritt 4 hochladen.
-   - Der **Produkt-/Publishername** in Partner Center muss exakt
-     â€žDiskRaptor" / â€žHansjoerg Hofer" sein (wie im ARP/Manifest).
-4. Nach dem Upload prÃ¼fen: Der Store Ã¼bernimmt **Code-Signing** â€” der
-   Signatur-Check (Policy 10.2.9) ist damit erledigt.
-
-## Hinweise
-
-- Die `-silent.msi` und der normale Win32-Build bleiben fÃ¼r **Nicht-Store**-
-  Nutzer (GitHub-Releases) erhalten und werden dort unverÃ¤ndert verteilt.
-- Das MSIX wird im CI automatisch gebaut (siehe oben); das Skript liegt unter
-  `msix\pack-msix.ps1` + `msix\generate_logos.py`.
-- Der Publisher `CN=Hansjoerg Hofer` steckt in `tauri.conf.json`
-  (`bundle.publisher` â†’ MSI-Manufacturer). FÃ¼r das MSIX-Manifest muss er
-  genauso lauten.
+- Code-Signing-Zertifikat (z. B. Azure Trusted Signing) für
+  `diskraptor.exe`, `diskraptor_scanner.dll`, `zerofrom_derive.dll` **und** die MSI;
+- in Partner Center eine **versionierte** Download-URL pro Release, die nach
+  der Einreichung unverändert bleibt;
+- Updates selbst ausliefern (der Store tut es auf diesem Pfad nicht).

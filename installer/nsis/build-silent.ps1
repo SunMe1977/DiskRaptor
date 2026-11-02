@@ -4,11 +4,11 @@
 
 .DESCRIPTION
   Compiles installer\nsis\DiskRaptor-silent.nsi with makensis. The installer
-  payload (diskraptor.exe + diskraptor_scanner.dll + _up_\frontend) is taken
-  from the freshly built silent MSI, so the EXE ships exactly the same files
-  as the package that gets submitted to the Store. No WebView2 runtime is
-  embedded: it is assumed present (bundled with Windows 10+ / Windows 11) and
-  only downloaded on demand when missing.
+  payload (diskraptor.exe + the scanner DLLs) is taken from the freshly built
+  silent MSI, so the EXE ships exactly the same files as the package that gets
+  submitted to the Store. Nothing is downloaded at install time: the WebView2
+  Evergreen runtime ships with Windows 11 / current Windows 10, and Store
+  installers must be standalone (no web installer).
 
   Prerequisites: silent MSI built (npx tauri build --bundles msi
   --config src-tauri/tauri.silent.conf.json --ci), makensis on disk.

@@ -159,15 +159,18 @@ try {
 
   # 2. Assemble package dir
   $pkgDir = Join-Path $work "pkg"
+  New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
   Copy-Item -Path (Join-Path $payloadDir "*") -Destination $pkgDir -Recurse -Force
   $assets = Join-Path $pkgDir "Assets"
   New-Item -ItemType Directory -Force -Path $assets | Out-Null
 
-  # 3. Logos from the master icon
-  $icon = Join-Path $repoRoot "src-tauri\icons\icon.png"
+  # 3. Logos from the master icon. The Store artwork (2160x2160) yields much
+  #    sharper small tiles than the 512px app icon, so prefer it when present.
+  $storeLogo = Join-Path $repoRoot "images\logo6_original_ms.png"
+  $icon = if (Test-Path $storeLogo) { $storeLogo } else { Join-Path $repoRoot "src-tauri\icons\icon.png" }
   Write-Host "  Generating logos from $icon ..."
   python (Join-Path $PSScriptRoot "generate_logos.py") $icon $assets
-  if ($LASTEXITCODE -ne 0) { throw "Logo generation failed" }
+  if ($LASTEXITCODE -ne 0) { throw "Logo generation failed (blank logo assets cannot be submitted to the Store)" }
 
   # 4. Manifest + content types
   Write-AppxManifest $pkgDir $PackageName $Version $Publisher $DisplayName $PublisherDisplayName

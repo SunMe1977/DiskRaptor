@@ -1,6 +1,6 @@
 //! Autostart (launch at login) on Windows / macOS / Linux.
-//! The frontend toggles this from Preferences; it defaults to enabled on the
-//! first run (see main.rs setup).
+//! Off by default: the user enables it in Preferences, which calls
+//! `set_autostart`. The app never registers itself at login on first run.
 
 use tauri_plugin_autostart::ManagerExt;
 
