@@ -133,6 +133,18 @@ jobs:
           [xml]$manifest = Get-Content (Join-Path $work "AppxManifest.xml")
           $identity = $manifest.Package.Identity
           Write-Host "Identity: $($identity.Name) / $($identity.Publisher) / $($identity.Version)"
+          # Partner Center only accepts a package whose identity matches the
+          # product exactly, so fail here instead of in the submission UI.
+          $expectedName = "${{ vars.MSIX_IDENTITY_NAME }}"
+          $expectedPublisher = "${{ vars.MSIX_IDENTITY_PUBLISHER }}"
+          if ($expectedName -and $identity.Name -ne $expectedName) {
+            Write-Error "MSIX Identity Name $($identity.Name) != MSIX_IDENTITY_NAME $expectedName"
+            exit 1
+          }
+          if ($expectedPublisher -and $identity.Publisher -ne $expectedPublisher) {
+            Write-Error "MSIX Publisher $($identity.Publisher) != MSIX_IDENTITY_PUBLISHER $expectedPublisher"
+            exit 1
+          }
           if ($identity.Version -ne "${ver}.0") {
             Write-Error "MSIX version $($identity.Version) does not match ${ver}.0 (stale package?)"
             exit 1
@@ -141,24 +153,31 @@ jobs:
             Write-Error "MSIX contains a duplicate unstamped frontend folder"
             exit 1
           }
-          $blankCheck = @'
-from PIL import Image
-import glob, os, sys
-assets = os.path.join(sys.argv[1], "Assets")
-bad = [os.path.basename(p) for p in glob.glob(os.path.join(assets, "*.png"))
-       if Image.open(p).convert("RGBA").getchannel("A").getbbox() is None]
-print("blank logos:", bad)
-sys.exit(1 if bad else 0)
-'@
-          $blankCheck | python - $work
-          if ($LASTEXITCODE -ne 0) { Write-Error "MSIX contains blank logo assets"; exit 1 }
+          Add-Type -AssemblyName System.Drawing
+          $blank = @()
+          Get-ChildItem (Join-Path $work "Assets") -Filter *.png | ForEach-Object {
+            $bmp = [System.Drawing.Bitmap]::new($_.FullName)
+            $opaque = $false
+            for ($y = 0; $y -lt $bmp.Height -and -not $opaque; $y++) {
+              for ($x = 0; $x -lt $bmp.Width; $x++) {
+                if ($bmp.GetPixel($x, $y).A -ne 0) { $opaque = $true; break }
+              }
+            }
+            $bmp.Dispose()
+            if (-not $opaque) { $blank += $_.Name }
+          }
+          if ($blank) {
+            Write-Error "MSIX contains blank logo assets: $($blank -join ', ')"
+            exit 1
+          }
           Write-Host "MSIX verification passed"
       - name: Build silent installer EXE (for Microsoft Store)
         shell: pwsh
         run: |
           # makensis comes from the NSIS that the Tauri bundler already downloaded.
-          # No WebView2 runtime is embedded; the installer downloads Microsoft's
-          # small bootstrapper only when the runtime is missing.
+          # Nothing is downloaded at install time: Store installers must be
+          # standalone, and the WebView2 runtime ships with Windows 11 / current
+          # Windows 10.
           powershell -ExecutionPolicy Bypass -File installer\nsis\build-silent.ps1
       - name: Stage release assets
         shell: pwsh
