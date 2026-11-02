@@ -30,9 +30,8 @@ if (-not $OutputDir) { $OutputDir = Join-Path $repoRoot "src-tauri\target\releas
 if (-not (Test-Path (Join-Path $PayloadDir "diskraptor.exe"))) {
   throw "diskraptor.exe not found in $PayloadDir - build the app first (npx tauri build --no-bundle --features store)"
 }
-if (-not (Test-Path (Join-Path $PayloadDir "diskraptor_scanner.dll"))) {
-  throw "diskraptor_scanner.dll not found in $PayloadDir"
-}
+# The scanner is statically linked into diskraptor.exe (rlib), so the cdylib
+# diskraptor_scanner.dll is NOT needed and is not shipped.
 
 # Locate candle.exe / light.exe
 if (-not $WixTools) {

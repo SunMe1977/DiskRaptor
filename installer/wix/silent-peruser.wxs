@@ -69,14 +69,8 @@
                                        KeyPath="yes"/>
                     </Component>
 
-                    <Component Id="ScannerLibrary" Guid="{B2D4F5A3-7C8E-4F69-AD32-1E4A6B9C8D75}" Win64="yes">
-                        <File Id="ScannerDllFile"
-                              Source="$(var.PayloadDir)\diskraptor_scanner.dll"/>
-                        <RegistryValue Root="HKCU"
-                                       Key="Software\Hansjoerg Hofer\DiskRaptor\Components"
-                                       Name="ScannerDllFile" Type="integer" Value="1"
-                                       KeyPath="yes"/>
-                    </Component>
+                    <!-- The scanner is compiled into diskraptor.exe (rlib), so no
+                         separate diskraptor_scanner.dll is shipped. -->
 
                     <Component Id="UninstallShortcut" Guid="{C3E5A6B4-8D9F-4A7B-BE43-2F5B7C0D9E86}">
                         <Shortcut Id="UninstallShortcut"
@@ -114,7 +108,6 @@
 
         <Feature Id="MainProgram" Title="DiskRaptor" Level="1">
             <ComponentRef Id="MainExecutable"/>
-            <ComponentRef Id="ScannerLibrary"/>
             <ComponentRef Id="ApplicationShortcut"/>
             <ComponentRef Id="UninstallShortcut"/>
         </Feature>
