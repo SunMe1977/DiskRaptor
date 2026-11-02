@@ -23,9 +23,13 @@ Name                  "${PRODUCT_NAME}"
 Caption               "$(^CaptionText)"
 BrandingText          "$(^CreatedBy)"
 OutFile               "..\..\release-assets\DiskRaptor-${PRODUCT_VERSION}-windows-x64-silent.exe"
-InstallDir            "$PROGRAMFILES64\${PRODUCT_NAME}"
-InstallDirRegKey      HKLM "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
-RequestExecutionLevel admin
+; Per-user install: the Store runs this EXE in the background as the signed-in
+; user, so it must not need elevation. Install to %LOCALAPPDATA% and write only
+; HKCU (a per-machine install would request admin and fail Store validation).
+InstallDir            "$LOCALAPPDATA\${PRODUCT_NAME}"
+InstallDirRegKey      HKCU "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
+RequestExecutionLevel user
+SetShellVarContext    current
 SetCompressor /SOLID lzma
 
 VIAddVersionKey "ProductName"        "${PRODUCT_NAME}"
@@ -59,21 +63,21 @@ Section "Install"
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\diskraptor.exe"
 
-  WriteRegStr   HKLM "${PRODUCT_UNINSTALL_KEY}" "DisplayName"          "${PRODUCT_NAME}"
-  WriteRegStr   HKLM "${PRODUCT_UNINSTALL_KEY}" "UninstallString"      '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr   HKLM "${PRODUCT_UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
-  WriteRegStr   HKLM "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"      "$INSTDIR"
-  WriteRegStr   HKLM "${PRODUCT_UNINSTALL_KEY}" "DisplayIcon"          "$INSTDIR\diskraptor.exe"
-  WriteRegStr   HKLM "${PRODUCT_UNINSTALL_KEY}" "DisplayVersion"       "${PRODUCT_VERSION}"
-  WriteRegStr   HKLM "${PRODUCT_UNINSTALL_KEY}" "Publisher"            "${PRODUCT_PUBLISHER}"
-  WriteRegStr   HKLM "${PRODUCT_UNINSTALL_KEY}" "URLInfoAbout"         "${PRODUCT_WEB_SITE}"
-  WriteRegDWord HKLM "${PRODUCT_UNINSTALL_KEY}" "NoModify" 1
-  WriteRegDWord HKLM "${PRODUCT_UNINSTALL_KEY}" "NoRepair" 1
+  WriteRegStr   HKCU "${PRODUCT_UNINSTALL_KEY}" "DisplayName"          "${PRODUCT_NAME}"
+  WriteRegStr   HKCU "${PRODUCT_UNINSTALL_KEY}" "UninstallString"      '"$INSTDIR\Uninstall.exe"'
+  WriteRegStr   HKCU "${PRODUCT_UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegStr   HKCU "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"      "$INSTDIR"
+  WriteRegStr   HKCU "${PRODUCT_UNINSTALL_KEY}" "DisplayIcon"          "$INSTDIR\diskraptor.exe"
+  WriteRegStr   HKCU "${PRODUCT_UNINSTALL_KEY}" "DisplayVersion"       "${PRODUCT_VERSION}"
+  WriteRegStr   HKCU "${PRODUCT_UNINSTALL_KEY}" "Publisher"            "${PRODUCT_PUBLISHER}"
+  WriteRegStr   HKCU "${PRODUCT_UNINSTALL_KEY}" "URLInfoAbout"         "${PRODUCT_WEB_SITE}"
+  WriteRegDWord HKCU "${PRODUCT_UNINSTALL_KEY}" "NoModify" 1
+  WriteRegDWord HKCU "${PRODUCT_UNINSTALL_KEY}" "NoRepair" 1
 
 ; Calculate program size
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "EstimatedSize" "$0"
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "EstimatedSize" "$0"
 
 ; WebView2: Microsoft Store installers must be fully offline ("standalone
 ; installer, not a web/downloader"). The Evergreen runtime ships with Windows 11
@@ -85,6 +89,6 @@ Section "Uninstall"
   Delete   "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk"
   RMDir    "$SMPROGRAMS\${PRODUCT_NAME}"
   RMDir /r "$INSTDIR"
-  DeleteRegKey HKLM "${PRODUCT_UNINSTALL_KEY}"
+  DeleteRegKey HKCU "${PRODUCT_UNINSTALL_KEY}"
   DeleteRegKey HKCU "Software\${PRODUCT_PUBLISHER}\${PRODUCT_NAME}"
 SectionEnd

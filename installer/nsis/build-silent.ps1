@@ -10,8 +10,8 @@
   Evergreen runtime ships with Windows 11 / current Windows 10, and Store
   installers must be standalone (no web installer).
 
-  Prerequisites: silent MSI built (npx tauri build --bundles msi
-  --config src-tauri/tauri.silent.conf.json --ci), makensis on disk.
+  Prerequisites: silent MSI built (installer\wix\build-silent-msi.ps1),
+  makensis on disk.
 
   Run from the repo root:
     powershell -ExecutionPolicy Bypass -File installer\nsis\build-silent.ps1
@@ -28,7 +28,7 @@ $MsiPath = (Resolve-Path $MsiPath -ErrorAction Stop).Path
 
 $msi = $MsiPath
 if (-not (Test-Path $msi)) {
-  throw "Silent MSI not found: $msi`nBuild it first: npx tauri build --bundles msi --config src-tauri/tauri.silent.conf.json --ci"
+  throw "Silent MSI not found: $msi`nBuild it first: installer\wix\build-silent-msi.ps1"
 }
 
 $work = Join-Path $env:TEMP ("dr_silent_" + [guid]::NewGuid().ToString("N"))

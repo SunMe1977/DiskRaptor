@@ -46,6 +46,25 @@ erfüllt. Es enthält außerdem keine zweite Frontend-Kopie: das Frontend steckt
 bereits (als Store-Build gestempelt, ohne In-App-Self-Update) in
 `diskraptor.exe`.
 
+### Silent-MSI ist per-user (nicht per-machine)
+
+Seit v1.0.50 wird das Store-MSI als **per-user**-Paket gebaut:
+
+- Installiert nach `%LOCALAPPDATA%\DiskRaptor`, schreibt **nur** HKCU und fragt
+  **nie** nach Admin-Rechten.
+- Grund: Der Store startet den eingereichten Installer im Hintergrund als
+  angemeldeter Benutzer. Ein per-machine-MSI (`ALLUSERS=1`, `Program Files`)
+  braucht Elevation und scheitert dort mit Fehler 1925 („unzureichende
+  Berechtigungen"), was Partner Center als „Hintergrundinstallation konnte nicht
+  verifiziert werden" meldet.
+- Tauris WiX-Bundler kann kein per-user-MSI erzeugen (seine File-Keypath-
+  Komponente scheitert an ICE38, das `Programs`-Verzeichnis an ICE64), daher wird
+  das Store-MSI aus `installer/wix/silent-peruser.wxs` mit `candle`/`light`
+  gebaut (`installer/wix/build-silent-msi.ps1`).
+- `IgnoreRemoveFailure` sorgt dafür, dass ein noch installiertes altes
+  per-machine v1.0.44 die Installation nicht abbricht (Fehler 1730). Dieses alte
+  Paket muss einmalig per Hand (mit Admin) entfernt werden.
+
 ## MSIX bauen
 
 Automatisch: der Release-Workflow ruft `msix/pack-msix.ps1` auf und lädt das
@@ -99,7 +118,15 @@ powershell -ExecutionPolicy Bypass -File msix\install-msix.ps1
 
 ## Wenn du beim MSI/EXE-Pfad bleiben willst
 
-Dann sind zusätzlich nötig (nicht im Repo enthalten):
+Seit v1.0.50 ist das Silent-MSI per-user und installiert daher auch in der
+Store-Hintergrundprüfung ohne Admin. Damit ist der Fehler „Hintergrundinstallation
+konnte nicht verifiziert werden" behoben – es bleiben aber zwei harte
+Anforderungen:
+
+- Das MSI/EXE muss **code-signiert** sein (alle PE-Dateien), sonst Ablehnung.
+- Die Download-URL muss **versioniert und unveränderlich** sein.
+
+Konkret sind dafür nötig (nicht im Repo enthalten):
 
 - Code-Signing-Zertifikat (z. B. Azure Trusted Signing) für
   `diskraptor.exe`, `diskraptor_scanner.dll`, `zerofrom_derive.dll` **und** die MSI;

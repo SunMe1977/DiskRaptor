@@ -70,27 +70,50 @@ jobs:
           DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
           DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
         run: npx tauri build --bundles nsis,msi --ci --features test-server
-      - name: Stage normal MSI
+      - name: Stage normal MSI + portable EXE
         shell: pwsh
         run: |
           $ver = (Get-Content package.json | ConvertFrom-Json).version
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
-          # The silent build later overwrites this MSI path, so preserve the
-          # normal (interactive) MSI here under its release name.
+          # The silent build later overwrites these target paths, so preserve the
+          # normal (interactive) MSI and the normal portable EXE here under their
+          # release names now.
           Copy-Item "src-tauri\target\release\bundle\msi\DiskRaptor_${ver}_x64_en-US.msi" "release-assets\DiskRaptor-${ver}-windows-x64.msi" -Force
+          Copy-Item "src-tauri\target\release\diskraptor.exe" "release-assets\DiskRaptor.exe" -Force
           if (-not (Test-Path "release-assets\DiskRaptor-${ver}-windows-x64.msi")) {
             Write-Error "MSI installer not found (DiskRaptor_${ver}_x64_en-US.msi)"
             exit 1
           }
-      - name: Build silent MSI (for Microsoft Store)
+          if (-not (Test-Path "release-assets\DiskRaptor.exe")) {
+            Write-Error "Portable EXE not found"
+            exit 1
+          }
+      - name: Build silent MSI (for Microsoft Store, per-user)
         env:
           DISKRAPTOR_LICENSE_PUBLIC_KEY: ${{ secrets.DISKRAPTOR_LICENSE_PUBLIC_KEY }}
           DISKRAPTOR_CREEM_API_KEY: ${{ secrets.DISKRAPTOR_CREEM_API_KEY }}
           DISKRAPTOR_CREEM_PRODUCT_ID: ${{ secrets.DISKRAPTOR_CREEM_PRODUCT_ID }}
-        # `store` compiles out admin elevation (restart_as_admin/runas), which
-        # Microsoft Store policy forbids and package validation rejects. The
-        # CDP test server is not compiled into the Store build.
-        run: npx tauri build --bundles msi --config src-tauri/tauri.silent.conf.json --ci --features store
+        shell: pwsh
+        run: |
+          # `store` compiles out admin elevation (restart_as_admin/runas), which
+          # Microsoft Store policy forbids and package validation rejects. The
+          # CDP test server is not compiled into the Store build.
+          npx tauri build --no-bundle --config src-tauri/tauri.silent.conf.json --ci --features store
+          if ($LASTEXITCODE -ne 0) { Write-Error "tauri build (store) failed"; exit 1 }
+          # Tauri's WiX bundler cannot emit a per-user MSI (its injected
+          # file-keypath component fails ICE38, and the Programs dir ICE64), and
+          # the WiX target has no per-user mode. So the Store package is compiled
+          # from installer\wix\silent-peruser.wxs with candle/light instead.
+          #
+          # Per-user is mandatory: the Store installs in the background as the
+          # signed-in user, and a per-machine (ALLUSERS=1) MSI needs elevation and
+          # fails there with error 1925 ("insufficient privileges"), which Partner
+          # Center reports as "background installation could not be verified".
+          powershell -ExecutionPolicy Bypass -File installer\wix\build-silent-msi.ps1
+          if (-not (Test-Path "src-tauri\target\release\bundle\msi\DiskRaptor_$((Get-Content package.json | ConvertFrom-Json).version)_x64_en-US.msi")) {
+            Write-Error "Silent per-user MSI not created"
+            exit 1
+          }
       - name: Build MSIX package (Microsoft Store)
         shell: pwsh
         run: |
@@ -184,11 +207,11 @@ jobs:
         run: |
           $ver = (Get-Content package.json | ConvertFrom-Json).version
           # Portable executable (no installer UI) — direct-run portable EXE.
-          Copy-Item "src-tauri\target\release\diskraptor.exe" "release-assets\DiskRaptor.exe" -Force
+          # Already staged in "Stage normal MSI + portable EXE" (before the silent
+          # store build overwrote target/release/diskraptor.exe).
           # NSIS setup installer.
           Copy-Item "src-tauri\target\release\bundle\nsis\DiskRaptor_${ver}_x64-setup.exe" "release-assets\DiskRaptor-${ver}-windows-x64.exe" -Force
-          # Fully silent installer EXE for the Microsoft Store (built above).
-          # After the silent build, this MSI is the UI-less variant.
+          # Fully silent, per-user installer MSI for the Microsoft Store (built above).
           Copy-Item "src-tauri\target\release\bundle\msi\DiskRaptor_${ver}_x64_en-US.msi" "release-assets\DiskRaptor-${ver}-windows-x64-silent.msi" -Force
           Write-Host "=== Staged assets ==="
           Get-ChildItem release-assets | Select-Object Name, Length

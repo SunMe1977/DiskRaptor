@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Standalone per-user MSI for the Microsoft Store.
+
+  Tauri's WiX bundler cannot produce this: it always emits file-keypath
+  components, which fails ICE38 for a user-profile install, and the WiX target
+  has no per-user mode (only NSIS does). So the Store package is built from
+  this source with candle/light.
+
+  Why per-user: the Store starts the submitted installer in the background as
+  the signed-in user. A per-machine package (ALLUSERS=1) needs elevation and
+  fails there with error 1925, which Partner Center reports as
+  "background installation could not be verified".
+
+  Installs to %LOCALAPPDATA%\DiskRaptor, writes only HKCU, never prompts and
+  never downloads anything.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Product Id="*"
+             Name="DiskRaptor"
+             Language="1033"
+             Version="$(var.Version)"
+             Manufacturer="Hansjoerg Hofer"
+             UpgradeCode="{339ED948-13D3-59F2-9A8E-5C0237C7938C}">
+
+        <Package Id="*"
+                 Keywords="Installer"
+                 Description="DiskRaptor Setup"
+                 Manufacturer="Hansjoerg Hofer"
+                 InstallerVersion="500"
+                 Compressed="yes"
+                 InstallScope="perUser"
+                 Languages="1033"
+                 SummaryCodepage="1252"
+                 Platform="x64"/>
+
+        <!-- Same UpgradeCode as the per-machine builds so an existing
+             installation is detected. IgnoreRemoveFailure keeps the silent
+             install working when an older per-machine copy (v1.0.44 and
+             earlier) is present - removing that one needs elevation, which the
+             background install does not have. -->
+        <MajorUpgrade Schedule="afterInstallInitialize"
+                      AllowSameVersionUpgrades="yes"
+                      IgnoreRemoveFailure="yes"
+                      DowngradeErrorMessage="A newer version of DiskRaptor is already installed."/>
+
+        <MediaTemplate EmbedCab="yes"/>
+
+        <Icon Id="ProductIcon" SourceFile="$(var.IconPath)"/>
+        <Property Id="ARPPRODUCTICON" Value="ProductIcon"/>
+        <Property Id="ARPNOREPAIR" Value="yes"/>
+        <Property Id="ARPNOMODIFY" Value="1"/>
+        <Property Id="ARPURLINFOABOUT" Value="https://github.com/SunMe1977/DiskRaptor"/>
+        <Property Id="ARPHELPLINK" Value="https://github.com/SunMe1977/DiskRaptor"/>
+
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="LocalAppDataFolder">
+                <Directory Id="INSTALLDIR" Name="DiskRaptor">
+
+                    <!-- Components under the user profile must use an HKCU
+                         registry keypath (ICE38). -->
+                    <Component Id="MainExecutable" Guid="{A1C3E4F2-6B7D-4E58-9C21-0D3F5A8B7C64}" Win64="yes">
+                        <File Id="DiskRaptorExe"
+                              Source="$(var.PayloadDir)\diskraptor.exe"
+                              Checksum="yes"/>
+                        <RegistryValue Root="HKCU"
+                                       Key="Software\Hansjoerg Hofer\DiskRaptor\Components"
+                                       Name="DiskRaptorExe" Type="integer" Value="1"
+                                       KeyPath="yes"/>
+                    </Component>
+
+                    <Component Id="ScannerLibrary" Guid="{B2D4F5A3-7C8E-4F69-AD32-1E4A6B9C8D75}" Win64="yes">
+                        <File Id="ScannerDllFile"
+                              Source="$(var.PayloadDir)\diskraptor_scanner.dll"/>
+                        <RegistryValue Root="HKCU"
+                                       Key="Software\Hansjoerg Hofer\DiskRaptor\Components"
+                                       Name="ScannerDllFile" Type="integer" Value="1"
+                                       KeyPath="yes"/>
+                    </Component>
+
+                    <Component Id="UninstallShortcut" Guid="{C3E5A6B4-8D9F-4A7B-BE43-2F5B7C0D9E86}">
+                        <Shortcut Id="UninstallShortcut"
+                                  Name="Uninstall DiskRaptor"
+                                  Description="Uninstalls DiskRaptor"
+                                  Target="[System64Folder]msiexec.exe"
+                                  Arguments="/x [ProductCode]"/>
+                        <RemoveFolder Id="INSTALLDIR" On="uninstall"/>
+                        <RegistryValue Root="HKCU"
+                                       Key="Software\Hansjoerg Hofer\DiskRaptor"
+                                       Name="Uninstaller Shortcut" Type="integer" Value="1"
+                                       KeyPath="yes"/>
+                    </Component>
+                </Directory>
+            </Directory>
+
+            <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="DiskRaptor">
+                    <Component Id="ApplicationShortcut" Guid="{D4F6B7C5-9EA0-4B8C-CF54-3A6C8D1EAF97}">
+                        <Shortcut Id="ApplicationStartMenuShortcut"
+                                  Name="DiskRaptor"
+                                  Description="Runs DiskRaptor"
+                                  Target="[INSTALLDIR]diskraptor.exe"
+                                  WorkingDirectory="INSTALLDIR"
+                                  Icon="ProductIcon"/>
+                        <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
+                        <RegistryValue Root="HKCU"
+                                       Key="Software\Hansjoerg Hofer\DiskRaptor"
+                                       Name="Start Menu Shortcut" Type="integer" Value="1"
+                                       KeyPath="yes"/>
+                    </Component>
+                </Directory>
+            </Directory>
+        </Directory>
+
+        <Feature Id="MainProgram" Title="DiskRaptor" Level="1">
+            <ComponentRef Id="MainExecutable"/>
+            <ComponentRef Id="ScannerLibrary"/>
+            <ComponentRef Id="ApplicationShortcut"/>
+            <ComponentRef Id="UninstallShortcut"/>
+        </Feature>
+
+        <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLDIR]" After="CostFinalize"/>
+    </Product>
+</Wix>
