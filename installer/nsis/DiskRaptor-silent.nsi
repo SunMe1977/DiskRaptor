@@ -29,7 +29,6 @@ OutFile               "..\..\release-assets\DiskRaptor-${PRODUCT_VERSION}-window
 InstallDir            "$LOCALAPPDATA\${PRODUCT_NAME}"
 InstallDirRegKey      HKCU "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
 RequestExecutionLevel user
-SetShellVarContext    current
 SetCompressor /SOLID lzma
 
 VIAddVersionKey "ProductName"        "${PRODUCT_NAME}"
@@ -49,6 +48,9 @@ SilentInstall silent
 SilentUnInstall silent
 
 Section "Install"
+  ; Per-user: Start Menu shortcuts and $LOCALAPPDATA must resolve to the current
+  ; user, never the all-users profile.
+  SetShellVarContext current
   SetOutPath "$INSTDIR"
   File "${PAYLOAD_DIR}\diskraptor.exe"
   ; The scanner cdylib is only present when the legacy ffi feature was built
@@ -85,6 +87,7 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
+  SetShellVarContext current
   Delete   "$INSTDIR\Uninstall.exe"
   Delete   "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk"
   RMDir    "$SMPROGRAMS\${PRODUCT_NAME}"
