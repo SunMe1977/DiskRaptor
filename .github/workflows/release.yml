@@ -444,14 +444,41 @@ jobs:
             return 0
           }
 
+          # Apple's ticket-delivery (CloudKit) endpoint is flaky: `stapler` can
+          # fail transiently with "The network connection was lost" (Error 68)
+          # even though notarization already returned "Accepted". Retry a few
+          # times, and treat the online `validate` check as best-effort - the
+          # local `staple` (which embeds the ticket) is what Gatekeeper needs.
+          retry() {
+            local n=0
+            until "$@"; do
+              n=$((n + 1))
+              if [ "$n" -ge 5 ]; then return 1; fi
+              echo "retry $n/5: $*" >&2
+              sleep $((10 * n))
+            done
+          }
+
+          staple_validate() {
+            local file="$1"
+            if ! retry xcrun stapler staple "$file"; then
+              echo "ERROR: stapler staple failed for $(basename "$file")" >&2
+              return 1
+            fi
+            if ! retry xcrun stapler validate "$file"; then
+              echo "WARNING: stapler validate failed (transient CloudKit) for $(basename "$file") - continuing" >&2
+            fi
+            return 0
+          }
+
           notarize "$dmg" dmg
-          xcrun stapler staple "$dmg" && xcrun stapler validate "$dmg"
+          staple_validate "$dmg"
           # The .app inside macos-app/ is only used to build the DMG/PKG.
           xcrun stapler staple "$app" || true
 
           if [ -f "$pkg" ]; then
             notarize "$pkg" pkg
-            xcrun stapler staple "$pkg" && xcrun stapler validate "$pkg"
+            staple_validate "$pkg"
           else
             echo "SKIP: no pkg produced in this run."
           fi
