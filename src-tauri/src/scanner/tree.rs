@@ -161,7 +161,7 @@ pub fn available_memory_bytes() -> u64 {
     });
     let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
     if guard.0.elapsed() >= Duration::from_secs(10) {
-        let mut sys = sysinfo::System::new();
+        let mut sys = sysinfo::System::new().unwrap();
         sys.refresh_memory();
         guard.1 = sys.available_memory().max(256 * 1024 * 1024);
         guard.0 = Instant::now();
