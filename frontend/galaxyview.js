@@ -1344,16 +1344,8 @@ _getVisibleObjects() {
         minWidth: "180px",
         boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
       });
-      const gxt = function (key, fb) {
-        const f = window.t;
-        const s = f(key);
-        return s === key ? fb : s;
-      };
-      menu.innerHTML =
-        '<div class="gx-ctx-item" data-action="info">\u2139\uFE0F ' + gxt("galaxy.info", "Info") + '</div>' +
-        '<div class="gx-ctx-item" data-action="open">\u{1F4C2} ' + gxt("action.explorer", "Open in Explorer") + '</div>' +
-        '<div class="gx-ctx-sep"></div>' +
-        '<div class="gx-ctx-item gx-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + gxt("action.move_to_trash", "Move to Trash") + '</div>';
+      this._contextMenu = menu;
+      this._renderContextMenu();
       document.body.appendChild(menu);
 
       const style = document.createElement("style");
@@ -1371,8 +1363,22 @@ _getVisibleObjects() {
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") this._hideContextMenu();
       });
+    }
 
-      this._contextMenu = menu;
+    // Translate menu labels on every open so they use the current locale even
+    // when the locale files finished loading after the menu was created.
+    _renderContextMenu() {
+      if (!this._contextMenu) return;
+      const tr = window.t || function (s) { return s; };
+      const gxt = function (key, fb) {
+        const s = tr(key);
+        return s === key ? fb : s;
+      };
+      this._contextMenu.innerHTML =
+        '<div class="gx-ctx-item" data-action="info">\u2139\uFE0F ' + gxt("galaxy.info", "Info") + '</div>' +
+        '<div class="gx-ctx-item" data-action="open">\u{1F4C2} ' + gxt("action.explorer", "Open in Explorer") + '</div>' +
+        '<div class="gx-ctx-sep"></div>' +
+        '<div class="gx-ctx-item gx-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + gxt("action.move_to_trash", "Move to Trash") + '</div>';
     }
 
     _handleContextMenu(x, y) {
@@ -1402,6 +1408,7 @@ _getVisibleObjects() {
       const menu = this._contextMenu;
       if (!menu) return;
       menu._obj = obj;
+      this._renderContextMenu();
       menu.style.display = "block";
       const mw = menu.offsetWidth;
       const mh = menu.offsetHeight;

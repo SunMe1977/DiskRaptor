@@ -124,17 +124,7 @@ class DiagramRenderer {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    const t = window.t;
-    const explorerLabel = this._isMac ? t("action.finder") : this._isLinux ? t("action.file_manager") : t("action.explorer");
-    this.contextMenu.innerHTML =
-      '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
-      '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} ' + t("action.terminal") + '</div>' +
-      '<div class="diag-ctx-item" data-action="tree">\u{1F332} ' + t("action.jump_in_tree") + '</div>' +
-      '<div class="diag-ctx-sep"></div>' +
-      '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F ' + t("action.properties") + '</div>' +
-      '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} ' + t("action.copy_path") + '</div>' +
-      '<div class="diag-ctx-sep"></div>' +
-      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + window.t("action.move_to_trash") + '</div>';
+    this._renderContextMenu();
     document.body.appendChild(this.contextMenu);
 
     // Context menu styles (inject once; DiagramView may be re-created)
@@ -1217,6 +1207,32 @@ class DiagramRenderer {
     }
   }
 
+  // Translate the context menu each time it opens: locale data is loaded
+  // asynchronously, so building the labels once at construction can leave
+  // raw keys such as "action.copy_path" in the menu.
+  _renderContextMenu() {
+    if (!this.contextMenu) return;
+    const tr = window.t || function (s) { return s; };
+    const label = function (key, fallback) {
+      const value = tr(key);
+      return value === key ? fallback : value;
+    };
+    const explorerLabel = this._isMac
+      ? label("action.finder", "Open in Finder")
+      : this._isLinux
+        ? label("action.file_manager", "Open in File Manager")
+        : label("action.explorer", "Open in Explorer");
+    this.contextMenu.innerHTML =
+      '<div class="diag-ctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
+      '<div class="diag-ctx-item" data-action="terminal">\u{1F4BB} ' + label("action.terminal", "Open Terminal") + '</div>' +
+      '<div class="diag-ctx-item" data-action="tree">\u{1F332} ' + label("action.jump_in_tree", "Jump in Tree") + '</div>' +
+      '<div class="diag-ctx-sep"></div>' +
+      '<div class="diag-ctx-item" data-action="properties">\u2699\uFE0F ' + label("action.properties", "Properties") + '</div>' +
+      '<div class="diag-ctx-item" data-action="copy">\u{1F4CB} ' + label("action.copy_path", "Copy Path") + '</div>' +
+      '<div class="diag-ctx-sep"></div>' +
+      '<div class="diag-ctx-item diag-ctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + label("action.move_to_trash", "Move to Trash") + '</div>';
+  }
+
   _onContextMenu(e) {
     e.preventDefault();
     const rect = this.canvas.getBoundingClientRect();
@@ -1233,6 +1249,7 @@ class DiagramRenderer {
   }
 
   _showContextMenu(x, y, hit) {
+    this._renderContextMenu();
     this.contextMenu.style.display = "block";
     const rect = this.contextMenu.getBoundingClientRect();
     const vw = window.innerWidth;

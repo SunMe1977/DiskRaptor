@@ -321,6 +321,33 @@ class TreeView {
     });
   }
 
+  // Build the menu labels on demand so they follow the active locale. Locale
+  // files load asynchronously and may arrive after the tree is constructed;
+  // translating only once here left raw keys such as "action.copy_path" on
+  // screen until the app was restarted with a cached locale.
+  _renderContextMenu() {
+    if (!this._ctxMenu) return;
+    const tr = window.t || function (s) { return s; };
+    const label = function (key, fallback) {
+      const value = tr(key);
+      return value === key ? fallback : value;
+    };
+    const explorerLabel = this._isMac
+      ? label("action.finder", "Open in Finder")
+      : this._isLinux
+        ? label("action.file_manager", "Open in File Manager")
+        : label("action.explorer", "Open in Explorer");
+    this._ctxMenu.innerHTML =
+      '<div class="tctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
+      '<div class="tctx-item" data-action="terminal">\u{1F4BB} ' + label("action.terminal", "Open Terminal") + '</div>' +
+      '<div class="tctx-item" data-action="scan-here">🔍 ' + label("action.scan_here", "Scan this Folder") + '</div>' +
+      '<div class="tctx-sep"></div>' +
+      '<div class="tctx-item" data-action="properties">\u2699\uFE0F ' + label("action.properties", "Properties") + '</div>' +
+      '<div class="tctx-item" data-action="copy">\u{1F4CB} ' + label("action.copy_path", "Copy Path") + '</div>' +
+      '<div class="tctx-item" data-action="copy-size">\u{1F4B0} ' + label("action.copy_size", "Copy Size") + '</div>' +
+      '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + label("action.move_to_trash", "Move to Trash") + '</div>';
+  }
+
   _initContextMenu() {
     this._ctxMenu = document.createElement("div");
     this._ctxMenu.id = "tree-context-menu";
@@ -337,17 +364,7 @@ class TreeView {
       overflowY: "auto",
       boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
     });
-    const t = window.t;
-    const explorerLabel = this._isMac ? t("action.finder") : this._isLinux ? t("action.file_manager") : t("action.explorer");
-    this._ctxMenu.innerHTML =
-      '<div class="tctx-item" data-action="explorer">\u{1F4C2} ' + explorerLabel + '</div>' +
-      '<div class="tctx-item" data-action="terminal">\u{1F4BB} ' + t("action.terminal") + '</div>' +
-      '<div class="tctx-item" data-action="scan-here">🔍 ' + t("action.scan_here") + '</div>' +
-      '<div class="tctx-sep"></div>' +
-      '<div class="tctx-item" data-action="properties">\u2699\uFE0F ' + t("action.properties") + '</div>' +
-      '<div class="tctx-item" data-action="copy">\u{1F4CB} ' + window.t("action.copy_path") + '</div>' +
-      '<div class="tctx-item" data-action="copy-size">\u{1F4B0} ' + window.t("action.copy_size") + '</div>' +
-      '<div class="tctx-item tctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + window.t("action.move_to_trash") + '</div>';
+    this._renderContextMenu();
     document.body.appendChild(this._ctxMenu);
 
     // Show context menu on right-click
@@ -361,6 +378,7 @@ class TreeView {
         const arenaIdx = parseInt(row.dataset.index);
         if (isNaN(arenaIdx)) return;
         self._ctxMenu._arenaIdx = arenaIdx;
+        self._renderContextMenu();
         self._ctxMenu.style.display = "block";
         self._placeContextMenu(e.clientX, e.clientY);
       });
@@ -1169,6 +1187,7 @@ let ok = 0;
       e.preventDefault();
       this.select(arenaIdx);
       this._ctxMenu._arenaIdx = arenaIdx;
+      this._renderContextMenu();
       this._ctxMenu.style.display = "block";
       this._placeContextMenu(e.clientX, e.clientY);
     };

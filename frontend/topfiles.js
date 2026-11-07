@@ -8,16 +8,26 @@ class TopFilesPanel {
     this.tbody = document.getElementById("topfiles-body");
     this._ensureHeader();
     this._initContextMenu();
+    const self = this;
+    window.addEventListener("locale-changed", function () {
+      self._ensureHeader();
+      self._renderContextMenu();
+    });
   }
 
   _ensureHeader() {
     const thead = document.querySelector("#topfiles-table thead tr");
     if (thead) {
+      const tr = window.t || function (s) { return s; };
+      const label = function (key, fallback) {
+        const value = tr(key);
+        return value === key ? fallback : value;
+      };
       thead.innerHTML =
         '<th># <span class="sort-arrow">\u25BC</span></th>' +
-        '<th>' + window.t("sel.name") + ' <span class="sort-arrow">\u25B2\u25BC</span></th>' +
-        '<th>' + window.t("sel.size") + ' <span class="sort-arrow">\u25BC</span></th>' +
-        '<th style="width:40px">' + window.t("action.action") + "</th>";
+        '<th>' + label("sel.name", "Name") + ' <span class="sort-arrow">\u25B2\u25BC</span></th>' +
+        '<th>' + label("sel.size", "Size") + ' <span class="sort-arrow">\u25BC</span></th>' +
+        '<th style="width:40px">' + label("action.action", "Action") + "</th>";
     }
   }
 
@@ -78,22 +88,12 @@ class TopFilesPanel {
     return "";
   }
 
-  _initContextMenu() {
-    this._ctxMenu = document.createElement("div");
-    Object.assign(this._ctxMenu.style, {
-      display: "none",
-      position: "fixed",
-      zIndex: 2000,
-      background: "#161b22",
-      border: "1px solid #30363d",
-      borderRadius: "6px",
-      padding: "4px 0",
-      minWidth: "200px",
-      boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-    });
+  // Rebuild labels so the menu never keeps stale or untranslated keys.
+  _renderContextMenu() {
+    if (!this._ctxMenu) return;
+    const tr = window.t || function (s) { return s; };
     const tf = function (key, fb) {
-      const f = window.t;
-      const s = f(key);
+      const s = tr(key);
       return s === key ? fb : s;
     };
     const explorerFallback = /mac/i.test(navigator.platform || "")
@@ -109,6 +109,22 @@ class TopFilesPanel {
       '<div class="tfctx-item" data-action="copy">\u{1F4CB} ' + tf("action.copy_path", "Copy Path") + '</div>' +
       '<div class="tfctx-sep"></div>' +
       '<div class="tfctx-item tfctx-del" data-action="delete">\u{1F5D1}\uFE0F ' + tf("action.move_to_trash", "Move to Trash") + '</div>';
+  }
+
+  _initContextMenu() {
+    this._ctxMenu = document.createElement("div");
+    Object.assign(this._ctxMenu.style, {
+      display: "none",
+      position: "fixed",
+      zIndex: 2000,
+      background: "#161b22",
+      border: "1px solid #30363d",
+      borderRadius: "6px",
+      padding: "4px 0",
+      minWidth: "200px",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    });
+    this._renderContextMenu();
     document.body.appendChild(this._ctxMenu);
 
     const style = document.createElement("style");
@@ -209,6 +225,7 @@ class TopFilesPanel {
       tr.addEventListener("contextmenu", function(e) {
         e.preventDefault();
         self._ctxMenu._filePath = filePath;
+        self._renderContextMenu();
         self._ctxMenu.style.display = "block";
         self._ctxMenu.style.left = e.clientX + "px";
         self._ctxMenu.style.top = e.clientY + "px";
