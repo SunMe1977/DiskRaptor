@@ -773,13 +773,18 @@ let chartData;
       if (!ok) return;
        cleanBtn.disabled = true;
        cleanBtn.textContent = window.t("tools.cleaning");
-       let done = 0, failed = 0;
+       let done = 0, failed = 0, doneBytes = 0;
+       const removedPaths = [];
        for (let si = 0; si < sel.length; si++) {
          cleanBtn.textContent = window.t("tools.moving_progress").replace("{n}", si + 1).replace("{total}", sel.length) + "...";
          try {
            const r = await window.app.deletePath(sel[si].path);
           if (r && r.success === false) failed++;
-          else done++;
+          else {
+            done++;
+            doneBytes += Number(sel[si].size || 0);
+            removedPaths.push(sel[si].path);
+          }
         } catch (e) { failed++; }
       }
       window.showToast(
@@ -792,12 +797,12 @@ let chartData;
       cleanBtn.textContent = "\uD83D\uDDD1 " + window.t("action.move_selected_to_trash");
       cleanBtn.disabled = false;
       load();
-      // Remove the trashed files from the tree so it reflects the deletion
-      // without a full re-scan.
-      if (window.__treeView && typeof window.__treeView.removePaths === "function") {
-        window.__treeView.removePaths(
-          sel.map(function (f) { return f.path; }),
-        );
+      // Remove the trashed files from the tree/stats/diagram so the views
+      // reflect the deletion without a full re-scan.
+      if (window.app && typeof window.app.applyStatsDelta === "function") {
+        window.app.applyStatsDelta(removedPaths, { files: done, dirs: 0, bytes: doneBytes });
+      } else if (window.__treeView && typeof window.__treeView.removePaths === "function") {
+        window.__treeView.removePaths(removedPaths);
       }
     };
 

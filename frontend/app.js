@@ -287,6 +287,78 @@ return window.__TAURI__.invoke("delete_permanent", { path });
         if (!ok) return { success: false, error: "cancelled" };
         return window.__TAURI__.invoke("delete_permanent", { path });
       };
+      // Refresh the scan summary after a successful move-to-trash so the
+      // stats panel, diagram, Top-Files table and tree stop showing deleted
+      // data without forcing a full rescan. `delta` is { files, dirs, bytes }
+      // for the removed subtree (from the tree node, or 1 file + its size).
+      window.app.applyStatsDelta = function (paths, delta, opts) {
+        const list = (Array.isArray(paths) ? paths : [paths]).filter(Boolean);
+        const d = delta || {};
+        const removedFiles = Number(d.files || 0);
+        const removedDirs = Number(d.dirs || 0);
+        const removedBytes = Number(d.bytes || 0);
+        const norm = function (s) {
+          return String(s == null ? "" : s)
+            .replace(/\\/g, "/")
+            .replace(/\/+$/, "")
+            .toLowerCase();
+        };
+        const wanted = list.map(norm).filter(Boolean);
+        const isDeleted = function (p) {
+          const n = norm(p);
+          if (!n) return false;
+          for (let i = 0; i < wanted.length; i++) {
+            const w = wanted[i];
+            if (n === w || n.indexOf(w + "/") === 0) return true;
+          }
+          return false;
+        };
+
+        const st = window.app.state && window.app.state.currentStats;
+        if (st) {
+          st.total_files = Math.max(0, Number(st.total_files || 0) - removedFiles);
+          st.total_dirs = Math.max(0, Number(st.total_dirs || 0) - removedDirs);
+          st.total_size = Math.max(0, Number(st.total_size || 0) - removedBytes);
+          if (Array.isArray(st.top_files)) {
+            st.top_files = st.top_files.filter(function (f) {
+              return !isDeleted(typeof f === "string" ? f : (f && f.path));
+            });
+          }
+        }
+        if (st && window.__statsPanel) {
+          try { window.__statsPanel.render(st); } catch (_) { /* ignore */ }
+        }
+        if (st && window.__topFiles) {
+          try { window.__topFiles.render(st.top_files || [], true); } catch (_) { /* ignore */ }
+        }
+        if (window.__diagram) {
+          try {
+            const dg = window.__diagram;
+            if (Array.isArray(dg.files)) {
+              dg.files = dg.files.filter(function (f) { return !isDeleted(f && f.path); });
+            }
+            if (dg.data && Array.isArray(dg.data.top_files)) {
+              dg.data.top_files = dg.data.top_files.filter(function (f) {
+                return !isDeleted(typeof f === "string" ? f : (f && f.path));
+              });
+            }
+            if (typeof dg._draw === "function") dg._draw();
+          } catch (_) { /* ignore */ }
+        }
+        let treeDone = null;
+        if (!(opts && opts.skipTree) && window.__treeView &&
+            typeof window.__treeView.removePaths === "function") {
+          try { treeDone = window.__treeView.removePaths(list); } catch (_) { /* ignore */ }
+        }
+        // The tree rebuild is asynchronous and rewrites the status line, so
+        // re-apply the caller's confirmation message once it has finished.
+        if (opts && opts.status) {
+          Promise.resolve(treeDone).then(function () {
+            const sb = document.getElementById("tree-status") || document.querySelector(".status-bar");
+            if (sb) sb.textContent = opts.status;
+          }).catch(function () { /* ignore */ });
+        }
+      };
     const getSetting = window.app.getSetting;
     const setSetting = window.app.setSetting;
 

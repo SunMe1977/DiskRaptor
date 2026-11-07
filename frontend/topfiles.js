@@ -173,17 +173,34 @@ class TopFilesPanel {
        } else if (action === "delete") {
          const t = window.t;
          const self = this;
+         const st = window.app && window.app.state && window.app.state.currentStats;
+         let removedBytes = 0;
+         if (st && Array.isArray(st.top_files)) {
+           const hit = st.top_files.find(function (f) {
+             return (typeof f === "string" ? f : (f && f.path)) === path;
+           });
+           if (hit && typeof hit !== "string") removedBytes = Number(hit.size || 0);
+         }
          self._exec("delete_path", { path: path })
-            .then(function () {
+            .then(function (res) {
+              if (res && res.success === false) {
+                if (res.error !== "cancelled") window.alertDialog("Failed: " + (res.error || "unknown error"));
+                return;
+              }
+              if (window.app && typeof window.app.applyStatsDelta === "function") {
+                window.app.applyStatsDelta([path], { files: 1, dirs: 0, bytes: removedBytes }, {
+                  status: t("status.moved_to_trash").replace("{name}", path),
+                });
+              } else {
+                if (st && Array.isArray(st.top_files)) {
+                  st.top_files = st.top_files.filter(function (f) {
+                    return (typeof f === "string" ? f : (f.path || "")) !== path;
+                  });
+                }
+                if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
+              }
               const sb = document.querySelector(".status-bar");
               if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
-              const st = window.app && window.app.state && window.app.state.currentStats;
-              if (st && Array.isArray(st.top_files)) {
-                st.top_files = st.top_files.filter(function (f) {
-                  return (typeof f === "string" ? f : (f.path || "")) !== path;
-                });
-              }
-              if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
             })
              .catch(function (err) {
                window.alertDialog("Failed: " + err);
@@ -315,17 +332,27 @@ class TopFilesPanel {
            const self = this;
            return function () {
              self._exec("delete_path", { path: p })
-                .then(function () {
+                .then(function (res) {
+                  if (res && res.success === false) {
+                    if (res.error !== "cancelled") window.alertDialog("Failed: " + (res.error || "unknown error"));
+                    return;
+                  }
                   const sb = document.querySelector(".status-bar");
                   if (sb) sb.textContent = window.t("status.moved_to_trash").replace("{name}", p);
-                  row.remove();
-                  const st = window.app && window.app.state && window.app.state.currentStats;
-                  if (st && Array.isArray(st.top_files)) {
-                    st.top_files = st.top_files.filter(function (f) {
-                      return (typeof f === "string" ? f : (f.path || "")) !== p;
+                  if (window.app && typeof window.app.applyStatsDelta === "function") {
+                    window.app.applyStatsDelta([p], { files: 1, dirs: 0, bytes: Number(entry.size || 0) }, {
+                      status: window.t("status.moved_to_trash").replace("{name}", p),
                     });
+                  } else {
+                    row.remove();
+                    const st = window.app && window.app.state && window.app.state.currentStats;
+                    if (st && Array.isArray(st.top_files)) {
+                      st.top_files = st.top_files.filter(function (f) {
+                        return (typeof f === "string" ? f : (f.path || "")) !== p;
+                      });
+                    }
+                    if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
                   }
-                  if (window.__topFiles) window.__topFiles.render(st ? st.top_files : [], true);
                 })
                  .catch(function (err) {
                    window.alertDialog("Failed: " + err);

@@ -429,12 +429,20 @@ const name = node.name || "?";
       const res = await window.app.deletePath(path);
       try {
       if (res && res.success === false) {
-        window.alertDialog("Failed: " + (res.error || "unknown error"));
+        if (res.error !== "cancelled") {
+          window.alertDialog("Failed: " + (res.error || "unknown error"));
+        }
         return;
       }
-      document.querySelector(".status-bar").textContent = t("status.moved_to_trash").replace("{name}", name);
-      this._removeNodeFromTree(arenaIdx);
+      const delta = this._removeNodeFromTree(arenaIdx);
       await this.rebuild();
+      // Update the scan totals and the other views too, so the deleted file
+      // disappears from the stats panel, diagram and Top-Files table.
+      if (window.app && typeof window.app.applyStatsDelta === "function") {
+        window.app.applyStatsDelta([path], delta, { skipTree: true });
+      }
+      const sb = document.querySelector(".status-bar");
+      if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", name);
       this._offerUndoTrash(path);
     } catch (e) {
       window.alertDialog("Failed: " + e);
@@ -443,8 +451,26 @@ const name = node.name || "?";
 
   _removeNodeFromTree(arenaIdx) {
     const node = this.loader.getNode(arenaIdx);
-    if (!node) return;
+    if (!node) return null;
     const parent = node.parent;
+    const delta = {
+      files: Number(node.file_count || 0),
+      dirs: Number(node.dir_count || 0),
+      bytes: Number(node.size || 0),
+    };
+
+    // Keep ancestors consistent with the removed subtree: their sizes and
+    // file/dir counts must no longer include deleted data.
+    let up = parent;
+    let guard = 0;
+    while (up !== 4294967295 && guard++ < 100000) {
+      const ancestor = this.loader.getNode(up);
+      if (!ancestor) break;
+      ancestor.size = Math.max(0, Number(ancestor.size || 0) - delta.bytes);
+      ancestor.file_count = Math.max(0, Number(ancestor.file_count || 0) - delta.files);
+      ancestor.dir_count = Math.max(0, Number(ancestor.dir_count || 0) - delta.dirs);
+      up = ancestor.parent;
+    }
 
     const toRemove = [arenaIdx];
     let i = 0;
@@ -473,6 +499,7 @@ const name = node.name || "?";
         this.loader.parentMap.set(parent, filtered);
       }
     }
+    return delta;
   }
 
   /**
@@ -500,12 +527,12 @@ const name = node.name || "?";
       const p = this._buildPathCached(i);
       if (p && wanted.has(norm(p))) toRemove.push(i);
     }
-    if (toRemove.length === 0) return;
+    if (toRemove.length === 0) return Promise.resolve();
     for (let ri = 0; ri < toRemove.length; ri++) {
       this._removeNodeFromTree(toRemove[ri]);
     }
     this._pathCache.clear();
-    this.rebuild();
+    return this.rebuild();
   }
 
   async _handleTerminal(arenaIdx) {
@@ -1018,26 +1045,40 @@ const name = node.name || "?";
   async _handleDeleteMany() {
     const idxs = this.selectedIndices.slice();
     if (idxs.length < 2) return;
-    const paths = [];
+    const entries = [];
     for (const idx of idxs) {
       const p = this._buildPath(idx);
-      if (p) paths.push(p);
+      if (p) entries.push({ idx: idx, path: p });
     }
 const t = window.t;
      let ok = 0;
-     for (const p of paths) {
+     let files = 0;
+     let dirs = 0;
+     let bytes = 0;
+     const removed = [];
+     for (const entry of entries) {
        try {
-         const res = await window.app.deletePath(p);
+         const res = await window.app.deletePath(entry.path);
         if (res && res.success === false) continue;
         ok++;
+        removed.push(entry.path);
+        const delta = this._removeNodeFromTree(entry.idx);
+        if (delta) {
+          files += delta.files;
+          dirs += delta.dirs;
+          bytes += delta.bytes;
+        }
       } catch (e) { /* keep going */ }
     }
-    document.querySelector(".status-bar").textContent =
-      t("status.moved_to_trash").replace("{name}", ok + " item(s)");
     this.selectedIndices = [];
     this._updateBatchBar();
     await this.rebuild();
-    this._offerUndoTrash(paths);
+    if (window.app && typeof window.app.applyStatsDelta === "function") {
+      window.app.applyStatsDelta(removed, { files: files, dirs: dirs, bytes: bytes }, { skipTree: true });
+    }
+    const sb = document.querySelector(".status-bar");
+    if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", ok + " item(s)");
+    this._offerUndoTrash(removed);
   }
 
   // After a move-to-trash, offer a short "Undo" that restores the file from

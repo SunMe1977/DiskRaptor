@@ -1468,12 +1468,21 @@ case "delete": {
              if (window.showToast) window.showToast(msg, "error");
              else console.error("[GalaxyView]", msg);
            };
+           const objSize = Number((obj && obj.data && obj.data.size) || (obj && obj.size) || 0);
+           const isFolder = !!(obj && obj.type === "planet");
+           const objFiles = isFolder ? Number((obj.data && obj.data.files) || 0) : 1;
+           const objDirs = isFolder ? 1 : 0;
            window.__TAURI__.invoke("delete_path", { path }).then(function (res) {
                if (res && res.success !== false) {
                  self.objects = self.objects.filter((o) => o !== obj);
                  if (self.selectedObject === obj) self.selectedObject = null;
                  if (self.followTarget === obj) self._clearFollow();
-                if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
+                 if (window.app && typeof window.app.applyStatsDelta === "function") {
+                   window.app.applyStatsDelta([path], { files: objFiles, dirs: objDirs, bytes: objSize }, {
+                     status: t("status.moved_to_trash").replace("{name}", path),
+                   });
+                 }
+                 if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", path);
               } else {
                 failMsg((res && res.error) || "Unbekannter Fehler");
               }

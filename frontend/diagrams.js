@@ -1304,16 +1304,34 @@ class DiagramRenderer {
       case "delete": {
           if (!filePath) break;
           const t = window.t;
-          if (window.app && typeof window.app.deletePath === "function") {
-            window.app.deletePath(filePath);
-          } else if (window.confirm(t("tree.confirm_delete").replace("{name}", filePath))) {
-            const self = this;
-            self._invoke("delete_path", { path: filePath }).then((ok2) => {
-              if (ok2 && ok2.success !== false) {
-                self.files = self.files.filter((f) => f.path !== filePath);
-                self._draw();
-                if (sb) sb.textContent = t("status.moved_to_trash").replace("{name}", filePath);
+          const hit = this._contextHit || {};
+          const removedBytes = Number(hit.size || 0);
+          const self = this;
+          const done = function (res) {
+            if (res && res.success === false) {
+              if (res.error !== "cancelled") {
+                window.alertDialog("Failed: " + (res.error || "unknown error"));
               }
+              return;
+            }
+            const statusMsg = t("status.moved_to_trash").replace("{name}", filePath);
+            if (window.app && typeof window.app.applyStatsDelta === "function") {
+              // Removes the file from the diagram, stats panel, Top-Files
+              // table and tree, and redraws the diagram.
+              window.app.applyStatsDelta([filePath], { files: 1, dirs: 0, bytes: removedBytes }, { status: statusMsg });
+            } else {
+              self.files = self.files.filter((f) => f.path !== filePath);
+              self._draw();
+            }
+            if (sb) sb.textContent = statusMsg;
+          };
+          if (window.app && typeof window.app.deletePath === "function") {
+            window.app.deletePath(filePath).then(done).catch(function (err) {
+              window.alertDialog("Failed: " + err);
+            });
+          } else if (window.confirm(t("tree.confirm_delete").replace("{name}", filePath))) {
+            this._invoke("delete_path", { path: filePath }).then(done).catch(function (err) {
+              window.alertDialog("Failed: " + err);
             });
           }
           break;
