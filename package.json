@@ -1,6 +1,6 @@
 {
   "name": "diskraptor",
-  "version": "1.0.51",
+  "version": "1.0.52",
   "private": true,
   "description": "Ultra-fast disk space analyzer",
   "engines": {
