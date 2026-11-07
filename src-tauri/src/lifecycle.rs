@@ -159,9 +159,10 @@ pub fn setup_low_disk_monitor(app: &AppHandle) {
         std::thread::sleep(std::time::Duration::from_secs(
             if std::env::var("DISKraptor_CDP_PORT").is_ok() { 3600 } else { 10 },
         ));
-        let disks = sysinfo::Disks::new_with_refreshed_list();
+        let Ok(disks) = sysinfo::Disks::new_with_refreshed_list() else {
+            continue;
+        };
         let low: Vec<String> = disks
-            .list()
             .iter()
             .filter_map(|d| {
                 let total = d.total_space();

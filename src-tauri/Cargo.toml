@@ -66,7 +66,7 @@ base64 = "0.23"
 chrono = { version = "0.4", features = ["clock"] }
 memmap2 = "0.9"
 dirs = "7"
-sysinfo = "0.39"
+sysinfo = "0.40"
 trash = "5"
 # Reads both XML and binary Info.plist files, which most built .app bundles use.
 plist = "1"

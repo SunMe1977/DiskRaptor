@@ -101,8 +101,10 @@ fn delete_local_snapshot_inner(volume: String) -> JsonResult {
 
 #[cfg(target_os = "macos")]
 fn mount_points() -> Vec<String> {
-    let mut mounts: Vec<String> = sysinfo::Disks::new_with_refreshed_list()
-        .list()
+    let Ok(disks) = sysinfo::Disks::new_with_refreshed_list() else {
+        return Vec::new();
+    };
+    let mut mounts: Vec<String> = disks
         .iter()
         .map(|d| d.mount_point().to_string_lossy().into_owned())
         .collect();

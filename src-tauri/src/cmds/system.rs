@@ -123,8 +123,10 @@ pub(crate) fn get_trash_path() -> JsonResult {
 
 #[tauri::command]
 pub(crate) fn list_drives() -> JsonResult {
-    let disks_list = sysinfo::Disks::new_with_refreshed_list();
-    let disks: Vec<serde_json::Value> = disks_list.list().iter().map(|d| {
+    let Ok(disks_list) = sysinfo::Disks::new_with_refreshed_list() else {
+        return JsonResult::err("Failed to enumerate disks");
+    };
+    let disks: Vec<serde_json::Value> = disks_list.iter().map(|d| {
         let mount = d.mount_point().to_string_lossy().to_string();
         let total = d.total_space();
         let free = d.available_space();
@@ -213,9 +215,11 @@ pub(crate) fn get_volume_stats() -> JsonResult {
 /// helper, so it survives the macOS App Sandbox (unlike smartctl/system_profiler).
 #[allow(dead_code)]
 pub(crate) fn list_volumes_via_sysinfo() -> Vec<serde_json::Value> {
-    let disks_list = sysinfo::Disks::new_with_refreshed_list();
+    let Ok(disks_list) = sysinfo::Disks::new_with_refreshed_list() else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
-    for d in disks_list.list() {
+    for d in disks_list.iter() {
         let mount = d.mount_point().to_string_lossy().to_string();
         if mount.is_empty() { continue; }
         let total = d.total_space();
@@ -463,7 +467,7 @@ pub(crate) fn parse_system_profiler_disks(s: &str) -> Vec<serde_json::Value> {
 
 #[tauri::command]
 pub(crate) fn get_memory_info() -> JsonResult {
-    let mut sys = sysinfo::System::new();
+    let mut sys = sysinfo::System::new().unwrap();
     sys.refresh_memory();
     let total = sys.total_memory();
     let used = sys.used_memory();
@@ -478,7 +482,7 @@ pub(crate) fn get_memory_info() -> JsonResult {
 #[tauri::command]
 pub(crate) fn get_process_memory() -> JsonResult {
     let pid = sysinfo::Pid::from_u32(std::process::id());
-    let mut sys = sysinfo::System::new();
+    let mut sys = sysinfo::System::new().unwrap();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), false);
     if let Some(p) = sys.process(pid) {
         JsonResult::ok(serde_json::json!({"resident": p.memory(), "virtual": p.virtual_memory()}))
@@ -519,7 +523,7 @@ fn is_protected_process(pid: u32, name: &str, self_pid: u32) -> bool {
 #[tauri::command]
 pub(crate) fn list_processes() -> JsonResult {
     let self_pid = std::process::id();
-    let mut sys = sysinfo::System::new();
+    let mut sys = sysinfo::System::new().unwrap();
     // Two passes give `cpu_usage` a delta to measure against, so the first open
     // already shows a sensible CPU column.
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
@@ -559,7 +563,7 @@ pub(crate) fn kill_process(pid: u32) -> JsonResult {
     if pid == self_pid {
         return JsonResult::err("Cannot terminate DiskRaptor itself");
     }
-    let mut sys = sysinfo::System::new();
+    let mut sys = sysinfo::System::new().unwrap();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, false);
     let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) else {
         return JsonResult::err("The process no longer exists");
@@ -634,7 +638,7 @@ fn trim_process_working_sets() -> usize {
 /// the before/after available memory so the UI never overstates the result.
 #[tauri::command]
 pub(crate) fn optimize_memory() -> JsonResult {
-    let mut sys = sysinfo::System::new();
+    let mut sys = sysinfo::System::new().unwrap();
     sys.refresh_memory();
     let before = sys.available_memory();
     let trimmed = trim_process_working_sets();
