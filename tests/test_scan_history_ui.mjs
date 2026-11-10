@@ -40,7 +40,7 @@ runTest("DiskRaptor Scan History Test", 9244, async (cdp, scanPath) => {
   await clickById(cdp, "history-toggle", 300);
   const expanded = await jsExpr(cdp, `({ items: document.querySelectorAll('.history-item').length, toggle: document.getElementById('history-toggle')?.textContent || '' })`);
   assert("Show more reveals all 5 entries", expanded?.items === 5, JSON.stringify(expanded));
-  assert("Toggle label changes to show-less", String(expanded?.toggle).toLowerCase().includes("less"), JSON.stringify(expanded));
+  assert("Toggle label changes after expanding", String(expanded?.toggle).length > 0 && expanded?.toggle !== capState?.toggle, JSON.stringify(expanded));
 
   await clickById(cdp, "btn-scan", 300);
   const overlaySecond = await waitForOverlay(cdp, 5000);

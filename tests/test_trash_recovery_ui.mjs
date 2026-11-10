@@ -1,51 +1,61 @@
 import { runTest, jsExpr, jsInvoke, assert, clickById, sleep } from "./test_shared.mjs";
 
+// Trash handling has two parts:
+//  - the Tools menu "Empty Trash" action (destructive - presence only)
+//  - the TrashRecovery panel class (trashrecovery.js), which lists items and
+//    offers restore / permanent delete. The panel is instantiated here
+//    explicitly so the test never mutates the real recycle bin.
 runTest("DiskRaptor Trash Recovery Test", 9219, async (cdp) => {
   await clickById(cdp, "btn-tools", 300);
-  const trashRecoveryClick = await jsExpr(cdp, `(function(){ const items=document.querySelectorAll('.tools-item'); for(const i of items){ if(i.getAttribute('data-action')==='trash-recovery'){ i.click(); return 'clicked'; }} return 'not-found'; })()`);
-  assert("Trash Recovery menu item clickable", trashRecoveryClick === "clicked");
-  await sleep(500);
+  const menu = await jsExpr(cdp,
+    `JSON.stringify(Array.from(document.querySelectorAll('.tools-item')).map(i => i.getAttribute('data-action')))`);
+  let actions = [];
+  try { actions = JSON.parse(menu); } catch { /* ignore */ }
+  assert("Tools menu offers trash action", Array.isArray(actions) && actions.includes("trash"), menu);
+  await jsExpr(cdp, `document.dispatchEvent(new MouseEvent('click', { bubbles: true })); 'dismiss'`);
+  await sleep(200);
 
-  const trashPanel = await jsExpr(cdp, `
-    (function() {
-      const p = document.getElementById('trash-panel') || document.querySelector('[id*="trash-recovery"], [class*="trash-recovery"]');
-      return p ? 'panel-found' : 'no-panel';
-    })()
-  `);
-  assert("Trash Recovery panel rendered", trashPanel === "panel-found", `${trashPanel}`);
+  const trashPath = await jsInvoke(cdp, "window.__TAURI__.invoke('get_trash_path', {})")
+    .catch((e) => "error:" + e.message);
+  assert("get_trash_path invoke completes",
+    (typeof trashPath === "string" && trashPath.length > 0) ||
+    (trashPath && typeof trashPath === "object" && typeof trashPath.error === "string"),
+    `${typeof trashPath}:${JSON.stringify(trashPath).slice(0, 80)}`);
 
-  const trashList = await jsInvoke(cdp,
-    "window.__TAURI__.invoke('list_trash', {})"
-  ).catch(() => 'error');
-  assert("list_trash invoke completes", trashList !== 'error', `${typeof trashList}`);
+  const trashList = await jsInvoke(cdp, "window.__TAURI__.invoke('list_trash', {})")
+    .catch((e) => "error:" + e.message);
+  assert("list_trash returns an array", Array.isArray(trashList), `${typeof trashList}`);
 
-  const restoreInvoke = await jsExpr(cdp, `
+  const panel = await jsExpr(cdp, `
     (async () => {
-      try {
-        const r = await window.__TAURI__.invoke('restore_trash', { path: '/tmp/test-restore' });
-        return 'ok-restore';
-      } catch(e) { return 'err-restore: ' + e.message.slice(0, 30); }
+      if (typeof TrashRecovery !== 'function') return 'no-class';
+      if (!window.__trashRecoveryTest) window.__trashRecoveryTest = new TrashRecovery();
+      await window.__trashRecoveryTest.open();
+      return document.getElementById('trash-panel') ? 'panel-found' : 'no-panel';
     })()
   `);
-  assert("restore_trash Tauri invoke", true, `${restoreInvoke}`);
+  assert("Trash Recovery panel renders", panel === "panel-found", `${panel}`);
 
-  const restoreAllInvoke = await jsExpr(cdp, `
-    (async () => {
-      try {
-        const r = await window.__TAURI__.invoke('restore_all_trash', {});
-        return 'ok-restore-all';
-      } catch(e) { return 'err-restore-all: ' + e.message.slice(0, 30); }
-    })()
-  `);
-  assert("restore_all_trash Tauri invoke", true, `${restoreAllInvoke}`);
+  if (panel === "panel-found") {
+    const controls = await jsExpr(cdp, `JSON.stringify({
+      search: !!document.getElementById('trash-search'),
+      type: !!document.getElementById('trash-type'),
+      sort: !!document.getElementById('trash-sort'),
+      restoreAll: !!document.getElementById('trash-restore-all'),
+      restoreSelected: !!document.getElementById('trash-restore-selected'),
+      deleteSelected: !!document.getElementById('trash-delete-selected'),
+      close: !!document.getElementById('trash-close')
+    })`);
+    const c = JSON.parse(controls);
+    assert("Trash search/filter controls", c.search && c.type && c.sort, controls);
+    assert("Trash restore/delete controls", c.restoreAll && c.restoreSelected && c.deleteSelected, controls);
 
-  const emptyTrashInvoke = await jsExpr(cdp, `
-    (async () => {
-      try {
-        const r = await window.__TAURI__.invoke('empty_trash', {});
-        return 'ok-empty';
-      } catch(e) { return 'err-empty: ' + e.message.slice(0, 30); }
-    })()
-  `);
-  assert("empty_trash from recovery panel", true, `${emptyTrashInvoke}`);
+    const summary = await jsExpr(cdp, `document.getElementById('trash-summary')?.textContent || ''`);
+    assert("Trash summary rendered", summary.length > 0, `summary="${summary}"`);
+
+    await jsExpr(cdp, `document.getElementById('trash-close').click(); 'ok'`);
+    await sleep(200);
+    const hidden = await jsExpr(cdp, `document.getElementById('trash-panel')?.style.display === 'none'`);
+    assert("Trash panel closes", hidden === true);
+  }
 });

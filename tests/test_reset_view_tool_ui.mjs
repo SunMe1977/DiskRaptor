@@ -30,8 +30,18 @@ runTest("DiskRaptor Reset View Tool Test", 9278, async (cdp, scanPath) => {
   const zoomLabel = await jsExpr(cdp, `document.getElementById('zoom-label')?.textContent?.trim() || ''`);
   assert("Zoom label exists after reset", zoomLabel.length >= 0, `zoom="${zoomLabel}"`);
 
+  // reset-view clears the scan state (empty tree) and returns to the welcome
+  // page — that is the intended behaviour of "Reset View".
   const treeRows = await jsExpr(cdp, `document.querySelectorAll('.tree-row').length`);
-  assert("Tree rows preserved after reset", treeRows > 0, `rows=${treeRows}`);
+  assert("Tree cleared after reset", treeRows === 0, `rows=${treeRows}`);
+
+  const welcomeShown = await jsExpr(cdp, `
+    (function() {
+      const el = document.getElementById('welcome-placeholder');
+      return el ? !el.classList.contains('hidden') : false;
+    })()
+  `);
+  assert("Welcome page shown after reset", welcomeShown === true);
 
   const statusBar = await jsExpr(cdp, `document.querySelector('.status-bar')?.textContent?.trim() || ''`);
   assert("Status bar has content after reset", statusBar.length >= 0, `status="${statusBar.slice(0, 60)}"`);

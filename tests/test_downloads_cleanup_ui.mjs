@@ -1,4 +1,10 @@
-import { runTest, jsExpr, assert, clickById, sleep, startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated } from "./test_shared.mjs";
+import {
+  runTest, jsExpr, assert, clickById, sleep, waitFor,
+  startScan, waitForOverlay, waitForScanComplete, waitForStatsPopulated,
+} from "./test_shared.mjs";
+
+// Downloads Cleanup after a normal scan: the overlay still opens, reports
+// candidates and closes cleanly.
 
 runTest("DiskRaptor Downloads Cleanup Test", 9252, async (cdp, scanPath) => {
   await startScan(cdp, scanPath);
@@ -8,40 +14,39 @@ runTest("DiskRaptor Downloads Cleanup Test", 9252, async (cdp, scanPath) => {
   await waitForStatsPopulated(cdp);
 
   await clickById(cdp, "btn-tools", 300);
-
   const clickedCleanup = await jsExpr(cdp, `
     (function() {
       const items = document.querySelectorAll('.tools-item');
       for (const i of items) {
-        if (i.getAttribute('data-action') === 'cleanup-downloads') {
-          i.click();
-          return 'clicked';
-        }
+        if (i.getAttribute('data-action') === 'cleanup-downloads') { i.click(); return 'clicked'; }
       }
       return 'not-found';
     })()
   `);
   assert("Downloads cleanup menu item clicked", clickedCleanup === "clicked", `${clickedCleanup}`);
-  await sleep(800);
 
-  const cleanupOverlay = await jsExpr(cdp, `document.getElementById('cleanup-overlay') ? 'found' : 'not-found'`);
-  assert("Cleanup overlay exists", cleanupOverlay === "found");
+  const appeared = await waitFor(async () => {
+    return await jsExpr(cdp, `!!document.getElementById('downloads-cleanup-overlay')`);
+  }, { timeout: 10000, label: "cleanup overlay" });
+  assert("Cleanup overlay exists", appeared);
+  if (!appeared) return;
 
-  const cleanupItems = await jsExpr(cdp, `document.querySelectorAll('.cleanup-item, .cleanup-entry').length`);
-  assert("Cleanup items rendered", cleanupItems >= 0, `items=${cleanupItems}`);
+  await waitFor(async () => {
+    const s = await jsExpr(cdp, `document.querySelector('#downloads-cleanup-overlay .dlc-status')?.textContent || ''`);
+    return s.length > 0 && !s.includes("\u23F3");
+  }, { timeout: 20000, label: "cleanup candidates" });
 
-  const selectAllBtn = await jsExpr(cdp, `document.getElementById('cleanup-select-all') ? 'found' : 'not-found'`);
-  assert("Select All button exists", selectAllBtn === "found");
+  const status = await jsExpr(cdp, `document.querySelector('#downloads-cleanup-overlay .dlc-status')?.textContent || ''`);
+  assert("Cleanup reports a result", status.length > 0, `status="${status}"`);
 
-  if (selectAllBtn === "found") {
-    await clickById(cdp, "cleanup-select-all", 300);
-    const checkboxesAfter = await jsExpr(cdp, `Array.from(document.querySelectorAll('.cleanup-item input[type="checkbox"]')).filter(cb => cb.checked).length`);
-    assert("Checkboxes toggled by Select All", true, `checked=${checkboxesAfter}`);
-  }
+  const cleanupItems = await jsExpr(cdp, `document.querySelectorAll('#downloads-cleanup-overlay .dlc-item').length`);
+  assert("Cleanup item list rendered", cleanupItems >= 0, `items=${cleanupItems}`);
 
-  await jsExpr(cdp, `document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true})); 'esc'`);
-  await sleep(200);
+  const selectAllBtn = await jsExpr(cdp, `!!document.querySelector('#downloads-cleanup-overlay .dlc-select-all')`);
+  assert("Select All button exists", selectAllBtn);
 
-  const overlayClosed = await jsExpr(cdp, `document.getElementById('cleanup-overlay')?.style?.display === 'none' || document.getElementById('cleanup-overlay') === null`);
-  assert("Cleanup overlay closed", overlayClosed === true || cleanupOverlay === "not-found");
+  await jsExpr(cdp, `document.querySelector('#downloads-cleanup-overlay .dlc-close').click(); 'ok'`);
+  await sleep(300);
+  const overlayClosed = await jsExpr(cdp, `document.getElementById('downloads-cleanup-overlay') === null`);
+  assert("Cleanup overlay closed", overlayClosed === true);
 });

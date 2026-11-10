@@ -17,8 +17,9 @@ runTest("DiskRaptor Tree Interactions Test", 9231, async (cdp, scanPath) => {
       const nodes = document.querySelectorAll('.tree-row');
       for (const n of nodes) {
         const idx = parseInt(n.dataset.index || n.dataset.idx || '-1');
-        const type = n.querySelector('.tree-col-type')?.textContent?.trim() || n.dataset.type || '';
-        if (type === 'Directory' || type === '0') return 'idx=' + idx;
+        const toggle = n.querySelector('.toggle');
+        const toggleText = toggle ? (toggle.textContent || '').trim() : '';
+        if (toggleText === '\\u25B6' || toggleText === '\\u25BC') return 'idx=' + idx;
       }
       return 'no-dir';
     })()
@@ -31,12 +32,12 @@ runTest("DiskRaptor Tree Interactions Test", 9231, async (cdp, scanPath) => {
       (function() {
         const node = document.querySelector('.tree-row[data-index="${dirIdx}"], .tree-row[data-idx="${dirIdx}"]');
         if (!node) return 'no-node';
-        const toggle = node.querySelector('.tree-expand, .tree-toggle, [data-expand]');
-        if (toggle) return 'has-toggle-' + (toggle.classList.contains('expanded') || toggle.getAttribute('aria-expanded') === 'true');
+        const toggle = node.querySelector('.toggle');
+        if (toggle) return 'has-toggle-' + (toggle.textContent || '').trim();
         return 'no-toggle';
       })()
     `);
-    assert("Directory node has expand control", expandedBefore !== "no-node", `${expandedBefore}`);
+    assert("Directory node has expand control", expandedBefore.startsWith("has-toggle"), `${expandedBefore}`);
 
     await jsExpr(cdp, `
       (function() {
@@ -44,7 +45,7 @@ runTest("DiskRaptor Tree Interactions Test", 9231, async (cdp, scanPath) => {
         for (const n of nodes) {
           const idx = n.dataset.index || n.dataset.idx;
           if (idx === '${dirIdx}') {
-            const toggle = n.querySelector('.tree-expand, .tree-toggle, [data-expand]');
+            const toggle = n.querySelector('.toggle');
             if (toggle) { toggle.click(); return 'clicked-toggle'; }
             n.click();
             return 'clicked-node';

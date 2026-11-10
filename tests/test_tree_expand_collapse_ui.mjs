@@ -16,13 +16,13 @@ runTest("DiskRaptor Tree Expand Collapse Stability Test", 9258, async (cdp, scan
       const nodes = document.querySelectorAll('.tree-row');
       const dirs = [];
       for (const n of nodes) {
-        const type = n.querySelector('.tree-col-type')?.textContent?.trim() || n.dataset.type || '';
-        if (type === 'Directory' || type === '0') dirs.push(n.dataset.index || n.dataset.idx);
+        const toggleText = (n.querySelector('.toggle')?.textContent || '').trim();
+        if (toggleText === '\\u25B6') dirs.push(n.dataset.index || n.dataset.idx);
       }
       return dirs.slice(0, 5).join(',');
     })()
   `);
-  assert("Tree has directory nodes", dirNodes.length > 0, `dirs=${dirNodes}`);
+  assert("Tree has collapsible directory nodes", dirNodes.length > 0, `dirs=${dirNodes}`);
 
   if (dirNodes) {
     const firstDirIdx = dirNodes.split(",")[0];
@@ -32,7 +32,7 @@ runTest("DiskRaptor Tree Expand Collapse Stability Test", 9258, async (cdp, scan
         for (const n of nodes) {
           const idx = n.dataset.index || n.dataset.idx;
           if (idx === '${firstDirIdx}') {
-            const toggle = n.querySelector('.tree-expand, .tree-toggle, [data-expand]');
+            const toggle = n.querySelector('.toggle');
             if (toggle) { toggle.click(); return 'toggled'; }
             n.click();
             return 'clicked';
@@ -44,7 +44,7 @@ runTest("DiskRaptor Tree Expand Collapse Stability Test", 9258, async (cdp, scan
     await sleep(500);
 
     const rowsAfterExpand = await jsExpr(cdp, `document.querySelectorAll('.tree-row').length`);
-    assert("Tree rows after expand", rowsAfterExpand >= rowsBefore, `before=${rowsBefore} after=${rowsAfterExpand}`);
+    assert("Tree rows change after toggling", rowsAfterExpand !== rowsBefore, `before=${rowsBefore} after=${rowsAfterExpand}`);
 
     await jsExpr(cdp, `
       (function() {
@@ -52,7 +52,7 @@ runTest("DiskRaptor Tree Expand Collapse Stability Test", 9258, async (cdp, scan
         for (const n of nodes) {
           const idx = n.dataset.index || n.dataset.idx;
           if (idx === '${firstDirIdx}') {
-            const toggle = n.querySelector('.tree-expand, .tree-toggle, [data-expand]');
+            const toggle = n.querySelector('.toggle');
             if (toggle) { toggle.click(); return 'toggled-back'; }
             n.click();
             return 'clicked-back';
@@ -64,7 +64,7 @@ runTest("DiskRaptor Tree Expand Collapse Stability Test", 9258, async (cdp, scan
     await sleep(400);
 
     const rowsAfterCollapse = await jsExpr(cdp, `document.querySelectorAll('.tree-row').length`);
-    assert("Tree rows after collapse", rowsAfterCollapse <= rowsAfterExpand, `afterCollapse=${rowsAfterCollapse}`);
+    assert("Tree rows restored after toggling back", rowsAfterCollapse === rowsBefore, `before=${rowsBefore} afterCollapse=${rowsAfterCollapse}`);
   }
 
   const treeRowsFinal = await jsExpr(cdp, `document.querySelectorAll('.tree-row').length`);

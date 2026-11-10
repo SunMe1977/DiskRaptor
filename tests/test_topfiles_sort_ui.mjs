@@ -34,8 +34,8 @@ runTest("DiskRaptor Top Files Interaction Test", 9238, async (cdp, scanPath) => 
     const headerCells = await jsExpr(cdp, `Array.from(document.querySelectorAll('#topfiles-table th')).map(th => th.textContent.trim().slice(0, 20))`);
     assert("Top files headers exist", Array.isArray(headerCells) && headerCells.length >= 1, `headers=${JSON.stringify(headerCells)}`);
 
-    const hasSizeOrBytes = headerCells.some(h => h.toLowerCase().includes("size") || h.toLowerCase().includes("bytes"));
-    assert("Header includes size/bytes column", hasSizeOrBytes);
+    const hasSizeOrBytes = headerCells.some(h => /size|bytes|gr(ö|oe)(ß|ss)e|taille|tama(ñ|n)o|dimensione|размер/i.test(String(h)));
+    assert("Header includes size/bytes column", hasSizeOrBytes, `headers=${JSON.stringify(headerCells)}`);
   }
 
   const topFilesCount = await jsExpr(cdp, `document.querySelectorAll('#topfiles-body tr').length`);

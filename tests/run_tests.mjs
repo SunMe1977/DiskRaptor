@@ -291,7 +291,10 @@ async function main() {
   };
 
   // Stale instances are killed synchronously (execSync inside killAll).
+  // DISKRAPTOR_NO_KILL=1 (used by local runs next to a live app) skips this
+  // so the user's running DiskRaptor instance is not terminated.
   const killStaleApps = async () => {
+    if (process.env.DISKRAPTOR_NO_KILL === "1") return;
     killAll();
     await sleep(1500);
   };

@@ -60,14 +60,24 @@ runTest("DiskRaptor Downloads Cleanup Test", 9230, async (cdp) => {
   assert("list_drives returns array", Array.isArray(drives));
 
   const mem = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('get_memory_info', {})");
-  assert("get_memory_info", mem && mem.total_bytes > 0);
+  assert("get_memory_info", mem && mem.total > 0, `total=${mem && mem.total}`);
 
-  // Test settings round-trip
+  // Test settings round-trip (save_settings takes a `settings` argument and
+  // merges it into the existing file, so restore the original values after).
   console.log("\n  Testing settings...");
+  const original = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('load_settings', {})");
   const testSettings = { theme: "dark", lang: "en" };
-  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('save_settings', ${JSON.stringify(testSettings)})`);
+  const saved = await jsInvokeSafe(cdp, `window.__TAURI__.invoke('save_settings', ${JSON.stringify({ settings: testSettings })})`);
+  assert("save_settings succeeds", saved === undefined || saved === null || saved.success !== false, `${JSON.stringify(saved)}`);
   const loaded = await jsInvokeSafe(cdp, "window.__TAURI__.invoke('load_settings', {})");
-  assert("save/load settings", loaded && loaded.theme === "dark", `${JSON.stringify(loaded)}`);
+  assert("save/load settings", loaded && loaded.theme === "dark", `${JSON.stringify(loaded).slice(0, 120)}`);
+  const restore = {
+    settings: {
+      theme: original && original.theme,
+      lang: original && original.lang,
+    },
+  };
+  await jsInvokeSafe(cdp, `window.__TAURI__.invoke('save_settings', ${JSON.stringify(restore)})`);
 
 // Test file ops commands (no-op, just check no throw)
    console.log("\n  Testing file ops commands...");

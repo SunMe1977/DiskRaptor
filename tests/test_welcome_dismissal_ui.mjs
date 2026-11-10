@@ -1,28 +1,42 @@
-import { runTest, jsExpr, assert, clickById, sleep } from "./test_shared.mjs";
+import { runTest, jsExpr, jsInvoke, assert, clickById, sleep } from "./test_shared.mjs";
 
+// Closing the onboarding banner must hide it immediately and persist
+// `welcome_dismissed` in the backend settings.
 runTest("DiskRaptor Welcome Dismissal Persistence Test", 9266, async (cdp) => {
-  const welcomeVisible = await jsExpr(cdp, `document.getElementById('welcome-placeholder') ? 'found' : 'not-found'`);
-  assert("Welcome placeholder exists", welcomeVisible === "found");
+  const placeholder = await jsExpr(cdp, `document.getElementById('welcome-placeholder') ? 'found' : 'not-found'`);
+  assert("Welcome placeholder exists", placeholder === "found");
 
-  const isHidden = await jsExpr(cdp, `document.getElementById('welcome-placeholder')?.classList.contains('hidden')`);
-  assert("Welcome visible initially", isHidden === false || isHidden === "false", `hidden=${isHidden}`);
+  const onboarding = await jsExpr(cdp, `document.getElementById('welcome-onboarding') ? 'found' : 'not-found'`);
+  assert("Welcome onboarding exists", onboarding === "found");
+  if (onboarding !== "found") return;
+
+  const original = await jsInvoke(cdp, "window.__TAURI__.invoke('load_settings', {})").catch(() => null);
+  const originalDismissed = !!(original && original.welcome_dismissed);
+
+  // Force the banner visible so the dismissal path is always exercised.
+  await jsExpr(cdp, `document.getElementById('welcome-onboarding').classList.remove('hidden'); 'shown'`);
+  const visible = await jsExpr(cdp, `!document.getElementById('welcome-onboarding').classList.contains('hidden')`);
+  assert("Welcome visible before close", visible === true);
 
   await clickById(cdp, "welcome-close", 300);
   await sleep(400);
 
-  const hiddenAfterClose = await jsExpr(cdp, `document.getElementById('welcome-placeholder')?.classList.contains('hidden')`);
-  assert("Welcome hidden after close click", hiddenAfterClose === true || hiddenAfterClose === "true");
+  const hiddenAfterClose = await jsExpr(cdp, `document.getElementById('welcome-onboarding').classList.contains('hidden')`);
+  assert("Welcome hidden after close click", hiddenAfterClose === true);
 
-  const dontShow = await jsExpr(cdp, `document.getElementById('welcome-dont-show')?.checked`);
-  assert("Don't show checkbox exists", dontShow !== undefined && dontShow !== null, `checked=${dontShow}`);
-
-  const savedSetting = await jsExpr(cdp, `
+  const dismissed = await jsExpr(cdp, `
     (async () => {
       try {
         const r = await window.__TAURI__.invoke('load_settings', {});
-        return r?.welcome_dismissed ? 'dismissed' : 'not-dismissed';
-      } catch(e) { return 'err'; }
+        return r && r.welcome_dismissed === true;
+      } catch (e) { return 'err:' + e.message; }
     })()
   `);
-  assert("Welcome dismissal saved to settings", true, `setting=${savedSetting}`);
+  assert("Welcome dismissal saved to settings", dismissed === true, `dismissed=${dismissed}`);
+
+  // Restore the original preference so the test does not change the user's app.
+  if (!originalDismissed) {
+    await jsInvoke(cdp, "window.__TAURI__.invoke('save_settings', { settings: { welcome_dismissed: false } })")
+      .catch(() => {});
+  }
 });

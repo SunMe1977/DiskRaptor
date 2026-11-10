@@ -151,8 +151,14 @@ async fn handle_ws(stream: tokio::net::TcpStream, buf: Vec<u8>, addr: std::net::
                                 // is sent as an explicit marker (handled in
                                 // parse_cdp_value). Without this the POST would
                                 // omit `value` and never resolve.
+                                //
+                                // The wrapper is async and `await`s the eval
+                                // result: `Runtime.evaluate` with
+                                // `awaitPromise: true` must resolve Promises
+                                // (async IIFEs used throughout the tests would
+                                // otherwise serialize as `{}`).
                                 let ejs = format!(
-                                    "try{{var r=eval({});var s=(typeof r==='undefined')?'__undefined__':JSON.stringify(r);var x=new XMLHttpRequest();x.open('POST','http://127.0.0.1:{}/cdp_result',true);x.setRequestHeader('Content-Type','text/plain');x.send(JSON.stringify({{id:'{}',value:s}}));}}catch(e){{}}",
+                                    "(async()=>{{try{{var r=await eval({});var s=(typeof r==='undefined')?'__undefined__':JSON.stringify(r);var x=new XMLHttpRequest();x.open('POST','http://127.0.0.1:{}/cdp_result',true);x.setRequestHeader('Content-Type','text/plain');x.send(JSON.stringify({{id:'{}',value:s}}));}}catch(e){{}}}})();",
                                     serde_json::Value::String(expr.to_string()), _cdp_port, cdp_id
                                 );
                                 let _ = w.eval(&ejs).ok();

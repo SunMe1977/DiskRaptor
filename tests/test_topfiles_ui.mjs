@@ -33,12 +33,11 @@ runTest("DiskRaptor Top Files Panel Test", 9204, async (cdp, scanPath) => {
 
   const hasSizeColumn = await jsExpr(cdp, `
     (function() {
-      const ths = document.querySelectorAll('#topfiles-table th');
-      for (const th of ths) {
-        if (th.textContent.toLowerCase().includes('size')) return 'has-size-col';
-      }
-      return 'no-size-col';
+      const ths = Array.from(document.querySelectorAll('#topfiles-table th'));
+      if (ths.some(th => (th.getAttribute('data-i18n') || '').toLowerCase().includes('size'))) return 'has-size-col';
+      if (ths.some(th => /size|gr(ö|oe)(ß|ss)e|taille|tama(ñ|n)o|dimensione|размер/i.test(th.textContent || ''))) return 'has-size-col';
+      return 'no-size-col:' + ths.map(th => th.textContent.trim()).join('|');
     })()
   `);
-  assert("Size column in top files", hasSizeColumn === "has-size-col");
+  assert("Size column in top files", hasSizeColumn === "has-size-col", hasSizeColumn);
 });
