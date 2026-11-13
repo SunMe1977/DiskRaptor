@@ -100,6 +100,6 @@
     "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
     "globals": "^17.13.0",
-    "playwright": "^1.64.0"
+    "playwright": "^1.65.0"
   }
 }
