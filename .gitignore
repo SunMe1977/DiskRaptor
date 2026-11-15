@@ -46,6 +46,8 @@ crash*.txt
 test-results/
 .tmp.driveupload/
 .tmp.drivedownload/
+.tmp.msix/
+.tmp.msi/
 
 # ── Secrets (NEVER commit) ──────────
 .env
