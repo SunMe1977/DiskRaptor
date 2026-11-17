@@ -25,7 +25,7 @@ param(
   [string]$Publisher = "CN=Hansjoerg Hofer",
   [string]$DisplayName = "DiskRaptor",
   [string]$PublisherDisplayName = "Hansjoerg Hofer",
-  [string]$OutFile = "release-assets\DiskRaptor-windows-x64.msix",
+  [string]$OutFile = "",
   [switch]$SelfSign
 )
 
@@ -40,6 +40,12 @@ if (-not $Version) {
   Write-Host "  Version not given - derived $Version from package.json"
 } elseif ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
   throw "MSIX version must be 4 parts (major.minor.build.revision), got '$Version'"
+}
+
+if (-not $OutFile) {
+  # Versioned filename like the silent MSI: DiskRaptor-<appversion>-windows-x64.msix
+  $appVer3 = ($Version -replace '\.\d+$', '')
+  $OutFile = "release-assets\DiskRaptor-${appVer3}-windows-x64.msix"
 }
 
 function Find-MakeAppx {

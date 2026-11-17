@@ -132,11 +132,11 @@ jobs:
           if ("${{ vars.MSIX_IDENTITY_PUBLISHER }}") { $identity += @("-Publisher", "${{ vars.MSIX_IDENTITY_PUBLISHER }}") }
           powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
             -MsiPath $msi -Version "${ver}.0" `
-            -OutFile "release-assets\DiskRaptor-windows-x64.msix" @identity
-          if (-not (Test-Path "release-assets\DiskRaptor-windows-x64.msix")) {
+            -OutFile "release-assets\DiskRaptor-${ver}-windows-x64.msix" @identity
+          if (-not (Test-Path "release-assets\DiskRaptor-${ver}-windows-x64.msix")) {
             Write-Error "MSIX package not created"; exit 1
           }
-          Get-Item "release-assets\DiskRaptor-windows-x64.msix" | Select-Object Name, Length
+          Get-Item "release-assets\DiskRaptor-${ver}-windows-x64.msix" | Select-Object Name, Length
       - name: Verify MSIX is Store-submittable
         shell: pwsh
         run: |
@@ -145,7 +145,7 @@ jobs:
           # copy of the frontend (which re-enables in-app self-update).
           $ErrorActionPreference = "Stop"
           $ver = (Get-Content package.json | ConvertFrom-Json).version
-          $msix = "release-assets\DiskRaptor-windows-x64.msix"
+          $msix = "release-assets\DiskRaptor-${ver}-windows-x64.msix"
           $work = Join-Path $env:TEMP "msix-verify"
           Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
           $makeappx = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue |

@@ -37,7 +37,7 @@ Konkret heißt das:
 2. `DiskRaptor-<ver>-windows-x64.msi` – normaler MSI (mit UI)
 3. `DiskRaptor-<ver>-windows-x64-silent.msi` – MSI ohne UI (Basis für das MSIX)
 4. `DiskRaptor-<ver>-windows-x64-silent.exe` – NSIS ohne UI
-5. `DiskRaptor-windows-x64.msix` – **das Store-Paket**
+5. `DiskRaptor-<ver>-windows-x64.msix` – **das Store-Paket**
 
 Das Silent-MSI wird mit `--features store` gebaut (keine Admin-Elevation,
 `restart_as_admin` ist deaktiviert) und enthält **keinen** WebView2-Download
@@ -67,7 +67,7 @@ Das Store-MSI wird als **per-machine**-Paket gebaut:
 ## MSIX bauen
 
 Automatisch: der Release-Workflow ruft `msix/pack-msix.ps1` auf und lädt das
-Ergebnis als `DiskRaptor-windows-x64.msix` hoch.
+Ergebnis als `DiskRaptor-<ver>-windows-x64.msix` hoch.
 
 Manuell:
 
@@ -92,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 `
    - `MSIX_IDENTITY_PUBLISHER` – z. B. `CN=8A1B...`
    Ohne diese Variablen werden die Standardwerte
    `DiskRaptor.DiskRaptor` / `CN=Hansjoerg Hofer` verwendet.
-3. **Neue Submission** anlegen, `DiskRaptor-windows-x64.msix` hochladen,
+3. **Neue Submission** anlegen, `DiskRaptor-<ver>-windows-x64.msix` hochladen,
    Version prüfen (`1.0.50.0`), einreichen.
 
 > Ein bestehendes Win32-Produkt (MSI/EXE) lässt sich nicht in ein

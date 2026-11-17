@@ -155,7 +155,7 @@ if exist "%MAKENSIS%" (
 REM -- Step 4: MSIX (Microsoft Store) package ------------
 REM Tauri v2 has no MSIX bundler. The Store package is built from the silent
 REM MSI by the CI release workflow (release.yml -> msix\pack-msix.ps1) and
-REM uploaded to GitHub Releases as DiskRaptor-windows-x64.msix.
+REM uploaded to GitHub Releases as DiskRaptor-<ver>-windows-x64.msix.
 REM Build it manually with:
 REM   npx tauri build --bundles msi --config src-tauri\tauri.silent.conf.json --ci
 REM   powershell -ExecutionPolicy Bypass -File msix\pack-msix.ps1 -MsiPath <silent.msi>
@@ -167,7 +167,7 @@ echo   BUILD COMPLETE
 echo ==========================================
 echo.
 echo  EXE: dist\DiskRaptor.exe
-echo  MSIX: built by the release workflow -> release-assets\DiskRaptor-windows-x64.msix
+echo  MSIX: built by the release workflow -> release-assets\DiskRaptor-<ver>-windows-x64.msix
 echo.
 
 pause
