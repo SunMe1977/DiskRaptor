@@ -1,12 +1,13 @@
 <#
 .SYNOPSIS
-  Build the silent, per-user MSI that is submitted to the Microsoft Store.
+  Build the silent, per-machine MSI that is submitted to the Microsoft Store.
 
 .DESCRIPTION
-  Compiles installer\wix\silent-peruser.wxs with the WiX toolset that ships
+  Compiles installer\wix\silent-permachine.wxs with the WiX toolset that ships
   with Tauri (or one found on PATH / in %WIX%). The package installs to
-  %LOCALAPPDATA%\DiskRaptor and needs no elevation, so the Store can install it
-  in the background.
+  Program Files and writes the uninstall key to HKLM, so the Store can detect
+  the installation in its background-install test. The install is silent
+  (/qn); the UAC elevation prompt is allowed by the Store's MSI/EXE rules.
 
   Run after the app binaries exist (npx tauri build --no-bundle ...):
 
@@ -51,7 +52,7 @@ if (-not $WixTools) { throw "candle.exe not found (expected in %LOCALAPPDATA%\ta
 $candle = Join-Path $WixTools "candle.exe"
 $light = Join-Path $WixTools "light.exe"
 $icon = Join-Path $repoRoot "src-tauri\icons\icon.ico"
-$wxs = Join-Path $PSScriptRoot "silent-peruser.wxs"
+$wxs = Join-Path $PSScriptRoot "silent-permachine.wxs"
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ("diskraptor_msi_" + [guid]::NewGuid().ToString("N"))
@@ -61,7 +62,7 @@ try {
   $msi = Join-Path $OutputDir "DiskRaptor_${Version}_x64_en-US.msi"
   Remove-Item $msi -Force -ErrorAction SilentlyContinue
 
-  Write-Host "  Building per-user silent MSI (WiX: $WixTools)"
+  Write-Host "  Building per-machine silent MSI (WiX: $WixTools)"
   & $candle -nologo -arch x64 "-dVersion=$Version" "-dPayloadDir=$PayloadDir" "-dIconPath=$icon" -out $wixobj $wxs
   if ($LASTEXITCODE -ne 0) { throw "candle failed with exit code $LASTEXITCODE" }
 

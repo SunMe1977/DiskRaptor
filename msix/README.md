@@ -46,24 +46,23 @@ erfüllt. Es enthält außerdem keine zweite Frontend-Kopie: das Frontend steckt
 bereits (als Store-Build gestempelt, ohne In-App-Self-Update) in
 `diskraptor.exe`.
 
-### Silent-MSI ist per-user (nicht per-machine)
+### Silent-MSI ist per-machine (nicht per-user)
 
-Seit v1.0.50 wird das Store-MSI als **per-user**-Paket gebaut:
+Das Store-MSI wird als **per-machine**-Paket gebaut:
 
-- Installiert nach `%LOCALAPPDATA%\DiskRaptor`, schreibt **nur** HKCU und fragt
-  **nie** nach Admin-Rechten.
-- Grund: Der Store startet den eingereichten Installer im Hintergrund als
-  angemeldeter Benutzer. Ein per-machine-MSI (`ALLUSERS=1`, `Program Files`)
-  braucht Elevation und scheitert dort mit Fehler 1925 („unzureichende
-  Berechtigungen"), was Partner Center als „Hintergrundinstallation konnte nicht
-  verifiziert werden" meldet.
-- Tauris WiX-Bundler kann kein per-user-MSI erzeugen (seine File-Keypath-
-  Komponente scheitert an ICE38, das `Programs`-Verzeichnis an ICE64), daher wird
-  das Store-MSI aus `installer/wix/silent-peruser.wxs` mit `candle`/`light`
+- Installiert nach `Program Files\DiskRaptor`, schreibt den Deinstallations-
+  Eintrag nach **HKLM** (Standard-Pfad, den „Programme hinzufügen/entfernen"
+  liest).
+- Grund: Der Hintergrundinstallations-Test des Stores erkennt eine **per-user**-
+  Installation nicht (Dateien in `%LOCALAPPDATA%`, Deinstallations-Key in HKCU).
+  Das schlägt in der Zertifizierung fehl mit „Wir konnten nicht ermitteln, ob
+  Ihre App im Hintergrund installiert wird" und „App-Name/Herausgeber in
+  ‚Programme hinzufügen/entfernen' nicht identifizierbar".
+- Die UAC-Elevation ist laut den Store-Anforderungen ausdrücklich erlaubt
+  („silent install required, UAC dialog is allowed").
+- Tauris WiX-Bundler kann dieses Paket nicht exakt erzeugen, daher wird das
+  Store-MSI aus `installer/wix/silent-permachine.wxs` mit `candle`/`light`
   gebaut (`installer/wix/build-silent-msi.ps1`).
-- `IgnoreRemoveFailure` sorgt dafür, dass ein noch installiertes altes
-  per-machine v1.0.44 die Installation nicht abbricht (Fehler 1730). Dieses alte
-  Paket muss einmalig per Hand (mit Admin) entfernt werden.
 
 ## MSIX bauen
 
@@ -118,9 +117,8 @@ powershell -ExecutionPolicy Bypass -File msix\install-msix.ps1
 
 ## Wenn du beim MSI/EXE-Pfad bleiben willst
 
-Seit v1.0.50 ist das Silent-MSI per-user und installiert daher auch in der
-Store-Hintergrundprüfung ohne Admin. Damit ist der Fehler „Hintergrundinstallation
-konnte nicht verifiziert werden" behoben – es bleiben aber zwei harte
+Das Silent-MSI ist per-machine (Program Files + HKLM), damit der Store die
+Installation in der Hintergrundprüfung erkennen kann. Es bleiben zwei harte
 Anforderungen:
 
 - Das MSI/EXE muss **code-signiert** sein (alle PE-Dateien), sonst Ablehnung.
