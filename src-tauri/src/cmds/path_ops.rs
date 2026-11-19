@@ -11,8 +11,11 @@ use crate::cmds::system::in_mac_sandbox;
 #[cfg(target_os = "windows")]
 fn strip_verbatim_prefix(p: &std::path::Path) -> std::path::PathBuf {
     let s = p.to_string_lossy();
-    let s = s.strip_prefix(r"\\?\UNC\").unwrap_or(&s);
-    let s = s.strip_prefix(r"\\?\").unwrap_or(s);
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        // `\\?\UNC\server\share` -> conventional `\\server\share`
+        return std::path::PathBuf::from(format!("\\\\{rest}"));
+    }
+    let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
     std::path::PathBuf::from(s)
 }
 
@@ -151,6 +154,12 @@ fn path_is_protected(candidate: &std::path::Path, bases: &[std::path::PathBuf]) 
         return false;
     }
     let norm = |p: &std::path::Path| -> String {
+        // Strip the `\\?\` / `\\?\UNC\` verbatim prefix so a canonical path from
+        // the delete pipeline still matches a protected folder entered by hand.
+        #[cfg(target_os = "windows")]
+        let p = strip_verbatim_prefix(p);
+        #[cfg(not(target_os = "windows"))]
+        let p = p.to_path_buf();
         let s = p.to_string_lossy();
         #[cfg(target_os = "windows")]
         {
@@ -780,15 +789,19 @@ pub(crate) fn get_app_icon(path: String) -> JsonResult {
     JsonResult::ok(serde_json::Value::String(String::new()))
 }
 
+/// Restrict to safe schemes so a compromised frontend can't use `open_url` to
+/// launch arbitrary programs (e.g. `file:///path/to/script`). Exposed as a
+/// standalone function so the allowlist is unit-tested.
+fn is_safe_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("mailto:")
+}
+
 #[tauri::command]
 pub(crate) fn open_url(url: String) -> JsonResult {
-    // Restrict to safe schemes so a compromised frontend can't use this to
-    // launch arbitrary programs (e.g. file:///path/to/script).
-    let lower = url.trim().to_ascii_lowercase();
-    if !(lower.starts_with("https://")
-        || lower.starts_with("http://")
-        || lower.starts_with("mailto:"))
-    {
+    if !is_safe_url(&url) {
         return JsonResult::err("Blocked URL scheme");
     }
     let _ = open::that(&url);
@@ -889,5 +902,181 @@ mod tests {
         // The real config dir may or may not exist, but the function must never
         // error; it simply reports no protection when nothing is configured.
         assert!(protected_delete_error(&std::env::temp_dir().to_string_lossy()).is_none());
+    }
+
+    /// Unique per-test temp dir under the OS temp folder, cleaned up by the
+    /// caller. The process id keeps parallel tests from colliding.
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("diskraptor_{tag}_{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn delete_path_checked_removes_file_dir_and_symlink() {
+        let dir = temp_dir("del");
+
+        // Regular file.
+        let file = dir.join("a.txt");
+        std::fs::write(&file, b"x").unwrap();
+        delete_path_checked(&file).unwrap();
+        assert!(!file.exists());
+
+        // Directory (recursive).
+        let sub = dir.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("b.txt"), b"y").unwrap();
+        delete_path_checked(&sub).unwrap();
+        assert!(!sub.exists());
+
+        // Symlink: removes the link itself, never the target.
+        #[cfg(unix)]
+        {
+            let target = dir.join("target.txt");
+            std::fs::write(&target, b"z").unwrap();
+            let link = dir.join("link.txt");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            delete_path_checked(&link).unwrap();
+            assert!(!link.exists());
+            assert!(target.exists(), "symlink target must survive link removal");
+        }
+
+        // Missing path: must error, never claim success.
+        assert!(delete_path_checked(&dir.join("missing.txt")).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn path_snapshot_detects_symlink_swap() {
+        #[cfg(unix)]
+        {
+            let dir = temp_dir("swap");
+            let file = dir.join("target.txt");
+            std::fs::write(&file, b"data").unwrap();
+            let snap = PathSnapshot::capture(&file.to_string_lossy()).expect("capture ok");
+            assert!(snap.still_matches());
+
+            // Swap the regular file for a symlink to a different file: the
+            // snapshot's symlink bit flips, so the guard must refuse.
+            std::fs::remove_file(&file).unwrap();
+            let other = dir.join("other.txt");
+            std::fs::write(&other, b"other").unwrap();
+            std::os::unix::fs::symlink(&other, &file).unwrap();
+            assert!(!snap.still_matches(), "symlink swap must be detected");
+
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    #[test]
+    fn sanitize_delete_path_rejects_empty_home_and_roots() {
+        // Empty / blank input.
+        assert!(sanitize_delete_path("").is_err());
+        assert!(sanitize_delete_path("   ").is_err());
+
+        // Home directory.
+        let home = dirs::home_dir().unwrap_or_default();
+        if !home.as_os_str().is_empty() {
+            assert!(sanitize_delete_path(&home.to_string_lossy()).is_err());
+        }
+
+        // Filesystem roots (varied spellings).
+        #[cfg(target_os = "windows")]
+        for t in ["C:\\", "C:/", "D:\\"] {
+            assert!(sanitize_delete_path(t).is_err(), "must reject {t:?}");
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(sanitize_delete_path("/").is_err());
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn strip_verbatim_prefix_strips_drive_and_unc() {
+        use std::path::Path;
+        // Drive letter form.
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\C:\foo\bar")),
+            std::path::PathBuf::from(r"C:\foo\bar")
+        );
+        // UNC form must become a conventional `\\server\share`.
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\UNC\server\share\dir")),
+            std::path::PathBuf::from(r"\\server\share\dir")
+        );
+        // Non-verbatim path is unchanged.
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"C:\foo")),
+            std::path::PathBuf::from(r"C:\foo")
+        );
+    }
+
+    #[test]
+    fn validate_system_path_rejects_control_chars() {
+        assert!(validate_system_path("C:\\foo\u{0001}bar").is_err());
+        assert!(validate_system_path("C:\\foo\u{0000}bar").is_err());
+        // Tab/newline are allowed by the current validator (whitespace in paths).
+        // NUL and C0 control chars are the hard rejections.
+    }
+
+    #[test]
+    fn is_safe_url_allowlist() {
+        assert!(is_safe_url("https://example.com"));
+        assert!(is_safe_url("http://example.com"));
+        assert!(is_safe_url("mailto:a@b.c"));
+        assert!(is_safe_url("  https://example.com  "), "leading/trailing space is trimmed");
+        assert!(!is_safe_url("file:///etc/passwd"));
+        assert!(!is_safe_url("javascript:alert(1)"));
+        assert!(!is_safe_url("ftp://example.com"));
+        assert!(!is_safe_url("data:text/html,<script>"));
+        assert!(!is_safe_url(""));
+    }
+
+    #[test]
+    fn get_file_preview_rejects_nonimage_oversized_and_symlink() {
+        let dir = temp_dir("preview");
+
+        // Non-image extension is rejected before touching disk.
+        assert!(!get_file_preview(dir.join("a.txt").to_string_lossy().to_string()).success);
+
+        // Image extension but larger than the 2 MB cap.
+        let big = dir.join("big.png");
+        std::fs::write(&big, vec![0u8; 2 * 1024 * 1024 + 1]).unwrap();
+        assert!(!get_file_preview(big.to_string_lossy().to_string()).success);
+
+        // Symlink to a valid image is rejected (metadata() would follow it).
+        #[cfg(unix)]
+        {
+            let img = dir.join("img.png");
+            std::fs::write(&img, vec![1u8; 16]).unwrap();
+            let link = dir.join("link.png");
+            std::os::unix::fs::symlink(&img, &link).unwrap();
+            assert!(!get_file_preview(link.to_string_lossy().to_string()).success);
+        }
+
+        // Small, real file with an image extension succeeds.
+        let ok = dir.join("ok.png");
+        std::fs::write(&ok, vec![1u8; 16]).unwrap();
+        assert!(get_file_preview(ok.to_string_lossy().to_string()).success);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn path_is_protected_handles_verbatim_prefix() {
+        let bases = vec![std::path::PathBuf::from(r"C:\Users\Me\Photos")];
+        // A canonicalized (verbatim) path must still match the protected folder.
+        assert!(path_is_protected(
+            &std::path::PathBuf::from(r"\\?\C:\Users\Me\Photos\a.jpg"),
+            &bases
+        ));
+        // Case-insensitive nesting still matches.
+        assert!(path_is_protected(
+            &std::path::PathBuf::from(r"c:\users\me\photos\sub\b.jpg"),
+            &bases
+        ));
     }
 }
