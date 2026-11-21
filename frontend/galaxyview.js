@@ -182,9 +182,6 @@
       if (this.interaction && typeof this.interaction.onClick === "function") {
         this.interaction.onClick((x, y, camera) => this._handleClick(x, y));
       }
-      if (this.interaction && typeof this.interaction.onDoubleClick === "function") {
-        this.interaction.onDoubleClick((x, y, camera) => this._handleDoubleClick(x, y));
-      }
       if (this.interaction && typeof this.interaction.onHover === "function") {
         this.interaction.onHover((x, y, camera) => this._handleHover(x, y));
       }
@@ -1022,63 +1019,72 @@ _getVisibleObjects() {
      // ── Interaction Helpers ────────────────────────────────────
 
     _handleClick(x, y) {
-      // Find nearest visible object
-      const visible = this._getVisibleObjects();
-      let nearest = null;
-      let nearestDist = Infinity;
-
-      for (const obj of visible) {
-        if (obj._screenX === undefined) continue;
-        const dx = obj._screenX - x;
-        const dy = obj._screenY - y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        const hitRadius = Math.max((obj.scale || 5) * 3, 10);
-        if (dist < hitRadius && dist < nearestDist) {
-          nearest = obj;
-          nearestDist = dist;
-        }
-      }
-
-      if (nearest) {
-        this.selectedObject = nearest;
-        this._onObjectSelected(nearest);
-
-        // Fly toward the object along the current view direction, stopping at
-        // a distance proportional to its size. Never flies AWAY: if already
-        // closer than the focus distance, keep the distance and just re-aim.
-        // (The old fixed +50z offset yanked the camera back out whenever you
-        // were already zoomed in close.)
-        const target = nearest.position || this.camera.target;
-        const focusDist = Math.min(
-          Math.max((nearest.scale || 5) * 6, CFG.camera.minZoom),
-          CFG.camera.maxZoom
-        );
-        const dir = [
-          this.camera.position[0] - target[0],
-          this.camera.position[1] - target[1],
-          this.camera.position[2] - target[2],
-        ];
-        const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-        const newDist = Math.min(len, focusDist);
-        const flyPos = [
-          target[0] + (dir[0] / len) * newDist,
-          target[1] + (dir[1] / len) * newDist,
-          target[2] + (dir[2] / len) * newDist,
-        ];
-        // Latest click wins: drop any in-flight transition, then lock the
-        // camera onto the planet so it stays there while it keeps orbiting.
-        if (this.animation && typeof this.animation.cancelTransitions === "function") {
-          this.animation.cancelTransitions();
-        }
-        this._setFollow(nearest);
-        this.animation.flyTo(flyPos, [...target]);
-      } else {
+      const nearest = this._pickObject(x, y);
+      if (!nearest) {
         // Clicked empty space: stay put, release the follow lock.
         this._clearFollow();
+        return;
       }
+
+      this.selectedObject = nearest;
+      this._onObjectSelected(nearest);
+
+      // Single click on a folder opens it in place: its subfolders become
+      // planets and its files become moons. Clicking it again collapses it.
+      if (this._isFolder(nearest)) {
+        this._flyToObject(nearest);
+        if (nearest._explodedChildren) this._collapseFolder(nearest);
+        else if (!nearest._opening) this._explodeFolder(nearest);
+        return;
+      }
+
+      // Files and other non-folder bodies: fly close and lock on for inspection.
+      this._flyToObject(nearest);
+      this._setFollow(nearest);
     }
 
-    // ── Folder explosion drill-down (double-click) ────────────
+    /** Fly the camera toward an object, stopping at a size-proportional
+     *  distance. Never flies AWAY: if already closer than the focus distance,
+     *  keep the distance and just re-aim. */
+    _flyToObject(obj) {
+      const target = (obj && obj.position) || this.camera.target;
+      const focusDist = Math.min(
+        Math.max(((obj && obj.scale) || 5) * 6, CFG.camera.minZoom),
+        CFG.camera.maxZoom
+      );
+      const dir = [
+        this.camera.position[0] - target[0],
+        this.camera.position[1] - target[1],
+        this.camera.position[2] - target[2],
+      ];
+      const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+      const newDist = Math.min(len, focusDist);
+      const flyPos = [
+        target[0] + (dir[0] / len) * newDist,
+        target[1] + (dir[1] / len) * newDist,
+        target[2] + (dir[2] / len) * newDist,
+      ];
+      // Latest click wins: drop any in-flight transition before re-aiming.
+      if (this.animation && typeof this.animation.cancelTransitions === "function") {
+        this.animation.cancelTransitions();
+      }
+      this.animation.flyTo(flyPos, [...target]);
+    }
+
+    /** True for bodies that can be drilled into (folders). */
+    _isFolder(obj) {
+      if (!obj) return false;
+      if (obj.type === "planet") {
+        // File bodies also map to "planet" but carry `data.type` (an extension
+        // category); real folder planets carry `data.files` and no `data.type`.
+        return !(obj.data && obj.data.type);
+      }
+      if (obj.type === "moon") return !!(obj.data && obj.data.isDir);
+      if (obj.type === "blackHole") return true;
+      return false;
+    }
+
+    // ── Folder drill-down (single click) ──────────────────────
 
     /** Shared screen-space picking. Returns nearest object within radius or null. */
     _pickObject(x, y, radiusFn) {
@@ -1099,23 +1105,7 @@ _getVisibleObjects() {
       return nearest;
     }
 
-    _handleDoubleClick(x, y) {
-      const obj = this._pickObject(x, y);
-      if (!obj) return;
-      // Only folders can explode open: planets, plus exploded moons that are
-      // directories themselves (recursive drill-down). Files were already
-      // selected by the two single clicks that precede every double-click.
-      const isFolder = obj.type === "planet" ||
-        (obj.type === "moon" && obj.data && obj.data.isDir);
-      if (!isFolder || !this._contextObjPath(obj)) return;
-      if (obj._explodedChildren) {
-        this._collapseFolder(obj);
-      } else {
-        this._explodeFolder(obj);
-      }
-    }
-
-    /** Second double-click: remove the exploded children again. */
+    /** Second click on an already-open folder: remove its exploded children. */
     _collapseFolder(obj) {
       const kids = obj._explodedChildren || [];
       obj._explodedChildren = null;
@@ -1128,15 +1118,18 @@ _getVisibleObjects() {
       this._rebuildSpatialIndex();
     }
 
-    /** Double-click on a folder planet: particle burst + show its contents
-     *  as new moons flying outward, settling into orbit around the folder. */
+    /** Open a folder (single click): particle burst + show its contents —
+     *  subfolders as planets, files as moons — flying outward and settling
+     *  into orbit around the folder. */
     _explodeFolder(obj) {
       const self = this;
-      // Release the camera/selection freeze from the preceding single clicks
-      // so the galaxy stays alive while the folder bursts open. The camera
-      // is already parked at the folder and simply stays there.
+      // Release any camera/selection freeze so the galaxy stays alive while
+      // the folder bursts open. The camera flies to the folder and stays put.
       this._clearFollow();
       this.selectedObject = obj;
+      // Mark the folder as opening so a rapid second click can't fire a
+      // duplicate async load (the children resolve a moment later).
+      obj._opening = true;
 
       const burstColor = Array.isArray(obj.color) ? obj.color : [0.5, 0.8, 1];
       if (this.effects && typeof this.effects.particleBurst === "function") {
@@ -1237,7 +1230,7 @@ _getVisibleObjects() {
           const dl = Math.hypot(dir[0], dir[1], dir[2]) || 1;
           const ringR = baseR + (i % 4) * (baseR * 0.28);
           const kid = {
-            type: "moon",
+            type: isDir ? "planet" : "moon",
             id: "burst-" + Date.now().toString(36) + "-" + i,
             name: nm,
             path: folderPath.replace(/\/+$/, "") + "/" + nm,
@@ -1249,6 +1242,7 @@ _getVisibleObjects() {
             active: true,
             _visible: true,
             sparkle: !isDir,
+            hasRing: false, // small sub-folders stay clean: no Saturn rings
             orbitSpeed: 0.002 + Math.random() * 0.002,
             data: { size: c.size || 0, isDir: isDir, explodedFrom: folderPath },
             lodLevel: 0,
@@ -1275,6 +1269,8 @@ _getVisibleObjects() {
           (children.length > kids.length ? " (largest of " + children.length + ")" : ""), "success");
       }).catch(function (e) {
         toast("Could not open folder: " + (e && e.message ? e.message : e), "error");
+      }).finally(function () {
+        obj._opening = false;
       });
     }
 

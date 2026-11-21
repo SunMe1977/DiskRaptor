@@ -75,9 +75,8 @@
         }
       });
 
-      // Double-click (e.g. explode a folder open). Fires after two single
-      // clicks — the click handler already flew the camera there, which is
-      // exactly where the explosion should happen.
+      // Double-click (generic hook — currently unused; folder drill-down is
+      // handled by single click in the view).
       c.addEventListener("dblclick", (e) => {
         if (this.dblClickHandler) {
           const rect = c.getBoundingClientRect();

@@ -106,10 +106,16 @@
       // the absolute clock `t`, so orbits kept accelerating the longer the
       // galaxy stayed open. Factor 0.6 keeps the original tempo.
       planet.orbitAngle = (planet.orbitAngle || 0) + (planet.orbitSpeed || CFG.animation.orbitSpeed) * dt * 0.6 * rotScale();
-      if (planet.position && planet.orbitRadius) {
-        const rad = planet.orbitRadius + Math.sin(t * 0.0001) * 2; // slight eccentricity
-        planet.position[0] = Math.cos(planet.orbitAngle) * rad;
-        planet.position[2] = Math.sin(planet.orbitAngle) * rad;
+      // Explosion flights are driven by _updateExplosions (position + scale),
+      // so the orbit integrator must not fight them while `_explode` is active.
+      if (planet.position && planet.orbitRadius && !planet._explode) {
+        // Parent-orbiting planets (opened sub-folders) revolve around their
+        // parent folder; top-level planets revolve around the star (origin).
+        const cx = planet.parentPosition ? planet.parentPosition[0] : 0;
+        const cz = planet.parentPosition ? planet.parentPosition[2] : 0;
+        const rad = planet.orbitRadius + (planet.parentPosition ? 0 : Math.sin(t * 0.0001) * 2);
+        planet.position[0] = cx + Math.cos(planet.orbitAngle) * rad;
+        planet.position[2] = cz + Math.sin(planet.orbitAngle) * rad;
       }
 
       // Pulse: recent activity = stronger pulse
